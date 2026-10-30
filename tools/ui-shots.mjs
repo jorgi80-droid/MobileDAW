@@ -1,6 +1,6 @@
 // UI screenshots of the main views with a fixed test project (drums, bass, lead, pad, audio loop, automation lane, effects), for
 // before / after comparisons of UI work. Serves the repo itself, drives the app with the preinstalled Playwright Chromium.
-// Usage: node tools/ui-shots.mjs <out-dir> [arr] [clip] [dev] [mix]      env: THEME=light|dark|..., VW / VH = viewport (default 1180 x 560)
+// Usage: node tools/ui-shots.mjs <out-dir> [arr] [clip] [dev] [mix] [win] [keys] [devs]      env: THEME=light|dark|..., VW / VH = viewport (default 1180 x 560)
 // Compare two runs (e.g. one on the previous commit, one on the working tree) side by side.
 import http from 'node:http'; import fs from 'node:fs'; import path from 'node:path'; import { fileURLToPath } from 'node:url'; import { createRequire } from 'node:module';
 const { chromium } = createRequire(import.meta.url)('playwright');
@@ -68,6 +68,36 @@ if (go('mix')) {
   await ev(() => document.querySelector('.seg .b[data-view="mix"]').click()); await shot('mix');
   await ev(async () => (await import('./js/project.js')).play()); await page.waitForTimeout(1800); await shot('mix-play');
   await ev(async () => (await import('./js/project.js')).stop());
+}
+if (go('win')) {                                         // global windows: tempo, preferences (every tab), modal, ask, export, toast, PWA card, floating window
+  const close = () => ev(async () => { (await import('./js/ui.js')).closeAll(); (await import('./js/floatwin.js')).closeAllFloats(); document.querySelectorAll('.pwa-card,.toast').forEach((e) => e.remove()); });
+  await ev(async () => (await import('./js/tempo.js')).openTempo()); await shot('win-tempo'); await close();
+  const tabs = await ev(async () => { (await import('./js/settingsui.js')).openSettings(); await new Promise((r) => setTimeout(r, 50)); return [...document.querySelectorAll('.btabs .b[data-t]')].map((b) => b.dataset.t); });
+  for (const t of tabs) { await ev((t) => document.querySelector(`.btabs .b[data-t="${t}"]`).click(), t); await shot('win-pref-' + t.toLowerCase().replace(/[^a-z]/g, '')); }
+  await close();
+  await ev(async () => { const U = await import('./js/ui.js'); U.modal('Proyek baru', 'Perubahan yang belum disimpan akan hilang.', [{ label: 'Batal' }, { label: 'Buat baru', go: true }]); }); await shot('win-modal'); await close();
+  await ev(async () => { const U = await import('./js/ui.js'); U.ask('Nama proyek', 'Lagu baru', () => {}); }); await shot('win-ask'); await close();
+  await ev(() => document.getElementById('btn-menu').click()); await shot('win-menu');
+  await ev(() => [...document.querySelectorAll('.menu .mi')].find((m) => /^Ekspor audio/.test(m.textContent)).click()); await shot('win-export'); await close();
+  await ev(async () => { const U = await import('./js/ui.js'); U.toast('Tersimpan: /MobileDAW/Lagu baru.mdaw', 9000); const c = U.h('div', { class: 'pwa-card', role: 'dialog' }, U.h('b', {}, 'Pasang MobileDAW'), U.h('div', { class: 'sv' }, 'Pasang sebagai aplikasi: layar penuh tanpa bilah browser, tetap jalan offline, dan ikon di layar utama.'), U.h('div', { class: 'acts' }, U.h('button', { class: 'b' }, 'Nanti'), U.h('button', { class: 'b go' }, 'Pasang'))); document.getElementById('layer').append(c); }); await shot('win-toast-pwa'); await close();
+  await ev(async () => { const P = await import('./js/project.js'), D = await import('./js/devices.js'); D.openDeviceWindow(P.state.tracks[1].devices[0].id); }); await shot('win-float'); await close();
+}
+if (go('keys')) {
+  await tab('keys');
+  await sel(2); await shot('keys-midi'); await btn('btn-max'); await shot('keys-midi-max'); await btn('btn-max');
+  await sel(0); await shot('keys-drum'); await btn('btn-max'); await shot('keys-drum-max'); await btn('btn-max');
+}
+if (go('devs')) {                                        // every instrument and every effect, normal and maximised panel
+  const list = await ev(async () => { const D = await import('./js/defs.js'); return { inst: [...D.INST_LIST], fx: Object.keys(D.DEVICES).map(Number) }; });
+  await sel(2); await tab('dev');
+  for (const k of list.inst) {
+    await ev(async (k) => { const P = await import('./js/project.js'); P.setInstrument(2, k); P.state.tracks[2].devices = []; P.syncAll(); P.emit('all'); }, k);
+    await shot('inst-' + k); await btn('btn-max'); await shot('inst-' + k + '-max'); await btn('btn-max');
+  }
+  for (const k of list.fx) {
+    await ev(async (k) => { const P = await import('./js/project.js'); P.state.tracks[2].devices = []; P.addDevice(2, k); P.syncAll(); P.emit('all'); }, k);
+    await shot('fx-' + k); await btn('btn-max'); await shot('fx-' + k + '-max'); await btn('btn-max');
+  }
 }
 console.log(errs.length ? 'page errors:\n' + errs.join('\n') : 'no page errors');
 await browser.close(); server.close();
