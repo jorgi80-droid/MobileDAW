@@ -3,6 +3,9 @@
 import { h, modal, ask, toast, clamp } from './ui.js';
 import { checkpoint } from './history.js';
 import * as P from './project.js';
+import { prefs, savePrefs } from './prefs.js';
+import * as TL from './timeline.js';
+import { openSigMenu } from './topbar.js';
 const { state } = P;
 
 const fmt = (b) => (Math.round(b * 100) / 100).toFixed(2);
@@ -69,6 +72,11 @@ export function openTempo() {
   sw.addEventListener('input', () => { P.setGroove({ amt: +sw.value / 100 }); paintSw(); });
   const paintSw = () => { sw.value = String(Math.round(state.groove.amt * 100)); swLbl.textContent = 'Swing ' + sw.value + '%'; swGrid.textContent = state.groove.grid === 480 ? '1/8' : state.groove.grid === 120 ? '1/32' : '1/16'; };
   const row = h('div', { class: 'tp-row' }, laneBtn, swLbl, sw, swGrid);
+  // time signature + follow playhead live here (the control bar only keeps the essentials)
+  const sigBtn = btn('', (e) => { const r = e.currentTarget.getBoundingClientRect(); openSigMenu(r.left, r.bottom + 4); }, 'tp-sig');
+  const folBtn = btn('Ikuti playhead', () => { prefs.follow = !prefs.follow; savePrefs(); TL.applyTimelinePrefs(); paintMeta(); }, 'tp-fol');
+  const paintMeta = () => { const sg = P.sigAtTick(Math.max(0, state.pos)); sigBtn.textContent = 'Birama ' + sg.n + ' / ' + sg.d; folBtn.classList.toggle('on', !!prefs.follow); };
+  const meta = h('div', { class: 'tp-meta' }, sigBtn, folBtn);
   let closeModal = () => {};
   const done = () => { off(); resetTaps(); closeModal(); };
 
@@ -76,10 +84,10 @@ export function openTempo() {
     h('div', { class: 'tp-head' }, h('span', { class: 'tp-title' }, 'Tempo'), h('button', { class: 'b tp-done', onclick: () => done() }, 'Selesai')),
     h('div', { class: 'tp-main' }, disp,
       h('div', { class: 'tp-grid' }, step(-1), step(-0.1), step(0.1), step(1), half, dbl, tapBtn, typ)),
-    syncBtn, row, sub);
+    meta, syncBtn, row, sub);
 
   const paint = () => {
-    big.textContent = fmt(state.bpm);
+    big.textContent = fmt(state.bpm); paintMeta();
     const n = nAudio();
     paintSw();
     if (P.tempoMapOn()) { sub.textContent = 'Tempo mengikuti lane otomasi. Kotak BPM menskalakan seluruh kurva.'; return; }

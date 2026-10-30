@@ -3,44 +3,46 @@
    strip, and a blurred backdrop behind every floating window. Loaded last: overrides app.css / live.css. Colours come from the
    theme variables, so every theme (Gelap, Live, Terang, Hitam) keeps working. ===== */
 
-/* ---- control bar: three zones, the transport always in the middle of the screen */
-#top { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 8px; background: var(--panel2); border-bottom: 1px solid var(--line); }
-#top-l, #top-r { display: flex; align-items: center; gap: 4px; min-width: 0; height: 100%; overflow: hidden; }
-#top-l { justify-content: flex-start; overflow-x: auto; touch-action: pan-x; }
+/* ---- control bar: only the essentials, symmetric. Left: browser, tempo, FPS | centre: play/pause, record, metronome |
+   right: CPU, undo/redo, Arrange/Mixer, menu. Both sides take the same width, so the transport sits exactly in the middle. */
+#top { --cb-h: 30px; display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 10px; background: var(--panel2); border-bottom: 1px solid var(--line); }
+#top-l, #top-r { display: flex; align-items: center; gap: 6px; min-width: 0; height: 100%; overflow: hidden; }
+#top-l { justify-content: flex-start; }
 #top-r { justify-content: flex-end; padding-left: 0; border-left: 0; flex: initial; }
 #top-l > *, #top-r > * { flex: none; }
-#top-c { display: flex; align-items: center; gap: 6px; height: 100%; }
-.tsep { width: 1px; height: 60%; background: var(--line); margin: 0 3px; }
-
-/* transport: one joined block of larger buttons, play lights green, record red, metronome orange (as in Live) */
-.tport { gap: 0; border: 1px solid var(--line); border-radius: 2px; overflow: hidden; background: var(--line); }
-.tport .b { width: 42px; height: 30px; border: 0; border-radius: 0; margin: 0; box-shadow: none; background: var(--raise); }
-.tport .b + .b { border-left: 1px solid var(--line); }
+#top-c { display: flex; align-items: center; height: 100%; }
+#top .b, #top .readout { height: var(--cb-h); }
+#top .b.ic { width: 38px; min-width: 38px; padding: 0; }
+.tport, .grp.hist { gap: 0; border: 1px solid var(--line); border-radius: 2px; overflow: hidden; background: var(--line); }
+.tport .b, .grp.hist .b { border: 0; border-radius: 0; margin: 0; box-shadow: none; background: var(--raise); }
+.tport .b + .b, .grp.hist .b + .b { border-left: 1px solid var(--line); }
+#top .tport .b { width: 52px; height: 32px; }
 .tport #btn-play.on { background: var(--play); color: #0b1a0e; }
 .tport #btn-rec.on { background: var(--rec); color: #fff; }
 .tport #btn-metro.on { background: var(--accent); color: var(--accent-ink); }
-#top-c .readout { height: 30px; min-width: 74px; font-size: 15px; font-weight: 600; background: var(--well, var(--bg)); }
-#top-c #rd-time { min-width: 64px; font-size: 13px; font-weight: 500; color: var(--dim); }
-#top-l #rd-bpm { min-width: 70px; height: 28px; font-weight: 600; color: var(--accent); cursor: ns-resize; }
-
-/* CPU meter: wide, readable, number inside the bar (Live shows CPU at the top right of the control bar) */
-.cpubox { gap: 5px; }
-.cpubox > b { font-size: 9px; font-weight: 700; letter-spacing: .08em; color: var(--dim); }
-#cpu, .cpubox #cpu { position: relative; width: 96px; height: 20px; border: 1px solid var(--line); border-radius: 2px; background: var(--well, var(--bg)); overflow: hidden; }
-#cpu i { position: absolute; left: 0; top: 0; bottom: 0; height: auto; transition: width var(--d4, .2s) var(--e-std, ease); opacity: .85;
+#top-l #rd-bpm { min-width: 74px; padding: 0 10px; font: 600 15px/1 var(--font); font-variant-numeric: tabular-nums; color: var(--accent); background: var(--well, var(--bg)); border: 1px solid var(--line); border-radius: 2px; cursor: ns-resize; touch-action: none; }
+.fpsbox { height: var(--cb-h); padding: 0 8px; gap: 5px; min-width: 62px; justify-content: center; border: 1px solid var(--line); border-radius: 2px; background: var(--well, var(--bg)); }
+.fpsbox b { font-size: 9px; letter-spacing: .08em; opacity: .65; }
+#top .seg .b { min-width: 72px; }
+/* CPU meter: wide, the value inside a segmented bar (Live: top right of the control bar) */
+.cpubox { display: flex; }
+#cpu, .cpubox #cpu { position: relative; display: block; width: 100px; height: var(--cb-h); border: 1px solid var(--line); border-radius: 2px; background: var(--well, var(--bg)); overflow: hidden; }
+#cpu i { position: absolute; left: 0; top: 0; bottom: 0; height: auto; opacity: .55; transition: width var(--d4, .2s) var(--e-std, ease);
   -webkit-mask: repeating-linear-gradient(90deg, #000 0 5px, transparent 5px 6px); mask: repeating-linear-gradient(90deg, #000 0 5px, transparent 5px 6px); }
 #cpu #cpu-t::before { content: "CPU\00a0"; font-size: 9px; letter-spacing: .08em; opacity: .7; }
-#cpu #cpu-t { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: var(--text); text-shadow: 0 0 3px var(--bg), 0 0 2px var(--bg); }
-[data-w="s"] #cpu, [data-w="xs"] #cpu { display: block; width: 60px; }
-[data-w="xs"] .cpubox > b, [data-w="s"] .cpubox > b { display: none; }
-[data-w="xs"] .cpubox span, [data-w="s"] .cpubox span { display: flex; }
-[data-w="xs"] #top-c .readout { min-width: 56px; font-size: 13px; }
-[data-w="xs"] .tport .b { width: 34px; }
-[data-w="xs"] #btn-rew { display: none; }
+#cpu #cpu-t { position: absolute; inset: 0; display: flex !important; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; color: var(--text); text-shadow: 0 0 3px var(--bg); }
+/* the same set of controls at every width; on narrow screens they only get tighter */
+[data-w="m"] #top .seg .b { min-width: 60px; }
+[data-w="s"] #top, [data-w="xs"] #top { gap: 6px; }
+[data-w="s"] #top .tport .b, [data-w="xs"] #top .tport .b { width: 42px; }
+[data-w="s"] #cpu, [data-w="xs"] #cpu { width: 70px; }
+[data-w="xs"] .fpsbox { min-width: 0; padding: 0 5px; } [data-w="xs"] .fpsbox b { display: none; }
+[data-w="xs"] #top .seg .b { min-width: 0; padding: 0 7px; }
+[data-w="xs"] #top-l #rd-bpm { min-width: 58px; font-size: 13px; padding: 0 5px; }
 
 /* ---- floating windows: blurred, dimmed backdrop + window with a title strip */
-.scrim { -webkit-backdrop-filter: blur(7px) saturate(.85); backdrop-filter: blur(7px) saturate(.85); background: rgba(0, 0, 0, .38) !important; }
-.reduce-motion .scrim { -webkit-backdrop-filter: none; backdrop-filter: none; }
+.scrim:has(+ .modal) { -webkit-backdrop-filter: blur(8px) saturate(.85); backdrop-filter: blur(8px) saturate(.85); background: rgba(0, 0, 0, .4) !important; }
+.reduce-motion .scrim { -webkit-backdrop-filter: none !important; backdrop-filter: none !important; }
 .modal { padding: 0 14px 14px; border-radius: 4px; border: 1px solid var(--line); background: var(--panel); box-shadow: 0 18px 50px rgba(0, 0, 0, .55), 0 0 0 1px rgba(255, 255, 255, .04) inset; overflow: hidden; }
 .modal > h3 { margin: 0 -14px 12px; height: 32px; padding: 0 14px; display: flex; align-items: center; background: var(--panel2); border-bottom: 1px solid var(--line);
   font-size: 11px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--dim); }
@@ -85,3 +87,18 @@
 .tempo .tp-wide { margin-top: 10px; height: 32px; }
 .tempo .tp-row { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
 .tempo .tp-sub { margin-top: 8px; }
+
+/* settings: on/off toggles as Live switches (LED + text), not big orange blocks; long help text kept quiet */
+.prefs .set .b:not(.segc .b) { background: var(--raise); color: var(--text); border-color: var(--line); }
+.prefs .set .b:not(.segc .b)::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--raise2); flex: none; }
+.prefs .set .b.on:not(.segc .b) { background: var(--raise); color: var(--text); }
+.prefs .set .b.on:not(.segc .b)::before { background: var(--accent); box-shadow: 0 0 6px var(--accent); }
+.prefs .set .b.step::before, .prefs .scalebox .b::before { display: none; }
+.prefs .sv { line-height: 1.5; max-width: 62ch; }
+.prefs .set > div + div { margin-top: 4px; }
+/* tempo window: time signature + follow row */
+.tempo .tp-meta { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; margin-top: 10px; background: var(--line); border: 1px solid var(--line); border-radius: 2px; overflow: hidden; }
+.tempo .tp-meta .b { height: 32px; border: 0; border-radius: 0; box-shadow: none; font-weight: 600; }
+.tempo .tp-meta .tp-fol.on { background: var(--raise); color: var(--accent); }
+.tempo .tp-meta .tp-fol::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--raise2); margin-right: 2px; }
+.tempo .tp-meta .tp-fol.on::before { background: var(--accent); box-shadow: 0 0 6px var(--accent); }

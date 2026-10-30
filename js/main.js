@@ -238,7 +238,7 @@ function readouts() {
   if (s !== lastPos) { $('#rd-pos').textContent = s; lastPos = s; }
   const b = P.bpmAt(Math.max(0, state.pos)).toFixed(2);
   if (b !== lastBpm) { $('#rd-bpm').textContent = b; lastBpm = b; }
-  $('#btn-play').classList.toggle('on', state.playing);
+  { const pb = $('#btn-play'); if (pb.classList.contains('on') !== !!state.playing) { pb.classList.toggle('on', !!state.playing); setIcon(pb, state.playing ? 'pause' : 'play'); } }   // one button: play / pause
   $('#btn-rec').classList.toggle('on', P.rec.on);
   $('#btn-metro').classList.toggle('on', state.metro);
   { const ci = state.countIn ? String(state.countIn) : ''; if ($('#btn-metro').dataset.ci !== ci) { if (ci) $('#btn-metro').dataset.ci = ci; else delete $('#btn-metro').dataset.ci; } $('#btn-metro').classList.toggle('pun', !!(state.punch.on || state.recLoop)); }

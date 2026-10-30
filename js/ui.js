@@ -17,7 +17,7 @@ export function h(tag, attrs, ...kids) {
 }
 
 const P = {
-  play: 'M8 5v14l11-7z', stop: 'M6 6h12v12H6z', rew: 'M6 6h2v12H6zm3.5 6L18 6v12z',
+  play: 'M8 5v14l11-7z', pause: 'M7 5h3.5v14H7zm6.5 0H17v14h-3.5z', stop: 'M6 6h12v12H6z', rew: 'M6 6h2v12H6zm3.5 6L18 6v12z',
   loop: 'M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z',
   metro: 'M10 3h4l4.5 18h-13L10 3zm1.3 2.5L8 19h8l-3.3-13.5h-1.4zM12 9l5-5.5-1.2-1L11 8z',
   undo: 'M12.5 8c-2.65 0-5.05 1-6.9 2.6L2 7v9h9l-3.6-3.6A8 8 0 0 1 12.5 10c3.5 0 6.5 2.3 7.6 5.5l2.4-.8C21.1 10.7 17.2 8 12.5 8z',

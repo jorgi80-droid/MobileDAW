@@ -186,7 +186,7 @@ export function openSettings() {
   const stepMetro = (d, label, name) => h('button', { class: 'b step', 'aria-label': name, onclick: () => { mSlider.value = clamp(+mSlider.value + d, 0, 150); liveMetro(); savePrefs(); } }, label);
   mSlider.addEventListener('input', liveMetro); mSlider.addEventListener('change', savePrefs);
   paintMetro();
-  const themeRow = h('div', {}, ...Object.entries(THEME_NAMES).map(([k, n]) => h('button', { class: 'b' + (prefs.theme === k ? ' on' : ''), style: 'height:30px', onclick: (e) => { prefs.theme = k; savePrefs(); applyTheme(k); for (const x of e.currentTarget.parentElement.children) x.classList.toggle('on', x === e.currentTarget); } }, n)));
+  const themeRow = h('div', { class: 'segc' }, ...Object.entries(THEME_NAMES).map(([k, n]) => h('button', { class: 'b' + (prefs.theme === k ? ' on' : ''), style: 'height:30px', onclick: (e) => { prefs.theme = k; savePrefs(); applyTheme(k); for (const x of e.currentTarget.parentElement.children) x.classList.toggle('on', x === e.currentTarget); } }, n)));
   const fsBox = [];
   const tabs = {
     Audio: [

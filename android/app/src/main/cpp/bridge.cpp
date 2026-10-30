@@ -55,6 +55,7 @@ class Host : public oboe::AudioStreamDataCallback, public oboe::AudioStreamError
   Spsc<Cmd*, 8192> cmds;               // bridge -> audio
   Spsc<Cmd*, 8192> spent;              // audio -> bridge (deleted there)
   std::shared_ptr<oboe::AudioStream> stream;
+  std::unique_ptr<oboe::LatencyTuner> tuner;   // starts at the smallest buffer and grows it only when underruns happen
   std::atomic<bool> wantActive{ false };
   std::mutex streamLock;               // open / close only (never taken by the audio thread)
 
@@ -72,6 +73,7 @@ class Host : public oboe::AudioStreamDataCallback, public oboe::AudioStreamError
 
   oboe::DataCallbackResult onAudioReady(oboe::AudioStream* s, void* data, int32_t frames) override {
     if (!ftz) { flushDenormals(); ftz = true; }
+    if (tuner) tuner->tune();
     auto t0 = std::chrono::steady_clock::now();
     Cmd* c;
     while (cmds.pop(c)) { apply(eng, *c); if (!spent.push(c)) { /* full: leak instead of freeing here */ } }
@@ -120,19 +122,20 @@ class Host : public oboe::AudioStreamDataCallback, public oboe::AudioStreamError
   bool open() {                        // caller holds hostLock
     std::lock_guard<std::mutex> g(streamLock);
     if (stream) { stream->close(); stream.reset(); }
+    tuner.reset();
     oboe::AudioStreamBuilder b;
     b.setDirection(oboe::Direction::Output)->setPerformanceMode(oboe::PerformanceMode::LowLatency)->setSharingMode(oboe::SharingMode::Exclusive)
       ->setFormat(oboe::AudioFormat::Float)->setChannelCount(2)->setSampleRate((int)rate)->setSampleRateConversionQuality(oboe::SampleRateConversionQuality::Medium)
       ->setUsage(oboe::Usage::Media)->setContentType(oboe::ContentType::Music)->setDataCallback(this)->setErrorCallback(this);
     oboe::Result r = b.openStream(stream);
     if (r != oboe::Result::OK) { LOGI("openStream failed: %s", oboe::convertToText(r)); stream.reset(); return false; }
-    stream->setBufferSizeInFrames(stream->getFramesPerBurst() * 2);   // double buffering: lowest latency that usually holds without underruns
+    tuner = std::make_unique<oboe::LatencyTuner>(*stream);           // created before the stream starts: the callback only reads it
     r = stream->requestStart();
     if (r != oboe::Result::OK) { LOGI("requestStart failed: %s", oboe::convertToText(r)); return false; }
     LOGI("stream: %d Hz, burst %d, buffer %d, exclusive %d", stream->getSampleRate(), stream->getFramesPerBurst(), stream->getBufferSizeInFrames(), stream->getSharingMode() == oboe::SharingMode::Exclusive);
     return true;
   }
-  void close() { std::lock_guard<std::mutex> g(streamLock); if (stream) { stream->stop(); stream->close(); stream.reset(); } }
+  void close() { std::lock_guard<std::mutex> g(streamLock); if (stream) { stream->stop(); stream->close(); stream.reset(); } tuner.reset(); }
 
   void collect() {                     // bridge / poll thread: free what the audio thread is done with
     Cmd* c; while (spent.pop(c)) delete c;
