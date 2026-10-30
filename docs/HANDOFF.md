@@ -66,9 +66,8 @@ Baca juga `README-ANDROID.md` (build, install, status fase 2).
 - **Keys** (`js/keys.js`): bar atas `.kb-bar` (oktaf, switch skala dari `ED.scaleSteps()` / `ED.getTheory()`), `.kb-body` (pitch wheel + piano),
   pad dalam urutan Drum Rack (pad pertama kiri bawah) berwarna track (`--tc`).
 - **Arrangement** (`js/timeline.js`): tinggi baris per track = `t.hx` (opsional, faktor terhadap `view.rowH`; `rowTarget()`), hit `rowh` di
-  tepi bawah header; loop brace = hit `loop/loopL/loopR` di pita bawah ruler (memakai `P.setLoop`), kecerahan `loopA` dilangkahkan di
-  `stepMotion()`; strip overview = elemen `#arr-ov` (index.html) dengan `initOverview()`/`drawOv()` (digambar dari `frame()`).
-  Header baris >= 96 px juga menampilkan Send A/B (`r.sa/r.sb` di `hdr()`). `openLaneMenu()` diekspor untuk Clip View.
+  tepi bawah header (strip overview sudah dihapus atas permintaan pemilik); loop brace = hit `loop/loopL/loopR` di pita bawah ruler (memakai `P.setLoop`), kecerahan `loopA` dilangkahkan di
+  `stepMotion()`; Header baris >= 96 px juga menampilkan Send A/B (`r.sa/r.sb` di `hdr()`). `openLaneMenu()` diekspor untuk Clip View.
 - **Clip View** (`js/editor.js`): kotak `Transform` (`TOOLS`, `transform()`: Quantize, Humanize, Strum, Arpeggiate, Legato; satu langkah undo)
   dan kotak `Envelopes` (lane otomasi yang menarget track klip + kurvanya di rentang klip).
 - **Mixer** (`js/mixer.js`): lebar strip `stripW` (`prefs.mixW`, grip `.mx-grip` di ujung title bar), strip Return menampilkan input (`inp()`).
@@ -106,6 +105,11 @@ Baca juga `README-ANDROID.md` (build, install, status fase 2).
   working-with-instruments-and-effects, instrument-drum-and-effect-racks, live-concepts (ableton.com/en/live-manual/12/...).
 - Toolbar hanya: Browser, Tempo, Undo/Redo | Play/Pause, Rekam, Metronom | FPS+CPU, Arrange/Mixer, menu.
 - Klip yang dipilih tidak boleh ikut buram saat ada popup aksi klip.
+
+## Panjang pattern & loop (FL Studio Mobile)
+- Pattern MIDI / drum selalu 1, 2, 4, 8, 16 ... bar: not yang masuk ke bar 9 membuat pattern 16 bar (`wholeBars()` di `js/editor.js`).
+- Memanjangkan klip di arrangement memakai `P.patternLen(c)` sebagai panjang loop: pola 9 bar -> loop tiap 16 bar (bar 10-16 sunyi), pola 8 bar
+  -> tiap 8. Klip lama yang lebih panjang dari pembulatan (mis. 6 bar dengan not di 3 bar pertama) tetap loop tiap panjangnya sendiri.
 
 ## Menunggu keputusan pemilik
 - **Instrument / Effect Rack dengan macro**: usulan desain ada di laporan sesi ini (rantai paralel = node "rack" berisi beberapa chain,

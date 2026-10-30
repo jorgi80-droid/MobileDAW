@@ -33,10 +33,9 @@ const live = new Map();                                        // clip id -> str
 const msel = new Set();   // ids of the picked clips: long-press a clip, or long-press an empty spot and drag a rectangle (no mode button)
 const fh = new Map();     // track id -> row height while a fold / unfold glides; hit tests read the same height, so nothing under the finger jumps
 const gl = new Map();     // clip id -> { c, s, l }: drawn start / length while a dragged clip glides onto its snapped position
-let dirtyOv = 0;                                               // bumps on every invalidate, so the overview redraws with the arrangement
 let canvas, ctx, W = 0, H = 0, dpr = 1, dirty = true, hooks = {}, sel = null, touchedAt = 0;
 
-export const invalidate = () => { dirty = true; dirtyOv++; };
+export const invalidate = () => { dirty = true; };
 export function snapTicks() {
   const m = SNAPS[cfg.snap][1];
   if (m >= 0) return m;
@@ -616,7 +615,6 @@ export function frame() {
   smoothMeters();
   const mk = state.playing || lastMeterKey ? meterKey() : 0;
   if (headDirty || px !== lastHeadPx || mk !== lastMeterKey) { lastHeadPx = px; lastMeterKey = mk; headDirty = false; drawHead(tick); }
-  drawOv(tick);
 }
 
 // Dragging a clip (or its edge) near the left / right border scrolls the arrangement so the clip can reach tick 0 and far bars.
@@ -1019,7 +1017,7 @@ function setup() {
         checkpoint(); P.selectClip(t.i, t.c.id);
         if (t.zone === 'left' && t.c.notes) P.bakeLoop(t.c, t.i);          // trimming the left edge of a looped clip: turn the repeats into real notes first
         if (t.zone === 'right' && stretchMode && state.tracks[t.i].kind === 'audio') { delete t.c.ll; delete t.c.lp; }
-        drag = { ll0: P.contentLen(t.c, state.tracks[t.i].kind), had: t.c.ll > 0, lp0: t.c.lp || 0, looped: !!P.loopOf(t.c), k: t.zone === 'right' ? 'gresize' : 'gmove', t0: t.tick, refStart: t.c.start, refEnd: t.c.start + t.c.len, row0: rowAt(y0), items: selList().map(({ i, c }) => ({ i, cur: i, c, start: c.start, len: c.len, ll0: P.contentLen(c, state.tracks[i].kind), had: c.ll > 0 })) };
+        drag = { ll0: P.patternLen(t.c, state.tracks[t.i].kind), had: t.c.ll > 0, lp0: t.c.lp || 0, looped: !!P.loopOf(t.c), k: t.zone === 'right' ? 'gresize' : 'gmove', t0: t.tick, refStart: t.c.start, refEnd: t.c.start + t.c.len, row0: rowAt(y0), items: selList().map(({ i, c }) => ({ i, cur: i, c, start: c.start, len: c.len, ll0: P.patternLen(c, state.tracks[i].kind), had: c.ll > 0 })) };
         return true;
       }
       if (t.type === 'empty' && fromLong) return !!marq;
@@ -1028,7 +1026,7 @@ function setup() {
         checkpoint(); P.selectClip(t.i, t.c.id);
         if (t.zone === 'left' && t.c.notes) P.bakeLoop(t.c, t.i);          // trimming the left edge of a looped clip: turn the repeats into real notes first
         if (t.zone === 'right' && stretchMode && state.tracks[t.i].kind === 'audio') { delete t.c.ll; delete t.c.lp; }
-        drag = { ll0: P.contentLen(t.c, state.tracks[t.i].kind), had: t.c.ll > 0, lp0: t.c.lp || 0, looped: !!P.loopOf(t.c), k: t.zone === 'right' ? (stretchMode && state.tracks[t.i].kind === 'audio' ? 'stretch' : 'resize') : t.zone === 'left' ? 'resizeL' : 'move', c: t.c, i: t.i, start: t.c.start, len: t.c.len, off: t.tick - t.c.start, t0: t.tick,
+        drag = { ll0: P.patternLen(t.c, state.tracks[t.i].kind), had: t.c.ll > 0, lp0: t.c.lp || 0, looped: !!P.loopOf(t.c), k: t.zone === 'right' ? (stretchMode && state.tracks[t.i].kind === 'audio' ? 'stretch' : 'resize') : t.zone === 'left' ? 'resizeL' : 'move', c: t.c, i: t.i, start: t.c.start, len: t.c.len, off: t.tick - t.c.start, t0: t.tick,
           offset: t.c.offset || 0, notes: t.c.notes ? t.c.notes.map((n) => ({ ...n })) : null, pts: t.c.pts ? t.c.pts.map((n) => ({ ...n })) : null };
         return true;
       }
@@ -1190,59 +1188,6 @@ function setup() {
 }
 
 
-// ------------------------------------------------------------------ overview strip (Live's Arrangement overview)
-// The whole song in one thin strip above the ruler: every track a line of its clips, the visible range as a frame, the playhead.
-// Tap = jump there (glides), drag sideways = scroll, drag up / down = zoom out / in around the frame. Same colours as the arrangement.
-const OVH = 24;
-let ovc = null, ovx = null, ovW = 0, ovDpr = 1, ovKey = '', ovDrag = null;
-function ovSpan() {
-  let e = BAR * 8;
-  for (const t of state.tracks) for (const c of t.clips) e = Math.max(e, c.start + c.len);
-  return Math.max(e + BAR, view.x0 + CW / view.ppt, state.loop.on ? state.loop.end : 0, P.currentTick() + BAR);
-}
-function drawOv(tick) {
-  if (!ovc || !ovW) return;
-  const span = ovSpan(), sx = CW / span, key = [span, view.x0, view.ppt, Math.round(tick * sx), CW, state.tracks.length, dirtyOv].join('|');
-  if (key === ovKey) return; ovKey = key; dirtyOv = 0;
-  const g = ovx; g.setTransform(ovDpr, 0, 0, ovDpr, 0, 0);
-  g.fillStyle = C('#202022'); g.fillRect(0, 0, ovW, OVH);
-  g.fillStyle = C('#2c2c2f'); g.fillRect(CW, 0, ovW - CW, OVH);
-  const n = state.tracks.length, top = 3, ah = OVH - 6, lh = n ? Math.max(1, Math.min(4, ah / n)) : 0;
-  state.tracks.forEach((t, i) => {
-    g.fillStyle = t.color; const y = top + Math.min(ah - lh, i * (ah - lh) / Math.max(1, n - 1));
-    for (const c of t.clips) g.fillRect(Math.floor(c.start * sx), y, Math.max(1, Math.ceil(c.len * sx)), Math.max(1, lh - 0.5));
-  });
-  if (state.loop.on && state.loop.end > state.loop.start) { g.fillStyle = T('--accent'); g.fillRect(state.loop.start * sx, 0, (state.loop.end - state.loop.start) * sx, 2); }
-  const a = view.x0 * sx, w = Math.max(6, CW / view.ppt * sx);
-  g.fillStyle = 'rgba(255,255,255,.07)'; g.fillRect(a, 0, w, OVH);
-  g.strokeStyle = C('#b4b4ba'); g.lineWidth = 1; g.strokeRect(Math.round(a) + 0.5, 0.5, Math.round(w) - 1, OVH - 1);
-  g.fillStyle = T('--text'); g.fillRect(Math.round(tick * sx), 0, 1, OVH);
-  g.fillStyle = C('#141415'); g.fillRect(CW, 0, 1, OVH);
-}
-function initOverview(el) {
-  ovc = document.createElement('canvas'); el.append(ovc); ovx = ovc.getContext('2d', { alpha: false });
-  const size = () => { const r = el.getBoundingClientRect(); ovDpr = Math.min(window.devicePixelRatio || 1, 3); ovW = Math.max(1, Math.round(r.width)); ovc.width = Math.round(ovW * ovDpr); ovc.height = Math.round(OVH * ovDpr); ovc.style.width = ovW + 'px'; ovc.style.height = OVH + 'px'; ovKey = ''; };
-  new ResizeObserver(size).observe(el); size();
-  const at = (e) => { const r = ovc.getBoundingClientRect(); return (e.clientX - r.left) / Math.max(1, Math.min(r.width, CW * r.width / ovW)) * ovSpan(); };
-  ovc.addEventListener('pointerdown', (e) => {
-    const r = ovc.getBoundingClientRect(); if ((e.clientX - r.left) * ovW / r.width > CW) return;
-    e.preventDefault(); ovc.setPointerCapture(e.pointerId); stopMotion(); touchedAt = performance.now();
-    const t = at(e), vis = CW / view.ppt, inside = t >= view.x0 && t <= view.x0 + vis;
-    ovDrag = { id: e.pointerId, off: inside ? t - view.x0 : vis / 2, y: e.clientY, p0: view.ppt, moved: false, t0: t, x: e.clientX };
-  });
-  ovc.addEventListener('pointermove', (e) => {
-    const d = ovDrag; if (!d || e.pointerId !== d.id) return;
-    if (!d.moved && Math.hypot(e.clientX - d.x, e.clientY - d.y) < 4) return;
-    d.moved = true; touchedAt = performance.now();
-    const dy = e.clientY - d.y, c = at(e);
-    if (Math.abs(dy) > 6) { const vis0 = CW / view.ppt, mid = view.x0 + vis0 / 2; view.ppt = clamp(d.p0 * Math.exp(-dy * 0.03), PMIN, PMAX); view.x0 = mid - CW / view.ppt / 2; d.off = CW / view.ppt / 2; }
-    else view.x0 = c - d.off;
-    clampView(); invalidate();
-  });
-  const end = (e) => { const d = ovDrag; if (!d || e.pointerId !== d.id) return; ovDrag = null; if (!d.moved) glideTo(d.t0 - CW / view.ppt / 2); touchedAt = performance.now(); };
-  ovc.addEventListener('pointerup', end); ovc.addEventListener('pointercancel', end);
-}
-
 let ov, octx, hostEl;
 function fit() {
   const r = hostEl.getBoundingClientRect();
@@ -1274,6 +1219,5 @@ export function initTimeline(host, h) {
   new ResizeObserver(fit).observe(host);
   window.addEventListener('themechange', invalidate); window.addEventListener('applayout', fit);
   fit(); setup(); buildSelBar(host);
-  const ovEl = document.getElementById('arr-ov'); if (ovEl) initOverview(ovEl);
   P.onChange((w) => { if (w === 'all') { stopMotion(); view.x0 = 0; view.y0 = 0; sel = null; msel.clear(); fh.clear(); gl.clear(); } if (msel.size && !drag) updateBar(); invalidate(); });
 }

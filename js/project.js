@@ -171,6 +171,16 @@ export function contentLen(c, kind) {
   }
   return c.len;
 }
+// Loop length used when a clip is dragged longer in the arrangement (FL Studio Mobile): a MIDI / drum pattern is 1, 2, 4, 8, 16 ... bars, so a
+// clip whose notes reach into bar 9 repeats every 16 bars (bars 10-16 stay silent), an 8-bar pattern every 8. Older clips keep their length if
+// that is longer than the rounded pattern (e.g. a 6-bar clip with notes in its first 3 bars still loops every 6 bars).
+export function patternLen(c, kind) {
+  if (c.ll > 0 || !c.notes) return contentLen(c, kind);
+  let e = 0; for (const n of c.notes) if (n.t + n.d > e) e = n.t + n.d;
+  if (!(e > 0)) return c.len;
+  const b0 = barAt(c.start), nb = Math.max(1, barAt(c.start + e - 1) - b0 + 1); let k = 1; while (k < nb) k *= 2;
+  return Math.max(c.len, barStart(b0 + k) - c.start);
+}
 // Turn the repeats of a looped MIDI clip into real notes (needed before anything edits the clip's inside: split, left-trim, piano roll).
 export function bakeLoop(c, i) {
   const ll = loopOf(c);
