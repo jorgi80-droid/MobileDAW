@@ -14,6 +14,7 @@ import * as P from './project.js';
 import * as FW from './floatwin.js';
 import { buildSuite, minimetersView } from './minimeters.js';
 import { prefs } from './prefs.js';
+import * as DP from './drumpad.js';
 const { state } = P;
 const VIEWS = { ...FXVIEW, 16: minimetersView };   // MiniMeters has its own view module
 
@@ -205,8 +206,9 @@ function instCard(i, t, o = {}) {
       b.addEventListener('pointerup', off); b.addEventListener('pointercancel', off);
       pads.append(b); return b;
     });
+    for (let k = PD.length; k < P.MAX_PADS; k++) pads.append(h('button', { class: 'pad empty', 'aria-label': 'Tambah pad', onclick: () => DP.addPad(i) }, h('span', {}, '+'), h('small', {}, 'Sample')));   // Live's empty Drum Rack pads: drop / pick a sample
     showKnobs();
-    return h('div', { class: 'card', style: 'min-width:420px' }, head, h('div', { class: 'drumrow' }, h('div', { class: 'dp' }, pads), h('div', { class: 'dr' }, title, kn)));
+    return h('div', { class: 'card drack', style: 'min-width:420px' }, head, h('div', { class: 'drumrow' }, h('div', { class: 'dp' }, pads), h('div', { class: 'dr' }, title, kn)));
   }
   if (def.view === 'soundfont') {
     const sf = t.inst.sf;

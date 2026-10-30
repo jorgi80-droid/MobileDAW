@@ -340,3 +340,20 @@
 .cp-grid.g2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .cp-grid .cp-sw { border: 0; height: 26px; padding: 0 4px; gap: 5px; font-size: 10.5px; }
 .cp-grid.g2 > :last-child:nth-child(odd) { grid-column: span 2; }
+
+/* ===== Drum Rack (Live 12): a 4 x 4 pad grid, pad 1 bottom left rising to the top row, every slot shown. A pad shows its sample name and
+   note; the selected pad is framed, a hit lights it; empty slots are dashed "+ Sample" pads. The selected pad's controls sit on the right. ===== */
+.card.drack .drumrow .dp { width: 236px; padding: 4px; background: var(--lv-well); border-right: 1px solid var(--lv-edge); }
+.card.drack .pads { display: flex; flex-wrap: wrap-reverse; gap: 3px; padding: 0; }
+.card.drack .pad { flex: 0 0 calc(25% - 2.25px); height: 40px; min-width: 0; padding: 2px 3px; border: 1px solid var(--lv-edge); border-radius: 2px; background: var(--lv-ctl); color: var(--lv-ink); box-shadow: none;
+  display: flex; flex-direction: column; align-items: flex-start; justify-content: space-between; text-align: left; transition: background-color var(--d2, .1s) ease, border-color var(--d2, .1s) ease; }
+.card.drack .pad span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 600 10px/1.1 var(--font); }
+.card.drack .pad small { font-size: 8.5px; color: var(--lv-dim); }
+.card.drack .pad.sel { outline: 0; border-color: var(--lv-ink); box-shadow: inset 0 0 0 1px var(--lv-ink); background: var(--lv-ctl2); }
+.card.drack .pad.hit { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.card.drack .pad.hit small { color: var(--accent-ink); }
+.card.drack .pad.empty { background: transparent; border-style: dashed; border-color: var(--lv-trk); color: var(--lv-dim); align-items: center; justify-content: center; }
+.card.drack .pad.empty span { font: 300 15px/1 var(--font); }
+.card.drack .pad.empty:active { background: rgba(255, 255, 255, .05); }
+.card.drack .drumrow .dr { padding: 6px 8px 0; }
+.card.drack .dt { font: 700 10.5px/1.3 var(--font); color: var(--lv-ink); padding: 0 0 4px; border-bottom: 1px solid var(--lv-div); margin-bottom: 4px; }
