@@ -113,6 +113,27 @@ Baca juga `README-ANDROID.md` (build, install, status fase 2).
   tetap seluruh pattern. Memotong klip tidak menghapus not. Editor selalu membuka seluruh pattern (`contentEnd()` = `c.ll` bila ada),
   jadi edit berlaku ke semua pengulangan; pattern yang tumbuh di klip terpotong hanya menambah `c.ll`, panjang klip tetap (`growTo()`).
 
+## Perangkat Live 12 (efek + instrumen) - status pekerjaan
+Permintaan pemilik: SEMUA efek dan instrumen diganti dengan set stok Ableton Live 12, tampilan harus sama dengan gambar referensi
+(tata letak, UI, bahasa visual), semua kontrol berfungsi, tidak ada tombol dummy. Gambar referensi ada di zip yang diunggah pemilik
+(efek: 33 gambar, instrumen: 21 gambar); kalau tidak ada lagi di sesi baru, minta pemilik mengunggah ulang.
+- Selesai: kit panel `js/fxkit.js` (`kit()`: K knob, T toggle, CH pilihan, S dropdown, N kotak nilai cyan, D display + drag, sec/row/col/sep, swap;
+  `V[type]` = panel per efek; `def.kit: true` di defs.js), engine `js/engine/fx3.js` (17-32) dan `js/engine/fx4.js` (33-45), `FX_GROUPS` (kategori
+  browser Live 12), `tools/fx-test.mjs` (setiap parameter harus terdengar; `PRE` = prasyarat, `NO_AUDIO`, `TODO`).
+  Panel Live 12 jadi: 0 Utility, 1 Auto Filter, 2 EQ Three, 3 Saturator, 4 Compressor, 5 Limiter, 6 Echo, 7 Reverb, 17 Delay, 18 Filter Delay,
+  19 Beat Repeat, 20 Chorus-Ensemble, 21 Phaser-Flanger, 22 Auto Pan, 23 Gate, 24 Glue Compressor, 25 Channel EQ, 26 Erosion, 27 Redux,
+  28 Vinyl Distortion, 29 Drum Buss, 30 Tuner, 31 EQ Eight, 32 Spectrum (perbandingan: `docs/redesign/20-*.jpg`, `21-*.jpg`).
+- Engine jadi, PANEL BELUM (kartu masih memakai kolom knob otomatis): 33 Amp, 34 Cabinet, 35 Overdrive, 36 Pedal, 37 Dynamic Tube,
+  38 Multiband Dynamics, 39 Resonators, 40 Corpus, 41 Vocoder, 42 Shifter, 43 Grain Delay, 44 Hybrid Reverb, 45 Looper.
+- TODO DSP (fx-test `TODO`): Corpus Ratio / LFO Amount / LFO Rate / Filter Freq / Bdwidth belum terdengar; Vocoder Unvoiced / Fast belum terdengar.
+  Looper perlu tes sendiri (rekam -> putar -> overdub).
+- Belum ada: Spectral Time, Spectral Resonator, modulator LFO / Shaper / Envelope Follower (tombol Map ke parameter device lain: engine
+  `runChain` + id target di project), Audio Effect Rack (rantai paralel + macro), External Audio Effect (tidak mungkin di HP: jangan dibuat).
+- Instrumen (belum mulai): Analog, Operator, Wavetable (redesign), Drift, Meld, Simpler, Sampler (redesign), Drum Rack (redesign), Impulse,
+  Electric, Collision, Tension, Poli, Granulator III, DS Kick / Snare / Tom / HH / Clap / FM. Tipe instrumen lama tetap bisa dimuat (proyek lama).
+- Aturan: parameter baru selalu DITAMBAHKAN di akhir (indeks lama tetap), `migrate()` bila arti berubah; efek tanpa padanan Live 12 masuk
+  'Lainnya (lama)'; native engine otomatis kembali ke engine web untuk device yang belum di-port.
+
 ## Menunggu keputusan pemilik
 - **Instrument / Effect Rack dengan macro**: usulan desain ada di laporan sesi ini (rantai paralel = node "rack" berisi beberapa chain,
   mixer per chain, 8 macro yang memetakan ke parameter device di dalamnya; butuh engine JS + C++ + golden). Belum dikerjakan.

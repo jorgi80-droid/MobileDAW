@@ -1,6 +1,7 @@
 // Effects of the web engine. Interface: setParam(i, v), process(L, R, n) in place, readOut(out) -> count, bypass flag.
 import { AutoFilter, Echo, Roar } from './fx2.js';
 import { Delay, FilterDelay, BeatRepeat, ChorusEnsemble, PhaserFlanger, AutoPan, Gate, GlueComp, ChannelEq, Erosion, Redux, VinylDist, DrumBuss, Tuner, EqEight, Spectrum } from './fx3.js';
+import { Amp, Cabinet, Overdrive, Pedal, DynTube, MultibandDyn, Resonators, Corpus, Vocoder, Shifter, GrainDelay, HybridReverb, Looper } from './fx4.js';
 import { TWO_PI, clamp, dbToLin, linToDb, Biquad, fft, fastLog2, fastPow2, fastTanh, Os4, OS4_LATENCY } from './dsp.js';
 
 const tanh = fastTanh;
@@ -621,5 +622,6 @@ class MiniMeters extends Fx {
 }
 
 const TYPES = [Utility, AutoFilter, Eq3, Saturator, Compressor, Limiter, Echo, Reverb, ParametricEq, Roar, Autoduck, null, Levelness, Analyzer, Stereolizer, Spacer, MiniMeters,
-  Delay, FilterDelay, BeatRepeat, ChorusEnsemble, PhaserFlanger, AutoPan, Gate, GlueComp, ChannelEq, Erosion, Redux, VinylDist, DrumBuss, Tuner, EqEight, Spectrum];   // 17.. = Live 12 set (fx3.js)
+  Delay, FilterDelay, BeatRepeat, ChorusEnsemble, PhaserFlanger, AutoPan, Gate, GlueComp, ChannelEq, Erosion, Redux, VinylDist, DrumBuss, Tuner, EqEight, Spectrum,
+  Amp, Cabinet, Overdrive, Pedal, DynTube, MultibandDyn, Resonators, Corpus, Vocoder, Shifter, GrainDelay, HybridReverb, Looper];   // 17.. = Live 12 set (fx3.js)
 export function makeDevice(type, sr, sc) { const C = TYPES[type]; return C ? new C(sr, sc) : null; }

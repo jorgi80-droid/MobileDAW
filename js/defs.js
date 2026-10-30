@@ -466,9 +466,47 @@ Object.assign(DEVICES, {
     list('Graph', ['Line', 'Bins'], 0), onoff('Max'), list('Scale X', ['Lin', 'Log', 'ST'], 1), onoff('Auto', 1)] };
 }
 
+// ---- Live 12 effects, part 2 (engine: js/engine/fx4.js)
+{
+  const pct = (n, d) => q(n, 0, 1, d, { unit: '%' }), dB = (n, lo, hi, d) => q(n, lo, hi, d, { unit: 'dB' }), ten = (n, d) => q(n, 0, 10, d, { unit: '' });
+  Object.assign(DEVICES, {
+    33: { name: 'Amp', kit: true, params: [list('Type', ['Clean', 'Boost', 'Blues', 'Rock', 'Lead', 'Heavy', 'Bass'], 2), ten('Gain', 6.9), ten('Bass', 6.27), ten('Middle', 5.79), ten('Treble', 4.44), ten('Presence', 2.62), ten('Volume', 8.25), list('Output', ['Mono', 'Stereo'], 0), pct('Dry/Wet', 1)] },
+    34: { name: 'Cabinet', kit: true, params: [list('Cabinet', ['1x12', '2x12', '4x12', '4x10 Bass'], 1), list('Microphone', ['Condenser', 'Dynamic'], 1), list('Position', ['Near On-Axis', 'Near Off-Axis', 'Far'], 0), list('Output', ['Mono', 'Stereo'], 0), pct('Dry/Wet', 1)] },
+    35: { name: 'Overdrive', kit: true, params: [q('Filter Freq', 50, 20000, 1100, { curve: 'log', unit: 'Hz' }), q('Bandwidth', 0.5, 9, 6, { unit: '' }), pct('Drive', 0.5), pct('Tone', 0.5), pct('Dynamics', 0.5), pct('Dry/Wet', 1)] },
+    36: { name: 'Pedal', kit: true, params: [list('Type', ['OD', 'Distort', 'Fuzz'], 0), pct('Gain', 0.5), dB('Output', -20, 20, 0), q('Bass', -1, 1, 0, { fmt: 'pct1' }), q('Mid', -1, 1, 0, { fmt: 'pct1' }), q('Treble', -1, 1, 0, { fmt: 'pct1' }), list('Mid Freq', ['Low', 'Mid', 'High'], 1), onoff('Sub'), pct('Dry/Wet', 1)] },
+    37: { name: 'Dynamic Tube', kit: true, params: [dB('Drive', -12, 24, 0), pct('Bias', 0.5), q('Envelope', -1, 1, 0, { fmt: 'pct1' }), list('Tube', ['A', 'B', 'C'], 0), pct('Tone', 0.5), q('Attack', 0.1, 300, 10, { curve: 'log', unit: 'ms' }), q('Release', 1, 3000, 100, { curve: 'log', unit: 'ms' }), dB('Output', -24, 12, 0), pct('Dry/Wet', 1)] },
+    38: { name: 'Multiband Dynamics', kit: true, params: [q('Low Split', 20, 1000, 120, { curve: 'log', unit: 'Hz' }), q('High Split', 500, 16000, 2500, { curve: 'log', unit: 'Hz' }),
+      ...['Low', 'Mid', 'High'].flatMap((b) => [onoff(b + ' On', 1), dB(b + ' Input', -24, 24, 6), dB(b + ' Output', -24, 24, 0), dB(b + ' Above', -60, 0, -12), q(b + ' Ratio A', 0.5, 20, 4, { curve: 'log', unit: ':1' }),
+        dB(b + ' Below', -80, 0, -40), q(b + ' Ratio B', 0.5, 4, 1, { unit: ':1' }), q(b + ' Attack', 0.1, 300, 10, { curve: 'log', unit: 'ms' }), q(b + ' Release', 1, 3000, 100, { curve: 'log', unit: 'ms' })]),
+      pct('Amount', 1), q('Time', 0.1, 10, 1, { curve: 'log', unit: 'x' }), dB('Output', -24, 24, 0), onoff('Soft Knee'), onoff('RMS')] },
+    39: { name: 'Resonators', kit: true, params: [onoff('Filter', 1), q('Frequency', 50, 20000, 50, { curve: 'log', unit: 'Hz' }), list('Filter Type', ['LP', 'BP', 'HP', 'Notch'], 2), list('Mode', ['A', 'B'], 0), pct('Decay', 0.77), onoff('Const'), pct('Color', 0.857),
+      onoff('I On', 1), q('Note', 24, 96, 43, { step: 1, fmt: 'note' }), q('I Fine', -50, 50, 0, { unit: 'ct' }), dB('I Gain', -48, 0, 0),
+      ...['II', 'III', 'IV', 'V'].flatMap((r, k) => [onoff(r + ' On', 1), q(r + ' Pitch', -24, 24, [7, 7, 3, 12][k], { step: 1, fmt: 'st' }), q(r + ' Fine', -50, 50, 0, { unit: 'ct' }), dB(r + ' Gain', -48, 0, 0)]),
+      pct('Width', 1), dB('Gain', -24, 24, 0), pct('Dry/Wet', 0.49)] },
+    40: { name: 'Corpus', kit: true, params: [list('Type', ['Beam', 'Marimba', 'String', 'Membrane', 'Plate', 'Pipe', 'Tube'], 3), list('Quality', ['Eco', 'Mid', 'High'], 1), pct('Decay', 0.5), pct('Material', 0.84),
+      q('Bright', -1, 1, 0, { fmt: 'pct1' }), q('Inharm', -1, 1, 0, { fmt: 'pct1' }), pct('Ratio', 0.5), pct('Hit', 0.5), pct('Width', 1), pct('Pos. L', 0.47), pct('Pos. R', 0.82),
+      q('Tune', 20, 2000, 65.41, { curve: 'log', unit: 'Hz' }), q('Fine', -50, 50, 0, { unit: 'ct' }), q('Spread', -1, 1, 0, { fmt: 'pct1' }), onoff('LFO'), pct('LFO Amount', 0.5), q('LFO Rate', 0.01, 20, 0.5, { curve: 'log', unit: 'Hz' }),
+      onoff('Filter'), q('Freq', 50, 18000, 1000, { curve: 'log', unit: 'Hz' }), q('Bdwidth', 0.1, 10, 4, { curve: 'log', unit: '' }), pct('Bleed', 0), dB('Gain', -24, 24, -0.5), pct('Dry/Wet', 1)] },
+    41: { name: 'Vocoder', kit: true, params: [list('Carrier', ['Noise', 'Modulator', 'Pitch Tracking'], 0), onoff('Enhance'), q('Unvoiced', -60, 0, -60, { fmt: 'dbinf' }), pct('Sens.', 0.5), onoff('Fast'),
+      list('Bands', ['4', '8', '12', '16', '20', '24', '32', '40'], 4), q('Range Lo', 20, 2000, 80, { curve: 'log', unit: 'Hz' }), q('Range Hi', 500, 18000, 12000, { curve: 'log', unit: 'Hz' }), q('BW', 0.1, 2, 1, { fmt: 'width' }),
+      q('Gate', -60, 0, -60, { fmt: 'dbinf' }), dB('Level', -24, 12, 0), onoff('Precise'), pct('Depth', 1), q('Attack', 0.1, 30, 1, { curve: 'log', unit: 'ms' }), q('Release', 1, 300, 150, { curve: 'log', unit: 'ms' }),
+      list('Output', ['Mono', 'Stereo', 'L/R'], 1), q('Formant', -1, 1, 0, { fmt: 'pct1' }), pct('Dry/Wet', 1)] },
+    42: { name: 'Shifter', kit: true, params: [list('Mode', ['Pitch', 'Freq', 'Ring'], 0), q('Pitch', -48, 48, 7, { step: 1, fmt: 'st' }), q('Fine', -50, 50, 0, { unit: 'ct' }), q('Freq', -5000, 5000, 100, { unit: 'Hz' }),
+      q('Window', 10, 300, 60, { curve: 'log', unit: 'ms' }), pct('Spread', 0), pct('Feedback', 0), q('Tone', 500, 20000, 20000, { curve: 'log', unit: 'Hz' }), pct('Dry/Wet', 1)] },
+    43: { name: 'Grain Delay', kit: true, params: [onoff('Sync'), list('16th', DIV16, 3), q('Delay', 1, 1000, 100, { curve: 'log', unit: 'ms' }), q('Spray', 0, 500, 15, { unit: 'ms' }), q('Frequency', 1, 150, 4, { curve: 'log', unit: 'Hz' }),
+      q('Pitch', -36, 12, 0, { unit: 'st' }), pct('Rand Pitch', 0), q('Feedback', 0, 0.95, 0, { unit: '%' }), pct('Dry/Wet', 0.5)] },
+    44: { name: 'Hybrid Reverb', kit: true, params: [q('Send', -60, 0, 0, { fmt: 'dbinf' }), q('Predelay', 0, 1000, 10, { unit: 'ms' }), pct('Feedback', 0), list('Routing', ['Serial', 'Parallel', 'Algorithm', 'Convolution'], 0), pct('Blend', 0.6),
+      list('IR', ['Hall', 'Room', 'Plate', 'Spring', 'Chamber'], 0), pct('IR Decay', 0.6), pct('IR Size', 0.6), list('Algorithm', ['Dark Hall', 'Quartz', 'Shimmer', 'Tides', 'Prism'], 0),
+      q('Decay', 0.2, 60, 3.5, { curve: 'log', unit: 's' }), pct('Size', 0.5), pct('Damping', 0.5), pct('Diffusion', 0.7), pct('Mod', 0.5), onoff('Freeze'), onoff('EQ'),
+      q('Low Cut', 20, 2000, 20, { curve: 'log', unit: 'Hz' }), q('High Cut', 1000, 20000, 20000, { curve: 'log', unit: 'Hz' }), q('Stereo', 0, 1.2, 1, { fmt: 'width' }), list('Vintage', ['Off', 'Subtle', 'Old', 'Older', 'Extreme'], 0), onoff('Bass Mono'), pct('Dry/Wet', 0.3)] },
+    45: { name: 'Looper', kit: true, params: [list('State', ['Stop', 'Record', 'Play', 'Overdub'], 0), list('Length', ['Free', '1 Bar', '2 Bars', '4 Bars', '8 Bars', '16 Bars'], 0), q('Speed', -12, 12, 0, { step: 1, fmt: 'st' }),
+      onoff('Reverse'), pct('Feedback', 1), list('Monitor', ['Always', 'Never', 'Rec/OVR', 'Rec/OVR/Stop'], 0), q('Clear', 0, 1000000, 0, { step: 1, hidden: true }), dB('Volume', -24, 12, 0)] },
+  });
+}
+
 // Audio effect categories as in Live 12's browser. Older devices that have no Live 12 counterpart stay loadable under 'Lainnya (lama)'.
-export const FX_GROUPS = [['loop', 'Delay & Loop', [19, 17, 6, 18]], ['drive', 'Drive & Color', [29, 26, 27, 9, 3, 28]], ['dyn', 'Dynamics', [4, 23, 24, 5]],
-  ['eq', 'EQ & Filters', [1, 25, 31, 2]], ['mod', 'Pitch & Modulation', [22, 20, 21]], ['rev', 'Reverb & Resonance', [7]], ['util', 'Utilities', [0, 32, 30, 16]], ['old', 'Lainnya (lama)', [8, 13, 10, 12, 14, 15]]];
+export const FX_GROUPS = [['loop', 'Delay & Loop', [19, 17, 6, 18, 43, 45]], ['drive', 'Drive & Color', [33, 34, 29, 37, 26, 27, 35, 36, 9, 3, 28]], ['dyn', 'Dynamics', [4, 23, 24, 5, 38]],
+  ['eq', 'EQ & Filters', [1, 25, 31, 2]], ['mod', 'Pitch & Modulation', [22, 20, 21, 42]], ['rev', 'Reverb & Resonance', [40, 44, 39, 7, 41]], ['util', 'Utilities', [0, 32, 30, 16]], ['old', 'Lainnya (lama)', [8, 13, 10, 12, 14, 15]]];
 
 // Parameter <-> 0..1 mapping shared by knobs, automation editing and the engine sync.
 export const normOf = (p, v) => { const x = p.curve === 'log' ? Math.log(v / p.min) / Math.log(p.max / p.min) : (v - p.min) / (p.max - p.min); return x < 0 ? 0 : x > 1 ? 1 : x; };
@@ -642,6 +680,7 @@ export function fmtParam(p, v) {
     case 'wfx': return ['None', 'FM', 'Classic', 'Modern'][Math.round(v)] || '';
     case 'wtab': return wtName(v);
     case 'list16': return Math.round(v) % 16 === 0 ? Math.round(v) / 16 + (Math.round(v) === 16 ? ' Bar' : ' Bars') : Math.round(v) + '/16';
+    case 'note': return ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'][Math.round(v) % 12] + (Math.floor(Math.round(v) / 12) - 1);   // same octave numbering as the piano roll (60 = C4)
     case 'list': return (p.items || [])[Math.round(v - p.min)] ?? '';
     case 'dbinf': return v <= -60 ? '-inf dB' : v.toFixed(1) + ' dB';
     case 'deg': return Math.round(v) + '\u00B0';
