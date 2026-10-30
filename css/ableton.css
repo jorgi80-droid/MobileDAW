@@ -229,3 +229,47 @@
 /* editor toolbar: view commands only, same switch / field language as the panel */
 .lv12 .ed-tools { height: 30px; gap: 4px; padding: 0 6px; border-bottom: 1px solid var(--line); }
 #app .lv12 .ed-tools .b, #app .lv12 .ed-tools .ed-g .b { height: 22px; padding: 0 9px; font-size: 11px; }
+
+/* ===== Mixer (Live 12): one column per track, sections of fixed height so every row lines up across tracks, returns and master.
+   Title bar in the track colour, Audio To chooser, sends, pan, volume / peak fields, meter + dB scale + fader, activator / S / arm. */
+#view-mix { background: var(--mx-bg, var(--bg)); align-items: stretch; }
+.mxs { flex: none; display: flex; flex-direction: column; min-height: 100%; box-sizing: border-box; background: var(--mx-strip, var(--panel)); color: var(--text); border-right: 1px solid var(--line); transition: background-color var(--d3, .15s) var(--e-std, ease); }
+.mxs.sel { background: var(--mx-strip-sel, var(--panel2)); }
+.mxs.ret0 { margin-left: 6px; border-left: 1px solid var(--line); }
+.mxs.master { margin-left: auto; position: sticky; right: 0; z-index: 2; border-left: 1px solid var(--line); border-right: 0; box-shadow: -8px 0 16px rgba(0, 0, 0, .28); }
+.mxs.ret0 + .mxs.master, .mxs.master:only-child { box-shadow: none; }
+.mx-title { flex: none; height: 24px; margin: 0; padding: 0 6px; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: var(--c); color: var(--ci); font: 700 11px/24px var(--font); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-shadow: none; }
+.mxs.sel .mx-title { box-shadow: inset 0 -3px 0 rgba(255, 255, 255, .5); }
+.mx-sec { flex: none; display: flex; flex-direction: column; align-items: stretch; padding: 4px 6px; border-bottom: 1px solid var(--sep); box-sizing: border-box; }
+.mx-io { height: 46px; gap: 3px; }
+.mx-lbl { font: 700 8.5px/1 var(--font); letter-spacing: .08em; text-transform: uppercase; color: var(--dim); }
+.mx-ch, .mx-fix { height: 22px; margin: 0; padding: 0 6px; display: flex; align-items: center; justify-content: space-between; gap: 4px; border: 1px solid var(--line); border-radius: 0; background: var(--lv-ctl, var(--raise)); color: var(--lv-ink, var(--text)); font: 600 10.5px/1 var(--font); box-shadow: none; white-space: nowrap; overflow: hidden; box-sizing: border-box; }
+.mx-ch span { overflow: hidden; text-overflow: ellipsis; }
+.mx-ch .tri { flex: none; width: 0; height: 0; border-left: 3.5px solid transparent; border-right: 3.5px solid transparent; border-top: 4px solid currentColor; opacity: .75; }
+.mx-ch:active { background: var(--lv-ctl2, var(--raise2)); }
+.mx-fix { background: transparent; color: var(--dim); justify-content: center; border-color: transparent; }
+.mx-load { flex: none; height: 15px; line-height: 15px; font-size: 9px; text-align: center; color: var(--dim); background: var(--mx-well, #101011); border-bottom: 1px solid var(--line); white-space: nowrap; overflow: hidden; font-variant-numeric: tabular-nums; }
+.mx-load.warn { color: var(--warn); } .mx-load.hot { color: var(--bad-ink); }
+.mx-sends { height: 64px; flex-direction: row; justify-content: space-around; align-items: center; padding: 3px 2px; }
+.mx-pan { height: 62px; flex-direction: row; justify-content: center; align-items: center; }
+.mxs .knob.sm { width: 44px; } .mxs .knob.sm svg { width: 32px; height: 32px; }
+.mxs .knob .k-n, .mxs .knob .k-v { color: var(--text); }
+.mxs .knob .k-n { color: var(--dim); }
+.mx-vals { flex: none; display: flex; gap: 3px; padding: 6px 6px 2px; }
+.mxs .vbox { flex: 1 1 0; min-width: 0; height: 20px; padding: 0; border: 1px solid var(--line); border-radius: 0; background: var(--mx-well, var(--well)); color: var(--text); font: 600 10px/1 var(--font); font-variant-numeric: tabular-nums; box-shadow: none; }
+.mxs .vbox.pk { color: var(--dim); }
+.mxs .vbox.pk.hot { color: #fff; background: var(--rec); border-color: var(--rec); }
+.mx-fader { flex: 1; min-height: 110px; position: relative; touch-action: none; cursor: ns-resize; }
+.mx-fader canvas { position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
+.mx-btns { flex: none; height: 36px; display: flex; justify-content: center; align-items: center; gap: 3px; padding: 0 6px; border-top: 1px solid var(--sep); }
+.mx-btns .b { width: 28px; min-width: 28px; height: 24px; padding: 0; border: 1px solid var(--line); border-radius: 0; box-shadow: none; font: 700 11px/1 var(--font); }
+.mx-btns .b.m { background: var(--mute); color: var(--on-col); }
+.mx-btns .b.m.on { background: var(--lv-ctl, var(--raise)); color: var(--lv-ink, var(--text)); }
+.mx-btns .b.s { background: var(--lv-ctl, var(--raise)); color: var(--lv-ink, var(--text)); }
+.mx-btns .b.s.on { background: var(--solo); color: var(--on-col); }
+.mx-btns .b.a { position: relative; background: var(--lv-ctl, var(--raise)); }
+.mx-btns .b.a::before { content: ""; position: absolute; left: 50%; top: 50%; width: 10px; height: 10px; margin: -5px 0 0 -5px; border-radius: 50%; background: var(--rec); opacity: .55; transition: background-color var(--d3, .15s) ease, opacity var(--d3, .15s) ease; }
+.mx-btns .b.a.on { background: var(--rec); }
+.mx-btns .b.a.on::before { background: #fff; opacity: 1; }
+[data-theme="light"] .mx-title { color: var(--ci); }
+[data-theme="light"] .mxs.master { box-shadow: -6px 0 12px rgba(0, 0, 0, .12); }
