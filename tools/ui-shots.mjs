@@ -68,6 +68,7 @@ if (go('mix')) {
   await ev(() => document.querySelector('.seg .b[data-view="mix"]').click()); await shot('mix');
   await ev(async () => (await import('./js/project.js')).play()); await page.waitForTimeout(1800); await shot('mix-play');
   await ev(async () => (await import('./js/project.js')).stop());
+  await ev(() => document.querySelector('.seg .b[data-view="arr"]').click());
 }
 if (go('win')) {                                         // global windows: tempo, preferences (every tab), modal, ask, export, toast, PWA card, floating window
   const close = () => ev(async () => { (await import('./js/ui.js')).closeAll(); (await import('./js/floatwin.js')).closeAllFloats(); document.querySelectorAll('.pwa-card,.toast').forEach((e) => e.remove()); });
