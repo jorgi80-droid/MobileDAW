@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="daw_background">#1B1B1C</color>
+    <color name="colorPrimary">#242426</color>
+    <color name="colorPrimaryDark">#1B1B1C</color>
+    <color name="colorAccent">#FFA726</color>
+</resources>
