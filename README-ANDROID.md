@@ -61,3 +61,27 @@ npm run apk               # -> android/app/build/outputs/apk/debug/app-debug.apk
 - File yang ditaruh aplikasi lain di `Documents/MobileDAW` tidak terbaca otomatis: impor lewat Browser → Impor.
 - APK debug saja (belum ada APK rilis bertanda tangan / Play Store).
 - `demos/SoundFonts/TimGM6mb.sf2` berlisensi GPL v2 dan ikut di dalam APK (lihat `demos/README.txt`).
+
+## Fase 2: engine audio C++ native (sedang berjalan)
+
+Engine audio JS (`js/engine/`) tetap jadi referensi. Port C++-nya ada di `native/engine/`. Kode yang sama dipakai di dua tempat:
+host desktop untuk tes kesetaraan (`native/host/golden_host`) dan library Android (`android/app/src/main/cpp/`, output lewat Oboe).
+
+- **Pilih engine:** Pengaturan → Audio → *Engine audio*: Web (bawaan) / Native (C++). Bisa diganti kapan saja tanpa restart.
+  Selama proyek memakai instrumen/efek yang belum di-port, proyek otomatis diputar engine Web dan alasannya ditampilkan.
+  Pergantian engine hanya terjadi saat transport berhenti.
+- **Ukur performa:** Pengaturan → Audio → *Ukur beban CPU* menampilkan beban per blok audio (rata-rata, p50, p99, maks dalam %
+  dari waktu blok), jumlah underrun, ukuran buffer, dan latensi output. *Reset statistik* sebelum memutar lagu yang diukur.
+- **Tes kesetaraan (golden):** `node tools/golden/golden.mjs` (butuh `cmake` dan `g++`/`clang++`). Skenario yang sama dirender oleh
+  engine JS dan engine C++, lalu dibandingkan sampel demi sampel. Lulus bila selisih RMS < −90 dBFS **dan** tidak ada satu sampel pun
+  yang selisihnya > −70 dBFS. Skenario yang memakai bagian yang belum di-port ditandai SKIP. `--list` menampilkan semua skenario.
+
+Status port:
+
+| Bagian | Status |
+|---|---|
+| Transport, loop, tempo/tempo map, birama, metronom, count-in, mixer, send, routing grup, klip audio, automation, CC | selesai, identik |
+| Mini Synth, SuperSaw (semua preset bawaan) | selesai, lulus golden |
+| GMS, Moisture, Osphere, DirectWave/Keystone/Sampler, Drum Sampler, SoundFont, Wavetable | belum |
+| Semua efek audio | belum |
+| Ekspor WAV lewat engine native | belum (ekspor memakai engine JS, yang hasilnya identik untuk bagian yang sudah di-port) |
