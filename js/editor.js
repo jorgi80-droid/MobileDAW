@@ -10,11 +10,12 @@ import { eng } from './engine.js';
 import { fmtParam, valOf } from './defs.js';
 import * as DP from './drumpad.js';
 import * as P from './project.js';
+import { prefs } from './prefs.js';
 const { state } = P;
 import { BAR, BEAT } from './project.js';   // live bindings (they follow the time signature)
 
 let KEYS = 36, VEL = 64;   // key strip width / lane height: set by dims() (narrow piano for MIDI notes, wider for drum names and automation values)
-const RULER = 18, LANE_HEAD = 92, STEP = 240;
+const RULER = 22, LANE_HEAD = 92, STEP = 240;
 // Snap values exactly as FL Studio Mobile lists them: fractions of a step (1 step = 1/16 note), fractions of a beat, and a bar.
 const sn = (n, f) => ({ 0: n, get 1() { return f(); } });   // read live: BAR / BEAT change with the time signature
 const SNAPS = [sn('1/6 Step', () => STEP / 6), sn('1/4 Step', () => STEP / 4), sn('1/3 Step', () => STEP / 3), sn('1/2 Step', () => STEP / 2), sn('1 Step', () => STEP), sn('1/6 Beat', () => BEAT / 6), sn('1/4 Beat', () => BEAT / 4), sn('1/3 Beat', () => BEAT / 3), sn('1/2 Beat', () => BEAT / 2), sn('1 Beat', () => BEAT), sn('Bar', () => BAR)];
@@ -22,27 +23,16 @@ const SCALES = { Chromatic: null, Major: [0, 2, 4, 5, 7, 9, 11], Minor: [0, 2, 3
 const NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 const BLACK = new Set([1, 3, 6, 8, 10]);
 
-const cfg = { snap: 6, snapOn: true, key: 0, scale: 'Chromatic', lock: false, vel: true, lane: 'vel', cc: { k: 'bend', n: 0 }, ccErase: false, mode: 'auto', lastLen: STEP, follow: true };
+const cfg = { snap: 6, snapOn: true, key: 0, scale: 'Chromatic', lastScale: 'Major', lock: false, vel: true, velH: 0, lane: 'vel', cc: { k: 'bend', n: 0 }, ccErase: false, mode: 'auto', lastLen: STEP, follow: true };   // velH: lane height dragged by the user (0 = automatic)
 const v = { x0: 0, ppt: 0.12, top: 84, keyH: 16 };
 const sv = { x0: 0, stepW: 30, y0: 0, rowH: 38 };
 let side = null, padSel = -1, padTrack = -1;   // drum pad panel (right of the step grid) and the pad it shows
-let title = null, fitId = null, needFit = false, lastHx = 0, asel = null, root, tools, host, canvas, ctx, W = 0, H = 0, dpr = 1, dirty = true, sel = new Set(), tsel = null, clipboard = null, drag = null, previewOff = 0;
+let props = null, fitId = null, needFit = false, lastHx = 0, asel = null, root, tools, host, canvas, ctx, W = 0, H = 0, dpr = 1, dirty = true, sel = new Set(), tsel = null, clipboard = null, drag = null, previewOff = 0;
 
 export const invalidate = () => { dirty = true; };
 const cur = () => P.selectedClip();
 const ink = (hex) => { const m = /^#([0-9a-f]{6})$/i.exec(hex || ''); if (!m) return '#141414'; const n = parseInt(m[1], 16); return (0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) > 140 ? '#141414' : '#f2f2f2'; };
-// Clip title bar (Live: activator + clip name on the clip colour). Same mute flag as the Mute entry of the clip menu.
-function updateTitle() {
-  if (!title) return;
-  const c = cur();
-  if (!c) { title.hidden = true; title.replaceChildren(); return; }
-  const t = state.tracks[c.track], cl = c.clip, on = !cl.muted;
-  title.hidden = false; title.classList.toggle('off', !on);
-  title.style.background = t.color; title.style.color = ink(t.color);
-  title.replaceChildren(
-    h('button', { class: 'ct-act' + (on ? ' on' : ''), 'aria-label': 'Klip aktif', onclick: () => { checkpoint(); P.setClipsMuted([{ i: c.track, c: cl }], on); updateTitle(); invalidate(); } }),
-    h('span', { class: 'ct-name' }, cl.name || (cl.dsample || cl.sample || {}).name || t.name));
-}
+const updateTitle = () => buildProps();   // the clip's name / activator live at the top of the properties panel
 const snapUnit = () => (cfg.snapOn ? Math.round(SNAPS[cfg.snap][1]) : 0);
 let CS = 0;   // start tick (on the timeline) of the clip being drawn / edited: bar lines, beats and snapping follow the project's meter map
 const snapT = (t) => {
@@ -81,7 +71,7 @@ const keyLabel = (p) => { if (isDrum()) { const d = padList().find((x) => x.pitc
 const pan0 = (n) => n.pan || 0;
 function dims() {
   KEYS = isDrum() || isAuto() ? 54 : 48;   // v66: wider piano ruler (Live's is wider than a thumb); every hit test and drawing uses KEYS
-  VEL = clamp(Math.round(H * 0.2), 36, 64);   // small panel: the Velocity lane shrinks so the note grid is not eaten by it
+  VEL = cfg.velH ? clamp(cfg.velH, 40, Math.max(40, Math.round(H * 0.55))) : clamp(Math.round(H * 0.24), 44, 84);   // small panel: the lane shrinks so the note grid is not eaten by it
 }
 
 // ------------------------------------------------------------------ geometry
@@ -97,6 +87,24 @@ function clampV(c) {
 }
 
 // ------------------------------------------------------------------ drawing
+// Live 12 note editor: white-key rows lighter than black-key rows, every other bar a shade darker, in-scale rows lit when a scale is
+// on (the root a little warmer), notes in the clip colour shaded by velocity, the clip's extent as a brace in the ruler.
+const FONT = (w, s) => `${w} ${s}px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`;
+const velCache = new Map();
+function velCol(hex, vel, selected) {            // note colour: low velocity = paler / greyer, high = the full clip colour (Live shades notes by velocity)
+  const q = Math.round(clamp(vel, 0, 1) * 12), key = hex + q + (selected ? 's' : '');
+  let r = velCache.get(key); if (r) return r;
+  const n = parseInt(String(hex).slice(1, 7), 16), b = Number.isFinite(n) ? n : 0x8a8a8a, k = 0.3 + 0.7 * q / 12;
+  let c = [b >> 16, (b >> 8) & 255, b & 255].map((x) => 118 + (x - 118) * k);
+  if (selected) c = c.map((x) => x + (255 - x) * 0.4);
+  r = `rgb(${c.map((x) => Math.round(x)).join(',')})`; velCache.set(key, r); return r;
+}
+const shadeC = (hex, k) => { const n = parseInt(String(hex).slice(1, 7), 16) || 0; return `rgb(${[n >> 16, (n >> 8) & 255, n & 255].map((x) => Math.round(x * (1 - k))).join(',')})`; };
+const laneTop = () => gridBottom() + 9, laneH = () => VEL - 14;   // value area of the controller lane (below its split line)
+function barSpans(fn) {                                        // fn(x0, x1, barIndexInClip) for every visible bar
+  const L = []; barLinesLocal((q, b) => L.push([q, b]));
+  for (let k = 0; k < L.length; k++) fn(px(L[k][0]), k + 1 < L.length ? px(L[k + 1][0]) : px(L[k][0] + BAR), L[k][1]);
+}
 function drawRoll(t, c) {
   CS = c.start; const gb = gridBottom();
   ctx.fillStyle = C('#1b1b1c'); ctx.fillRect(0, 0, W, H);
@@ -104,54 +112,67 @@ function drawRoll(t, c) {
   const p0 = Math.max(0, pAt(gb)), p1 = Math.min(127, pAt(RULER));
   const sc = SCALES[cfg.scale];
   for (let p = p0; p <= p1; p++) {
-    const y = py(p);
-    ctx.fillStyle = BLACK.has(p % 12) ? C('#1e1e20') : C('#262629');
-    if (sc && inScale(p)) ctx.fillStyle = BLACK.has(p % 12) ? C('#272431') : C('#2e2a3a');
-    if (sc && ((p - cfg.key) % 12 + 12) % 12 === 0) ctx.fillStyle = C('#3a3350');
+    const y = py(p), blk = BLACK.has(p % 12), ins = !sc || inScale(p);
+    ctx.fillStyle = sc ? (ins ? (blk ? C('#2c2c30') : C('#323236')) : C('#1f1f21')) : (blk ? C('#232325') : C('#2b2b2e'));
     ctx.fillRect(KEYS, y - v.keyH, W - KEYS, v.keyH);
-    ctx.fillStyle = p % 12 === 0 ? C('#3d3d42') : C('#1b1b1d'); ctx.fillRect(KEYS, y - 1, W - KEYS, 1);
+    if (sc && ((p - cfg.key) % 12 + 12) % 12 === 0) { ctx.fillStyle = 'rgba(255,167,34,.10)'; ctx.fillRect(KEYS, y - v.keyH, W - KEYS, v.keyH); }   // root rows
+    ctx.fillStyle = p % 12 === 0 ? C('#3c3c41') : C('#1f1f21'); ctx.fillRect(KEYS, y - 1, W - KEYS, 1);
   }
+  ctx.fillStyle = 'rgba(0,0,0,.13)'; barSpans((a, b, k) => { if (k % 2) ctx.fillRect(a, RULER, b - a, gb - RULER); });   // every other bar darker
   const g = [60, 120, 240, 480, 960, 1920, 3840].find((x) => x * v.ppt >= 12) || 3840;
-  gridLocal(g, (q, kd) => { if (kd === 2) return; ctx.fillStyle = kd === 1 ? C('#38383d') : C('#2b2b2f'); ctx.fillRect(Math.round(px(q)), RULER, 1, gb - RULER); });
-  ctx.fillStyle = C('#4a4a50'); barLinesLocal((q) => ctx.fillRect(Math.round(px(q)), RULER, 1, gb - RULER));   // bar lines per bar (7/8, 5/4 ...)
-  ctx.fillStyle = 'rgba(0,0,0,.45)'; const ce = px(c.len); if (ce < W) ctx.fillRect(Math.max(KEYS, ce), RULER, W - ce, gb - RULER);
-  if (tsel) { ctx.fillStyle = 'rgba(79,163,224,.2)'; ctx.fillRect(px(tsel.a), RULER, px(tsel.b) - px(tsel.a), gb - RULER); }
+  gridLocal(g, (q, kd) => { if (kd === 2) return; ctx.fillStyle = kd === 1 ? C('#3a3a3f') : C('#303034'); ctx.fillRect(Math.round(px(q)), RULER, 1, gb - RULER); });
+  ctx.fillStyle = C('#4c4c52'); barLinesLocal((q) => ctx.fillRect(Math.round(px(q)), RULER, 1, gb - RULER));   // bar lines per bar (7/8, 5/4 ...)
+  ctx.fillStyle = 'rgba(0,0,0,.42)'; const ce = px(c.len); if (ce < W) ctx.fillRect(Math.max(KEYS, ce), RULER, W - ce, gb - RULER);
+  if (tsel) { ctx.fillStyle = 'rgba(120,182,230,.18)'; ctx.fillRect(px(tsel.a), RULER, px(tsel.b) - px(tsel.a), gb - RULER); }
+  const nInk = ink(t.color) === '#141414' ? 'rgba(14,14,18,.82)' : 'rgba(255,255,255,.9)';
+  ctx.font = FONT(600, 9); ctx.textBaseline = 'middle';
   for (const n of c.notes) {
     const x = px(n.t), w = Math.max(3, n.d * v.ppt), y = py(n.p) - v.keyH;
     if (x + w < KEYS || x > W || y > gb || y + v.keyH < RULER) continue;
-    ctx.fillStyle = t.color; ctx.globalAlpha = 0.4 + 0.6 * n.v; ctx.fillRect(x, y + 1, w - 1, v.keyH - 2); ctx.globalAlpha = 1;
-    ctx.strokeStyle = 'rgba(0,0,0,.4)'; ctx.lineWidth = 1; ctx.strokeRect(x + 0.5, y + 1.5, w - 2, v.keyH - 3);   // v65: flat note with a hairline outline, like Live (no bevel)
-    if (w > 14 && (sel.has(n) || w > 28)) { ctx.fillStyle = 'rgba(255,255,255,.22)'; ctx.fillRect(x + w - 4, y + 3, 2, v.keyH - 6); }   // right edge: resize grip, kept for touch
-    if (sel.has(n)) { ctx.strokeStyle = C('#fff'); ctx.lineWidth = 2; ctx.strokeRect(x + 1, y + 2, w - 3, v.keyH - 4); }
-    if (w > 54 && v.keyH >= 20) { ctx.fillStyle = C('#111'); ctx.font = '9px system-ui'; ctx.textBaseline = 'middle'; ctx.fillText(pName(n.p), x + 3, y + v.keyH / 2 + 1); }
+    const s = sel.has(n);
+    ctx.fillStyle = velCol(t.color, n.v, s); ctx.fillRect(x, y + 1, w - 1, v.keyH - 1);
+    ctx.strokeStyle = s ? C('#ffffff') : shadeC(t.color, 0.6); ctx.lineWidth = s ? 1.5 : 1; ctx.strokeRect(x + 0.5, y + 1.5, w - 2, v.keyH - 2);   // flat note, hairline outline (Live: no bevel)
+    if (w > 16 && (s || w > 30)) { ctx.fillStyle = 'rgba(0,0,0,.28)'; ctx.fillRect(x + w - 5, y + 4, 2, Math.max(2, v.keyH - 7)); }   // right edge: resize grip, kept for touch
+    if (w > 34 && v.keyH >= 13) { ctx.fillStyle = nInk; ctx.fillText(pName(n.p), x + 4, y + v.keyH / 2 + 1, w - 9); }
   }
-  if (drag && drag.k === 'rect' && !drag.pending) { ctx.fillStyle = 'rgba(255,255,255,.12)'; ctx.strokeStyle = C('#fff'); ctx.lineWidth = 1; ctx.fillRect(drag.x, drag.y, drag.w, drag.h); ctx.strokeRect(drag.x, drag.y, drag.w, drag.h); }
+  if (drag && drag.k === 'rect' && !drag.pending) { ctx.fillStyle = 'rgba(120,182,230,.14)'; ctx.strokeStyle = 'rgba(170,210,240,.9)'; ctx.lineWidth = 1; ctx.fillRect(drag.x, drag.y, drag.w, drag.h); ctx.strokeRect(drag.x + 0.5, drag.y + 0.5, drag.w, drag.h); }
   ctx.restore();
-  // keys: white keys full width, black keys shorter, so the keyboard reads like a keyboard
+  // keys: white keys full width, black keys shorter, so the keyboard reads like a keyboard; only the C keys are named (all white keys when zoomed in)
   ctx.save(); ctx.beginPath(); ctx.rect(0, RULER, KEYS, gb - RULER); ctx.clip();
   ctx.fillStyle = C('#101011'); ctx.fillRect(0, RULER, KEYS, gb - RULER);
-  const bw = Math.round(KEYS * 0.6);   // black key length
+  const bw = Math.round(KEYS * 0.58);   // black key length
   for (let p = p0; p <= p1; p++) {
     const y = py(p) - v.keyH, pc = p % 12, blk = BLACK.has(pc), lit = previewHeld && previewHeld.p === p;
-    ctx.fillStyle = lit && !blk ? C('#ffa722') : C('#dedee2'); ctx.fillRect(0, y, KEYS, v.keyH);   // white key (it also runs behind a black key)
+    ctx.fillStyle = lit && !blk ? C('#ffa722') : C('#d8d8dc'); ctx.fillRect(0, y, KEYS - 1, v.keyH);   // white key (it also runs behind a black key)
     if (blk) {
-      ctx.fillStyle = C('#a4a4ab'); ctx.fillRect(bw, Math.round(y + v.keyH / 2), KEYS - bw, 1);   // boundary of the two white keys this black key sits between
+      ctx.fillStyle = C('#9c9ca3'); ctx.fillRect(bw, Math.round(y + v.keyH / 2), KEYS - bw, 1);   // boundary of the two white keys this black key sits between
       ctx.fillStyle = lit ? C('#ffa722') : C('#1c1c1f'); ctx.fillRect(0, y + 1, bw, v.keyH - 2);
       if (!lit) { ctx.fillStyle = C('#3a3a40'); ctx.fillRect(bw - 2, y + 1, 2, v.keyH - 2); }
-    } else if (pc === 0 || pc === 5) { ctx.fillStyle = C('#a4a4ab'); ctx.fillRect(0, y + v.keyH - 1, KEYS, 1); }   // B|C and E|F: no black key between
-    if (isDrum() && padList().some((d) => d.pitch === p)) { ctx.fillStyle = blk && !lit ? C('#eee') : C('#111'); ctx.font = '600 9px system-ui'; ctx.textBaseline = 'middle'; ctx.textAlign = 'left'; ctx.fillText(keyLabel(p), 3, y + v.keyH / 2, KEYS - 5); }
-    else if (pc === 0 || (v.keyH >= 24 && !blk)) { ctx.fillStyle = C('#333'); ctx.font = '600 10px system-ui'; ctx.textBaseline = 'middle'; ctx.textAlign = 'right'; ctx.fillText(pName(p), KEYS - 4, y + v.keyH / 2); ctx.textAlign = 'left'; }   // like Live: only the C keys are named (all white keys when zoomed in)
+    } else if (pc === 0 || pc === 5) { ctx.fillStyle = C('#9c9ca3'); ctx.fillRect(0, y + v.keyH - 1, KEYS, 1); }   // B|C and E|F: no black key between
+    if (isDrum() && padList().some((d) => d.pitch === p)) { ctx.fillStyle = blk && !lit ? C('#eee') : C('#111'); ctx.font = FONT(600, 9); ctx.textBaseline = 'middle'; ctx.textAlign = 'left'; ctx.fillText(keyLabel(p), 3, y + v.keyH / 2, KEYS - 5); }
+    else if (pc === 0 || (v.keyH >= 24 && !blk)) { ctx.fillStyle = C('#3a3a40'); ctx.font = FONT(600, 9.5); ctx.textBaseline = 'middle'; ctx.textAlign = 'right'; ctx.fillText(pName(p), KEYS - 5, y + v.keyH / 2); ctx.textAlign = 'left'; }
   }
+  ctx.fillStyle = C('#141415'); ctx.fillRect(KEYS - 1, RULER, 1, gb - RULER);
   ctx.restore();
-  // ruler
-  ctx.fillStyle = C('#2a2a2d'); ctx.fillRect(0, 0, W, RULER); ctx.fillStyle = C('#9a9aa2'); ctx.font = '10px system-ui'; ctx.textBaseline = 'middle';
-  barLinesLocal((q, b) => { if (px(q) >= KEYS - 1) ctx.fillText(String(b + 1), px(q) + 3, RULER / 2); });
-  if (tsel) { ctx.fillStyle = C('#4fa3e0'); ctx.fillRect(px(tsel.a), 0, Math.max(2, px(tsel.b) - px(tsel.a)), RULER - 2); ctx.fillStyle = C('#fff'); ctx.font = '700 12px system-ui'; ctx.fillText('+', Math.min(W - 12, px(tsel.a) + 4), RULER / 2); }
-  ctx.fillStyle = C('#2a2a2d'); ctx.fillRect(0, 0, KEYS, RULER);
+  drawEdRuler(t, c);
   if (cfg.vel) drawVel(t, c, gb);
 }
+// ruler of the clip editor: bar numbers + beat ticks, the clip's extent as a brace in the clip colour, the time selection
+function drawEdRuler(t, c) {
+  ctx.fillStyle = C('#2c2c2f'); ctx.fillRect(0, 0, W, RULER); ctx.fillStyle = C('#141415'); ctx.fillRect(0, RULER - 1, W, 1);
+  ctx.save(); ctx.beginPath(); ctx.rect(KEYS, 0, W - KEYS, RULER); ctx.clip();
+  const a = Math.max(KEYS, px(0)), b = Math.min(W, px(c.len));
+  if (b > a) { ctx.fillStyle = t.color; ctx.fillRect(a, RULER - 6, b - a, 4); ctx.fillStyle = shadeC(t.color, 0.45); ctx.fillRect(a, RULER - 2, b - a, 1); }
+  ctx.fillStyle = C('#4a4a50'); gridLocal(BEAT, (q, kd) => { if (kd !== 2) ctx.fillRect(Math.round(px(q)), RULER - 9, 1, 3); });
+  ctx.font = FONT(500, 10); ctx.textBaseline = 'middle';
+  barLinesLocal((q, bi) => { const x = Math.round(px(q)); if (x < KEYS - 1) return; ctx.fillStyle = C('#6a6a70'); ctx.fillRect(x, 3, 1, RULER - 4); ctx.fillStyle = C('#b4b4ba'); ctx.fillText(String(bi + 1), x + 4, RULER / 2 - 2); });
+  if (tsel) { ctx.fillStyle = 'rgba(120,182,230,.45)'; ctx.fillRect(px(tsel.a), 0, Math.max(2, px(tsel.b) - px(tsel.a)), RULER - 1); ctx.fillStyle = C('#fff'); ctx.font = FONT(700, 12); ctx.fillText('+', Math.min(W - 12, px(tsel.a) + 4), RULER / 2); }
+  ctx.restore();
+  ctx.fillStyle = C('#2c2c2f'); ctx.fillRect(0, 0, KEYS - 1, RULER - 1); ctx.fillStyle = C('#141415'); ctx.fillRect(KEYS - 1, 0, 1, RULER);
+  if (!isDrum() && SCALES[cfg.scale]) { ctx.fillStyle = C('#ffad32'); ctx.font = FONT(700, 9); ctx.textBaseline = 'middle'; ctx.fillText(NAMES[cfg.key] + ' ' + cfg.scale.slice(0, 3), 4, RULER / 2, KEYS - 7); }   // Live 12: the active scale in the editor corner
+}
 
-// bottom lane: Velocity / Pan tabs (FL Studio Mobile: "drag-up panel" with two tabs)
+// bottom lane: Velocity / Pan / controller lanes, chosen with the lane header (Live: the chooser at the left of each MIDI editor lane)
 // ---- controller lanes (pitch bend, CC) of the clip: c.cc = [{ k: 'bend' | 'cc', n, pts: [{ t, v }] }]  (bend -1..1 = +-2 semitones, cc 0..127)
 const CC_RES = 60;
 const CC_LIST = [['bend', 0, 'Pitch Bend'], ['cc', 1, 'Mod Wheel (CC1) - hanya disimpan / ekspor'], ['cc', 7, 'Volume (CC7)'], ['cc', 10, 'Pan (CC10)'], ['cc', 11, 'Ekspresi (CC11)'], ['cc', 64, 'Sustain (CC64) - hanya disimpan / ekspor']];
@@ -160,7 +181,7 @@ let ccLast = null;
 const ccFind = (c, create) => { let l = (c.cc || []).find((q) => q.k === cfg.cc.k && q.n === cfg.cc.n); if (!l && create) { if (!c.cc) c.cc = []; l = { k: cfg.cc.k, n: cfg.cc.n, pts: [] }; c.cc.push(l); } return l; };
 const ccSetPt = (l, t, v) => { const i = l.pts.findIndex((q) => q.t === t); if (i >= 0) l.pts[i].v = v; else { l.pts.push({ t, v }); l.pts.sort((a, b) => a.t - b.t); } };
 function ccPaint(c, x, y) {
-  const gb = gridBottom(), f = clamp(1 - (y - gb - 4) / (VEL - 8), 0, 1), bend = cfg.cc.k === 'bend';
+  const f = clamp(1 - (y - laneTop()) / laneH(), 0, 1), bend = cfg.cc.k === 'bend';
   const val = bend ? (Math.abs(f * 2 - 1) < 0.05 ? 0 : Math.round((f * 2 - 1) * 100) / 100) : Math.round(f * 127);
   const t = clamp(Math.round(tk(x) / CC_RES) * CC_RES, 0, c.len), l = ccFind(c, !cfg.ccErase);
   if (!l) return false;
@@ -170,45 +191,59 @@ function ccPaint(c, x, y) {
   ccLast = { t, v: val };
   return true;
 }
-function ccMenu(x, y) {
-  const has = (k, n) => (cur().clip.cc || []).some((l) => l.k === k && l.n === n && l.pts.length);
+function laneChooser(x, y) {
+  const c = cur().clip, has = (k, n) => (c.cc || []).some((l) => l.k === k && l.n === n && l.pts.length);
   menu([
-    ...CC_LIST.map(([k, n, label]) => ({ label: label + (has(k, n) ? ' \u2022' : ''), check: cfg.cc.k === k && cfg.cc.n === n, fn: () => { cfg.cc = { k, n }; invalidate(); } })),
-    { label: 'Nomor CC lain\u2026', fn: () => ask('Nomor CC (0-127)', cfg.cc.k === 'cc' ? cfg.cc.n : 74, (v) => { if (Number.isFinite(v) && v >= 0 && v <= 127) { cfg.cc = { k: 'cc', n: Math.round(v) }; invalidate(); } }, 'number') },
+    { label: 'Velocity', check: cfg.lane === 'vel', fn: () => { cfg.lane = 'vel'; invalidate(); } },
+    { label: 'Pan (per not)', check: cfg.lane === 'pan', fn: () => { cfg.lane = 'pan'; invalidate(); } },
     { sep: true },
-    { label: 'Mode hapus titik (seret di lane)', check: cfg.ccErase, fn: () => { cfg.ccErase = !cfg.ccErase; invalidate(); } },
-    { label: 'Hapus seluruh lane ini', dim: !has(cfg.cc.k, cfg.cc.n), fn: () => { checkpoint(); const c = cur().clip; c.cc = (c.cc || []).filter((l) => !(l.k === cfg.cc.k && l.n === cfg.cc.n)); if (!c.cc.length) delete c.cc; changed(); } },
+    ...CC_LIST.map(([k, n, label]) => ({ label: label + (has(k, n) ? ' •' : ''), check: cfg.lane === 'cc' && cfg.cc.k === k && cfg.cc.n === n, fn: () => { cfg.cc = { k, n }; cfg.lane = 'cc'; invalidate(); } })),
+    { label: 'Nomor CC lain…', fn: () => ask('Nomor CC (0-127)', cfg.cc.k === 'cc' ? cfg.cc.n : 74, (v) => { if (Number.isFinite(v) && v >= 0 && v <= 127) { cfg.cc = { k: 'cc', n: Math.round(v) }; cfg.lane = 'cc'; invalidate(); } }, 'number') },
+    ...(cfg.lane === 'cc' ? [{ sep: true },
+      { label: 'Mode hapus titik (seret di lane)', check: cfg.ccErase, fn: () => { cfg.ccErase = !cfg.ccErase; invalidate(); } },
+      { label: 'Hapus seluruh lane ' + ccName(), dim: !has(cfg.cc.k, cfg.cc.n), fn: () => { checkpoint(); const cl = cur().clip; cl.cc = (cl.cc || []).filter((l) => !(l.k === cfg.cc.k && l.n === cfg.cc.n)); if (!cl.cc.length) delete cl.cc; changed(); } }] : []),
   ], x, y);
 }
 function drawCC(t, c, gb) {
-  ctx.save(); ctx.beginPath(); ctx.rect(KEYS, gb, W - KEYS, VEL); ctx.clip();
-  const bend = cfg.cc.k === 'bend', top = gb + 4, hh = VEL - 8, yv = (v) => (bend ? top + (1 - (v + 1) / 2) * hh : top + (1 - v / 127) * hh);
-  ctx.fillStyle = C('#3a3a3f'); ctx.fillRect(KEYS, Math.round(bend ? gb + VEL / 2 : gb + VEL - 4), W - KEYS, 1);
+  ctx.save(); ctx.beginPath(); ctx.rect(KEYS, gb + 2, W - KEYS, VEL - 2); ctx.clip();
+  const bend = cfg.cc.k === 'bend', top = laneTop(), hh = laneH(), yv = (v) => (bend ? top + (1 - (v + 1) / 2) * hh : top + (1 - v / 127) * hh);
+  ctx.fillStyle = C('#3a3a3f'); ctx.fillRect(KEYS, Math.round(bend ? top + hh / 2 : top + hh), W - KEYS, 1);
   const l = (c.cc || []).find((q) => q.k === cfg.cc.k && q.n === cfg.cc.n);
-  if (!l || !l.pts.length) { ctx.fillStyle = C('#6c6c73'); ctx.font = '10px system-ui'; ctx.textBaseline = 'middle'; ctx.fillText('Ketuk atau seret untuk menggambar ' + ccName() + (cfg.ccErase ? ' (mode hapus)' : ''), KEYS + 8, gb + VEL / 2); ctx.restore(); return; }
-  ctx.strokeStyle = t.color; ctx.fillStyle = t.color; ctx.lineWidth = 1.5; ctx.beginPath();
+  if (!l || !l.pts.length) { ctx.fillStyle = C('#6c6c73'); ctx.font = FONT(500, 10); ctx.textBaseline = 'middle'; ctx.fillText('Ketuk atau seret untuk menggambar ' + ccName() + (cfg.ccErase ? ' (mode hapus)' : ''), KEYS + 8, top + hh / 2); ctx.restore(); return; }
+  ctx.strokeStyle = t.color; ctx.lineWidth = 1.5; ctx.beginPath();
   let first = true; for (const q of l.pts) { const x = px(q.t); if (first) { ctx.moveTo(x, yv(q.v)); first = false; } else ctx.lineTo(x, yv(q.v)); }
   ctx.stroke();
-  for (const q of l.pts) { const x = px(q.t); if (x < KEYS - 3 || x > W + 3) continue; ctx.fillRect(x - 1.5, yv(q.v) - 1.5, 3, 3); }
+  ctx.lineTo(px(l.pts[l.pts.length - 1].t), top + hh); ctx.lineTo(px(l.pts[0].t), top + hh); ctx.closePath(); ctx.fillStyle = 'rgba(255,255,255,.05)'; ctx.fill();
+  ctx.fillStyle = t.color; for (const q of l.pts) { const x = px(q.t); if (x < KEYS - 3 || x > W + 3) continue; ctx.fillRect(x - 1.5, yv(q.v) - 1.5, 3, 3); }
   ctx.restore();
 }
 function drawVel(t, c, gb) {
-  ctx.fillStyle = C('#202022'); ctx.fillRect(0, gb, W, VEL); ctx.fillStyle = C('#0e0e0f'); ctx.fillRect(0, gb, W, 1);
-  const rh3 = (VEL - 1) / 3;
-  for (const [k, label, row] of [['vel', 'Vel', 0], ['pan', 'Pan', 1], ['cc', ccName(), 2]]) {
-    const on = cfg.lane === k, y = gb + 1 + row * rh3;
-    ctx.fillStyle = on ? C('#ffa722') : C('#2d2d30'); ctx.fillRect(2, y + 1, KEYS - 4, rh3 - 2);
-    ctx.fillStyle = on ? C('#111') : C('#8b8b92'); ctx.font = '600 9px system-ui'; ctx.textBaseline = 'middle'; ctx.fillText(label, 6, y + rh3 / 2);
-  }
+  ctx.fillStyle = C('#222224'); ctx.fillRect(0, gb, W, VEL);
+  ctx.fillStyle = C('#141415'); ctx.fillRect(0, gb, W, 1); ctx.fillStyle = C('#3a3a3f'); ctx.fillRect(0, gb + 1, W, 1);   // split line: drag it to resize the lane
+  ctx.fillStyle = C('#5a5a60'); ctx.fillRect(Math.round(KEYS + (W - KEYS) / 2 - 14), gb + 3, 28, 2);                    // grip mark on the split line
+  // lane header: lane name with a chooser arrow, the value of the selected note under it
+  ctx.fillStyle = C('#2c2c2f'); ctx.fillRect(0, gb + 2, KEYS - 1, VEL - 2); ctx.fillStyle = C('#141415'); ctx.fillRect(KEYS - 1, gb + 2, 1, VEL - 2);
+  const nm = cfg.lane === 'vel' ? 'Vel' : cfg.lane === 'pan' ? 'Pan' : ccName();
+  ctx.fillStyle = C('#d0d0d4'); ctx.font = FONT(700, 10); ctx.textBaseline = 'middle'; ctx.fillText(nm, 5, gb + 13, KEYS - 16);
+  ctx.fillStyle = C('#8b8b92'); ctx.beginPath(); ctx.moveTo(KEYS - 12, gb + 11); ctx.lineTo(KEYS - 5, gb + 11); ctx.lineTo(KEYS - 8.5, gb + 15); ctx.closePath(); ctx.fill();
+  const lead = sel.size ? [...sel][0] : null;
+  if (lead && cfg.lane !== 'cc' && VEL >= 44) { ctx.fillStyle = C('#ffad32'); ctx.font = FONT(700, 11); ctx.fillText(cfg.lane === 'pan' ? (Math.abs(pan0(lead)) < 0.02 ? 'C' : Math.round(Math.abs(pan0(lead)) * 50) + (pan0(lead) < 0 ? 'L' : 'R')) : String(Math.round(lead.v * 127)), 5, gb + 30, KEYS - 8); }
   if (cfg.lane === 'cc') { drawCC(t, c, gb); return; }
-  ctx.save(); ctx.beginPath(); ctx.rect(KEYS, gb, W - KEYS, VEL); ctx.clip();
-  const isPan = cfg.lane === 'pan', cy = gb + VEL / 2, half = (VEL - 8) / 2;
-  if (isPan) { ctx.fillStyle = C('#3a3a3f'); ctx.fillRect(KEYS, Math.round(cy), W - KEYS, 1); }
-  for (const n of c.notes) {
-    const x = px(n.t); if (x < KEYS - 4 || x > W) continue;
-    ctx.fillStyle = sel.has(n) ? C('#fff') : t.color;
-    if (isPan) { const yy = cy + pan0(n) * half; ctx.fillRect(x, Math.min(cy, yy), 4, Math.max(2, Math.abs(yy - cy))); ctx.fillRect(x - 2, yy - 2, 8, 4); }
-    else { const y0 = gb + VEL - 3 - n.v * (VEL - 8); ctx.fillRect(x + 1, y0, 2, gb + VEL - 3 - y0 + 1); ctx.fillRect(x - 1, y0 - 1, 6, 4); }
+  ctx.save(); ctx.beginPath(); ctx.rect(KEYS, gb + 2, W - KEYS, VEL - 2); ctx.clip();
+  const isPan = cfg.lane === 'pan', top = laneTop(), hh = laneH(), cy = top + hh / 2, bottom = top + hh;
+  for (const q of isPan ? [0.5] : [0, 0.25, 0.5, 0.75]) { ctx.fillStyle = q === 0.5 && isPan ? C('#3a3a3f') : C('#2b2b2e'); ctx.fillRect(KEYS, Math.round(top + q * hh), W - KEYS, 1); }
+  ctx.fillStyle = C('#3a3a3f'); ctx.fillRect(KEYS, Math.round(bottom), W - KEYS, 1);
+  ctx.fillStyle = 'rgba(0,0,0,.3)'; const ce = px(c.len); if (ce < W) ctx.fillRect(Math.max(KEYS, ce), gb + 2, W - ce, VEL - 2);
+  for (const pass of [0, 1]) {                                   // selected notes drawn last, on top
+    for (const n of c.notes) {
+      const s = sel.has(n); if ((pass === 1) !== s) continue;
+      const x = Math.round(px(n.t)) + 0.5; if (x < KEYS - 4 || x > W + 4) continue;
+      const col = s ? C('#ffffff') : velCol(t.color, isPan ? 1 : n.v, false);
+      const y = isPan ? cy + pan0(n) * hh / 2 : top + (1 - n.v) * hh, from = isPan ? cy : bottom;
+      ctx.fillStyle = col; ctx.fillRect(x - 0.75, Math.min(from, y), 1.5, Math.max(1, Math.abs(from - y)));          // stem
+      ctx.beginPath(); ctx.arc(x, y, s ? 3.6 : 3, 0, 6.2832); ctx.fill();                                              // head
+      if (!s) { ctx.strokeStyle = shadeC(t.color, 0.6); ctx.lineWidth = 1; ctx.stroke(); }
+    }
   }
   ctx.restore();
 }
@@ -226,24 +261,25 @@ function drawSteps(t, c) {
       const x = LANE_HEAD + s * sv.stepW - sv.x0;
       if (x > W) break; if (x + sv.stepW < LANE_HEAD) continue;
       const hit = byRow[r].find((q) => Math.abs(q.t - s * STEP) < STEP / 2);
-      ctx.fillStyle = hit ? t.color : (Math.floor(s / SPBT) % 2 ? C('#2b2b2f') : C('#232326'));
+      ctx.fillStyle = hit ? velCol(t.color, hit.v, false) : (Math.floor(s / SPBT) % 2 ? C('#303034') : C('#28282b'));
       ctx.fillRect(x + 1, y + 1, sv.stepW - 2, sv.rowH - 2);
-      if (hit) { ctx.fillStyle = 'rgba(0,0,0,.35)'; ctx.fillRect(x + 1, y + 1, sv.stepW - 2, (1 - hit.v) * (sv.rowH - 2)); }
+      if (hit) { ctx.strokeStyle = shadeC(t.color, 0.6); ctx.lineWidth = 1; ctx.strokeRect(x + 1.5, y + 1.5, sv.stepW - 3, sv.rowH - 3); }
     }
   }
   ctx.fillStyle = C('#46464d');                       // v71: bar boundaries, so long patterns read in bars like FL Studio's step sequencer
   for (let s = SPB; s < steps; s += SPB) { const x = Math.round(LANE_HEAD + s * sv.stepW - sv.x0) - 1; if (x > LANE_HEAD && x < W) ctx.fillRect(x, hdr, 2, Math.min(GB, hdr + n * sv.rowH - sv.y0) - hdr); }
   ctx.restore();
-  ctx.fillStyle = C('#242426'); ctx.fillRect(0, 0, W, hdr);
-  ctx.fillStyle = C('#9a9aa2'); ctx.font = '10px system-ui'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = C('#2c2c2f'); ctx.fillRect(0, 0, W, hdr); ctx.fillStyle = C('#141415'); ctx.fillRect(0, hdr - 1, W, 1);
+  ctx.fillStyle = C('#b4b4ba'); ctx.font = FONT(500, 10); ctx.textBaseline = 'middle';
   for (let s = 0; s < steps; s += SPBT) { const x = LANE_HEAD + s * sv.stepW - sv.x0; if (x > LANE_HEAD - 10 && x < W) ctx.fillText(s % SPB === 0 ? 'Bar ' + (s / SPB + 1) : String(Math.round(s % SPB / SPBT) + 1), x + 3, hdr / 2); }
   ctx.save(); ctx.beginPath(); ctx.rect(0, hdr, LANE_HEAD, GB - hdr); ctx.clip();
   for (let r = 0; r < n; r++) {
     const y = hdr + r * sv.rowH - sv.y0;
-    ctx.fillStyle = r === padSel ? C('#3a3a40') : C('#2d2d30'); ctx.fillRect(0, y, LANE_HEAD - 1, sv.rowH - 1);
-    ctx.fillStyle = t.color; ctx.fillRect(0, y, r === padSel ? 7 : 4, sv.rowH - 1);
+    ctx.fillStyle = r === padSel ? C('#3c3c40') : C('#2c2c2f'); ctx.fillRect(0, y, LANE_HEAD - 1, sv.rowH - 1);
+    ctx.fillStyle = t.color; ctx.fillRect(0, y, r === padSel ? 6 : 3, sv.rowH - 1);
+    ctx.fillStyle = C('#141415'); ctx.fillRect(0, y + sv.rowH - 1, LANE_HEAD, 1);
     const dim = PD[r].mute;
-    ctx.fillStyle = dim ? C('#6a6a72') : (r === padSel ? C('#ffa722') : C('#d6d6da')); ctx.font = '600 12px system-ui'; ctx.textBaseline = 'middle'; ctx.fillText(PD[r].name, 12, y + sv.rowH / 2, LANE_HEAD - 16);
+    ctx.fillStyle = dim ? C('#6a6a72') : (r === padSel ? C('#ffad32') : C('#d6d6da')); ctx.font = FONT(600, 11.5); ctx.textBaseline = 'middle'; ctx.fillText(PD[r].name, 12, y + sv.rowH / 2, LANE_HEAD - 16);
   }
   ctx.restore();
   if (LH) {                                                                           // velocity lane of the selected pad (FL Studio Mobile graph editor)
@@ -282,6 +318,8 @@ export function frame() {
   if (t.kind === 'audio') { AE.frame(); return; }
   if (!c.clip.notes && t.kind !== 'auto') return;
   dims();
+  const now = performance.now(), dt = clamp((now - (emo.last || now)) / 1000, 0.001, 0.05); emo.last = now;
+  if (stepEd(c, dt)) dirty = true;
   if (state.playing && cfg.follow && !drag && !stepsMode() && t.kind !== 'auto' && W > KEYS + 40) {
     // continuous follow (same behaviour as the arrangement): the roll scrolls under the playhead one device pixel at a time
     const rel = P.currentTick() - c.clip.start, vis = (W - KEYS) / v.ppt, q = v.ppt * dpr;
@@ -393,8 +431,9 @@ function timeMenu(x) {
 function hitRoll(x, y) {
   dims(); const c = cur().clip, gb = gridBottom();
   if (y < RULER) { if (tsel && x >= px(tsel.a) - 6 && x <= Math.max(px(tsel.b), px(tsel.a) + 24)) return { type: 'rsel', tick: tk(x) }; return { type: 'ruler', tick: tk(x) }; }
+  if (cfg.vel && y >= gb - 4 && y <= gb + 5 && x >= KEYS) return { type: 'lsplit' };   // the split line above the lane: drag to resize it
   if (cfg.vel && y >= gb) {
-    if (x < KEYS) return { type: 'tab', lane: ['vel', 'pan', 'cc'][Math.min(2, Math.floor((y - gb) / (VEL / 3)))] };
+    if (x < KEYS) return { type: 'lanehead' };
     return { type: 'lane', x };
   }
   if (x < KEYS) { const p = clamp(pAt(y), 0, 127); notePreview(p); return { type: 'keys', p }; }
@@ -409,11 +448,11 @@ function hitRoll(x, y) {
 // Lane editing: dragging across the bars paints their velocity / pan; bars at the same time (a chord) move together.
 function laneSet(c, x, y) {
   if (cfg.lane === 'cc') return ccPaint(c, x, y);
-  const gb = gridBottom(); let d0 = 14;
-  for (const n of c.notes) { const d = Math.abs(px(n.t) + 2 - x); if (d < d0) d0 = d; }
+  let d0 = 14;
+  for (const n of c.notes) { const d = Math.abs(px(n.t) - x); if (d < d0) d0 = d; }
   if (d0 >= 14) return false;
-  const val = cfg.lane === 'pan' ? clamp((y - gb - VEL / 2) / ((VEL - 8) / 2), -1, 1) : clamp(1 - (y - gb - 4) / (VEL - 8), 0.02, 1);
-  for (const n of c.notes) if (Math.abs(px(n.t) + 2 - x) <= d0 + 2) { if (cfg.lane === 'pan') n.pan = Math.abs(val) < 0.06 ? 0 : val; else n.v = val; }
+  const top = laneTop(), hh = laneH(), val = cfg.lane === 'pan' ? clamp((y - top - hh / 2) / (hh / 2), -1, 1) : clamp(1 - (y - top) / hh, 0.02, 1);
+  for (const n of c.notes) if (Math.abs(px(n.t) - x) <= d0 + 2) { if (cfg.lane === 'pan') n.pan = Math.abs(val) < 0.06 ? 0 : val; else n.v = val; }
   return true;
 }
 
@@ -428,7 +467,7 @@ function rollHandlers() {
         let p = clamp(t.p, 0, 127); if (cfg.lock) p = toScale(p);
         const at = clamp(floorT(t.t), 0, c.len - 1);
         checkpoint(); const n = { t: at, d: Math.min(cfg.lastLen, c.len - at), p, v: 0.8 }; c.notes.push(n); sel.add(n); notePreview(p); changed();
-      } else if (t.type === 'tab') { if (t.lane === 'cc' && cfg.lane === 'cc') { const r = canvas.getBoundingClientRect(); ccMenu(r.left + x, r.top + y); } cfg.lane = t.lane; invalidate(); }
+      } else if (t.type === 'lanehead') { const r = canvas.getBoundingClientRect(); laneChooser(r.left + x, r.top + y); }
       else if (t.type === 'lane') { checkpoint(); if (laneSet(c, x, y)) changed(); ccLast = null; }
       else if (t.type === 'rsel') { if (tsel) timeMenu(x); }
       else if (t.type === 'ruler') { tsel = null; P.seekTo(Math.max(0, cur().clip.start + snapT(t.tick))); invalidate(); }
@@ -453,6 +492,7 @@ function rollHandlers() {
         return true;
       }
       if (t.type === 'keys') { drag = { k: 'keys', p: t.p }; return true; }
+      if (t.type === 'lsplit') { drag = { k: 'lsplit' }; return true; }
       if (t.type === 'lane') { checkpoint(); drag = { k: 'lane' }; return true; }
       if (t.type === 'ruler' || t.type === 'rsel') { drag = { k: 'tsel', a: snapT(t.tick) }; tsel = { a: drag.a, b: drag.a }; return true; }
       return false;
@@ -485,6 +525,7 @@ function rollHandlers() {
       } else if (drag.k === 'lane') {
         if (laneSet(c, x, y)) { P.touchClips(cur().track); P.emit('notes'); }
       } else if (drag.k === 'tsel') { const q = snapT(tk(x)); tsel = { a: Math.min(drag.a, q), b: Math.max(drag.a, q) }; }
+      else if (drag.k === 'lsplit') { cfg.velH = clamp(Math.round(H - y), 40, Math.round(H * 0.55)); dims(); clampV(c); }
       invalidate();
     },
     dragEnd(x, y) {
@@ -496,8 +537,10 @@ function rollHandlers() {
       else if (drag && drag.k === 'keys') { eng.preview(cur().track, drag.p, 0, false); }
       drag = null; ccLast = null; invalidate();
     },
-    pan(dx, dy) { v.x0 -= dx / v.ppt; v.top += dy / v.keyH; clampV(cur() && cur().clip); invalidate(); },
+    pan(dx, dy) { emo.t = null; v.x0 -= dx / v.ppt; v.top += dy / v.keyH; clampV(cur() && cur().clip); invalidate(); },
+    panEnd(vx, vy) { fling(vx, vy); },
     pinch(cx, cy, sx, sy) {
+      emo.t = null;
       const t = tk(cx), p = (v.top - (cy - RULER) / v.keyH);
       v.ppt *= sx; v.keyH *= sy; v.x0 = t - (cx - KEYS) / v.ppt; v.top = p + (cy - RULER) / v.keyH; clampV(cur() && cur().clip); invalidate();
     },
@@ -575,6 +618,7 @@ function stepHandlers() {
       if (drag && drag.k === 'paint') { const s = Math.floor((x - LANE_HEAD + sv.x0) / sv.stepW), d = s > drag.last ? 1 : -1; for (let k = drag.last; k !== s; k += d) paintStep(drag.r, k + d, drag.add); drag.last = s; return; }
       if (drag && drag.k === 'svel') { drag.n.v = clamp(drag.v0 - dy / sv.rowH, 0.05, 1); P.touchClips(cur().track); P.emit('notes'); invalidate(); } },
     dragEnd() { drag = null; invalidate(); },
+    panEnd(vx, vy) { fling(vx, vy); },
     pan(dx, dy) { sv.x0 = Math.max(0, sv.x0 - dx); sv.y0 = clamp(sv.y0 - dy, 0, Math.max(0, padList().length * sv.rowH - (H - 18 - stepLaneH()))); invalidate(); },
     pinch(cx, cy, sx, sy) { svAuto = false; const s = (cx - LANE_HEAD + sv.x0) / sv.stepW; sv.stepW = clamp(sv.stepW * sx, 14, 80); sv.x0 = Math.max(0, s * sv.stepW - (cx - LANE_HEAD)); sv.rowH = clamp(sv.rowH * sy, 26, 70); invalidate(); },
   };
@@ -597,14 +641,15 @@ function drawAuto(t, c) {
   ctx.fillStyle = C('#4a4a50'); barLinesLocal((q) => ctx.fillRect(Math.round(px(q)), AR, 1, H - AR));
   ctx.fillStyle = 'rgba(0,0,0,.45)'; const ce = px(c.len); if (ce < W) ctx.fillRect(Math.max(KEYS, ce), AR, W - ce, H - AR);
   const pts = [...c.pts].sort((a, b) => a.t - b.t);
-  ctx.strokeStyle = C('#8ea2c0'); ctx.lineWidth = 2; ctx.beginPath();
+  ctx.strokeStyle = t.color; ctx.lineWidth = 2; ctx.beginPath();
   ctx.moveTo(px(0), ay(pts[0].v));
   for (const p of pts) ctx.lineTo(px(p.t), ay(p.v));
   ctx.lineTo(px(c.len), ay(pts[pts.length - 1].v)); ctx.stroke();
-  ctx.fillStyle = 'rgba(142,162,192,.16)'; ctx.lineTo(px(c.len), H); ctx.lineTo(px(0), H); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,.06)'; ctx.lineTo(px(c.len), H); ctx.lineTo(px(0), H); ctx.closePath(); ctx.fill();
   for (const p of pts) {
     const on = p === asel;
-    ctx.fillStyle = on ? C('#fff') : C('#ffa722'); ctx.beginPath(); ctx.arc(px(p.t), ay(p.v), on ? PT + 2 : PT, 0, 6.2832); ctx.fill();
+    ctx.beginPath(); ctx.arc(px(p.t), ay(p.v), on ? 6 : 4.5, 0, 6.2832); ctx.fillStyle = on ? C('#ffffff') : t.color; ctx.fill();
+    ctx.strokeStyle = on ? t.color : shadeC(t.color, 0.6); ctx.lineWidth = on ? 2 : 1; ctx.stroke();
   }
   const shown = asel || (drag && drag.k === 'apt' ? drag.p : null);
   if (shown) { ctx.fillStyle = C('#fff'); ctx.font = '600 12px system-ui'; ctx.textBaseline = 'middle'; const lx = Math.min(W - 70, px(shown.t) + 10); ctx.fillText(autoFmt(t, shown.v), lx, Math.max(AR + 12, ay(shown.v) - 14)); }
@@ -612,7 +657,7 @@ function drawAuto(t, c) {
   ctx.fillStyle = C('#242426'); ctx.fillRect(0, AR, KEYS, H - AR);
   ctx.fillStyle = C('#9a9aa2'); ctx.font = '10px system-ui'; ctx.textBaseline = 'middle';
   for (const q of [1, 0.5, 0]) ctx.fillText(autoFmt(t, q), 3, Math.max(AR + 7, Math.min(H - 7, ay(q))), KEYS - 5);
-  ctx.fillStyle = C('#2a2a2d'); ctx.fillRect(0, 0, W, AR); ctx.fillStyle = C('#9a9aa2');
+  ctx.fillStyle = C('#2c2c2f'); ctx.fillRect(0, 0, W, AR); ctx.fillStyle = C('#141415'); ctx.fillRect(0, AR - 1, W, 1); ctx.fillStyle = C('#b4b4ba');
   barLinesLocal((q, b) => { if (px(q) >= KEYS - 1) ctx.fillText(String(b + 1), px(q) + 3, AR / 2); });
 }
 
@@ -645,7 +690,8 @@ function autoHandlers() {
       P.touchClips(cur().track); P.emit('notes'); invalidate();
     },
     dragEnd() { drag = null; invalidate(); },
-    pan(dx) { v.x0 -= dx / v.ppt; clampV(clipC()); invalidate(); },
+    pan(dx) { emo.t = null; v.x0 -= dx / v.ppt; clampV(clipC()); invalidate(); },
+    panEnd(vx) { fling(vx, 0); },
     pinch(cx, cy, sx) { const t = tk(cx); v.ppt *= sx; v.x0 = t - (cx - KEYS) / v.ppt; clampV(clipC()); invalidate(); },
     wheel(e) { if (e.ctrlKey) v.ppt *= Math.exp(-e.deltaY * 0.002); else v.x0 += e.deltaY / v.ppt; clampV(clipC()); invalidate(); },
   };
@@ -663,16 +709,45 @@ function snapButton() {
   return el;
 }
 
-function fitView(c) {
+// Fit: the view glides to the notes (zoom in log space) instead of jumping; a fling keeps scrolling with friction after a swipe.
+const emo = { t: null, vx: 0, vy: 0, last: 0 };
+const eease = (dt, r) => 1 - Math.exp(-dt * r / Math.max(0.3, prefs.animScale || 1));
+function fitView(c, glide) {
   dims(); const gb = gridBottom(); let lo = 127, hi = 0;
   for (const n of c.notes) { if (n.p < lo) lo = n.p; if (n.p > hi) hi = n.p; }
   if (hi < lo) { lo = hi = isDrum() ? 38 : 60; }
-  const span = hi - lo + 1;
-  v.keyH = clamp((gb - RULER) / Math.max(span + 3, 12), 10, 24);
-  const rows = (gb - RULER) / v.keyH;
-  v.top = (lo + hi) / 2 + rows / 2 + 0.5;
-  v.ppt = clamp((W - KEYS - 6) / Math.max(c.len, 1), 0.02, 0.5); v.x0 = 0;
-  clampV(c);
+  const span = hi - lo + 1, keyH = clamp((gb - RULER) / Math.max(span + 3, 12), 10, 24), rows = (gb - RULER) / keyH;
+  const T = { keyH, top: (lo + hi) / 2 + rows / 2 + 0.5, ppt: clamp((W - KEYS - 6) / Math.max(c.len, 1), 0.02, 0.5), x0: 0 };
+  const old = { ...v }; Object.assign(v, T); clampV(c); Object.assign(T, { keyH: v.keyH, top: v.top, ppt: v.ppt, x0: v.x0 });
+  if (glide && !prefs.reduceMotion && W > 0) { Object.assign(v, old); emo.t = T; emo.vx = emo.vy = 0; invalidate(); }
+}
+function fling(vx, vy) {
+  const cap = (q) => clamp(q, -4000, 4000);
+  emo.vx = cap(vx); emo.vy = isAuto() ? 0 : cap(vy);
+  if (Math.hypot(emo.vx, emo.vy) < 90 || prefs.reduceMotion) emo.vx = emo.vy = 0;
+}
+function stepEd(c, dt) {
+  let moved = false;
+  if (emo.t) {
+    const k = eease(dt, 14), T = emo.t;
+    v.ppt = Math.exp(Math.log(v.ppt) + (Math.log(T.ppt) - Math.log(v.ppt)) * k); v.x0 += (T.x0 - v.x0) * k; v.keyH += (T.keyH - v.keyH) * k; v.top += (T.top - v.top) * k;
+    if (Math.abs(Math.log(T.ppt / v.ppt)) < 0.003 && Math.abs(T.x0 - v.x0) * v.ppt < 0.5 && Math.abs(T.keyH - v.keyH) < 0.05 && Math.abs(T.top - v.top) * v.keyH < 0.5) { Object.assign(v, T); emo.t = null; }
+    moved = true;
+  }
+  if (emo.vx || emo.vy) {
+    if (stepsMode()) {
+      const nx = Math.max(0, sv.x0 - emo.vx * dt), ny = clamp(sv.y0 - emo.vy * dt, 0, Math.max(0, padList().length * sv.rowH - (H - 18 - stepLaneH())));
+      if (nx === sv.x0) emo.vx = 0; if (ny === sv.y0) emo.vy = 0; sv.x0 = nx; sv.y0 = ny;
+    } else {
+      const wx = v.x0 - emo.vx * dt / v.ppt, wt = v.top + emo.vy * dt / v.keyH;
+      v.x0 = wx; v.top = wt; clampV(c.clip);
+      if (Math.abs(v.x0 - wx) > 1e-6) emo.vx = 0; if (Math.abs(v.top - wt) > 1e-6) emo.vy = 0;
+    }
+    const f = Math.exp(-dt * 3.4); emo.vx *= f; emo.vy *= f;
+    if (Math.abs(emo.vx) < 10) emo.vx = 0; if (Math.abs(emo.vy) < 10) emo.vy = 0;
+    moved = true;
+  }
+  return moved;
 }
 
 // ------------------------------------------------------------------ drum pad panel (gain / sample / envelope knobs of one pad)
@@ -692,58 +767,142 @@ function openPad(r, toggle) {
 }
 function closePad() { padSel = -1; syncSide(); invalidate(); }
 
+// ------------------------------------------------------------------ clip properties (Live 12 Clip View: the panel left of the editor)
+// Clip box (activator + name on the clip colour, signature, position, length, groove), Notes box (transpose, x2 / :2, legato,
+// quantize, humanize, repeat), Scale box (Live 12 scale mode: root + scale, lock to scale) and the drum / envelope boxes.
+// Values are Live number boxes: drag up / down to change, tap for a list or to type a value.
+const PANEL_KEY = 'mobiledaw.clipPanel';
+let panelOpen = (() => { try { const x = localStorage.getItem(PANEL_KEY); return x === null ? null : x === '1'; } catch (_) { return null; } })();
+const panelShown = () => (panelOpen === null ? !root || root.clientWidth >= 640 : panelOpen);   // automatic until the user opens / closes it
+function setPanel(on) { panelOpen = on; try { localStorage.setItem(PANEL_KEY, on ? '1' : '0'); } catch (_) { /* storage unavailable */ } buildProps(); fit(); }
+let numDrag = false;                                           // a number box is being dragged: the panel is not rebuilt under the finger
+function numBox(o) {
+  const el = h('button', { class: 'cp-num' }, o.fmt(o.get()));
+  let id = null, y0 = 0, v0 = 0, moved = false;
+  el.update = () => { el.textContent = o.fmt(o.get()); };
+  el.addEventListener('pointerdown', (e) => { id = e.pointerId; try { el.setPointerCapture(id); } catch (_) { /* pointer gone */ } y0 = e.clientY; v0 = o.get(); moved = false; });
+  el.addEventListener('pointermove', (e) => {
+    if (e.pointerId !== id) return;
+    if (!moved) { if (Math.abs(e.clientY - y0) < 5) return; moved = true; numDrag = true; el.classList.add('drag'); if (o.begin) o.begin(); }
+    const nv = clamp(v0 + Math.round((y0 - e.clientY) / (o.px || 8)) * (o.step || 1), o.min, o.max);
+    if (nv !== o.get()) o.set(nv);
+    el.update();
+  });
+  const end = (e, cancel) => {
+    if (e.pointerId !== id) return; id = null;
+    if (moved) { numDrag = false; el.classList.remove('drag'); if (o.end) o.end(); buildProps(); }
+    else if (!cancel && o.tap) { const r = el.getBoundingClientRect(); o.tap(r.left, r.bottom + 2); }
+  };
+  el.addEventListener('pointerup', (e) => end(e, false)); el.addEventListener('pointercancel', (e) => end(e, true));
+  return el;
+}
+const posTxt = (tick) => { const b = P.barAt(tick), r = tick - P.barStart(b), bl = P.beatLenAt(tick); return `${b + 1}.${Math.floor(r / bl) + 1}.${Math.floor((r % bl) / (bl / 4)) + 1}`; };
+const lenTxt = (len, at) => { const bl = P.barLenAt(at), bt = P.beatLenAt(at), bars = Math.floor(len / bl), r = len - bars * bl; return `${bars}.${Math.floor(r / bt)}.${Math.floor((r % bt) / (bt / 4))}`; };
+function stretchNotes(k) {                                     // Live's x2 / :2: note positions (from the first selected note) and lengths
+  const c = cur().clip, ns = [...sel]; if (!ns.length) return;
+  checkpoint();
+  const t0 = Math.min(...ns.map((n) => n.t));
+  for (const n of ns) { n.t = Math.round(t0 + (n.t - t0) * k); n.d = Math.max(30, Math.round(n.d * k)); }
+  growTo(c, Math.max(...c.notes.map((n) => n.t + n.d)));
+  changed();
+}
+function buildProps() {
+  if (!props) return;
+  if (numDrag) { for (const el of props.querySelectorAll('.cp-num')) el.update(); return; }
+  const c = cur();
+  if (!c) { props.hidden = true; props.replaceChildren(); return; }
+  props.hidden = false;
+  const t = state.tracks[c.track], cl = c.clip, on = !cl.muted, kind = t.kind, open = panelShown();
+  const name = cl.name || (cl.dsample || cl.sample || {}).name || t.name;
+  props.classList.toggle('min', !open);
+  props.style.setProperty('--cc', t.color); props.style.setProperty('--ci', ink(t.color));
+  if (!open) { props.replaceChildren(h('button', { class: 'cp-strip', 'aria-label': 'Tampilkan properti klip', onclick: () => setPanel(true) }, h('span', {}, name))); return; }
+  const row = (label, ctl) => h('div', { class: 'cp-row' }, h('span', { class: 'cp-l' }, label), ctl);
+  const sec = (title, ...kids) => h('section', { class: 'cp-sec' }, h('h5', {}, title), ...kids.filter(Boolean));
+  const val = (txt) => h('span', { class: 'cp-val' }, txt);
+  const ch = (txt, fn) => h('button', { class: 'cp-ch', onclick: (e) => { const r = e.currentTarget.getBoundingClientRect(); fn(r.left, r.bottom + 2); } }, h('span', {}, txt), h('i', { class: 'tri', 'aria-hidden': 'true' }));
+  const sw = (txt, onv, fn) => h('button', { class: 'cp-sw' + (onv ? ' on' : ''), onclick: fn }, txt);
+  const btn = (txt, fn, cls) => h('button', { class: 'cp-b' + (cls ? ' ' + cls : ''), onclick: fn }, txt);
+  const kids = [h('div', { class: 'cp-head' + (on ? '' : ' off') },
+    h('button', { class: 'cp-act' + (on ? ' on' : ''), 'aria-label': on ? 'Matikan klip' : 'Aktifkan klip', onclick: () => { checkpoint(); P.setClipsMuted([{ i: c.track, c: cl }], on); buildProps(); invalidate(); } }),
+    h('button', { class: 'cp-name', 'aria-label': 'Ganti nama klip', onclick: () => ask('Nama klip', name, (x) => { checkpoint(); cl.name = String(x || '').trim().slice(0, 40); P.emit('clips'); }) }, name),
+    h('button', { class: 'cp-hide', 'aria-label': 'Sembunyikan panel properti', onclick: () => setPanel(false) }, '◂'))];
+  // ---- Clip box
+  const sg = P.sigAtTick(cl.start), lenMenu = (x, y) => menu([...[1, 2, 4, 8].map((b) => ({ label: b + ' bar', check: cl.len === clipBars(cl, b), fn: () => { checkpoint(); cl.len = clipBars(cl, b); trimToLen(cl); P.clipChanged(c.track); P.emit('clips'); } })),
+    { label: 'Ketik panjang (beat)…', fn: () => ask('Panjang klip (beat)', String(Math.round(cl.len / BEAT * 100) / 100), (x2) => { if (Number.isFinite(x2) && x2 >= 0.25 && x2 <= 512) { checkpoint(); cl.len = Math.max(P.PPQ / 4, Math.round(x2 * BEAT)); trimToLen(cl); P.clipChanged(c.track); P.emit('clips'); } else toast('Panjang harus 0,25 sampai 512 beat.'); }, 'number') }], x, y);
+  const editable = !!cl.notes || kind === 'auto';
+  const lenBox = editable ? numBox({ get: () => Math.round(cl.len / BEAT), set: (b) => { cl.len = Math.max(BEAT, b * BEAT); P.clipChanged(c.track); }, fmt: () => lenTxt(cl.len, cl.start), min: 1, max: 512, px: 7, begin: () => checkpoint(), end: () => { trimToLen(cl); P.clipChanged(c.track); P.emit('clips'); }, tap: lenMenu }) : val(lenTxt(cl.len, cl.start));
+  const own = cl.swing != null && cl.swing >= 0, setSw = (x) => { checkpoint(); if (x == null) delete cl.swing; else cl.swing = x; P.clipChanged(c.track); buildProps(); };
+  kids.push(sec('Clip',
+    row('Signature', val(sg.n + ' / ' + sg.d)),
+    row('Posisi', val(posTxt(cl.start))),
+    row('Panjang', lenBox),
+    cl.notes ? row('Groove', ch(Math.round(P.swingOf(cl) * 100) + '%' + (own ? '' : ' global'), (x, y) => menu([
+      { label: 'Ikuti swing global (' + Math.round(state.groove.amt * 100) + '%)', check: !own, fn: () => setSw(null) },
+      ...[0, 25, 50, 60, 75, 100].map((q) => ({ label: q + '%', check: own && Math.round(cl.swing * 100) === q, fn: () => setSw(q / 100) })),
+      { label: 'Ketik…', fn: () => ask('Swing klip (0-100%)', String(Math.round(P.swingOf(cl) * 100)), (q) => { if (Number.isFinite(q) && q >= 0 && q <= 100) setSw(q / 100); }, 'number') },
+    ], x, y))) : null));
+  // ---- Notes box (MIDI / drum clips)
+  if (cl.notes) {
+    const all = (fn) => () => { const had = sel.size > 0; if (!had) sel = new Set(cur().clip.notes); if (sel.size) fn(); if (!had) sel.clear(); invalidate(); };
+    const xp = cl.xpose | 0, fmtX = (q) => (q > 0 ? '+' : '') + q + ' st';
+    kids.push(sec('Notes',
+      kind !== 'drum' ? row('Transpose', numBox({ get: () => cl.xpose | 0, set: (q) => P.setClipXpose(c.track, cl.id, q), fmt: () => fmtX(cl.xpose | 0), min: -48, max: 48, px: 7, begin: () => checkpoint(),
+        tap: (x, y) => menu([-24, -12, -7, -5, -2, -1, 0, 1, 2, 5, 7, 12, 24].map((q) => ({ label: fmtX(q), check: xp === q, fn: () => { checkpoint(); P.setClipXpose(c.track, cl.id, q); } })), x, y) })) : null,
+      h('div', { class: 'cp-grid' },
+        btn('×2', all(() => stretchNotes(2))), btn(':2', all(() => stretchNotes(0.5))), btn('Legato', all(() => ops().legato())),
+        btn('Quantize', all(() => ops().snap())), btn('Humanize', all(() => ops().humanize())),
+        btn('Ulangi…', (e) => { const r = e.currentTarget.getBoundingClientRect(); menu([2, 4, 8].map((n) => ({ label: `Ulangi isi ${n}x`, fn: () => { checkpoint(); const o = P.repeatClipContent(c.track, cl.id, n); if (o.error) toast(o.error); else { needFit = true; refresh(); } } })), r.left, r.bottom + 2); })),
+      h('div', { class: 'cp-hint' }, 'Tanpa not terpilih: berlaku untuk semua not')));
+  }
+  // ---- Scale box (Live 12 scale mode)
+  if (kind === 'midi') {
+    const scOn = !!SCALES[cfg.scale];
+    kids.push(sec('Scale',
+      h('div', { class: 'cp-line' }, sw('Scale', scOn, () => { if (scOn) { cfg.lastScale = cfg.scale; cfg.scale = 'Chromatic'; } else cfg.scale = cfg.lastScale || 'Major'; buildProps(); invalidate(); })),
+      h('div', { class: 'cp-line' },
+        ch(NAMES[cfg.key], (x, y) => menu(NAMES.map((n, k) => ({ label: n, check: cfg.key === k, fn: () => { cfg.key = k; buildProps(); invalidate(); } })), x, y)),
+        ch(scOn ? cfg.scale : cfg.lastScale || 'Major', (x, y) => menu(Object.keys(SCALES).filter((q) => SCALES[q]).map((q) => ({ label: q, check: scOn && cfg.scale === q, fn: () => { cfg.scale = q; cfg.lastScale = q; buildProps(); invalidate(); } })), x, y))),
+      h('div', { class: 'cp-line' }, sw('Kunci ke skala', cfg.lock, () => { cfg.lock = !cfg.lock; buildProps(); }), btn('Tebak', (e) => { const r = e.currentTarget.getBoundingClientRect(); guessMenu(sel.size ? selNotes() : cl.notes, r.left, r.bottom + 2); }, 'sm'))));
+  }
+  // ---- Drum box
+  if (kind === 'drum') {
+    kids.push(sec('Drum',
+      h('div', { class: 'cp-seg' }, sw('Step', stepsMode(), () => { if (!stepsMode()) { cfg.mode = 'steps'; sel.clear(); refresh(); } }), sw('Notes', !stepsMode(), () => { if (stepsMode()) { cfg.mode = 'notes'; sel.clear(); refresh(); } })),
+      h('div', { class: 'cp-line' }, btn('+ Sample', () => DP.addPad(c.track, (k) => { openPad(k); })), btn('Pad', () => (padSel >= 0 ? closePad() : openPad(Math.max(0, Math.min(padSel, padList().length - 1))))))));
+  }
+  // ---- Envelope box (automation clips)
+  if (kind === 'auto') {
+    kids.push(sec('Envelope', row('Target', val(P.autoLabel(t))),
+      h('div', { class: 'cp-line' }, btn('Ratakan', () => { checkpoint(); const v0 = cl.pts.length ? cl.pts[0].v : 0.5; cl.pts = [{ t: 0, v: v0 }, { t: cl.len, v: v0 }]; asel = null; changed(); }))));
+  }
+  if (kind === 'audio') kids.push(sec('Sample', row('File', val(((cl.dsample || cl.sample) || {}).name || '-'))));
+  props.replaceChildren(h('div', { class: 'cp-in' }, ...kids));
+}
+function trimToLen(cl) {                                     // after a length change: notes / points past the new end go (the change is one undo step)
+  if (cl.notes) cl.notes = cl.notes.filter((n) => n.t < cl.len);
+  if (cl.pts) { cl.pts = cl.pts.filter((q) => q.t <= cl.len); if (!cl.pts.length) cl.pts = [{ t: 0, v: 0.5 }]; }
+}
+
+// Editor toolbar: only the view commands (grid snap, fit, follow, selection, lane); the clip's properties live in the panel on the left.
 function toolbar() {
   tools.replaceChildren();
+  buildProps();
   const c = cur(); if (!c) return;
   const t = state.tracks[c.track];
   const B = (label, fn, on) => h('button', { class: 'b' + (on ? ' on' : ''), onclick: fn }, label);
-  const SEP = () => h('i', { class: 'ed-sep', 'aria-hidden': 'true' });   // v67: hairline between the toolbar groups (grid | view | clip)
-  const at = (e) => { const r = e.currentTarget.getBoundingClientRect(); return [r.left, r.bottom + 2]; };
+  const SEP = () => h('i', { class: 'ed-sep', 'aria-hidden': 'true' });   // hairline between the toolbar groups
   if (t.kind === 'audio') return;
-  if (t.kind === 'auto') {
-    tools.append(
-      snapButton(),
-      B('Ratakan', () => { checkpoint(); const v0 = c.clip.pts.length ? c.clip.pts[0].v : 0.5; c.clip.pts = [{ t: 0, v: v0 }, { t: c.clip.len, v: v0 }]; asel = null; changed(); }),
-      B('Panjang klip', (e) => menu([1, 2, 4, 8].map((b) => ({ label: b + ' bar', check: c.clip.len === clipBars(c.clip, b), fn: () => { checkpoint(); c.clip.len = clipBars(c.clip, b); c.clip.pts = c.clip.pts.filter((p) => p.t <= c.clip.len); if (!c.clip.pts.length) c.clip.pts = [{ t: 0, v: 0.5 }]; P.clipChanged(c.track); invalidate(); } })), ...at(e))),
-    );
-    return;
-  }
-  if (t.kind === 'drum') tools.append(B(stepsMode() ? 'Step' : 'Notes', () => { cfg.mode = stepsMode() ? 'notes' : 'steps'; sel.clear(); refresh(); }, true));
-  if (t.kind === 'drum' && stepsMode()) tools.append(B('+ Sample', () => DP.addPad(c.track, (k) => { openPad(k); })), B('Pad', () => (padSel >= 0 ? closePad() : openPad(Math.max(0, Math.min(padSel, padList().length - 1))))));
-  if (!stepsMode()) {
-    tools.append(
-      snapButton(),
-      B(`${NAMES[cfg.key]} ${cfg.scale}`, (e) => menu([
-        ...Object.keys(SCALES).map((s) => ({ label: s, check: cfg.scale === s, fn: () => { cfg.scale = s; toolbar(); invalidate(); } })), { sep: true },
-        ...NAMES.map((n, k) => ({ label: 'Root ' + n, check: cfg.key === k, fn: () => { cfg.key = k; toolbar(); invalidate(); } })), { sep: true },
-        { label: 'Kunci not ke skala', check: cfg.lock, fn: () => { cfg.lock = !cfg.lock; } },
-      ], ...at(e))),
-      B('Lane Vel/Pan/CC', () => { cfg.vel = !cfg.vel; clampV(cur().clip); invalidate(); toolbar(); }, cfg.vel),
-      SEP(),
-      B('Pilih semua', () => { sel = new Set(c.clip.notes); invalidate(); if (sel.size) noteBar(null, 80, RULER + 60); }),
-      B('Fit', () => { fitView(c.clip); invalidate(); }),
-      B('Ikuti', () => { cfg.follow = !cfg.follow; toolbar(); }, cfg.follow),
-    );
-  }
-  tools.append(SEP(), B('Panjang klip', (e) => menu([1, 2, 4, 8].map((b) => ({ label: b + ' bar', check: c.clip.len === clipBars(c.clip, b), fn: () => { checkpoint(); c.clip.len = clipBars(c.clip, b); c.clip.notes && (c.clip.notes = c.clip.notes.filter((n) => n.t < c.clip.len)); P.clipChanged(c.track); invalidate(); } })), ...at(e))));
-  const own = c.clip.swing != null && c.clip.swing >= 0, setSw = (v) => { checkpoint(); if (v == null) delete c.clip.swing; else c.clip.swing = v; P.clipChanged(c.track); toolbar(); };
-  tools.append(B('Swing ' + Math.round(P.swingOf(c.clip) * 100) + '%' + (own ? '' : ' (global)'), (e) => menu([
-    { label: 'Ikuti swing global (' + Math.round(state.groove.amt * 100) + '%)', check: !own, fn: () => setSw(null) },
-    ...[0, 25, 50, 60, 75, 100].map((v) => ({ label: v + '%', check: own && Math.round(c.clip.swing * 100) === v, fn: () => setSw(v / 100) })),
-    { label: 'Ketik\u2026', fn: () => ask('Swing klip (0-100%)', String(Math.round(P.swingOf(c.clip) * 100)), (v) => { if (Number.isFinite(v) && v >= 0 && v <= 100) setSw(v / 100); }, 'number') },
-  ], ...at(e)), own));
-  if (t.kind !== 'drum') {
-    const xp = c.clip.xpose | 0, setX = (v) => { checkpoint(); P.setClipXpose(c.track, c.clip.id, v); toolbar(); invalidate(); };
-    tools.append(B(`Transpose ${xp > 0 ? '+' : ''}${xp} st`, (e) => menu([
-      ...[-24, -12, -7, -5, -2, -1, 0, 1, 2, 5, 7, 12, 24].map((v) => ({ label: (v > 0 ? '+' : '') + v + ' semitone', check: xp === v, fn: () => setX(v) })),
-      { label: 'Ketik\u2026', fn: () => ask('Transpose klip (-48 sampai +48 semitone)', String(xp), (v) => { if (Number.isFinite(v) && v >= -48 && v <= 48) setX(v); else toast('Transpose harus -48 sampai +48.'); }, 'number') },
-    ], ...at(e)), !!xp, 'dd'));
-  }
+  if (t.kind === 'auto') { tools.append(snapButton()); return; }
+  if (t.kind === 'drum') tools.append(h('div', { class: 'ed-g' }, B('Step', () => { if (!stepsMode()) { cfg.mode = 'steps'; sel.clear(); refresh(); } }, stepsMode()), B('Notes', () => { if (stepsMode()) { cfg.mode = 'notes'; sel.clear(); refresh(); } }, !stepsMode())));
+  if (stepsMode()) return;
+  if (t.kind === 'drum') tools.append(SEP());
   tools.append(
-    SEP(),
-    B('Ulangi isi', (e) => menu([2, 4, 8].map((n) => ({ label: `Ulangi ${n}x`, fn: () => { checkpoint(); const o = P.repeatClipContent(c.track, c.clip.id, n); if (o.error) toast(o.error); else { needFit = true; refresh(); } } })), ...at(e)), false, 'dd'),
-    B('Panjang (beat)', () => ask('Panjang klip (beat)', String(Math.round(c.clip.len / BEAT * 100) / 100), (v) => { if (Number.isFinite(v) && v >= 0.25 && v <= 512) { checkpoint(); c.clip.len = Math.max(P.PPQ / 4, Math.round(v * BEAT)); c.clip.notes && (c.clip.notes = c.clip.notes.filter((n) => n.t < c.clip.len)); P.clipChanged(c.track); invalidate(); toolbar(); } else toast('Panjang harus 0,25 sampai 512 beat.'); }, 'number')),
-    h('span', { class: 'ct-sig' }, 'Sign. ' + P.sigAtTick(c.clip.start).n + '/' + P.sigAtTick(c.clip.start).d),
+    snapButton(), SEP(),
+    B('Fit', () => fitView(c.clip, true)),
+    B('Ikuti', () => { cfg.follow = !cfg.follow; toolbar(); }, cfg.follow),
+    B('Pilih semua', () => { sel = new Set(c.clip.notes); invalidate(); if (sel.size) noteBar(null, 80, RULER + 60); }), SEP(),
+    B('Lane', () => { cfg.vel = !cfg.vel; clampV(cur().clip); invalidate(); toolbar(); }, cfg.vel),
   );
 }
 
@@ -798,7 +957,8 @@ export const fitNow = () => fit();
 
 export function initEditor(container) {
   root = container;
-  root.replaceChildren();
+  root.replaceChildren(); root.classList.add('lv12');
+  props = h('div', { class: 'cp' }); props.hidden = true;
   tools = h('div', { class: 'ed-tools' });
   const stage = h('div', { class: 'ed-canvas' });
   host = h('div', { class: 'ed-host' });
@@ -806,13 +966,13 @@ export function initEditor(container) {
   side = h('div', { class: 'ed-side' }); side.hidden = true;
   stage.append(canvas, ov, host);
   const body = h('div', { class: 'ed-body' }, stage, side);
-  title = h('div', { class: 'clip-title' }); title.hidden = true;
-  root.append(title, tools, body);
+  root.append(props, h('div', { class: 'ed-main' }, tools, body));
   ctx = canvas.getContext('2d', { alpha: false }); octx = ov.getContext('2d');
   window.addEventListener('themechange', invalidate); window.addEventListener('applayout', fit);
   const R = rollHandlers(), S = stepHandlers(), A = autoHandlers();
-  const route = (name) => (...a) => { const cc = cur(); if (!cc) return undefined; if (cc.clip.ll && cc.clip.notes && P.loopOf(cc.clip) && name !== 'hit' && name !== 'pan' && name !== 'pinch' && name !== 'wheel') P.bakeLoop(cc.clip, cc.track); return (isAuto() ? A : stepsMode() ? S : R)[name]?.(...a); };
-  attachGestures(ov, Object.fromEntries(['hit', 'tap', 'dtap', 'long', 'dragStart', 'drag', 'dragEnd', 'pan', 'pinch', 'wheel'].map((k) => [k, route(k)])));
+  const route = (name) => (...a) => { const cc = cur(); if (!cc) return undefined; if (cc.clip.ll && cc.clip.notes && P.loopOf(cc.clip) && name !== 'hit' && name !== 'pan' && name !== 'panEnd' && name !== 'pinch' && name !== 'wheel') P.bakeLoop(cc.clip, cc.track); return (isAuto() ? A : stepsMode() ? S : R)[name]?.(...a); };
+  attachGestures(ov, Object.fromEntries(['hit', 'tap', 'dtap', 'long', 'dragStart', 'drag', 'dragEnd', 'pan', 'panEnd', 'pinch', 'wheel'].map((k) => [k, route(k)])));
+  ov.addEventListener('pointerdown', () => { emo.vx = emo.vy = 0; emo.t = null; }, true);   // a touch stops a fling or a Fit glide where it is
   new ResizeObserver(fit).observe(stage);
   P.onChange((w) => { if (w === 'clips' || w === 'tracks') updateTitle(); if (w === 'notes' || w === 'clips' || w === 'tracks') invalidate(); if (w === 'devices' && stepsMode()) { toolbar(); invalidate(); } });
 }
@@ -821,4 +981,4 @@ export function initEditor(container) {
 export const KEY_NAMES = NAMES;
 export const SCALE_NAMES = Object.keys(SCALES);
 export const getTheory = () => ({ key: cfg.key, scale: cfg.scale });
-export function setTheory(key, scale) { if (key !== undefined) cfg.key = key; if (scale !== undefined) cfg.scale = scale; invalidate(); }
+export function setTheory(key, scale) { if (key !== undefined) cfg.key = key; if (scale !== undefined) { cfg.scale = scale; if (SCALES[scale]) cfg.lastScale = scale; } buildProps(); invalidate(); }
