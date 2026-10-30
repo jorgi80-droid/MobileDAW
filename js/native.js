@@ -4,13 +4,13 @@ import { log } from './log.js';
 
 const cap = () => globalThis.Capacitor;
 export const isNativeApp = () => { try { const c = cap(); return !!(c && c.isNativePlatform && c.isNativePlatform()); } catch (_) { return false; } };
-const plugin = (name) => (isNativeApp() && cap().Plugins ? cap().Plugins[name] || null : null);
+export const plugin = (name) => (isNativeApp() && cap().Plugins ? cap().Plugins[name] || null : null);
 
 // ---- files: Documents/MobileDAW/<sub folder>/<name>, then the Android share sheet
 export const DOC_ROOT = 'MobileDAW';
-const CHUNK = 3 << 20;                                   // 3 MB per bridge call (multiple of 3: every piece is complete base64 on its own)
-const toBlob = (data) => (data instanceof Blob ? data : new Blob([typeof data === 'string' ? new TextEncoder().encode(data) : data]));
-const b64 = (blob) => new Promise((res, rej) => {
+export const CHUNK = 3 << 20;                                   // 3 MB per bridge call (multiple of 3: every piece is complete base64 on its own)
+export const toBlob = (data) => (data instanceof Blob ? data : new Blob([typeof data === 'string' ? new TextEncoder().encode(data) : data]));
+export const b64 = (blob) => new Promise((res, rej) => {
   const r = new FileReader();
   r.onload = () => { const s = String(r.result); res(s.slice(s.indexOf(',') + 1)); };
   r.onerror = () => rej(r.error || new Error('baca data gagal'));

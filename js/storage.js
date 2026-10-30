@@ -4,10 +4,12 @@
 // fall back to the app's private file system (OPFS): same folder tree, kept inside the app.
 import { log } from './log.js';
 import { isNativeApp } from './native.js';
+import { hasSaf, safPick, safFrom, safRelease } from './safdir.js';
 
 export const TREE = ['Samples', 'SoundFonts', 'Recordings', 'Exports', 'Projects', 'Presets/Mixer', 'Presets/Instruments'];
 const ROOT = 'MobileDAW';
-export const canPick = () => typeof globalThis.showDirectoryPicker === 'function' && !isNativeApp();
+// Android app: the system folder picker through the DawFolder plugin (js/safdir.js) instead of showDirectoryPicker
+export const canPick = () => (isNativeApp() ? hasSaf() : typeof globalThis.showDirectoryPicker === 'function');
 export const canOpfs = () => !!(navigator.storage && navigator.storage.getDirectory);
 
 const st = { mode: 'none', root: null, perm: 'none', name: '', scanErr: 0, scanCount: 0 };   // mode: device | opfs | none ; perm: granted | prompt | none
@@ -60,7 +62,8 @@ async function useRoot(root, mode) {
 export async function initStorage() {
   try {
     if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
-    const saved = await kv('get', 'root');
+    let saved = await kv('get', 'root');
+    if (isNativeApp()) saved = safFrom(saved);          // IndexedDB gives back plain data: rebuild the folder handle
     if (saved && canPick()) {
       let p = 'prompt';
       try { p = await saved.queryPermission({ mode: 'readwrite' }); } catch (_) { /* old API */ }
@@ -81,7 +84,7 @@ export async function initStorage() {
 export async function chooseFolder() {
   if (!canPick()) return { error: 'Browser ini tidak punya pemilih folder. Gunakan Chrome/Edge terbaru; sementara file disimpan di penyimpanan aplikasi.' };
   try {
-    const picked = await showDirectoryPicker({ id: 'mobiledaw', mode: 'readwrite', startIn: 'documents' });
+    const picked = isNativeApp() ? await safPick() : await showDirectoryPicker({ id: 'mobiledaw', mode: 'readwrite', startIn: 'documents' });
     if ((await picked.requestPermission({ mode: 'readwrite' })) !== 'granted') return { error: 'Izin tulis ditolak.' };
     const root = picked.name === ROOT ? picked : await picked.getDirectoryHandle(ROOT, { create: true });
     await useRoot(root, 'device'); st.perm = 'granted';
@@ -104,7 +107,7 @@ export async function regrant() {
     return ok;
   } catch (e) { log('warn', 'regrant', e); return false; }
 }
-export async function disconnect() { dropCaches(); await kv('del', 'root'); st.root = null; st.mode = 'none'; st.perm = 'none'; st.name = ''; if (canOpfs() && !canPick()) await initStorage(); }
+export async function disconnect() { dropCaches(); if (isNativeApp()) safRelease(st.root); await kv('del', 'root'); st.root = null; st.mode = 'none'; st.perm = 'none'; st.name = ''; if (canOpfs() && !canPick()) await initStorage(); }
 
 // ---- file operations (paths look like /Samples/kick.wav; Presets/Mixer is a nested folder)
 async function parent(path, create) { const parts = path.split('/').filter(Boolean), name = parts.pop(); return { dir: await sub(st.root, parts.join('/'), create), name }; }

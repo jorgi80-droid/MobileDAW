@@ -14,6 +14,7 @@ import com.getcapacitor.BridgeActivity;
 public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
+        registerPlugin(DawFolderPlugin.class);   // MobileDAW folder on the phone's storage (js/safdir.js)
         super.onCreate(savedInstanceState);
         Window w = getWindow();
         WindowCompat.setDecorFitsSystemWindows(w, false);

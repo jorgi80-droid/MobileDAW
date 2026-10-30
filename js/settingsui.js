@@ -84,7 +84,8 @@ function folderSection() {
   const paint = () => {
     const i = FS.info();
     stat.textContent = i.mode === 'device' ? (i.perm === 'granted' ? `Terhubung: ${i.name}/ (Samples, SoundFonts, Recordings, Exports, Projects, Presets)` : `Folder ${i.name}/ butuh izin lagi (browser meminta ulang tiap sesi).`)
-      : isNativeApp() ? 'Aplikasi Android: sample, proyek, dan preset disimpan di dalam aplikasi. Hasil ekspor (WAV/MP3/ZIP/.mdaw/.mid) juga disalin ke Documents/MobileDAW dan bisa dibagikan. Impor file lewat Browser \u2192 Impor.'
+      : isNativeApp() && !FS.canPick() ? 'Aplikasi Android: sample, proyek, dan preset disimpan di dalam aplikasi. Hasil ekspor juga disalin ke Documents/MobileDAW dan bisa dibagikan. Impor file lewat Browser \u2192 Impor.'
+      : isNativeApp() ? 'Belum ada folder MobileDAW. Pilih lokasi sekali (mis. Documents atau Music) dan izinkan akses; aplikasi membuat folder MobileDAW beserta sub-foldernya dan sample di dalamnya langsung bisa dipakai.'
       : i.mode === 'opfs' ? 'Browser ini tidak punya pemilih folder: MobileDAW/ disimpan di dalam aplikasi.' : 'Belum ada folder MobileDAW. Pilih lokasi sekali; aplikasi membuat folder MobileDAW beserta sub-foldernya.';
     const items = [];
     if (FS.canPick()) items.push(btn(i.mode === 'device' ? 'Ganti folder\u2026' : 'Pilih folder & beri izin', async () => { const r = await FS.chooseFolder(); if (r.error) toast(r.error, 5000); else if (r.ok) { await eng.syncFolder(); toast('Folder ' + r.name + ' siap.', 3000); } paint(); }));
