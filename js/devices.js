@@ -1,7 +1,7 @@
 // Device chain for the selected strip (track, return or master): instrument card, effect cards, "+" card.
 // Long-press a knob to create automation for it. Levelness / Analyzer / Autoduck have live meter views.
 import { C } from './theme.js';
-import { h, knob, menu, icon, modal, fromNorm, toNorm, ask, toast } from './ui.js';
+import { h, knob, menu, modal, fromNorm, toNorm, ask, toast } from './ui.js';
 import * as PRS from './presets.js';
 import { LAYOUT, buildSynth, DISP } from './devviz.js';
 import { FXVIEW } from './fxviz.js';
@@ -13,6 +13,7 @@ import * as BR from './browser.js';
 import * as P from './project.js';
 import * as FW from './floatwin.js';
 import { buildSuite, minimetersView } from './minimeters.js';
+import { prefs } from './prefs.js';
 const { state } = P;
 const VIEWS = { ...FXVIEW, 16: minimetersView };   // MiniMeters has its own view module
 
@@ -23,6 +24,11 @@ const FOLD_KEY = 'mobiledaw.fold';
 const folded = new Set((() => { try { return JSON.parse(localStorage.getItem(FOLD_KEY) || '[]'); } catch (_) { return []; } })());
 const isFolded = (k) => folded.has(k);
 function setFolded(k, on) { if (on) folded.add(k); else folded.delete(k); try { localStorage.setItem(FOLD_KEY, JSON.stringify([...folded].slice(-400))); } catch (_) { /* storage unavailable */ } render(); }
+function titleFold(head, k) {                 // Live: double-click a device's title bar folds it; here a double tap on the bar (not on its buttons)
+  let last = 0;
+  head.addEventListener('pointerup', (e) => { if (e.target.closest && e.target.closest('button')) return; const now = performance.now(); if (now - last < 320) { last = 0; setFolded(k, !isFolded(k)); } else last = now; });
+  return head;
+}
 const foldBtn = (k, on) => { const b = h('button', { class: 'fold-b', 'aria-label': on ? 'Buka lipatan' : 'Lipat modul', onclick: () => setFolded(k, !on) }, on ? '\u25B8' : '\u25C2'); return b; };
 function foldedCard(k, name, pw) {
   const c = h('div', { class: 'card fold', 'aria-label': 'Buka ' + name, onclick: (e) => { if (e.target.closest && e.target.closest('.pw')) return; setFolded(k, false); } }, pw || null, h('span', { class: 'fn' }, name), foldBtn(k, true));
@@ -123,7 +129,13 @@ function instCard(i, t, o = {}) {
   const fk = 'i' + t.id;
   if (!o.floating && FW.isOpen('i:' + t.id)) return floatedCard('i:' + t.id, def.name, () => openInstWindow(t.id));
   if (!o.floating && isFolded(fk)) return foldedCard(fk, def.name, null);
-  const head = h('h4', {}, h('i', { class: 'pdot' }), h('span', {}, def.name));
+  const head = h('h4', {}, h('i', { class: 'pdot' }));
+  if (t.kind === 'midi') head.append(h('button', { class: 'dv-name', 'aria-label': 'Ganti instrumen', onclick: (e) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    menu(INST_LIST.map((k) => ({ label: INSTRUMENTS[k].name, check: t.inst.type === k, fn: () => P.setInstrument(i, k) })), r.left, r.bottom);
+  } }, h('span', {}, def.name), h('i', { class: 'tri', 'aria-hidden': 'true' })));
+  else head.append(h('span', {}, def.name));
+  titleFold(head, fk);
   if (t.kind === 'midi') {
     const presets = P.presetsFor(t.inst.type);
     head.append(h('button', { class: 'pre', 'aria-label': 'Preset', style: 'width:auto;padding:0 6px;font-size:11px', onclick: (e) => {
@@ -138,10 +150,6 @@ function instCard(i, t, o = {}) {
       }
       menu(items, r.left - 60, r.bottom);
     } }, 'Preset'));
-    head.append(h('button', { class: 'dd', 'aria-label': 'Ganti instrumen', onclick: (e) => {
-      const r = e.currentTarget.getBoundingClientRect();
-      menu(INST_LIST.map((k) => ({ label: INSTRUMENTS[k].name, check: t.inst.type === k, fn: () => P.setInstrument(i, k) })), r.left - 90, r.bottom);
-    } }, '\u25BE'));
   }
   if (!o.floating) head.append(popBtn(() => openInstWindow(t.id)));
   head.append(foldBtn(fk, false));
@@ -242,12 +250,19 @@ function sideLayout(el) {
 
 function fxCard(i, d, di, n, o = {}) {
   const def = DEVICES[d.type];
-  const mv = (dir) => h('button', { 'aria-label': dir < 0 ? 'Geser ke kiri' : 'Geser ke kanan', onclick: () => P.moveDevice(i, di, di + dir), disabled: di + dir < 0 || di + dir >= n }, '');
-  const l = mv(-1), r = mv(1); l.innerHTML = icon('left'); r.innerHTML = icon('right');
-  for (const b of [l, r]) b.firstChild.style.cssText = 'width:16px;height:16px;fill:currentColor';
   const pw = h('button', { class: 'pw' + (d.bypass ? '' : ' on'), 'aria-label': 'Bypass', onclick: () => P.toggleBypass(i, di) });
-  const x = h('button', { 'aria-label': 'Hapus device', onclick: () => P.removeDevice(i, di) }); x.innerHTML = icon('close');
-  x.firstChild.style.cssText = 'width:15px;height:15px;fill:currentColor';
+  // device menu (Live: the title bar's context menu): float, fold, move left / right, delete
+  const more = h('button', { class: 'dv-more', 'aria-label': 'Menu device', onclick: (e) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    menu([
+      ...(o.floating ? [] : [{ label: 'Buka di jendela mengambang', fn: () => openDeviceWindow(d.id) }, { label: 'Lipat', fn: () => setFolded(d.id, true) }, { sep: true }]),
+      { label: 'Geser ke kiri', dim: di <= 0, fn: () => { if (di > 0) P.moveDevice(i, di, di - 1); } },
+      { label: 'Geser ke kanan', dim: di >= n - 1, fn: () => { if (di < n - 1) P.moveDevice(i, di, di + 1); } },
+      { sep: true },
+      { label: d.bypass ? 'Aktifkan' : 'Bypass', fn: () => P.toggleBypass(i, di) },
+      { label: 'Hapus device', fn: () => P.removeDevice(i, di) },
+    ], r.left - 120, r.bottom);
+  } }, '\u22EF');
   if (!o.floating && FW.isOpen('d:' + d.id)) return floatedCard('d:' + d.id, def.name, () => openDeviceWindow(d.id));
   if (!o.floating && isFolded(d.id)) { const c = foldedCard(d.id, def.name, pw); if (d.bypass) c.classList.add('off'); return c; }
 
@@ -271,30 +286,53 @@ function fxCard(i, d, di, n, o = {}) {
   });
   if (view && view.el) sideLayout(view.el);
   const body = view ? h('div', { class: 'fxv' }, view.el, knobsDiv.children.length ? knobsDiv : null) : knobsDiv;
-  return h('div', { class: 'card' + (d.bypass ? ' off' : '') }, h('h4', {}, pw, h('span', {}, def.name), o.floating ? null : popBtn(() => openDeviceWindow(d.id)), foldBtn(d.id, false), l, r, x), body);
+  return h('div', { class: 'card' + (d.bypass ? ' off' : '') }, titleFold(h('h4', {}, pw, h('span', {}, def.name), o.floating ? null : popBtn(() => openDeviceWindow(d.id)), more, o.floating ? null : foldBtn(d.id, false)), d.id), body);
 }
 
+// Device chain of the selected strip. A re-render of the same strip keeps the scroll position, and cards that moved (reorder, fold,
+// delete) glide to their new place while new ones fade in (FLIP); switching to another strip crossfades the chain.
+let lastStrip = null;
+const dur = (ms) => Math.round(ms * Math.max(0, prefs.animScale ?? 1));
+const quiet = () => prefs.reduceMotion || !(prefs.animScale > 0) || (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
+function flip(scroll, before) {
+  if (!before.size || quiet()) return;
+  const ease = 'cubic-bezier(.2,.8,.2,1)';
+  for (const el of scroll.children) {
+    const k = el.dataset.k; if (!k) continue;
+    const x0 = before.get(k), x1 = el.getBoundingClientRect().left;
+    if (x0 === undefined) el.animate([{ opacity: 0, transform: 'translateY(6px) scale(.97)' }, { opacity: 1, transform: 'none' }], { duration: dur(220), easing: ease });
+    else if (Math.abs(x0 - x1) > 1) el.animate([{ transform: `translateX(${x0 - x1}px)` }, { transform: 'none' }], { duration: dur(240), easing: ease });
+  }
+}
 export function render() {
   if (!root) return;
   for (const t of timers) clearInterval(t);
   timers = [];
   const i = state.sel.track, t = P.tr(i);
+  const old = root.firstElementChild && root.firstElementChild.classList.contains('dev-scroll') ? root.firstElementChild : null;
+  const same = old && lastStrip === i && t, sl = same ? old.scrollLeft : 0, before = new Map();
+  if (same) for (const el of old.children) if (el.dataset.k) before.set(el.dataset.k, el.getBoundingClientRect().left);
   const scroll = h('div', { class: 'dev-scroll' });
   scroll.style.setProperty('--sc', root.clientWidth >= 1150 ? '3' : '2');   // synth panels per row
+  const put = (el, k) => { el.dataset.k = k; scroll.append(el); };
+  lastStrip = i;
   if (!t) { scroll.append(h('div', { class: 'hint' }, 'Tambahkan track lewat tombol + di arrangement.')); root.replaceChildren(scroll); return; }
   if (t.kind === 'auto') {
     scroll.append(h('div', { class: 'hint' }, 'Ini track otomasi untuk ', h('b', {}, P.autoLabel(t)), '. Pilih klipnya lalu buka tab Clip untuk mengedit titik.'));
     root.replaceChildren(scroll); return;
   }
-  if (i < MASTER && t.inst) scroll.append(instCard(i, t));
-  else if (i < MASTER) scroll.append(h('div', { class: 'card', style: 'min-width:150px' }, h('h4', {}, h('span', {}, 'Audio')), h('div', { class: 'hint', style: 'padding:8px' }, 'Klip audio lewat chain efek di kanan.')));
-  t.devices.forEach((d, di) => scroll.append(fxCard(i, d, di, t.devices.length)));
-  const add = h('button', { class: 'card addcard b', 'aria-label': 'Tambah efek', onclick: (e) => {
+  if (i < MASTER && t.inst) put(instCard(i, t), 'i' + t.id);
+  else if (i < MASTER) put(h('div', { class: 'card dev-src' }, h('h4', {}, h('i', { class: 'pdot' }), h('span', {}, 'Audio')), h('div', { class: 'dev-src-b' }, h('b', {}, 'Klip audio'), 'diputar lalu lewat rantai efek di kanan')), 'src');
+  t.devices.forEach((d, di) => put(fxCard(i, d, di, t.devices.length), d.id));
+  const full = t.devices.length >= 16;
+  const add = h('button', { class: 'card addcard dev-drop b', 'aria-label': 'Tambah efek', disabled: full, onclick: (e) => {
     const r = e.currentTarget.getBoundingClientRect();
     menu(Object.entries(DEVICES).map(([k, d]) => ({ label: d.name, fn: () => P.addDevice(i, +k) })), Math.max(8, r.left - 40), Math.max(8, r.top - 120));
-  } }, '+ Efek');
-  scroll.append(add);
+  } }, h('b', { 'aria-hidden': 'true' }, '+'), h('span', {}, full ? 'Rantai penuh (16 efek)' : 'Ketuk untuk menambah efek'), h('small', {}, 'atau seret efek dari Browser ke sini'));
+  put(add, 'add');
   root.replaceChildren(scroll);
+  if (same) { scroll.scrollLeft = sl; flip(scroll, before); }
+  else if (old && !quiet()) scroll.animate([{ opacity: 0.25 }, { opacity: 1 }], { duration: dur(170), easing: 'ease-out' });
   const title = document.getElementById('dtitle');
   if (title) title.textContent = stripName(i);
 }
