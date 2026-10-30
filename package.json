@@ -2,6 +2,7 @@
   "name": "mobiledaw",
   "version": "1.0.0",
   "private": true,
+  "type": "module",
   "description": "MobileDAW: DAW seluler (web/PWA + aplikasi Android lewat Capacitor)",
   "scripts": {
     "www": "node tools/copy-www.mjs",

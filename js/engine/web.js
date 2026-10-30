@@ -8,7 +8,7 @@ import { buildPyramid } from '../waveform.js';
 import * as FS from '../storage.js';
 import { log } from '../log.js';
 import { prefs } from '../prefs.js';
-import { isNativeApp, saveAndShare, subFor } from '../native.js';
+import { isNativeApp, saveAndShare, subFor, pickerAccept, accepts } from '../native.js';
 
 export const FOLDERS = ['/Samples', '/SoundFonts', '/Recordings', '/Projects', '/Exports', '/Presets/Mixer', '/Presets/Instruments'];
 const NO_MIRROR = /\/_autosave\.mdaw$/;   // rewritten every few seconds: stays in the app's own storage only
@@ -420,11 +420,12 @@ export function createWebBackend() {
   };
   me.importFiles = (accept = 'audio/*,.sf2,.mdaw,.zip,.wav,.mp3,.ogg,.flac,.m4a') => new Promise((res) => {
     const inp = document.createElement('input');
-    inp.type = 'file'; inp.multiple = true; inp.accept = accept; inp.style.display = 'none';
+    inp.type = 'file'; inp.multiple = true; inp.accept = pickerAccept(accept); inp.style.display = 'none';
     document.body.append(inp);
     inp.onchange = async () => {
       const out = [];
       for (const f of inp.files) {
+        if (!accepts(accept, f)) { log('warn', 'jenis file tidak didukung, dilewati:', f.name); continue; }
         if (/\.zip$/i.test(f.name)) {   // project bundle: the .mdaw goes to Projects, everything else to the folder it came from
           try {
             const { readZip } = await import('../zip.js');

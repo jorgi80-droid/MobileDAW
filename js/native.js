@@ -64,6 +64,15 @@ export async function shareFile(uri, title) {
 // Which Documents/MobileDAW sub-folder a downloaded file belongs in.
 export const subFor = (name) => (/\.(mdaw|zip)$/i.test(name) && !/ stems\.zip$/i.test(name) ? 'Projects' : 'Exports');
 
+// ---- file picker: the Android WebView turns <input accept> into MIME types and silently drops extensions it does not know (.mdaw, .sf2),
+// so in the app the picker opens unfiltered and the chosen files are checked against the accept list here instead.
+export const pickerAccept = (accept) => (isNativeApp() ? '' : accept);
+export function accepts(accept, file) {
+  if (!accept) return true;
+  const name = (file.name || '').toLowerCase(), type = (file.type || '').toLowerCase();
+  return accept.split(',').map((s) => s.trim().toLowerCase()).some((a) => (a.startsWith('.') ? name.endsWith(a) : a.endsWith('/*') ? type.startsWith(a.slice(0, -1)) : type === a));
+}
+
 // ---- screen kept on (playback, or the "Layar tetap menyala" preference)
 let awake = false;
 export function setAwake(on) {

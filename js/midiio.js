@@ -2,6 +2,7 @@
 import { encodeSmf, decodeSmf } from './engine/smf.js';
 import { normOf } from './defs.js';
 import { eng } from './engine.js';
+import { pickerAccept } from './native.js';
 import { h, modal, toast } from './ui.js';
 import { checkpoint } from './history.js';
 import * as P from './project.js';
@@ -124,7 +125,7 @@ function applyInner(m, withTempo) {
 }
 export async function importMidi() {
   const file = await new Promise((res) => {
-    const inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.mid,.midi,audio/midi'; inp.style.display = 'none'; document.body.append(inp);
+    const inp = document.createElement('input'); inp.type = 'file'; inp.accept = pickerAccept('.mid,.midi,audio/midi'); inp.style.display = 'none'; document.body.append(inp);
     inp.onchange = () => { const f = inp.files && inp.files[0]; inp.remove(); res(f || null); };
     inp.addEventListener('cancel', () => { inp.remove(); res(null); });
     inp.click();
