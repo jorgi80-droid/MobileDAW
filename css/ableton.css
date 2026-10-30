@@ -649,3 +649,14 @@
 .lk-harm { position: absolute; right: 6px; top: 4px; display: flex; align-items: center; gap: 4px; font: var(--fw-sb) var(--fs-2)/14px var(--font); color: #e4e4e6; }
 .lk .lv-btn.lk-chk, .lk .lv-btn.lk-chk.on { background: transparent !important; border-color: transparent !important; color: var(--lv-ink) !important; }
 .lk .lk-sec.box { padding: 4px 8px 8px; background: color-mix(in srgb, var(--lv-ink) 5%, transparent); border-radius: 4px; }
+/* modulators: map bar, shaper presets */
+.lk-map { align-self: stretch; display: flex; align-items: center; gap: var(--sp-2); }
+.lk .lk-mapb { min-width: 96px; max-width: 150px; height: 20px; padding: 0 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: transparent; border: 1px solid #ffad32; color: #ffad32; font: var(--fw-sb) var(--fs-2)/18px var(--font); }
+.lk .lk-mapb.on { background: #ffad32; color: #1b1b1d; }
+.lk .lk-mapx { width: 18px; height: 18px; min-width: 0; padding: 0; border-radius: 50%; border: 1px solid #ffad32; background: transparent; color: #ffad32; line-height: 14px; }
+.lk-dk .lv-btn.lk-modb.on { background: #4fc3f0; color: #1b1b1d; }
+.lk-shrow { align-self: stretch; display: flex; align-items: center; gap: var(--sp-2); }
+.lk-shp { display: flex; gap: 2px; }
+.lk .lk-shpb { width: 30px; height: 20px; min-width: 0; padding: 0; background: transparent; border: 0; }
+.lk .lk-shpb canvas { width: 30px; height: 16px; }
+.lk .lk-dk .lv-fld.sel.or { color: #ffad32; }

@@ -3,13 +3,13 @@
 // device that is silent although it should pass audio, and on a parameter index the definition has but the engine ignores
 // (each parameter must change the output for at least one value - "no dummy controls").
 // Usage: node tools/fx-test.mjs [type ...]
-import { DEVICES } from '../js/defs.js';
+import { DEVICES, MOD_MAP } from '../js/defs.js';
 import { makeDevice } from '../js/engine/fx.js';
 
 const SR = 48000, N = 128, BLOCKS = Math.round(SR * 1.2 / N);
 const want = process.argv.slice(2).map(Number), types = Object.keys(DEVICES).map(Number).filter((t) => !want.length || want.includes(t));
 // parameters that cannot change the audio by design: display / meter options, momentary triggers, the Tuner reference
-const NO_AUDIO = { 47: [1], 13: 'all', 12: 'all', 16: 'all', 30: 'all', 32: 'all', 19: [15], 10: 'all', 45: 'all' };   // 45 Looper: state-driven, has its own test below   // 10 Autoduck: listens to another track's sidechain only
+const NO_AUDIO = { 48: 'all', 49: 'all', 50: 'all', 47: [1], 13: 'all', 12: 'all', 16: 'all', 30: 'all', 32: 'all', 19: [15], 10: 'all', 45: 'all' };   // 45 Looper: state-driven, has its own test below   // 10 Autoduck: listens to another track's sidechain only
 // conditions a parameter needs before it can be heard (Live works the same: L Time only counts with Sync off, R only without Link ...)
 const PRE = {
   17: { 2: { 0: 0 }, 3: { 0: 1 }, 4: { 8: 0, 5: 6 }, 5: { 8: 0 }, 6: { 8: 0, 4: 0 }, 7: { 8: 0 }, 8: { 5: 6 }, 14: { 16: 1 } },
@@ -79,6 +79,22 @@ if (!want.length || want.includes(45)) {
   const play = run(sec, 0), ovr = (d.setParam(0, 3), run(sec, 0.5), d.setParam(0, 2), run(sec, 0)); d.setParam(6, 1); const clr = run(sec, 0);
   const fail = [len < 0.9 && 'length ' + len.toFixed(2), play < 1 && 'no playback', ovr <= play * 1.5 && 'overdub not added', clr > 1e-6 && 'clear left audio'].filter(Boolean);
   if (fail.length) { bad++; console.log('FAIL 45 Looper transport: ' + fail.join('; ')); } else console.log('ok   45 Looper transport (record / play / overdub / clear)');
+}
+// Modulators (48 LFO, 49 Shaper, 50 Envelope Follower): mapped to a target with a log 20 Hz .. 20 kHz range, the value must move and stay in the
+// range (Remap) or around the target's own value (Mod); unmapped they give no target
+for (const t of [48, 49, 50]) {
+  if (want.length && !want.includes(t)) continue;
+  const M = MOD_MAP[t], res = [];
+  for (const mode of [0, 1]) {
+    const d = makeDevice(t, SR); d.setTempo(120); DEVICES[t].params.forEach((p, k) => d.setParam(k, p.def));
+    const none = d.target(); [mode, 1, 0.5, 0.1, 0.9, 2, 0, 3, 20, 20000, 1, 1000].forEach((v, j) => d.setParam(M + j, v));
+    const L = new Float32Array(N), R = new Float32Array(N); let lo = 1e9, hi = -1e9, ph = 0;
+    for (let b = 0; b < SR * 2 / N; b++) { for (let i = 0; i < N; i++) { ph += 0.05; L[i] = R[i] = Math.sin(ph) * (b % 100 < 30 ? 0.8 : 0.01); } d.process(L, R, N); const v = d.target().v; lo = Math.min(lo, v); hi = Math.max(hi, v); }
+    res.push({ mode, none, lo, hi });
+  }
+  const [rm, md] = res, ok = rm.none === null && rm.hi > rm.lo * 1.05 && rm.lo >= 20 * 0.99 && rm.hi <= 20000 * 1.01 && md.lo < 1000 * 1.01 && md.hi > 1000 * 0.99 && md.hi > md.lo * 1.05;
+  if (!ok) { bad++; console.log(`FAIL ${t} ${DEVICES[t].name} mapping: remap ${rm.lo.toFixed(0)}..${rm.hi.toFixed(0)}, mod ${md.lo.toFixed(0)}..${md.hi.toFixed(0)}`); }
+  else console.log(`ok   ${t} ${DEVICES[t].name} mapping (remap ${rm.lo.toFixed(0)}..${rm.hi.toFixed(0)} Hz, mod ${md.lo.toFixed(0)}..${md.hi.toFixed(0)} Hz)`);
 }
 console.log(bad ? `\n${bad} device(s) FAILED` : '\nALL EFFECTS OK');
 process.exit(bad ? 1 : 0);

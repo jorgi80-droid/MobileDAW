@@ -131,8 +131,16 @@ Permintaan pemilik: SEMUA efek dan instrumen diganti dengan set stok Ableton Liv
 - fx-test: tidak ada TODO lagi (Corpus Ratio butuh Hit != 50 %, Vocoder Unvoiced / Fast butuh Sens. 100 % sebagai prasyarat); Looper punya tes
   transport sendiri (rekam -> putar -> overdub -> clear). `FX=33,34 node tools/ui-shots.mjs <folder> devs` = screenshot efek tertentu saja.
 - Gambar referensi dari pemilik (zip `Ui_Refrences.zip`, 61 gambar: arrangement / clip / efek / instrumen) disimpan di `docs/refs/`.
-- Belum ada: Spectral Time, Spectral Resonator, modulator LFO / Shaper / Envelope Follower (tombol Map ke parameter device lain: engine
-  `runChain` + id target di project), Audio Effect Rack (rantai paralel + macro), External Audio Effect (tidak mungkin di HP: jangan dibuat).
+- Jadi juga: 46 Spectral Time, 47 Spectral Resonator (`js/engine/fx5.js`, STFT bersama `Stft`: Hann, overlap 4x, latensi 2048 sampel), modulator
+  48 LFO, 49 Shaper, 50 Envelope Follower (`js/engine/fx6.js`; perbandingan `docs/redesign/23-fx-spectral.jpg`, `24-modulators.jpg`).
+  - MIDI ke efek: device dengan `midiIn` (Spectral Resonator mode MIDI) menerima not track sendiri atau track di MIDI From (`core.js midiTo`).
+  - Map modulator: `d.map = { s: stripOf, id: device id | 'inst', k }` di project; engine menerima target lewat parameter tersembunyi
+    (`MOD_MAP[type]` + 5..11: strip, indeks device (-1 = instrumen), parameter, min, max, log, nilai dasar). `fixMods()` (project.js) menulis
+    ulang setiap kali track/device berubah (dipanggil dari `emit`) dan saat nilai target berubah. `core.js applyMod()` menulis nilai ke device
+    target tiap blok; `runMods()` menjaga modulator tetap jalan di strip yang diam. Mode Remap (Min..Max) / Mod (sekitar nilai target, ± bipolar).
+- fx-test (diperbaiki): dulu noise uji berbeda tiap render sehingga semua parameter tampak "terdengar". Sekarang input identik; prasyarat
+  ditulis di `PRE` (sama seperti Live: Attack envelope butuh Env Amount, dst.). Modulator dites lewat pemetaan (remap/mod) di akhir tes.
+- Belum ada: Audio Effect Rack (rantai paralel + macro), External Audio Effect (tidak mungkin di HP: jangan dibuat).
 - Instrumen (belum mulai): Analog, Operator, Wavetable (redesign), Drift, Meld, Simpler, Sampler (redesign), Drum Rack (redesign), Impulse,
   Electric, Collision, Tension, Poli, Granulator III, DS Kick / Snare / Tom / HH / Clap / FM. Tipe instrumen lama tetap bisa dimuat (proyek lama).
 - Aturan: parameter baru selalu DITAMBAHKAN di akhir (indeks lama tetap), `migrate()` bila arti berubah; efek tanpa padanan Live 12 masuk

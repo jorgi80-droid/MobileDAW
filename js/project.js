@@ -2,7 +2,7 @@
 // The UI edits `state`; this module mirrors changes into the native engine.
 import { eng, MASTER, RET0, hooks } from './engine.js';
 import { processBuffers, detectBpm } from './engine/audioops.js';
-import { INSTRUMENTS, DEVICES, DRUM_PADS, INST, PRESETS, normOf, valOf } from './defs.js';
+import { INSTRUMENTS, DEVICES, DRUM_PADS, INST, PRESETS, normOf, valOf, MOD_MAP } from './defs.js';
 
 export const PPQ = 960, MAX_TRACKS = 64;
 export let BEAT = PPQ, BAR = PPQ * 4;   // live bindings: they change with the time signature (setSig), so always read them at use time
@@ -25,7 +25,7 @@ let _id = 1;
 const uid = () => _id++;
 const listeners = new Set();
 export const onChange = (fn) => { listeners.add(fn); return () => listeners.delete(fn); };
-export const emit = (what) => listeners.forEach((f) => f(what));
+export const emit = (what) => { if (what === 'devices' || what === 'tracks' || what === 'all') fixMods(); listeners.forEach((f) => f(what)); };
 // Undo hook, filled in by js/history.js. hit(key) = true when this change belongs to the gesture already recorded (a knob being dragged); add(entry) stores
 // a small "before" entry. on is false while an undo / redo / project load runs, so replayed changes are not recorded again.
 export const HK = { on: true, hit: () => false, add: () => {}, group: (f) => f(), barrier: () => {} };
@@ -612,7 +612,7 @@ function instVal(t, pi) {
 export function setInstParam(i, pi, v) {
   const t = state.tracks[i];
   if (HK.on) { const old = instVal(t, pi); if (old !== undefined && old !== v && !HK.hit('ip' + t.id + '.' + pi)) HK.add({ t: 'val', k: 'inst', s: t.id, p: pi, v: old, u: !(pi in t.inst.params) }); }
-  t.inst.params[pi] = v; eng.instParam(i, pi, v);
+  t.inst.params[pi] = v; eng.instParam(i, pi, v); if (modsMapped) fixMods();
   if (t.kind === 'drum' && pi >= 0 && pi < MAX_PADS * 3 && t.inst.pads) {   // automation of the original pad parameters: keep the pad data equal
     const q = t.inst.pads[(pi / 3) | 0];
     if (q) { const j = pi % 3; if (j === 0) q.gain = v; else if (j === 1) q.pit = v; else q.dec = v; }
@@ -713,7 +713,7 @@ export function addDevice(i, type) {
   emit('devices');
 }
 export function removeDevice(i, di) { const d0 = tr(i).devices[di]; if (HK.on && d0) HK.add({ t: 'dpres', s: stripOf(i), d: d0, di, present: false }); tr(i).devices.splice(di, 1); eng.removeDevice(i, di); emit('devices'); }
-export function setDeviceParam(i, di, pi, v) { const d = tr(i).devices[di]; if (HK.on && d.params[pi] !== v && !HK.hit('dp' + stripOf(i) + '.' + d.id + '.' + pi)) HK.add({ t: 'val', k: 'dev', s: stripOf(i), d: d.id, p: pi, v: d.params[pi] }); tr(i).devices[di].params[pi] = v; eng.devParam(i, di, pi, v); }
+export function setDeviceParam(i, di, pi, v) { const d = tr(i).devices[di]; if (HK.on && d.params[pi] !== v && !HK.hit('dp' + stripOf(i) + '.' + d.id + '.' + pi)) HK.add({ t: 'val', k: 'dev', s: stripOf(i), d: d.id, p: pi, v: d.params[pi] }); tr(i).devices[di].params[pi] = v; eng.devParam(i, di, pi, v);  if (modsMapped) fixMods(); }
 export function toggleBypass(i, di) {
   const d = tr(i).devices[di];
   if (HK.on) HK.add({ t: 'tog', k: 'byp', s: stripOf(i), d: d.id });
@@ -733,6 +733,29 @@ export function moveDevice(i, from, to) {
   if (d.bypass) eng.devBypass(i, to, true);
   emit('devices');
 }
+
+// ---- modulators (LFO / Shaper / Envelope Follower): d.map = { s: stripOf(target), id: device id or 'inst', k: parameter }. The engine gets the
+// target as strip / device index / range / base value through the hidden Map parameters (MOD_MAP), rewritten whenever tracks or devices
+// change and when the target's own value changes (base for Mod mode). A target that no longer exists unmaps the modulator.
+let modsMapped = false;
+const allStrips = () => [...state.tracks.map((_, i) => i), MASTER, ...state.returns.map((_, k) => RET0 + k)];
+export function modTarget(m) {
+  const i = allStrips().find((j) => tr(j) && stripOf(j) === m.s); if (i == null) return null; const t = tr(i);
+  if (m.id === 'inst') { const q = t.inst && INSTRUMENTS[t.inst.type] && INSTRUMENTS[t.inst.type].params[m.k]; return q ? { i, di: -1, p: q, v: instVal(t, m.k) } : null; }
+  const di = t.devices.findIndex((d) => d.id === m.id); if (di < 0) return null; const d = t.devices[di];
+  return DEVICES[d.type].params[m.k] ? { i, di, d, p: DEVICES[d.type].params[m.k], v: d.params[m.k] } : null;
+}
+function writeMap(i, di, d) {
+  const o = MOD_MAP[d.type], tg = d.map && modTarget(d.map); if (d.map && !tg) d.map = null;
+  const vals = tg ? [tg.i, tg.di, d.map.k, tg.p.min, tg.p.max, tg.p.curve === 'log' ? 1 : 0, tg.v ?? tg.p.def] : [-1, 0, 0, 0, 1, 0, 0];
+  vals.forEach((v, j) => { if (d.params[o + 5 + j] !== v) { d.params[o + 5 + j] = v; eng.devParam(i, di, o + 5 + j, v); } });
+  if (tg) modsMapped = true;
+}
+export function fixMods() {
+  if (!state || !state.tracks) return; modsMapped = false;
+  for (const i of allStrips()) { const t = tr(i); if (t && t.devices) t.devices.forEach((d, di) => { if (MOD_MAP[d.type] != null) writeMap(i, di, d); }); }
+}
+export function setModMap(i, di, m) { const d = tr(i).devices[di]; d.map = m || null; writeMap(i, di, d); emit('devices'); }
 
 // ------------------------------------------------------------------ clips + notes
 

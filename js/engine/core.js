@@ -27,7 +27,7 @@ export class Engine {
     this.tm = new TempoMap(); this.tmOn = false; this.curBpm = 120; this.beatT = PPQ; this.barBeats = 4; this.mm = new MeterMap(); this.cinN = 4;
     this.metro = false; this.metroVol = 1; this.clickIdx = 1e9; this.clickOff = 0; this.clickF = 1000;
     this.cin = 0; this.cinBf = 0; this.cinNext = 0; this.cinPos = 0; this.cinBeat = 0;   // count-in: frames left, frames per beat, next click frame, position, beat counter
-    this.mixL = new Float32Array(BLOCK); this.mixR = new Float32Array(BLOCK); this.scrL = new Float32Array(BLOCK); this.scrR = new Float32Array(BLOCK); this.noDirect = false;   // noDirect: ekspor stem Return (track hanya mengisi send/grup, tidak langsung ke master)
+    this.mixL = new Float32Array(BLOCK); this.mixR = new Float32Array(BLOCK); this.zL = new Float32Array(BLOCK); this.zR = new Float32Array(BLOCK); this.scrL = new Float32Array(BLOCK); this.scrR = new Float32Array(BLOCK); this.noDirect = false;   // noDirect: ekspor stem Return (track hanya mengisi send/grup, tidak langsung ke master)
     this.retL = Array.from({ length: NFX }, () => new Float32Array(BLOCK)); this.retR = Array.from({ length: NFX }, () => new Float32Array(BLOCK)); this.retActive = new Array(NFX).fill(false);
     this.lanes = []; this.tailFrames = TAIL_SECONDS * sr; this.onError = null;
     this.tl = false; this.tlc = new Float64Array(MAX_TRACKS); this.tlp = new Float64Array(MAX_TRACKS);   // per-track load read-out (only measured while the mixer is open): ms spent in the window, smoothed share of the block budget
@@ -187,7 +187,15 @@ export class Engine {
     const x = L[0] + L[n - 1] + R[n - 1];
     if (!(x > -1e6 && x < 1e6)) { d.bypass = true; L.fill(0, 0, n); R.fill(0, 0, n); this.err({ kind: 'dev', strip, dev: di, msg: 'nilai tidak valid (NaN/tak hingga)' }); }
   }
-  runChain(s, strip, L, R, n) { const dv = s.dev; for (let i = 0; i < dv.length; i++) if (!dv[i].bypass) { if (dv[i].tr) dv[i].tr(this.playing, this.f2t(this.pos) / PPQ); this.runDev(strip, i, dv[i], L, R, n); } }   // tr: bar-synced effects (Beat Repeat, Auto Pan) read the song position
+  runChain(s, strip, L, R, n) { const dv = s.dev; for (let i = 0; i < dv.length; i++) if (!dv[i].bypass) { if (dv[i].tr) dv[i].tr(this.playing, this.f2t(this.pos) / PPQ); this.runDev(strip, i, dv[i], L, R, n); if (dv[i].mod) this.applyMod(dv[i]); } }   // tr: bar-synced effects (Beat Repeat, Auto Pan) read the song position
+  // modulators (LFO / Shaper / Envelope Follower, fx6.js) write their mapped value into the target device (or instrument when d = -1)
+  applyMod(m) {
+    const t = m.target(); if (!t || t.s < 0 || t.s >= NSTRIPS) return;
+    const st = this.s[t.s]; if (t.d < 0) { if (st.inst && t.v !== m.last) { st.inst.setParam(t.k, t.v); m.last = t.v; } return; }
+    const d = st.dev[t.d]; if (d && d !== m && t.v !== m.last) { d.setParam(t.k, t.v); m.last = t.v; }
+  }
+  // a silent strip skips its chain, but its modulators keep running (with silence as input)
+  runMods(s, n) { for (const d of s.dev) if (d.mod && !d.bypass) { this.zL.fill(0, 0, n); this.zR.fill(0, 0, n); d.process(this.zL, this.zR, n); this.applyMod(d); } }
   spt() { return this.sr * 60 / (this.bpm * PPQ); }
   balance(L, R, a, b, pan) { if (!pan) return; const gl = pan > 0 ? 1 - pan : 1, gr = pan < 0 ? 1 + pan : 1; for (let k = a; k < b; k++) { L[k] *= gl; R[k] *= gr; } }
   panic() { for (let t = 0; t < MAX_TRACKS; t++) this.s[t].nPan = 0; for (let t = 0; t < MAX_TRACKS; t++) if (this.s[t].inst) this.s[t].inst.allOff(); }
@@ -271,10 +279,10 @@ export class Engine {
     s.active = false;
     if (!audible) {
       if (s.wasAudible) { if (s.inst) s.inst.allOff(); s.wasAudible = false; s.silent = this.tailFrames + 1; }
-      this.sc[idx] = 0; s.peakL *= 0.99; s.peakR *= 0.99; s.pre.length = 0; return;
+      this.sc[idx] = 0; s.peakL *= 0.99; s.peakR *= 0.99; s.pre.length = 0; this.runMods(s, n); return;
     }
     s.wasAudible = true;
-    if (!s.inst && !s.clips.length) { this.sc[idx] = 0; s.peakL *= 0.99; s.peakR *= 0.99; return; }
+    if (!s.inst && !s.clips.length) { this.sc[idx] = 0; s.peakL *= 0.99; s.peakR *= 0.99; this.runMods(s, n); return; }
     const L = s.bufL, R = s.bufR;
     L.fill(0, 0, n); R.fill(0, 0, n);
     let active = false;
@@ -334,7 +342,7 @@ export class Engine {
       }
     }
     if (active) s.silent = 0; else s.silent += n;
-    if (!active && s.silent > this.tailFrames) { this.sc[idx] = 0; s.peakL *= 0.99; s.peakR *= 0.99; return; }
+    if (!active && s.silent > this.tailFrames) { this.sc[idx] = 0; s.peakL *= 0.99; s.peakR *= 0.99; this.runMods(s, n); return; }
     this.runChain(s, idx, L, R, n);
     const pn = s.ccP ? clamp(s.pan + s.ccP, -1, 1) : s.pan, vg = s.vol * s.ccG, a = (pn + 1) * Math.PI * 0.25, tl = vg * Math.cos(a) * 1.41421356, tr = vg * Math.sin(a) * 1.41421356, s0 = s.send[0], s1 = s.send[1];
     if (s0 > 0) this.retActive[0] = true; if (s1 > 0) this.retActive[1] = true;
@@ -359,7 +367,7 @@ export class Engine {
   ret(k, n) {
     const s = this.s[RET0 + k], L = this.retL[k], R = this.retR[k];
     if (this.retActive[k]) s.silent = 0; else s.silent += n;
-    if (s.silent > this.tailFrames) { s.peakL *= 0.995; s.peakR *= 0.995; this.sc[RET0 + k] = 0; return; }
+    if (s.silent > this.tailFrames) { s.peakL *= 0.995; s.peakR *= 0.995; this.sc[RET0 + k] = 0; this.runMods(s, n); return; }
     this.runChain(s, RET0 + k, L, R, n);
     const target = s.mute ? 0 : s.vol, a = (s.pan + 1) * Math.PI * 0.25, tl = target * Math.cos(a) * 1.41421356, tr = target * Math.sin(a) * 1.41421356;
     let pl = 0, pr = 0;

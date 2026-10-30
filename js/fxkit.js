@@ -1,14 +1,14 @@
 // Live 12 device panels for the effects of js/engine/fx3.js (defs.js: kit: true). Every control is bound to a real engine parameter;
 // the layout follows the owner's reference images of Live 12 (sections side by side, label above / value below each knob, orange toggles,
 // cyan value boxes, dark displays with a cyan curve and hollow orange rings that can be dragged).
-import { h, knob } from './ui.js';
+import { h, knob, menu } from './ui.js';
 import { C } from './theme.js';
-import { fmtParam, normOf, valOf } from './defs.js';
+import { fmtParam, normOf, valOf, MOD_MAP, DEVICES, INSTRUMENTS } from './defs.js';
 import { lvNum, lvTog, lvBtn, lvChoice, lvSel, lvDisp, lvDrag, lvRing, lvPath, lvTabs, DISPC } from './liveui.js';
 import { eq8Stages } from './engine/fx3.js';
 import { offerAutomation } from './automate.js';
 import { Biquad } from './engine/dsp.js';
-import { eng } from './engine.js';
+import { eng, MASTER, RET0 } from './engine.js';
 import * as P from './project.js';
 
 const SR = 48000, F0 = 20, F1 = 20000;
@@ -33,7 +33,7 @@ function kit(ctx) {
   const CY = (k, labels, o = {}) => { const p = def.params[k], b = lvBtn('', () => { const j = Math.round(get(k) - p.min) + 1; set(k, (j >= labels.length ? 0 : j) + p.min); b.update(); }, { cls: 'lk-t on ' + (o.cls || ''), w: o.w });
     b.update = () => { b.textContent = labels[Math.round(get(k) - p.min)] || ''; }; b.update(); return reg(b, k); };
   const CH = (k, labels, o = {}) => { const p = def.params[k]; return reg(lvChoice(labels.map((l) => ({ label: l })), () => Math.round(get(k) - p.min), (j) => set(k, j + p.min), { cls: 'lk-ch ' + (o.v ? 'v ' : '') + (o.cls || '') }), k); };
-  const S = (k, o = {}) => { const p = def.params[k], items = p.items || Array.from({ length: Math.round(p.max - p.min) + 1 }, (_, j) => fmtParam(p, p.min + j)); return reg(lvSel(() => items.map((l, j) => ({ label: l, value: j + p.min })), () => Math.round(get(k)), (v) => set(k, v), { w: o.w || 76, cls: 'lk-s', show: o.short ? (v) => o.short[Math.round(v - p.min)] : null }), k); };
+  const S = (k, o = {}) => { const p = def.params[k], items = p.items || Array.from({ length: Math.round(p.max - p.min) + 1 }, (_, j) => fmtParam(p, p.min + j)); return reg(lvSel(() => items.map((l, j) => ({ label: l, value: j + p.min })), () => Math.round(get(k)), (v) => set(k, v), { w: o.w || 76, cls: 'lk-s ' + (o.cls || ''), show: o.short ? (v) => o.short[Math.round(v - p.min)] : null }), k); };
   const N = (k, o = {}) => reg(lvNum(def.params[k], () => get(k), (v) => set(k, v), fmtParam, { fill: o.fill !== false, w: o.w || 64, onLong: auto(k), label: def.params[k].n, cls: 'lk-n ' + (o.cls || '') }), k);
   const NT = (k, o = {}) => N(k, { ...o, fill: false, cls: 'lk-nt ' + (o.cls || '') });     // value as coloured text inside a dark display (Live: Decay 1.81 s)
   const dk = (...kids) => h('div', { class: 'lk-dk' }, ...kids.filter(Boolean));                // dark display area holding controls
@@ -50,7 +50,7 @@ function kit(ctx) {
   const swap = (k, on, off) => { const box = h('div', { class: 'lk-swap' }); const fill = () => box.replaceChildren(get(k) > 0.5 ? on() : off()); fill(); draws.push(() => { const want = get(k) > 0.5; if (box._on !== want) { box._on = want; fill(); } }); box._on = get(k) > 0.5; return box; };
   // like swap, for a list parameter: fn(value) builds the content (Spectral Time: Time / Notes / 16th knob by Mode)
   const swapN = (k, fn) => { const box = h('div', { class: 'lk-swap' }); let cur = null; const fill = () => { const v = Math.round(get(k)); if (v !== cur) { cur = v; box.replaceChildren(fn(v)); } }; fill(); draws.push(fill); return box; };
-  return { d, def, get, set, K, swapN, T, CY, CH, S, N, NT, dk, LN, TL, D, sec, row, col, sep, every, out, swap, redraw, reg, auto };
+  return { ctx, d, def, get, set, K, swapN, T, CY, CH, S, N, NT, dk, LN, TL, D, sec, row, col, sep, every, out, swap, redraw, reg, auto };
 }
 // filter (band) display with a draggable ring: x = freq, y = width (or Q); used by the delays, Beat Repeat, Erosion, Vinyl
 function bandDisp(k, w, hh, kf, kw, o = {}) {
@@ -609,6 +609,106 @@ V[47] = (k) => {
     k.col(k.K(4), k.K(5), k.K(6)), k.sep(),
     k.col(k.CH(9, ['None', 'Chorus', 'Wander', 'Granular'], { v: true }), k.K(10), k.TL('Pch.Mod', k.N(11, { w: 64, fill: false }))),
     disp, k.col(k.TL('Unison', k.S(15, { w: 50 })), k.K(16), k.K(17), k.K(18)));
+};
+
+// ================================================================================================ Live 12 modulators (engine: js/engine/fx6.js)
+// Map bar: Map (tap = choose a device and a parameter anywhere in the set; mapped = shows the target, ⓧ unmaps), Mod (modulate around the target's
+// own value: ± bipolar + amount) or Remap (Min / Max of the target range)
+const stripName = (i) => (i === MASTER ? 'Master' : i >= RET0 ? 'Return ' + 'ABCDEFGH'[i - RET0] : (P.state.tracks[i].name || 'Track ' + (i + 1)));
+function mapBar(k, o = {}) {
+  const { i, di } = k.ctx, M = MOD_MAP[k.d.type], bar = h('div', { class: 'lk-map' });
+  const pick = (r) => {
+    const strips = [...P.state.tracks.map((_, j) => j), MASTER, ...P.state.returns.map((_, j) => RET0 + j)], items = [];
+    for (const s of strips) {
+      const t = P.tr(s); if (!t) continue; items.push({ label: stripName(s).toUpperCase(), dim: true });
+      if (t.inst && INSTRUMENTS[t.inst.type]) items.push({ label: '   ' + INSTRUMENTS[t.inst.type].name + '…', fn: () => params(s, 'inst', INSTRUMENTS[t.inst.type].params) });
+      t.devices.forEach((d) => { if (d !== k.d && !DEVICES[d.type].mod) items.push({ label: '   ' + DEVICES[d.type].name + '…', fn: () => params(s, d.id, DEVICES[d.type].params) }); });
+    }
+    const params = (s, id, ps) => menu(ps.map((q, kk) => (q.hidden ? null : { label: q.n, fn: () => { P.setModMap(i, di, { s: P.stripOf(s), id, k: kk }); fill(); } })).filter(Boolean), r.left, r.bottom + 1);
+    menu(items, r.left, r.bottom + 1);
+  };
+  const fill = () => {
+    const m = k.d.map, tg = m && P.modTarget(m), name = tg ? tg.p.n : 'Map';
+    const mb = h('button', { class: 'lk-mapb' + (tg ? ' on' : ''), onclick: (e) => pick(e.currentTarget.getBoundingClientRect()) }, name);
+    const x = tg ? h('button', { class: 'lk-mapx', 'aria-label': 'Unmap', onclick: () => { P.setModMap(i, di, null); fill(); } }, '×') : null;
+    bar.replaceChildren(...[mb, x, o.noMode ? null : k.T(M, 'Mod', { cls: 'lk-modb' }), k.swap(M, () => k.row(k.T(M + 1, '±', { w: 22 }), k.NT(M + 2, { w: 50 })), () => k.row(k.NT(M + 3, { w: 46, cls: 'or' }), k.NT(M + 4, { w: 50, cls: 'or' })))].filter(Boolean));
+  };
+  fill(); return bar;
+};
+const WF = (w, x, sh) => { x -= Math.floor(x); if (sh) x = sh > 0 ? Math.pow(x, 1 + sh * 3) : 1 - Math.pow(1 - x, 1 - sh * 3);
+  switch (w) { case 1: return x; case 2: return 1 - x; case 3: return 1 - Math.abs(2 * x - 1); case 4: return x < 0.5 ? 1 : 0; default: return 0.5 + 0.5 * Math.sin(TWO * x); } };
+const TWO = Math.PI * 2;
+// LFO: Map / Mod / ± / amount, waveform display (Waveform, Shape, Steps, Jitter, Smooth) | Rate (Hz or synced) with Hz / ♪ and ×10, Depth, Offset, Phase, Hold, R
+V[48] = (k) => {
+  let live = 0;
+  const disp = k.D(370, 92, (g, w, hh) => {
+    const wf = Math.round(k.get(0)), sh = k.get(1), st = Math.round(k.get(2)), dep = k.get(9), off = k.get(10), ph = k.get(11);
+    g.fillStyle = DISPC.grid; g.fillRect(0, hh / 2, w, 1);
+    const rv = (c) => { const r = Math.sin(c * 12.9898) * 43758.5453; return r - Math.floor(r); }, pts = [];
+    for (let x = 0; x <= w; x += 1) { const t = x / w * 3 + ph; let v = wf >= 5 ? (wf === 6 ? (rv(Math.floor(t)) > 0.5 ? 1 : 0) : rv(Math.floor(t))) : WF(wf, t, sh); if (st > 1) v = Math.round(v * (st - 1)) / (st - 1); v = Math.max(0, Math.min(1, 0.5 + (v - 0.5) * dep + off * 0.5)); pts.push([x, hh - 6 - v * (hh - 12)]); }
+    lvPath(g, pts, DISPC.or, null, 1.8);
+    g.fillStyle = DISPC.or; g.globalAlpha = 0.9; g.beginPath(); g.arc(w - 6, hh - 6 - live * (hh - 12), 3.5, 0, 7); g.fill(); g.globalAlpha = 1;
+  });
+  k.every(50, () => { const r = k.out(); if (r.length) { live = r[0]; disp.paint(); } });
+  const R = lvBtn('R', () => k.set(13, k.get(13) + 1), { cls: 'lk-t lk-r', w: 22 });
+  return k.col(k.dk(mapBar(k), disp, k.row(k.TL('Waveform', k.S(0, { w: 96, cls: 'dk or' })), k.TL('Shape', k.NT(1, { w: 52, cls: 'or' })), k.TL('Steps', k.NT(2, { w: 44, cls: 'or' })), k.TL('Jitter', k.NT(3, { w: 48, cls: 'or' })), k.TL('Smooth', k.NT(4, { w: 48, cls: 'or' })))),
+    k.row(k.swap(6, () => k.K(7, { n: 'Rate' }), () => k.K(5, { n: 'Rate' })), k.col(k.CH(6, ['Hz', '♪'], { v: true, cls: 'sm' }), k.T(8, '×10', { w: 34 })), k.K(9), k.K(10), k.col(k.TL('Phase', k.N(11, { w: 60 })), k.row(k.T(12, 'Hold'), R))));
+};
+// Shaper: Map bar, breakpoint editor (drag a point; tap empty space = new point; double tap a point = remove; drag a segment up / down = curve),
+// preset shapes, Grid, Snap | output history with Jitter / Smooth, Rate (Hz or synced), Depth, Phase, Offset
+const SP = 11, SPRESET = [[[0, 0, 0], [1, 1, 0]], [[0, 1, 0], [1, 0, 0]], [[0, 0, -0.5], [0.5, 1, 0.5], [1, 0, 0]], [[0, 0, 0], [0.5, 0, 0], [0.5, 1, 0], [1, 1, 0]], [[0, 1, 0], [0.25, 0, 0], [0.5, 1, 0], [0.75, 0, 0], [1, 1, 0]], [[0, 0, 0.6], [0.5, 1, -0.6], [1, 0, 0]], [[0, 0, 0], [0.2, 1, 0], [0.4, 0.3, 0], [0.7, 0.8, 0], [1, 0, 0]]];
+V[49] = (k) => {
+  const W = 300, H = 132, pad = 8, X = (x) => pad + x * (W - 2 * pad), Y = (y) => H - pad - y * (H - 2 * pad);
+  const np = () => Math.round(k.get(10)), pt = (j) => [k.get(SP + j * 3), k.get(SP + j * 3 + 1), k.get(SP + j * 3 + 2)];
+  const setPts = (arr) => { arr.forEach(([x, y, c], j) => { k.set(SP + j * 3, x); k.set(SP + j * 3 + 1, y); k.set(SP + j * 3 + 2, c); }); k.set(10, arr.length); };
+  const curve = (y0, y1, c, t) => { if (c) t = c > 0 ? Math.pow(t, 1 + c * 4) : 1 - Math.pow(1 - t, 1 - c * 4); return y0 + (y1 - y0) * t; };
+  let hist = [], lastTap = 0;
+  const ed = k.D(W, H, (g) => {
+    const gr = Math.round(k.get(8)); g.fillStyle = DISPC.grid; for (let j = 1; j < gr; j++) g.fillRect(Math.round(X(j / gr)), 0, 1, H); g.fillRect(0, Math.round(Y(0.5)), W, 1);
+    const n = np(), path = [];
+    for (let j = 0; j < n - 1; j++) { const [x0, y0, c] = pt(j), [x1, y1] = pt(j + 1); for (let s2 = 0; s2 <= 24; s2++) { const t = s2 / 24; path.push([X(x0 + (x1 - x0) * t), Y(curve(y0, y1, c, t))]); } }
+    lvPath(g, path, DISPC.or, null, 1.8); for (let j = 0; j < n; j++) { const [x, y] = pt(j); g.strokeStyle = DISPC.or; g.lineWidth = 1.4; g.beginPath(); g.arc(X(x), Y(y), 4, 0, 7); g.stroke(); }
+  }, {
+    onDown: (x, y) => {
+      const n = np(); let best = -1, bd = 14; for (let j = 0; j < n; j++) { const [px, py] = pt(j), dd = Math.hypot(X(px) - x, Y(py) - y); if (dd < bd) { bd = dd; best = j; } }
+      const now = performance.now();
+      if (best >= 0 && now - lastTap < 320 && n > 2) { const a = Array.from({ length: n }, (_, j) => pt(j)); a.splice(best, 1); if (best === 0) a[0][0] = 0; if (best === n - 1) a[a.length - 1][0] = 1; setPts(a); lastTap = 0; return false; }
+      lastTap = now;
+      if (best >= 0) return { mode: 'pt', j: best };
+      const xn = (x - pad) / (W - 2 * pad); let seg = 0; for (let j = 0; j < n - 1; j++) if (xn >= pt(j)[0]) seg = j;
+      return { mode: 'seg', j: seg, c: pt(seg)[2], x, y, moved: false };
+    },
+    onMove: (x, y, dx, dy, s) => {
+      const n = np();
+      if (s.mode === 'pt') { const j = s.j, lo = j === 0 ? 0 : pt(j - 1)[0], hi = j === n - 1 ? 1 : pt(j + 1)[0], gr = Math.round(k.get(8)); let xn = (x - pad) / (W - 2 * pad); if (k.get(9) > 0.5) xn = Math.round(xn * gr) / gr;
+        if (j > 0 && j < n - 1) k.set(SP + j * 3, Math.max(lo, Math.min(hi, xn))); k.set(SP + j * 3 + 1, Math.max(0, Math.min(1, (H - pad - y) / (H - 2 * pad)))); }
+      else if (Math.abs(dy) > 4 || s.moved) { s.moved = true; const up = pt(s.j + 1)[1] >= pt(s.j)[1]; k.set(SP + s.j * 3 + 2, Math.max(-1, Math.min(1, s.c + (up ? dy : -dy) / 60))); }
+    },
+    onUp: (x, y, s) => {
+      if (!s || s.mode !== 'seg' || s.moved || np() >= 8) return;
+      const gr = Math.round(k.get(8)); let xn = Math.max(0.001, Math.min(0.999, (x - pad) / (W - 2 * pad))); if (k.get(9) > 0.5) xn = Math.round(xn * gr) / gr;
+      const a = Array.from({ length: np() }, (_, j) => pt(j)); let at = a.findIndex((q) => q[0] > xn); if (at <= 0) at = a.length - 1;
+      a.splice(at, 0, [xn, Math.max(0, Math.min(1, (H - pad - y) / (H - 2 * pad))), 0]); setPts(a);
+    },
+  });
+  const out = k.D(150, 56, (g, w, hh) => { if (!hist.length) return; lvPath(g, hist.map((v, j) => [j / (hist.length - 1) * w, hh - 4 - v * (hh - 8)]), DISPC.or, null, 1.2); });
+  k.every(50, () => { const r = k.out(); if (r.length >= 129) { hist = r.slice(1, 129); out.paint(); } });
+  const presets = h('div', { class: 'lk-shp' }, ...SPRESET.map((ps) => { const c = document.createElement('canvas'); c.width = 44; c.height = 24; const g = c.getContext('2d'); g.strokeStyle = '#9a9aa2'; g.lineWidth = 2; g.beginPath();
+    for (let j = 0; j < ps.length - 1; j++) for (let s2 = 0; s2 <= 10; s2++) { const t = s2 / 10, xx = 2 + (ps[j][0] + (ps[j + 1][0] - ps[j][0]) * t) * 40, yy = 22 - curve(ps[j][1], ps[j + 1][1], ps[j][2], t) * 20; if (!j && !s2) g.moveTo(xx, yy); else g.lineTo(xx, yy); } g.stroke();
+    return h('button', { class: 'lk-shpb', 'aria-label': 'Shape', onclick: () => setPts(ps.map((q) => q.slice())) }, c); }));
+  return k.row(k.dk(mapBar(k), ed, h('div', { class: 'lk-shrow' }, presets, k.LN('Grid', k.NT(8, { w: 30 })), k.T(9, 'Snap'))),
+    k.col(k.dk(out, k.row(k.LN('Jitter', k.NT(6, { w: 44 })), k.LN('Smooth', k.NT(7, { w: 44 })))),
+      k.row(k.col(k.swap(1, () => k.K(2, { n: 'Rate' }), () => k.K(0, { n: 'Rate' })), k.TL('Phase', k.N(5, { w: 56 }))), k.CH(1, ['Hz', '♪'], { v: true, cls: 'sm' }), k.col(k.K(3), k.TL('Offset', k.N(4, { w: 56 }))))));
+};
+// Envelope Follower: Map bar (Min / Max), input level bars with the envelope (orange) | Gain, Rise, Fall, Delay (ms or synced) with ms / ♪
+V[50] = (k) => {
+  let env = [], lv = [];
+  const disp = k.D(300, 118, (g, w, hh) => {
+    const n = lv.length; if (!n) return; g.fillStyle = '#6b6b70'; for (let j = 0; j < n; j++) { const v = Math.min(1, lv[j] * 1.2); g.fillRect(j / n * w, hh - 2 - v * (hh - 8), Math.max(1, w / n - 0.5), v * (hh - 8)); }
+    const lo = k.get(MOD_MAP[50] + 3), hi = k.get(MOD_MAP[50] + 4); lvPath(g, env.map((v, j) => [j / (env.length - 1) * w, hh - 2 - (lo + (hi - lo) * v) * (hh - 8)]), DISPC.or, null, 1.6);
+  });
+  k.every(50, () => { const r = k.out(); if (r.length >= 257) { env = r.slice(1, 129); lv = r.slice(129, 257); disp.paint(); } });
+  return k.col(k.dk(mapBar(k, { noMode: true }), disp), k.row(k.K(0), k.K(1), k.K(2), k.swap(4, () => k.K(5, { n: 'Delay' }), () => k.K(3)), k.CH(4, ['ms', '♪'], { v: true, cls: 'sm' })));
 };
 
 export const KIT = V;

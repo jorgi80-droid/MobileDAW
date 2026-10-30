@@ -522,9 +522,29 @@ Object.assign(DEVICES, {
   });
 }
 
+// ---- Live 12 modulators (engine: js/engine/fx6.js). Mapping block at the end of each (MOD_MAP[type] = its first index):
+// Map Mode, Bipolar, Mod Amount, Min, Max, then hidden: target strip, device index (-1 = instrument), parameter, target min / max / log, base value
+export const MOD_MAP = { 48: 14, 49: 35, 50: 6 };
+{
+  const pct = (n, d) => q(n, 0, 1, d, { unit: '%' }), NOTES = ['1/32', '1/16', '1/8', '1/4', '1/2', '1 Bar', '2 Bars', '4 Bars'], H = { hidden: true };
+  const map = () => [list('Map Mode', ['Remap', 'Mod'], 0), onoff('Bipolar'), pct('Mod Amount', 0.5), pct('Min', 0), pct('Max', 1),
+    q('Map Strip', -1, 72, -1, { step: 1, ...H }), q('Map Device', -1, 16, 0, { step: 1, ...H }), q('Map Param', 0, 255, 0, { step: 1, ...H }),
+    q('Map Lo', -1e6, 1e6, 0, H), q('Map Hi', -1e6, 1e6, 1, H), q('Map Log', 0, 1, 0, { step: 1, ...H }), q('Map Base', -1e6, 1e6, 0, H)];
+  const pts = [0, 0, -0.5, 0.5, 1, 0, 0.5, 0, 0.5, 1, 1, 0];
+  Object.assign(DEVICES, {
+    48: { name: 'LFO', kit: true, mod: true, params: [list('Waveform', ['Sine', 'Saw Up', 'Saw Down', 'Triangle', 'Rectangle', 'Random', 'Binary Noise'], 0), q('Shape', -1, 1, 0, { fmt: 'pct1' }),
+      q('Steps', 0, 16, 0, { step: 1, fmt: 'steps' }), pct('Jitter', 0), pct('Smooth', 0), q('Rate', 0.01, 40, 1, { curve: 'log', unit: 'Hz' }), onoff('Sync'), list('Sync Rate', NOTES, 3), onoff('x10'),
+      pct('Depth', 1), q('Offset', -1, 1, 0, { fmt: 'pct1' }), pct('Phase', 0), onoff('Hold'), q('Retrigger', 0, 1e6, 0, { step: 1, ...H }), ...map()] },
+    49: { name: 'Shaper', kit: true, mod: true, params: [q('Rate', 0.01, 40, 1, { curve: 'log', unit: 'Hz' }), onoff('Sync'), list('Sync Rate', NOTES, 3), pct('Depth', 1), q('Offset', -1, 1, 0, { fmt: 'pct1' }),
+      pct('Phase', 0), pct('Jitter', 0), pct('Smooth', 0), q('Grid', 1, 16, 4, { step: 1, fmt: 'num' }), onoff('Snap', 1), q('Points', 2, 8, 4, { step: 1, ...H }),
+      ...Array.from({ length: 8 }, (_, j) => [q(`P${j + 1} X`, 0, 1, j < 4 ? pts[j * 3] : 1, H), q(`P${j + 1} Y`, 0, 1, j < 4 ? pts[j * 3 + 1] : 0, H), q(`P${j + 1} Curve`, -1, 1, j < 4 ? pts[j * 3 + 2] : 0, H)]).flat(), ...map()] },
+    50: { name: 'Envelope Follower', kit: true, mod: true, params: [q('Gain', -24, 24, 0, { unit: 'dB' }), pct('Rise', 0.157), pct('Fall', 0.134), q('Delay', 0, 1000, 63, { unit: 'ms' }), onoff('Delay Sync'), list('Delay Note', NOTES, 2), ...map()] },
+  });
+}
+
 // Audio effect categories as in Live 12's browser. Older devices that have no Live 12 counterpart stay loadable under 'Lainnya (lama)'.
 export const FX_GROUPS = [['loop', 'Delay & Loop', [19, 17, 6, 18, 43, 45, 46]], ['drive', 'Drive & Color', [33, 34, 29, 37, 26, 27, 35, 36, 9, 3, 28]], ['dyn', 'Dynamics', [4, 23, 24, 5, 38]],
-  ['eq', 'EQ & Filters', [1, 25, 31, 2]], ['mod', 'Pitch & Modulation', [22, 20, 21, 42]], ['rev', 'Reverb & Resonance', [40, 44, 39, 7, 47, 41]], ['util', 'Utilities', [0, 32, 30, 16]], ['old', 'Lainnya (lama)', [8, 13, 10, 12, 14, 15]]];
+  ['eq', 'EQ & Filters', [1, 25, 31, 2]], ['mod', 'Pitch & Modulation', [22, 20, 21, 42]], ['rev', 'Reverb & Resonance', [40, 44, 39, 7, 47, 41]], ['modu', 'Modulators', [50, 48, 49]], ['util', 'Utilities', [0, 32, 30, 16]], ['old', 'Lainnya (lama)', [8, 13, 10, 12, 14, 15]]];
 
 // Parameter <-> 0..1 mapping shared by knobs, automation editing and the engine sync.
 export const normOf = (p, v) => { const x = p.curve === 'log' ? Math.log(v / p.min) / Math.log(p.max / p.min) : (v - p.min) / (p.max - p.min); return x < 0 ? 0 : x > 1 ? 1 : x; };
@@ -693,6 +713,7 @@ export function fmtParam(p, v) {
     case 'bpm': return v.toFixed(1) + ' BPM';
     case 'st': return (v > 0 ? '+' : '') + Math.round(v) + ' st';
     case 'num': return String(Math.round(v));
+    case 'steps': return v < 2 ? 'Off' : String(Math.round(v));
     case 'interp': return Math.round(v) ? 'High' : 'Norm';
     case 'suboct': return ['0', '-1', '-2'][Math.round(v)] || '0';
     case 'umode': return ['None', 'Classic', 'Shimmer', 'Noise', 'Phase Sync', 'Pos Spread', 'Random'][Math.round(v)] || '';
