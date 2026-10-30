@@ -1,9 +1,10 @@
 // Live 12 device panels for the effects of js/engine/fx3.js (defs.js: kit: true). Every control is bound to a real engine parameter;
 // the layout follows the owner's reference images of Live 12 (sections side by side, label above / value below each knob, orange toggles,
 // cyan value boxes, dark displays with a cyan curve and hollow orange rings that can be dragged).
-import { h, knob, menu, ask } from './ui.js';
+import { h, knob, menu, ask, fromNorm, toNorm } from './ui.js';
 import { C } from './theme.js';
-import { fmtParam, normOf, valOf, MOD_MAP, DEVICES, INSTRUMENTS, FX_GROUPS } from './defs.js';
+import { fmtParam, normOf, valOf, MOD_MAP, DEVICES, INSTRUMENTS, FX_GROUPS, IRACK_DEF } from './defs.js';
+import { buildSynth } from './devviz.js';
 import { lvNum, lvTog, lvBtn, lvChoice, lvSel, lvDisp, lvDrag, lvRing, lvPath, lvTabs, DISPC } from './liveui.js';
 import { eq8Stages } from './engine/fx3.js';
 import { offerAutomation } from './automate.js';
@@ -24,7 +25,7 @@ function kit(ctx) {
   const get = (k) => d.params[k];
   const redraw = () => { for (const f of draws) f(); };
   const set = (k, v) => { if (ctx.setParam) ctx.setParam(k, v); else P.setDeviceParam(i, di, k, v); redraw(); for (const c of ctls) if (c.update && c._k !== k) c.update(); };
-  const auto = (k) => (ctx.nested ? null : (rect) => offerAutomation(rect, { kind: 4, strip: P.stripOf(i), devId: d.id, param: k, def: def.params[k] }, `${def.name} ${def.params[k].n}`));   // devices inside a rack have no automation lanes (map them to a macro)
+  const auto = (k) => (ctx.autoFn ? ctx.autoFn(k) : ctx.nested ? null : (rect) => offerAutomation(rect, { kind: 4, strip: P.stripOf(i), devId: d.id, param: k, def: def.params[k] }, `${def.name} ${def.params[k].n}`));   // devices inside a rack have no automation lanes (map them to a macro)
   const reg = (el, k) => { el._k = k; ctls.push(el); return el; };
   const lbl = (k, o) => (o && o.n != null ? o.n : def.params[k].n.replace(/^(L\+R|L|R) /, ''));
   const K = (k, o = {}) => { const el = knob({ ...def.params[k], n: lbl(k, o) }, () => get(k), (v) => set(k, v), fmtParam, C('#7ac5ff'), auto(k)); el.classList.add('lk-k'); if (o.big) el.classList.add('big'); if (o.col) el.style.setProperty('--lv-arc', o.col); return reg(el, k); };
@@ -711,20 +712,25 @@ V[50] = (k) => {
   return k.col(k.dk(mapBar(k, { noMode: true }), disp), k.row(k.K(0), k.K(1), k.K(2), k.swap(4, () => k.K(5, { n: 'Delay' }), () => k.K(3)), k.CH(4, ['ms', '♪'], { v: true, cls: 'sm' })));
 };
 
-// ================================================================================================ Audio Effect Rack (engine: js/engine/fx7.js)
-// Left strip: macros / chain list / devices toggles. Macros: 8 knobs (Map mode: tap a macro, then a device and a parameter inside the rack).
-// Chain list: Auto Select, Chain (select editor) / Hide; per chain: name (tap = select, double tap = rename), meter, volume, pan, activator, solo,
-// chain menu; Create Chain; tapping "Drop Audio Effects Here" = new chain with an effect. Devices: the selected chain's devices as Live cards.
+// ================================================================================================ Racks (engine: js/engine/fx7.js)
+// One panel for the Audio Effect Rack (device 51) and the Instrument Rack (instrument 12, di = -1). Left strip: macros / chain list / devices.
+// Macros: 8 knobs (Map mode: tap a macro, then a device or instrument and a parameter inside the rack). Chain list: Auto Select, zone editors
+// (Instrument Rack: Key / Vel / Chain, Audio Effect Rack: Chain) and Hide; per chain: name (tap = select, double tap = rename), meter, volume,
+// pan, activator, solo, chain menu; Create Chain; tapping the drop text = a new chain with an effect / instrument. Devices: the selected chain's
+// instrument (Instrument Rack) and effects as Live cards.
 const RK = new Map(), RACK_FX = () => FX_GROUPS.map(([, label, ks]) => [label, ks.filter((t) => DEVICES[t] && DEVICES[t].kit && !DEVICES[t].mod && !DEVICES[t].rack)]).filter(([, ks]) => ks.length);
 const fxMenu = (r, fn) => menu(RACK_FX().flatMap(([label, ks]) => [{ label: label.toUpperCase(), dim: true }, ...ks.map((t) => ({ label: DEVICES[t].name, fn: () => fn(t) }))]), r.left, Math.max(8, r.top - 120));
+const instMenu = (r, fn, cur) => menu(P.IRACK_INSTS.map((t) => ({ label: INSTRUMENTS[t].name, check: t === cur, fn: () => fn(t) })), r.left, r.bottom + 1);
 const icoBtn = (svg, title, on, fn) => { const b = h('button', { class: 'lk-rki' + (on ? ' on' : ''), 'aria-label': title, title, onclick: fn }); b.innerHTML = `<svg viewBox="0 0 16 16" width="14" height="14">${svg}</svg>`; return b; };
-V[51] = (k) => {
-  const { i, di } = k.ctx, d = k.d, st = RK.get(d.id) || { mac: false, list: true, dev: true, sel: 0, zones: false, auto: false, map: false }; RK.set(d.id, st);
+const ZM = { key: [122, 0, 'Key'], vel: [138, 1, 'Vel'], chain: [106, 0, 'Chain'] };
+function rackPanel(k) {
+  const { i, di } = k.ctx, d = k.d, IR = di < 0, st = RK.get(d.id) || { mac: false, list: true, dev: true, sel: 0, zm: null, auto: false, map: false }; RK.set(d.id, st);
   const root = h('div', { class: 'lk-rack' }); let pk = [];
   st.sel = Math.max(0, Math.min(st.sel, d.chains.length - 1));
   const redo = () => { root.replaceChildren(...build()); };
   const meterEls = [];
   k.every(60, () => { const r = k.out(); if (r.length) { pk = r; for (const [c, m] of meterEls) { const v = Math.max(0, Math.min(1, (20 * Math.log10((pk[c] || 0) + 1e-9) + 60) / 60)); m.style.setProperty('--m', String(v)); } } });
+  const paramMenu = (r, ps, fn) => menu(ps.map((pp, kk) => (pp.hidden ? null : { label: pp.n, fn: () => fn(kk) })).filter(Boolean), r.left, r.bottom + 1);
   function build() {
     meterEls.length = 0;
     const strip = h('div', { class: 'lk-rks' },
@@ -734,13 +740,18 @@ V[51] = (k) => {
     const parts = [strip];
     if (st.mac) {
       const mk = (m) => {
-        const mm = d.macroMap && d.macroMap[m], ch = mm && d.chains.find((c) => c.id === mm.c), x = ch && ch.devices.find((q) => q.id === mm.id), name = x ? DEVICES[x.type].params[mm.k].n : 'Macro ' + (m + 1);
+        const mm = d.macroMap && d.macroMap[m], ch = mm && d.chains.find((c) => c.id === mm.c), x = ch && (mm.id === 'inst' ? ch.inst : ch.devices.find((q) => q.id === mm.id));
+        const name = x ? (mm.id === 'inst' ? INSTRUMENTS[x.type] : DEVICES[x.type]).params[mm.k].n : 'Macro ' + (m + 1);
         const kn = k.K(33 + m, { n: name }); if (!st.map) return kn;
         const b = h('button', { class: 'lk-mmap' + (x ? ' on' : ''), onclick: (e) => {
           const r = e.currentTarget.getBoundingClientRect(), items = [];
-          d.chains.forEach((c, ci) => { items.push({ label: c.name.toUpperCase(), dim: true }); c.devices.forEach((q) => items.push({ label: '   ' + DEVICES[q.type].name + '…', fn: () => menu(DEVICES[q.type].params.map((pp, kk) => (pp.hidden ? null : { label: pp.n, fn: () => P.rackMapMacro(i, di, m, { c: c.id, id: q.id, k: kk }) })).filter(Boolean), r.left, r.bottom + 1) })); });
+          d.chains.forEach((c) => {
+            items.push({ label: c.name.toUpperCase(), dim: true });
+            if (c.inst) items.push({ label: '   ' + INSTRUMENTS[c.inst.type].name + '…', fn: () => paramMenu(r, INSTRUMENTS[c.inst.type].params, (kk) => P.rackMapMacro(i, di, m, { c: c.id, id: 'inst', k: kk })) });
+            c.devices.forEach((q) => items.push({ label: '   ' + DEVICES[q.type].name + '…', fn: () => paramMenu(r, DEVICES[q.type].params, (kk) => P.rackMapMacro(i, di, m, { c: c.id, id: q.id, k: kk })) }));
+          });
           if (x) items.push({ sep: true }, { label: 'Hapus map', fn: () => P.rackMapMacro(i, di, m, null) });
-          menu(items.length ? items : [{ label: 'Tambahkan efek ke chain dulu', dim: true }], r.left, r.bottom + 1);
+          menu(items.length ? items : [{ label: 'Tambahkan device ke chain dulu', dim: true }], r.left, r.bottom + 1);
         } }, x ? name : 'Map');
         return h('div', { class: 'lk-mcell' }, kn, b);
       };
@@ -753,54 +764,79 @@ V[51] = (k) => {
         const more = icoBtn('<path d="M3 8a5 5 0 0 1 9-3M13 8a5 5 0 0 1-9 3" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M12 2v3H9M4 14v-3h3" fill="none" stroke="currentColor" stroke-width="1.5"/>', 'Menu chain', false, (e) => {
           const r = e.currentTarget.getBoundingClientRect();
           menu([{ label: 'Ganti nama…', fn: () => ask('Nama chain', c.name, (v) => P.rackRenameChain(i, di, ci, String(v).trim())) }, { label: 'Duplikat', dim: d.chains.length >= 8, fn: () => P.rackDuplicateChain(i, di, ci) },
+            ...(IR ? [{ label: c.inst ? 'Ganti instrumen…' : 'Pilih instrumen…', fn: () => instMenu(r, (t) => P.rackSetChainInst(i, ci, t), c.inst && c.inst.type) }] : []),
             { label: 'Tambah efek…', fn: () => fxMenu(r, (t) => P.rackAddDevice(i, di, ci, t)) }, { sep: true }, { label: 'Hapus chain', fn: () => { P.rackRemoveChain(i, di, ci); if (st.sel >= d.chains.length) st.sel = Math.max(0, d.chains.length - 1); } }], r.left - 120, r.bottom);
         });
         return h('div', { class: 'lk-crow' + (sel ? ' sel' : '') }, name, met, k.N(o, { w: 58 }), k.N(o + 1, { w: 48, fill: false }), k.T(o + 2, '🔈', { cls: 'lk-spk', w: 24 }), k.T(o + 3, 'S', { w: 22 }), more);
       });
-      const zones = st.zones ? zoneEditor() : null;
-      const drop = h('button', { class: 'lk-rdrop', onclick: (e) => fxMenu(e.currentTarget.getBoundingClientRect(), (t) => { const c = P.rackAddChain(i, di); if (c >= 0) { P.rackAddDevice(i, di, c, t); st.sel = c; } }) }, 'Drop Audio Effects Here');
+      const zones = st.zm ? zoneEditor() : null;
+      const drop = h('button', { class: 'lk-rdrop', onclick: (e) => { const r = e.currentTarget.getBoundingClientRect(), mkc = (t, isInst) => { const c = P.rackAddChain(i, di, isInst ? t : 0); if (c < 0) return; if (!isInst) P.rackAddDevice(i, di, c, t); st.sel = c; };
+        if (IR) instMenu(r, (t) => mkc(t, true)); else fxMenu(r, (t) => mkc(t, false)); } }, IR ? 'Drop an Instrument or Sample Here' : 'Drop Audio Effects Here');
+      const zb = (key) => lvTog(ZM[key][2], () => st.zm === key, (b) => { st.zm = b ? key : null; redo(); }, { cls: 'lk-t' });
       const head = h('div', { class: 'lk-rkh' }, k.reg(lvTog('⇥', () => st.auto, (b) => { st.auto = b; }, { cls: 'lk-t', w: 26 }), -2), h('span', { class: 'lk-grow' }),
-        lvTog('Chain', () => st.zones, (b) => { st.zones = b; redo(); }, { cls: 'lk-t' }), lvTog('Hide', () => !st.zones, (b) => { st.zones = !b; redo(); }, { cls: 'lk-t lk-hide' }));
+        ...(IR ? [zb('key'), zb('vel')] : []), zb('chain'), lvTog('Hide', () => !st.zm, (b) => { if (b) st.zm = null; else st.zm = IR ? 'key' : 'chain'; redo(); }, { cls: 'lk-t lk-hide' }));
       parts.push(h('div', { class: 'lk-rkl' }, head, h('div', { class: 'lk-cbox' }, ...rows, zones, h('button', { class: 'lv-btn lk-cchain', disabled: d.chains.length >= 8, onclick: () => { const c = P.rackAddChain(i, di); if (c >= 0) st.sel = c; } }, 'Create Chain'), drop)));
     }
     if (st.dev) {
-      const ch = d.chains[st.sel], cards = [];
+      const sc = st.sel, ch = d.chains[sc], cards = [];   // the chain shown when these cards were built
+      if (ch && IR) cards.push(instCard(ch));
       if (ch) ch.devices.forEach((x, j) => {
         const def = DEVICES[x.type]; if (!def) return;
-        const ctx = { i, di, d: x, def, nested: true, outD: 1000 + di * 256 + st.sel * 16 + j, every: k.ctx.every, setParam: (kk, v) => P.rackParam(i, di, st.sel, j, kk, v) };
+        const ctx = { i, di, d: x, def, nested: true, outD: IR ? 2000 + sc * 16 + j : 1000 + di * 256 + sc * 16 + j, every: k.ctx.every, setParam: (kk, v) => P.rackParam(i, di, sc, j, kk, v) };
         let kv = null; try { kv = kitView(ctx); } catch (e) { console.error('rack', e); }
-        const pw = h('button', { class: 'pw' + (x.bypass ? '' : ' on'), 'aria-label': 'Bypass', onclick: () => P.rackBypass(i, di, st.sel, j) });
+        const pw = h('button', { class: 'pw' + (x.bypass ? '' : ' on'), 'aria-label': 'Bypass', onclick: () => P.rackBypass(i, di, sc, j) });
         const more = h('button', { class: 'dv-more', 'aria-label': 'Menu device', onclick: (e) => { const r = e.currentTarget.getBoundingClientRect(), n = ch.devices.length;
-          menu([{ label: 'Geser ke kiri', dim: j <= 0, fn: () => P.rackMoveDevice(i, di, st.sel, j, j - 1) }, { label: 'Geser ke kanan', dim: j >= n - 1, fn: () => P.rackMoveDevice(i, di, st.sel, j, j + 1) }, { sep: true },
-            { label: x.bypass ? 'Aktifkan' : 'Bypass', fn: () => P.rackBypass(i, di, st.sel, j) }, { label: 'Hapus device', fn: () => P.rackRemoveDevice(i, di, st.sel, j) }], r.left - 120, r.bottom); } }, '⋯');
+          menu([{ label: 'Geser ke kiri', dim: j <= 0, fn: () => P.rackMoveDevice(i, di, sc, j, j - 1) }, { label: 'Geser ke kanan', dim: j >= n - 1, fn: () => P.rackMoveDevice(i, di, sc, j, j + 1) }, { sep: true },
+            { label: x.bypass ? 'Aktifkan' : 'Bypass', fn: () => P.rackBypass(i, di, sc, j) }, { label: 'Hapus device', fn: () => P.rackRemoveDevice(i, di, sc, j) }], r.left - 120, r.bottom); } }, '⋯');
         cards.push(h('div', { class: 'card lkcard lk-rcard' + (x.bypass ? ' off' : '') }, h('h4', {}, pw, h('span', {}, def.name), more), kv ? kv.el : null));
       });
-      parts.push(h('div', { class: 'lk-rkd' }, ...cards, h('button', { class: 'lk-rdrop2', disabled: !ch, onclick: (e) => fxMenu(e.currentTarget.getBoundingClientRect(), (t) => P.rackAddDevice(i, di, st.sel, t)) }, 'Drop Audio Effects Here')));
+      parts.push(h('div', { class: 'lk-rkd' }, ...cards, h('button', { class: 'lk-rdrop2', disabled: !ch, onclick: (e) => fxMenu(e.currentTarget.getBoundingClientRect(), (t) => P.rackAddDevice(i, di, sc, t)) }, 'Drop Audio Effects Here')));
     }
     return parts;
   }
-  // Chain Select Editor: ruler 0..127 with the selector (drag), one zone bar per chain (drag the edges or the middle)
+  // Instrument Rack: the chain's instrument as a Live card (name = instrument chooser, ⋯ = change / remove), or a drop zone to choose one
+  function instCard(ch) {
+    const ci = d.chains.indexOf(ch);
+    if (!ch.inst) return h('button', { class: 'lk-rdrop2 lk-idrop', onclick: (e) => instMenu(e.currentTarget.getBoundingClientRect(), (t) => P.rackSetChainInst(i, ci, t)) }, 'Drop an Instrument Here');
+    const def = INSTRUMENTS[ch.inst.type], get = (kk) => ch.inst.params[kk] ?? def.params[kk].def;
+    const name = h('button', { class: 'dv-name', onclick: (e) => instMenu(e.currentTarget.getBoundingClientRect(), (t) => P.rackSetChainInst(i, ci, t), ch.inst.type) }, h('span', {}, def.name), h('i', { class: 'tri', 'aria-hidden': 'true' }));
+    const more = h('button', { class: 'dv-more', 'aria-label': 'Menu instrumen', onclick: (e) => { const r = e.currentTarget.getBoundingClientRect(); menu([{ label: 'Ganti instrumen…', fn: () => instMenu(r, (t) => P.rackSetChainInst(i, ci, t), ch.inst.type) }, { label: 'Hapus instrumen', fn: () => P.rackSetChainInst(i, ci, 0) }], r.left - 120, r.bottom); } }, '⋯');
+    const syn = buildSynth({ type: ch.inst.type, t: { id: 'ir' + d.id + ':' + ch.id }, def, h, knob, fmt: fmtParam, fromNorm, toNorm, pitch: null, get, set: (kk, v) => P.rackInstParam(i, ci, kk, v), auto: () => {} });
+    return h('div', { class: 'card syn lk-rcard lk-rinst' }, h('h4', {}, h('i', { class: 'pdot' }), name, more), syn ? syn.el : null);
+  }
+  // zone editors: Key (0..127, note names) / Vel (1..127) / Chain (selector + zones). Drag a bar's edges or middle; Chain: drag the selector
   function zoneEditor() {
-    const W = 300, RH = 16, H = 14 + d.chains.length * RH;
+    const [base, lo0, label] = ZM[st.zm], W = 300, RH = 16, H = 14 + d.chains.length * RH, X = (v) => 4 + (v - lo0) / (127 - lo0) * (W - 8), V2 = (x) => Math.max(lo0, Math.min(127, Math.round(lo0 + (x - 4) / (W - 8) * (127 - lo0))));
     const c = k.D(W, H, (g) => {
-      g.fillStyle = DISPC.grid; for (let v = 0; v <= 127; v += 16) { const x = 4 + v / 127 * (W - 8); g.fillRect(Math.round(x), 0, 1, H); }
-      d.chains.forEach((_, ci) => { const lo = k.get(106 + ci * 2), hi = k.get(107 + ci * 2), x0 = 4 + lo / 127 * (W - 8), x1 = 4 + hi / 127 * (W - 8); g.fillStyle = ci === st.sel ? '#4fc3f0' : '#3c7e8d'; g.fillRect(x0, 14 + ci * RH + 2, Math.max(2, x1 - x0), RH - 4); });
-      const sx = 4 + k.get(105) / 127 * (W - 8); g.fillStyle = DISPC.or; g.fillRect(Math.round(sx) - 1, 0, 2, H); g.beginPath(); g.moveTo(sx - 5, 0); g.lineTo(sx + 5, 0); g.lineTo(sx, 7); g.fill();
+      g.fillStyle = DISPC.grid; for (let v = 0; v <= 127; v += st.zm === 'key' ? 12 : 16) { g.fillRect(Math.round(X(Math.max(lo0, v))), 0, 1, H); if (st.zm === 'key') label2(g, 'C' + (v / 12 - 1), X(v) + 2, 10); }
+      d.chains.forEach((_, ci) => { const a = k.get(base + ci * 2), b = k.get(base + ci * 2 + 1); g.fillStyle = ci === st.sel ? '#4fc3f0' : '#3c7e8d'; g.fillRect(X(a), 14 + ci * RH + 2, Math.max(2, X(b) - X(a)), RH - 4); });
+      if (st.zm === 'chain') { const sx = X(k.get(105)); g.fillStyle = DISPC.or; g.fillRect(Math.round(sx) - 1, 0, 2, H); g.beginPath(); g.moveTo(sx - 5, 0); g.lineTo(sx + 5, 0); g.lineTo(sx, 7); g.fill(); }
     }, {
-      onDown: (x, y) => { const v = Math.round((x - 4) / (W - 8) * 127); if (y < 14) return { sel: true }; const ci = Math.floor((y - 14) / RH); if (ci < 0 || ci >= d.chains.length) return false; const lo = k.get(106 + ci * 2), hi = k.get(107 + ci * 2);
-        const edge = Math.abs(v - lo) < 6 ? 'lo' : Math.abs(v - hi) < 6 ? 'hi' : 'mid'; return { ci, edge, lo, hi, v }; },
+      onDown: (x, y) => { const v = V2(x); if (y < 14) return st.zm === 'chain' ? { sel: true } : false; const ci = Math.floor((y - 14) / RH); if (ci < 0 || ci >= d.chains.length) return false; const a = k.get(base + ci * 2), b = k.get(base + ci * 2 + 1);
+        return { ci, edge: Math.abs(v - a) < 6 ? 'lo' : Math.abs(v - b) < 6 ? 'hi' : 'mid', a, b, v }; },
       onMove: (x, y, dx, dy, s) => {
-        const v = Math.max(0, Math.min(127, Math.round((x - 4) / (W - 8) * 127)));
+        const v = V2(x);
         if (s.sel) { k.set(105, v); if (st.auto) { const hit = d.chains.findIndex((_, ci) => v >= k.get(106 + ci * 2) && v <= k.get(107 + ci * 2)); if (hit >= 0 && hit !== st.sel) { st.sel = hit; redo(); } } return; }
-        const a = 106 + s.ci * 2;
-        if (s.edge === 'lo') k.set(a, Math.min(v, k.get(a + 1))); else if (s.edge === 'hi') k.set(a + 1, Math.max(v, k.get(a)));
-        else { const dv = Math.max(-s.lo, Math.min(127 - s.hi, v - s.v)); k.set(a, s.lo + dv); k.set(a + 1, s.hi + dv); }
+        const q = base + s.ci * 2;
+        if (s.edge === 'lo') k.set(q, Math.min(v, k.get(q + 1))); else if (s.edge === 'hi') k.set(q + 1, Math.max(v, k.get(q)));
+        else { const dv = Math.max(lo0 - s.a, Math.min(127 - s.b, v - s.v)); k.set(q, s.a + dv); k.set(q + 1, s.b + dv); }
       } });
-    return h('div', { class: 'lk-zone' }, c, k.LN('Chain Select', k.N(105, { w: 52 })));
+    const sc = st.sel, ro = st.zm === 'chain' ? k.LN('Chain Select', k.N(105, { w: 52 })) : k.row(h('span', { class: 'lk-lb' }, label + ' ' + (sc + 1)), k.N(base + sc * 2, { w: 52 }), k.N(base + sc * 2 + 1, { w: 52 }));
+    return h('div', { class: 'lk-zone' }, c, ro);
   }
   root.replaceChildren(...build());
   return root;
-};
+}
+const label2 = (g, t, x, y) => label(g, t, x, y, DISPC.ink, 8);
+V[51] = (k) => rackPanel(k);
+// Instrument Rack (instrument 12): the rack panel on top of the instrument's own parameters (stored at 100 + k, see project.js)
+export function irackView(i, t, every) {
+  const store = t.inst, def = IRACK_DEF;
+  const d = { id: 'ir' + t.id, type: 51, get chains() { return store.chains; }, get macroMap() { return store.macroMap; }, params: new Proxy({}, { get: (_, kk) => store.params[100 + +kk] ?? (def.params[kk] ? def.params[kk].def : undefined) }) };
+  const ctx = { i, di: -1, d, def, every, outD: 999, setParam: (kk, v) => P.setInstParam(i, 100 + kk, v),
+    autoFn: (kk) => (rect) => offerAutomation(rect, { kind: 5, strip: P.stripOf(i), param: 100 + kk, def: def.params[kk] }, `${t.name} \u2022 ${def.params[kk].n}`) };
+  const k = kit(ctx); const el = rackPanel(k); el.classList.add('lk'); return { el, draw: k.redraw };
+}
 
 export const KIT = V;
 export function kitView(ctx) { if (!V[ctx.d.type]) return null;   // no Live 12 panel yet: the card falls back to the automatic knob layout

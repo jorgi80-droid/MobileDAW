@@ -24,7 +24,7 @@ Baca juga `README-ANDROID.md` (build, install, status fase 2).
 | Logika bar & loop gaya FL Studio Mobile (editor terbuka ke kanan, isi klip tumbuh per bar, klip loop diedit sebagai sumber loop, "Lepas loop") | selesai (`docs/redesign/5-*.jpg`) |
 | Perombakan UI Live 12 tahap 2 (Fase 0-8): fondasi CSS/token, control bar + jendela global, internal device, tab Keys, arrangement (tinggi baris, overview, loop brace), Clip View (Transform + Envelopes), mixer (lebar strip, input return, send di header) | selesai (`docs/redesign/11..17-*.jpg`, `docs/redesign/PERF.md`) |
 | Audio Effect Rack dengan macro (engine JS; port C++ belum) | selesai |
-| **Instrument Rack (instrumen per chain)** | **belum** |
+| Instrument Rack (instrumen + efek per chain, zona Key / Vel / Chain, macro) | selesai (instrumen bersampel di dalam chain belum) |
 | **Port C++: GMS, Moisture, Osphere, DirectWave/Keystone/Sampler, Drum Sampler, SoundFont, Wavetable** | **belum** |
 | **Port C++: semua efek (Utility, EQ Three, Parametric EQ, Compressor, Limiter, Saturator, Auto Filter, Echo, Reverb, Roar, Autoduck, Stereolizer, Spacer, Level/Analyzer/MiniMeters)** | **belum** |
 | Ekspor WAV lewat engine native; angka CPU/underrun Web vs Native dari HP | belum |
@@ -150,8 +150,16 @@ Permintaan pemilik: SEMUA efek dan instrumen diganti dengan set stok Ableton Liv
   device dikirim ulang ke engine (muat proyek, pindah device, undo). Isi rack: hanya efek kit (tanpa modulator / rack bersarang); device di
   dalam rack tidak punya lane otomasi (pakai macro). UI: `V[51]` di fxkit.js (`ctx.setParam` / `ctx.outD` / `ctx.nested` untuk kartu di dalam).
   `node tools/ui-shots.mjs <folder> rack` = screenshot rack berisi dua chain.
-- Belum ada: Instrument Rack / Drum Rack baru (pola sama dengan Audio Effect Rack, plus instrumen per chain), External Audio Effect
-  (tidak mungkin di HP: jangan dibuat).
+- Instrument Rack (instrumen tipe 12, jadi; `docs/redesign/26-instrument-rack.jpg`): `InstrumentRack` di `js/engine/fx7.js` (turunan rack efek;
+  chain = instrumen + efek; not diarahkan per zona Key (122 + 2c) / Vel (138 + 2c) / Chain; note-off ke chain yang menerima note-on; instrumen
+  dirender per potongan sampel ke buffer chain, efek + mix sekali per blok lewat `endBlock` yang dipanggil core.js). Parameter rack disimpan di
+  `t.inst.params[100 + k]` karena parameter instrumen 90 = Pitch engine (`IRACK_DEF` = definisi tanpa geseran, `INSTRUMENTS[12]` = 100 placeholder
+  + IRACK_DEF). Semua fungsi `rack*` di project.js menerima `di = -1` untuk Instrument Rack (`R(i, di)`), plus `rackSetChainInst`,
+  `rackInstParam`. Instrumen yang boleh di dalam chain: `IRACK_INSTS` = Mini Synth, SuperSaw, GMS, Moisture, Osphere (tanpa data sampel);
+  Sampler / Wavetable / DirectWave / Keystone / SoundFont / Drum belum (butuh data sampel per chain). devOut: 999 = meter chain,
+  2000 + chain * 16 + j = efek di dalam. UI: `rackPanel()` di fxkit.js dipakai kedua rack (`irackView()` dari devices.js instCard).
+  `node tools/ui-shots.mjs <folder> irack`.
+- Belum ada: instrumen bersampel di dalam Instrument Rack, Drum Rack versi rack (pad = chain), External Audio Effect (tidak mungkin di HP).
 - Instrumen (belum mulai): Analog, Operator, Wavetable (redesign), Drift, Meld, Simpler, Sampler (redesign), Drum Rack (redesign), Impulse,
   Electric, Collision, Tension, Poli, Granulator III, DS Kick / Snare / Tom / HH / Clap / FM. Tipe instrumen lama tetap bisa dimuat (proyek lama).
 - Aturan: parameter baru selalu DITAMBAHKAN di akhir (indeks lama tetap), `migrate()` bila arti berubah; efek tanpa padanan Live 12 masuk

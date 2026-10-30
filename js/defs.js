@@ -4,7 +4,7 @@ import { wtName, WT_COUNT } from './engine/live.js';
 // (app/src/main/cpp/instruments.h and devices.h).
 export const INST = { MINISYNTH: 1, SUPERSAW: 2, DRUM: 3, DIRECTWAVE: 4, GMS: 5, SOUNDFONT: 6, MOISTURE: 7, OSPHERE: 8, KEYSTONE: 9, SAMPLER: 10, WAVETABLE: 11 };
 // Instruments a synth/sampler track can switch between (drums have their own track type).
-export const INST_LIST = [11, 10, 1, 2, 4, 5, 6, 7, 8, 9];
+export const INST_LIST = [11, 10, 1, 2, 4, 5, 6, 7, 8, 9, 12];
 
 export const INSTRUMENTS = {
   1: { name: 'Mini Synth', params: [
@@ -525,6 +525,7 @@ Object.assign(DEVICES, {
 // ---- Live 12 modulators (engine: js/engine/fx6.js). Mapping block at the end of each (MOD_MAP[type] = its first index):
 // Map Mode, Bipolar, Mod Amount, Min, Max, then hidden: target strip, device index (-1 = instrument), parameter, target min / max / log, base value
 export const MOD_MAP = { 48: 14, 49: 35, 50: 6 };
+export const IRACK_DEF = { name: 'Instrument Rack', rack: true, params: [] };   // filled below with the Audio Effect Rack parameters + key / velocity zones
 {
   const pct = (n, d) => q(n, 0, 1, d, { unit: '%' }), NOTES = ['1/32', '1/16', '1/8', '1/4', '1/2', '1 Bar', '2 Bars', '4 Bars'], H = { hidden: true };
   const map = () => [list('Map Mode', ['Remap', 'Mod'], 0), onoff('Bipolar'), pct('Mod Amount', 0.5), pct('Min', 0), pct('Max', 1),
@@ -552,6 +553,13 @@ export const MOD_MAP = { 48: 14, 49: 35, 50: 6 };
     q(`M${m + 1} Lo`, -1e6, 1e6, 0, H), q(`M${m + 1} Hi`, -1e6, 1e6, 1, H), q(`M${m + 1} Log`, 0, 1, 0, { step: 1, ...H }), q(`M${m + 1} Min`, 0, 1, 0, { unit: '%' }), q(`M${m + 1} Max`, 0, 1, 1, { unit: '%' }));
   P.push(q('Chain Selector', 0, 127, 0, { step: 1, fmt: 'num' })); for (let c = 0; c < 8; c++) P.push(q(`Chain ${c + 1} Zone Low`, 0, 127, 0, { step: 1, fmt: 'num' }), q(`Chain ${c + 1} Zone High`, 0, 127, 127, { step: 1, fmt: 'num' }));
   DEVICES[51] = { name: 'Audio Effect Rack', kit: true, rack: true, params: P };
+  // Instrument Rack (instrument type 12): the same rack parameters plus key and velocity zones per chain; stored at 100 + k in the instrument
+  // parameters (90 is the engine's Pitch), so INSTRUMENTS[12].params starts with 100 hidden placeholders
+  const IP = P.map((x) => (/ Device$/.test(x.n) ? { ...x, min: -1 } : x));
+  for (let c = 0; c < 8; c++) IP.push(q(`Chain ${c + 1} Key Low`, 0, 127, 0, { step: 1, fmt: 'note' }), q(`Chain ${c + 1} Key High`, 0, 127, 127, { step: 1, fmt: 'note' }));
+  for (let c = 0; c < 8; c++) IP.push(q(`Chain ${c + 1} Vel Low`, 1, 127, 1, { step: 1, fmt: 'num' }), q(`Chain ${c + 1} Vel High`, 1, 127, 127, { step: 1, fmt: 'num' }));
+  IRACK_DEF.params = IP;
+  INSTRUMENTS[12] = { name: 'Instrument Rack', view: 'irack', params: [...Array.from({ length: 100 }, () => ({ n: '-', min: 0, max: 1, def: 0, hidden: true })), ...IP] };
 }
 
 // Audio effect categories as in Live 12's browser. Older devices that have no Live 12 counterpart stay loadable under 'Lainnya (lama)'.

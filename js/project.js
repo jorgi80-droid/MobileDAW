@@ -2,7 +2,7 @@
 // The UI edits `state`; this module mirrors changes into the native engine.
 import { eng, MASTER, RET0, hooks } from './engine.js';
 import { processBuffers, detectBpm } from './engine/audioops.js';
-import { INSTRUMENTS, DEVICES, DRUM_PADS, INST, PRESETS, normOf, valOf, MOD_MAP } from './defs.js';
+import { INSTRUMENTS, DEVICES, DRUM_PADS, INST, PRESETS, normOf, valOf, MOD_MAP, IRACK_DEF } from './defs.js';
 
 export const PPQ = 960, MAX_TRACKS = 64;
 export let BEAT = PPQ, BAR = PPQ * 4;   // live bindings: they change with the time signature (setSig), so always read them at use time
@@ -304,6 +304,7 @@ export function syncTrackFull(i) {
     if (t.inst.type === 11 && t.inst.params && t.inst.params[90] !== undefined) { if (t.inst.params[106] === undefined) t.inst.params[106] = t.inst.params[90]; delete t.inst.params[90]; }   // old projects: Vel>Filter Res moved from 90 (pitch) to 106
     for (const [k, v] of Object.entries(t.inst.params)) eng.instParam(i, +k, v);
     eng.instParam(i, 90, t.inst.pitch || 0);
+    if (t.inst.chains) rackSync(i, -1);
   }
   syncZones(i);
   syncPads(i);
@@ -530,7 +531,10 @@ export function setInstrument(i, type) {
   if (HK.on) HK.add({ t: 'inst', s: t.id, v: t.inst });
   t.inst = { type, params: {}, pitch: (t.inst && t.inst.pitch) || 0 };
   if (isSampler(type)) t.inst.zones = [newZone()];
+  if (type === IRACK) { t.inst.chains = [{ id: uid(), name: 'Chain', devices: [], inst: null }]; t.inst.macroMap = []; t.inst.params[IRB + 32] = 1; }
   eng.trackInst(i, type);
+  for (const [k, v] of Object.entries(t.inst.params)) eng.instParam(i, +k, v);
+  if (type === IRACK) rackSync(i, -1);
   syncZones(i);
   emit('devices');
 }
@@ -761,52 +765,75 @@ export function fixMods() {
 }
 export function setModMap(i, di, m) { const d = tr(i).devices[di]; d.map = m || null; writeMap(i, di, d); emit('devices'); }
 
-// ---- Audio Effect Rack (type 51, engine fx7.js): d.chains = [{ id, name, devices: [{ id, type, params, bypass }] }], the chain mixer and the macros
-// are d.params (chain c at 4c: volume, pan, activator, solo; 32 chain count; 33.. macros); d.macroMap[m] = { c: chain id, id: device id, k } is
-// written into the hidden macro map parameters (41 + 8m) by fixMacros. Every structural change is one undo step (a snapshot of the rack).
-export const RACK = 51, RACK_MAX_CH = 8;
-const fillParams = (x) => { const dp = DEVICES[x.type].params; for (let k = 0; k < dp.length; k++) if (!Number.isFinite(x.params[k])) x.params[k] = dp[k].def; };
-const rackSnap = (d) => JSON.stringify({ c: d.chains, p: d.params, mm: d.macroMap || [] });
-const rackUndo = (i, d, key) => { if (HK.on && !(key && HK.hit(key))) HK.add({ t: 'rack', s: stripOf(i), d: d.id, v: rackSnap(d) }); };
-const rackP = (i, di, d, k, v) => { if (d.params[k] !== v) { d.params[k] = v; eng.devParam(i, di, k, v); } };
+// ---- Racks (engine fx7.js). Audio Effect Rack = device type 51 (params in d.params); Instrument Rack = instrument type 12 (di = -1 in every
+// rack* function; params stored in t.inst.params at 100 + k, because instrument parameter 90 is the engine's Pitch). Both hold
+// chains = [{ id, name, devices: [{ id, type, params, bypass }], inst?: { type, params } }]; the chain mixer and the macros are rack parameters
+// (chain c at 4c: volume, pan, activator, solo; 32 chain count; 33.. macros; 105 chain selector; 106 + 2c chain zones; Instrument Rack also
+// 122 + 2c key zones, 138 + 2c velocity zones); macroMap[m] = { c: chain id, id: device id | 'inst', k } is written into the hidden macro
+// map parameters (41 + 8m) by fixMacros. Every structural change is one undo step (a snapshot of the rack).
+export const RACK = 51, IRACK = 12, RACK_MAX_CH = 8, IRACK_INSTS = [1, 2, 5, 7, 8];
+const IRB = 100;
+const RDEF = (di) => (di < 0 ? IRACK_DEF : DEVICES[RACK]);
+function R(i, di) {
+  const t = tr(i);
+  if (di < 0) { const o = t.inst; return { o, id: 'inst', get: (k) => o.params[IRB + k] ?? IRACK_DEF.params[k].def, put: (k, v) => { if (o.params[IRB + k] !== v) { o.params[IRB + k] = v; eng.instParam(i, IRB + k, v); } } }; }
+  const o = t.devices[di]; return { o, id: o.id, get: (k) => o.params[k], put: (k, v) => { if (o.params[k] !== v) { o.params[k] = v; eng.devParam(i, di, k, v); } } };
+}
+const fillParams = (x, defs) => { const dp = defs[x.type].params; for (let k = 0; k < dp.length; k++) if (!Number.isFinite(x.params[k])) x.params[k] = dp[k].def; };
+const rackSnap = (o, di) => JSON.stringify({ c: o.chains, p: di < 0 ? o.params : o.params, mm: o.macroMap || [] });
+const rackUndo = (i, di, key) => { const r = R(i, di); if (HK.on && !(key && HK.hit(key))) HK.add({ t: 'rack', s: stripOf(i), d: r.id, v: rackSnap(r.o, di) }); };
+function sendChainInst(i, di, ci, x) { if (!x) { eng.rackCmd(i, di, 5, ci, 0, 0, 0); return; } eng.rackCmd(i, di, 5, ci, 0, x.type, 0); const dp = INSTRUMENTS[x.type].params; dp.forEach((q, k) => eng.rackCmd(i, di, 6, ci, 0, k, x.params[k] ?? q.def)); }
 export function rackSync(i, di) {
-  const d = tr(i).devices[di]; if (!d || !d.chains) return;
+  const r = R(i, di), o = r.o; if (!o || !o.chains) return;
   eng.rackCmd(i, di, 0, 0, 0, 0, 0);
-  d.chains.forEach((c, ci) => c.devices.forEach((x, j) => { if (!DEVICES[x.type]) return; fillParams(x); eng.rackCmd(i, di, 1, ci, j, x.type, 0); x.params.forEach((v, k) => eng.rackCmd(i, di, 2, ci, j, k, v)); if (x.bypass) eng.rackCmd(i, di, 3, ci, j, 1, 0); }));
-  rackP(i, di, d, 32, d.chains.length); fixMacros(i, di);
+  o.chains.forEach((c, ci) => {
+    if (di < 0) sendChainInst(i, di, ci, c.inst);
+    c.devices.forEach((x, j) => { if (!DEVICES[x.type]) return; fillParams(x, DEVICES); eng.rackCmd(i, di, 1, ci, j, x.type, 0); x.params.forEach((v, k) => eng.rackCmd(i, di, 2, ci, j, k, v)); if (x.bypass) eng.rackCmd(i, di, 3, ci, j, 1, 0); });
+  });
+  r.put(32, o.chains.length); fixMacros(i, di);
 }
 function fixMacros(i, di) {
-  const d = tr(i).devices[di]; if (!d.macroMap) d.macroMap = [];
+  const r = R(i, di), o = r.o; if (!o.macroMap) o.macroMap = [];
   for (let m = 0; m < 8; m++) {
-    const mm = d.macroMap[m], ci = mm ? d.chains.findIndex((c) => c.id === mm.c) : -1, j = ci >= 0 ? d.chains[ci].devices.findIndex((x) => x.id === mm.id) : -1;
-    const q = j >= 0 && DEVICES[d.chains[ci].devices[j].type].params[mm.k]; if (mm && !q) d.macroMap[m] = null;
-    (q ? [ci, j, mm.k, q.min, q.max, q.curve === 'log' ? 1 : 0] : [-1, 0, 0, 0, 1, 0]).forEach((v, n) => rackP(i, di, d, 41 + m * 8 + n, v));
+    const mm = o.macroMap[m], ci = mm ? o.chains.findIndex((c) => c.id === mm.c) : -1, ch = ci >= 0 ? o.chains[ci] : null;
+    const j = !ch ? -2 : mm.id === 'inst' ? (ch.inst ? -1 : -2) : ch.devices.findIndex((x) => x.id === mm.id);
+    const q = j === -1 ? INSTRUMENTS[ch.inst.type].params[mm.k] : j >= 0 ? DEVICES[ch.devices[j].type].params[mm.k] : null; if (mm && !q) o.macroMap[m] = null;
+    (q ? [ci, j, mm.k, q.min, q.max, q.curve === 'log' ? 1 : 0] : [-1, 0, 0, 0, 1, 0]).forEach((v, n) => r.put(41 + m * 8 + n, v));
   }
 }
-const rk = (i, di) => tr(i).devices[di];
-export function rackAddChain(i, di) { const d = rk(i, di); if (d.chains.length >= RACK_MAX_CH) return -1; rackUndo(i, d); const c = d.chains.length; d.chains.push({ id: uid(), name: 'Chain', devices: [] }); [0, 0, 1, 0].forEach((v, n) => rackP(i, di, d, c * 4 + n, v)); rackP(i, di, d, 106 + c * 2, 0); rackP(i, di, d, 107 + c * 2, 127); rackSync(i, di); emit('devices'); return c; }
+const CH_GROUPS = (di) => [[0, 4, [0, 0, 1, 0]], [106, 2, [0, 127]], ...(di < 0 ? [[122, 2, [0, 127]], [138, 2, [1, 127]]] : [])];
+const chainDefaults = (r, di, c) => { for (const [b, n, dv] of CH_GROUPS(di)) for (let k = 0; k < n; k++) r.put(b + c * n + k, dv[k]); };
+export function rackAddChain(i, di, inst) {
+  const r = R(i, di), o = r.o; if (o.chains.length >= RACK_MAX_CH) return -1; rackUndo(i, di); const c = o.chains.length;
+  o.chains.push({ id: uid(), name: inst ? INSTRUMENTS[inst].name : 'Chain', devices: [], ...(di < 0 ? { inst: inst ? { type: inst, params: {} } : null } : {}) });
+  chainDefaults(r, di, c); rackSync(i, di); emit('devices'); return c;
+}
 export function rackRemoveChain(i, di, c) {
-  const d = rk(i, di); rackUndo(i, d); d.chains.splice(c, 1);
-  for (let x = c; x < RACK_MAX_CH; x++) { for (let n = 0; n < 4; n++) rackP(i, di, d, x * 4 + n, x + 1 < RACK_MAX_CH ? d.params[(x + 1) * 4 + n] : [0, 0, 1, 0][n]); for (let n = 0; n < 2; n++) rackP(i, di, d, 106 + x * 2 + n, x + 1 < RACK_MAX_CH ? d.params[106 + (x + 1) * 2 + n] : [0, 127][n]); }
+  const r = R(i, di), o = r.o; if (!o.chains[c]) return; rackUndo(i, di); o.chains.splice(c, 1);
+  for (let x = c; x < RACK_MAX_CH; x++) for (const [b, n, dv] of CH_GROUPS(di)) for (let k = 0; k < n; k++) r.put(b + x * n + k, x + 1 < RACK_MAX_CH ? r.get(b + (x + 1) * n + k) : dv[k]);
   rackSync(i, di); emit('devices');
 }
 export function rackDuplicateChain(i, di, c) {
-  const d = rk(i, di); if (d.chains.length >= RACK_MAX_CH) return; rackUndo(i, d); const n = d.chains.length, src = d.chains[c];
-  d.chains.push({ id: uid(), name: src.name, devices: src.devices.map((x) => ({ ...x, id: uid(), params: x.params.slice() })) });
-  for (let k = 0; k < 4; k++) rackP(i, di, d, n * 4 + k, d.params[c * 4 + k]); rackP(i, di, d, 106 + n * 2, d.params[106 + c * 2]); rackP(i, di, d, 107 + n * 2, d.params[107 + c * 2]);
+  const r = R(i, di), o = r.o; if (o.chains.length >= RACK_MAX_CH) return; rackUndo(i, di); const n = o.chains.length, src = o.chains[c];
+  o.chains.push({ ...src, id: uid(), devices: src.devices.map((x) => ({ ...x, id: uid(), params: x.params.slice() })), ...(src.inst ? { inst: { type: src.inst.type, params: { ...src.inst.params } } } : {}) });
+  for (const [b, m] of CH_GROUPS(di)) for (let k = 0; k < m; k++) r.put(b + n * m + k, r.get(b + c * m + k));
   rackSync(i, di); emit('devices');
 }
-export function rackRenameChain(i, di, c, name) { const d = rk(i, di); rackUndo(i, d); d.chains[c].name = name || 'Chain'; emit('devices'); }
+export function rackRenameChain(i, di, c, name) { const o = R(i, di).o; if (!o.chains[c]) return; rackUndo(i, di); o.chains[c].name = name || 'Chain'; emit('devices'); }
 export function rackAddDevice(i, di, c, type) {
-  const d = rk(i, di), ch = d.chains[c]; if (!ch || ch.devices.length >= 16) return; rackUndo(i, d);
-  const x = { id: uid(), type, params: DEVICES[type].params.map((p) => p.def), bypass: false }; ch.devices.push(x); const j = ch.devices.length - 1;
+  const o = R(i, di).o, ch = o.chains[c]; if (!ch || ch.devices.length >= 16) return; rackUndo(i, di);
+  const x = { id: uid(), type, params: DEVICES[type].params.map((q) => q.def), bypass: false }; ch.devices.push(x); const j = ch.devices.length - 1;
   eng.rackCmd(i, di, 1, c, j, type, 0); x.params.forEach((v, k) => eng.rackCmd(i, di, 2, c, j, k, v)); fixMacros(i, di); emit('devices');
 }
-export function rackRemoveDevice(i, di, c, j) { const d = rk(i, di); rackUndo(i, d); d.chains[c].devices.splice(j, 1); eng.rackCmd(i, di, 4, c, j, 0, 0); fixMacros(i, di); emit('devices'); }
-export function rackMoveDevice(i, di, c, j, to) { const d = rk(i, di), a = d.chains[c].devices; if (to < 0 || to >= a.length) return; rackUndo(i, d); a.splice(to, 0, a.splice(j, 1)[0]); rackSync(i, di); emit('devices'); }
-export function rackParam(i, di, c, j, k, v) { const d = rk(i, di), x = d.chains[c].devices[j]; rackUndo(i, d, 'rk' + d.id + '.' + x.id + '.' + k); x.params[k] = v; eng.rackCmd(i, di, 2, c, j, k, v); }
-export function rackBypass(i, di, c, j) { const d = rk(i, di), x = d.chains[c].devices[j]; rackUndo(i, d); x.bypass = !x.bypass; eng.rackCmd(i, di, 3, c, j, x.bypass ? 1 : 0, 0); emit('devices'); }
-export function rackMapMacro(i, di, m, map) { const d = rk(i, di); rackUndo(i, d); if (!d.macroMap) d.macroMap = []; d.macroMap[m] = map || null; fixMacros(i, di); emit('devices'); }
+export function rackRemoveDevice(i, di, c, j) { const o = R(i, di).o; if (!o.chains[c] || !o.chains[c].devices[j]) return; rackUndo(i, di); o.chains[c].devices.splice(j, 1); eng.rackCmd(i, di, 4, c, j, 0, 0); fixMacros(i, di); emit('devices'); }
+export function rackMoveDevice(i, di, c, j, to) { const ch = R(i, di).o.chains[c]; if (!ch) return; const a = ch.devices; if (to < 0 || to >= a.length) return; rackUndo(i, di); a.splice(to, 0, a.splice(j, 1)[0]); rackSync(i, di); emit('devices'); }
+export function rackParam(i, di, c, j, k, v) { const o = R(i, di).o, x = o.chains[c] && o.chains[c].devices[j]; if (!x) return; rackUndo(i, di, 'rk' + stripOf(i) + '.' + di + '.' + x.id + '.' + k); x.params[k] = v; eng.rackCmd(i, di, 2, c, j, k, v); }
+export function rackBypass(i, di, c, j) { const ch = R(i, di).o.chains[c], x = ch && ch.devices[j]; if (!x) return; rackUndo(i, di); x.bypass = !x.bypass; eng.rackCmd(i, di, 3, c, j, x.bypass ? 1 : 0, 0); emit('devices'); }
+export function rackMapMacro(i, di, m, map) { const o = R(i, di).o; rackUndo(i, di); if (!o.macroMap) o.macroMap = []; o.macroMap[m] = map || null; fixMacros(i, di); emit('devices'); }
+// Instrument Rack: the chain's instrument (type 0 = remove) and its parameters
+export function rackSetChainInst(i, c, type) { const o = R(i, -1).o, ch = o.chains[c]; if (!ch) return; rackUndo(i, -1); ch.inst = type ? { type, params: {} } : null; if (type && /^Chain/.test(ch.name)) ch.name = INSTRUMENTS[type].name; sendChainInst(i, -1, c, ch.inst); fixMacros(i, -1); emit('devices'); }
+export function rackInstParam(i, c, k, v) { const ch = R(i, -1).o.chains[c]; if (!ch || !ch.inst) return; rackUndo(i, -1, 'ri' + stripOf(i) + '.' + ch.id + '.' + k); ch.inst.params[k] = v; eng.rackCmd(i, -1, 6, c, 0, k, v); }
+export const rackDef = RDEF;
 
 // ------------------------------------------------------------------ clips + notes
 
@@ -1657,9 +1684,14 @@ export function swapRec(e) {
       else { placeDevice(i, Math.min(e.di, t.devices.length), e.d); e.present = true; }
       return;
     }
-    case 'rack': { if (!t) return; const di = t.devices.findIndex((x) => x.id === e.d); if (di < 0) return; const d = t.devices[di], cur = rackSnap(d), o = JSON.parse(e.v); d.chains = o.c; d.params = o.p; d.macroMap = o.mm || []; d.params.forEach((v, pi) => eng.devParam(i, di, pi, v)); rackSync(i, di); e.v = cur; emit('devices'); return; }
+    case 'rack': {
+      if (!t) return; const di = e.d === 'inst' ? -1 : t.devices.findIndex((x) => x.id === e.d); if (di < -1 || (di < 0 && (!t.inst || t.inst.type !== IRACK))) return;
+      const d = di < 0 ? t.inst : t.devices[di], cur = rackSnap(d, di), o = JSON.parse(e.v); d.chains = o.c; d.params = o.p; d.macroMap = o.mm || [];
+      if (di < 0) for (const [k, v] of Object.entries(d.params)) eng.instParam(i, +k, v); else d.params.forEach((v, pi) => eng.devParam(i, di, pi, v));
+      rackSync(i, di); e.v = cur; emit('devices'); return;
+    }
     case 'dmv': { if (!t) return; const cur = t.devices.findIndex((x) => x.id === e.d); if (cur < 0) return; moveDevice(i, cur, cur === e.b ? e.a : e.b); return; }
-    case 'inst': { if (!t) return; const cur = t.inst; t.inst = e.v; e.v = cur; syncTrackFull(i); emit('devices'); return; }
+    case 'inst': { if (!t) return; const cur = t.inst; t.inst = e.v; e.v = cur; syncTrackFull(i); emit('devices'); return; }   // syncTrackFull also rebuilds an Instrument Rack
     case 'ipar': {
       if (!t || !t.inst) return;
       const cur = { ...t.inst.params }; t.inst.params = { ...e.v }; e.v = cur;

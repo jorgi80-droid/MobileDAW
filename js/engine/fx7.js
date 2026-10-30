@@ -30,7 +30,7 @@ export class AudioEffectRack {
     const p = this.p;
     for (let m = 0; m < RACK_MACROS; m++) {
       const o = RACK_MAP0 + m * 8, c = Math.round(p[o]); if (c < 0) continue;
-      const d = this.ch[c] && this.ch[c].dev[Math.round(p[o + 1])]; if (!d) continue;
+      const j = Math.round(p[o + 1]), d = this.ch[c] && (j < 0 ? this.ch[c].inst : this.ch[c].dev[j]); if (!d) continue;   // -1 = the chain's instrument (Instrument Rack)
       const lo = p[o + 3], hi = p[o + 4], log = p[o + 5] > 0.5 && lo > 0 && hi > 0, n = clamp(p[o + 6] + (p[o + 7] - p[o + 6]) * p[33 + m], 0, 1);
       const v = log ? lo * Math.pow(hi / lo, n) : lo + n * (hi - lo);
       if (v !== this.last[m]) { this.last[m] = v; d.setParam(Math.round(p[o + 2]), v); }
@@ -53,4 +53,56 @@ export class AudioEffectRack {
   }
   readOut(o) { for (let c = 0; c < RACK_CHAINS; c++) o[c] = this.pk[c]; return RACK_CHAINS; }
   sub(c, j) { return this.ch[c] && this.ch[c].dev[j]; }
+}
+
+// ================================================================================================ Instrument Rack
+// An instrument (track.inst type 12): each chain = an instrument + effects. Notes go to the chains whose key zone (122 + 2c), velocity zone
+// (138 + 2c) and chain select zone contain them; a note-off goes to the chains that got the note-on. Chain instruments render sample-accurately
+// into the chain buffers (render), the chain effects and the mix run once per block (endBlock, called by core.js after the last render).
+// Commands as the Audio Effect Rack, plus op 5 = chain c instrument type a (0 = none), op 6 = chain instrument parameter a = b.
+export class InstrumentRack extends AudioEffectRack {
+  constructor(sr, mkInst) {
+    super(sr); this.mkInst = mkInst; this.pitchNative = false; this.irack = true;
+    for (let c = 0; c < RACK_CHAINS; c++) this.p[122 + c * 2] = 0, this.p[123 + c * 2] = 127, this.p[138 + c * 2] = 1, this.p[139 + c * 2] = 127;
+    for (const c of this.ch) { c.inst = null; c.L = new Float32Array(128); c.R = new Float32Array(128); }
+    this.held = new Map();
+  }
+  cmd(op, c, j, a, b, eng) {
+    if (op === 0) { for (const x of this.ch) { if (x.inst) x.inst.allOff(); x.inst = null; } this.held.clear(); }
+    const ch = this.ch[c];
+    if (op === 5) { if (ch) { ch.inst = a > 0 ? this.mkInst(a) : null; if (ch.inst && ch.inst.setTempo) ch.inst.setTempo(this.bpm); this.last.fill(NaN); } return; }
+    if (op === 6) { if (ch && ch.inst) ch.inst.setParam(a, b); return; }
+    super.cmd(op, c, j, a, b, eng);
+  }
+  setParam(i, v) { if (i >= 100) super.setParam(i - 100, v); }   // instrument parameter 100 + k = rack parameter k (90 is the engine's Pitch)
+  setTempo(b) { super.setTempo(b); for (const c of this.ch) if (c.inst && c.inst.setTempo) c.inst.setTempo(b); }
+  plays(c, p, v) {
+    const q = this.p, vel = Math.max(1, Math.round(v * 127)), sel = q[105];
+    return q[c * 4 + 2] > 0.5 && p >= q[122 + c * 2] && p <= q[123 + c * 2] && vel >= q[138 + c * 2] && vel <= q[139 + c * 2] && sel >= q[106 + c * 2] && sel <= q[107 + c * 2];
+  }
+  noteOn(p, v) {
+    const cnt = clamp(Math.round(this.p[32]), 0, RACK_CHAINS); let mask = 0;
+    for (let c = 0; c < cnt; c++) if (this.ch[c].inst && this.plays(c, p, v)) { this.ch[c].inst.noteOn(p, v); mask |= 1 << c; }
+    this.held.set(p, (this.held.get(p) || 0) | mask);
+  }
+  noteOff(p) { const mask = this.held.get(p) || 0; for (let c = 0; c < RACK_CHAINS; c++) if (mask & (1 << c) && this.ch[c].inst) this.ch[c].inst.noteOff(p); this.held.delete(p); }
+  allOff() { for (const c of this.ch) if (c.inst) c.inst.allOff(); this.held.clear(); }
+  active() { for (const c of this.ch) if (c.inst && c.inst.active()) return true; return false; }
+  render(L, R, from, to) { const cnt = clamp(Math.round(this.p[32]), 0, RACK_CHAINS); for (let c = 0; c < cnt; c++) { const x = this.ch[c]; if (x.inst) x.inst.render(x.L, x.R, from, to); } }
+  endBlock(L, R, n) {
+    this.macros();
+    const p = this.p, cnt = clamp(Math.round(p[32]), 0, RACK_CHAINS);
+    let solo = false; for (let c = 0; c < cnt; c++) if (p[c * 4 + 3] > 0.5 && p[c * 4 + 2] > 0.5) solo = true;
+    for (let c = 0; c < cnt; c++) {
+      const x = this.ch[c], o = c * 4, bl = x.L, br = x.R;
+      if (p[o + 2] > 0.5 && !(solo && p[o + 3] < 0.5)) {
+        for (const d of x.dev) if (!d.bypass) d.process(bl, br, n);
+        const g = p[o] <= -60 ? 0 : Math.pow(10, p[o] / 20), pan = p[o + 1], gl = g * Math.min(1, 1 - pan), gr = g * Math.min(1, 1 + pan); let pk = 0;
+        for (let i = 0; i < n; i++) { const l = bl[i] * gl, r = br[i] * gr; L[i] += l; R[i] += r; const a = Math.max(Math.abs(l), Math.abs(r)); if (a > pk) pk = a; }
+        this.pk[c] = Math.max(pk, this.pk[c] * 0.95);
+      } else this.pk[c] *= 0.9;
+      bl.fill(0, 0, n); br.fill(0, 0, n);
+    }
+  }
+  process() {}
 }

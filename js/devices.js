@@ -13,7 +13,7 @@ import * as BR from './browser.js';
 import * as P from './project.js';
 import * as FW from './floatwin.js';
 import { buildSuite, minimetersView } from './minimeters.js';
-import { kitView } from './fxkit.js';
+import { kitView, irackView } from './fxkit.js';
 import { prefs } from './prefs.js';
 import * as DP from './drumpad.js';
 const { state } = P;
@@ -155,6 +155,7 @@ function instCard(i, t, o = {}) {
   }
   if (!o.floating) head.append(popBtn(() => openInstWindow(t.id)));
   head.append(foldBtn(fk, false));
+  if (def.view === 'irack') { const rv = irackView(i, t, o.every || every); return h('div', { class: 'card lkcard lvcard' }, head, rv.el); }   // Instrument Rack (fxkit.js rackPanel)
   if (def.view === 'lsampler' || def.view === 'lwavetable') {
     const pn = def.view === 'lsampler' ? samplerPanel(i, t) : wavetablePanel(i, t);
     return h('div', { class: 'card lvcard' }, head, pn.el);

@@ -1,6 +1,6 @@
 // UI screenshots of the main views with a fixed test project (drums, bass, lead, pad, audio loop, automation lane, effects), for
 // before / after comparisons of UI work. Serves the repo itself, drives the app with the preinstalled Playwright Chromium.
-// Usage: node tools/ui-shots.mjs <out-dir> [arr] [clip] [dev] [mix] [win] [keys] [devs] [rack]      env: THEME=light|dark|..., VW / VH = viewport (default 1180 x 560), FX=33,34 = only these effects in devs
+// Usage: node tools/ui-shots.mjs <out-dir> [arr] [clip] [dev] [mix] [win] [keys] [devs] [rack] [irack]      env: THEME=light|dark|..., VW / VH = viewport (default 1180 x 560), FX=33,34 = only these effects in devs
 // Compare two runs (e.g. one on the previous commit, one on the working tree) side by side.
 import http from 'node:http'; import fs from 'node:fs'; import path from 'node:path'; import { fileURLToPath } from 'node:url'; import { createRequire } from 'node:module';
 const { chromium } = createRequire(import.meta.url)('playwright');
@@ -99,6 +99,15 @@ if (want.includes('rack')) {                             // Audio Effect Rack wi
   await ev(() => { for (const b of document.querySelectorAll('.lk-rki')) if (b.title === 'Macro') b.click(); });
   await ev(() => { const b = [...document.querySelectorAll('.lk-rkh .lv-btn')].find((x) => x.textContent === 'Chain'); if (b) b.click(); });
   await shot('rack-macro'); await btn('btn-max');
+}
+if (want.includes('irack')) {                            // Instrument Rack: chain 1 SuperSaw, chain 2 Mini Synth + Utility, key zones split at C3
+  await sel(2); await tab('dev');
+  await ev(async () => { const P = await import('./js/project.js'); P.state.tracks[2].devices = []; P.syncAll(); P.setInstrument(2, 12); P.rackSetChainInst(2, 0, 2); const c = P.rackAddChain(2, -1, 1); P.rackAddDevice(2, -1, c, 0);
+    P.setInstParam(2, 100 + 123, 59); P.setInstParam(2, 100 + 124, 60); P.emit('all'); });
+  await btn('btn-max'); await shot('irack');
+  await ev(() => { const b = [...document.querySelectorAll('.lk-rkh .lv-btn')].find((x) => x.textContent === 'Key'); if (b) b.click(); });
+  await ev(() => { const b = [...document.querySelectorAll('.lk-cname')][1]; if (b) b.click(); });
+  await shot('irack-key'); await btn('btn-max');
 }
 if (go('devs')) {                                        // every instrument and every effect, normal and maximised panel
   const list = await ev(async () => { const D = await import('./js/defs.js'); return { inst: [...D.INST_LIST], fx: Object.keys(D.DEVICES).map(Number) }; });

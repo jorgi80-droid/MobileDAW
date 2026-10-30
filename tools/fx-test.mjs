@@ -5,6 +5,8 @@
 // Usage: node tools/fx-test.mjs [type ...]
 import { DEVICES, MOD_MAP } from '../js/defs.js';
 import { makeDevice } from '../js/engine/fx.js';
+import { InstrumentRack } from '../js/engine/fx7.js';
+import { makeInstrument } from '../js/engine/instruments.js';
 
 const SR = 48000, N = 128, BLOCKS = Math.round(SR * 1.2 / N);
 const want = process.argv.slice(2).map(Number), types = Object.keys(DEVICES).map(Number).filter((t) => !want.length || want.includes(t));
@@ -109,6 +111,16 @@ if (!want.length || want.includes(51)) {
   const near = (a, b) => Math.abs(a - b) < 1e-3, ok2 = near(both, 0.625) && near(one, 0.125) && near(solo, 0.125) && near(vol, 0.125) && Math.abs(mac - (0.25 * 15.8489 + 0.5)) < 0.01 && near(pass, 0.25) && near(zone, 0.5);
   if (!ok2) { bad++; console.log(`FAIL 51 Audio Effect Rack: both ${both.toFixed(4)} one ${one.toFixed(4)} solo ${solo.toFixed(4)} vol ${vol.toFixed(4)} macro ${mac.toFixed(4)} pass ${pass.toFixed(4)} zone ${zone.toFixed(4)}`); }
   else console.log('ok   51 Audio Effect Rack (parallel chains, volume, activator, solo, macro, chain select zones, empty rack)');
+}
+// Instrument Rack (instrument 12): notes go by key / velocity zone, effects inside a chain act, parameters arrive at 100 + k
+if (!want.length || want.includes(12)) {
+  const fe = { mk: (t) => makeDevice(t, SR) }, run = (r, p, v) => { const L = new Float32Array(N), R = new Float32Array(N); let e = 0; r.noteOn(p, v); for (let b = 0; b < 60; b++) { L.fill(0); R.fill(0); r.render(L, R, 0, 64); r.render(L, R, 64, N); r.endBlock(L, R, N); for (const x of L) e += x * x; } r.allOff(); return e; };
+  const mk = () => { const r = new InstrumentRack(SR, (k) => makeInstrument(k, SR)); r.setParam(132, 2); r.cmd(5, 0, 0, 1, 0, fe); r.cmd(5, 1, 0, 2, 0, fe); return r; };
+  const both = run(mk(), 60, 0.8); let r = mk(); r.setParam(223, 59); const key = run(r, 60, 0.8); r = mk(); r.setParam(223, 59); r.setParam(225, 59); const none = run(r, 60, 0.8);
+  r = mk(); r.setParam(240, 100); const vel = run(r, 60, 0.5); r = mk(); r.cmd(1, 0, 0, 0, 0, fe); r.cmd(2, 0, 0, 0, -60, fe); r.setParam(104, -60); const fx = run(r, 60, 0.8);
+  const ok = both > key * 1.5 && key > 1 && none < 1e-9 && vel > 1 && vel < both && fx < both * 0.01;
+  if (!ok) { bad++; console.log(`FAIL 12 Instrument Rack: both ${both.toFixed(2)} key ${key.toFixed(2)} none ${none} vel ${vel.toFixed(2)} fx ${fx.toFixed(5)}`); }
+  else console.log('ok   12 Instrument Rack (key zones, velocity zones, effects in a chain, chain volume)');
 }
 console.log(bad ? `\n${bad} device(s) FAILED` : '\nALL EFFECTS OK');
 process.exit(bad ? 1 : 0);

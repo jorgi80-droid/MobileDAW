@@ -1,6 +1,7 @@
 // The audio engine of the web version. Plain JS with preallocated typed arrays: the same class runs inside the
 // AudioWorklet (realtime), in the main thread (WAV export) and in node (tests). No allocation while rendering.
 import { TWO_PI, clamp, BLOCK, JOBS, pumpJobs } from './dsp.js';
+import { InstrumentRack } from './fx7.js';
 import { makeInstrument } from './instruments.js';
 import { makeDevice } from './fx.js';
 import { TempoMap } from './tmap.js';
@@ -88,7 +89,7 @@ export class Engine {
   trackOut(t, k) { if (this.ok(t) && t < MASTER) this.s[t].out = (k >= 0 && k < NFX) ? k | 0 : -1; }
   trackInst(t, type) {
     if (!this.ok(t) || t >= MASTER) return;
-    const inst = makeInstrument(type, this.sr, this.bank, this.sfs);
+    const inst = type === 12 ? new InstrumentRack(this.sr, (k) => makeInstrument(k, this.sr, this.bank, this.sfs)) : makeInstrument(type, this.sr, this.bank, this.sfs);   // 12 = Instrument Rack (fx7.js)
     this.s[t].inst = inst;
     if (inst) { inst.setTempo(this.bpm); if (inst.pitchNative) inst.setParam(90, this.s[t].pitch); }
   }
@@ -115,7 +116,7 @@ export class Engine {
   devParam(t, d, p, v) { if (this.ok(t) && this.s[t].dev[d]) this.s[t].dev[d].setParam(p, v); }
   devBypass(t, d, b) { if (this.ok(t) && this.s[t].dev[d]) this.s[t].dev[d].bypass = !!b; }
   // Audio Effect Rack (fx7.js): op 0 reset, 1 insert type a at chain c / index j, 2 parameter a = b, 3 bypass a, 4 remove
-  rackCmd(t, d, op, c, j, a, b) { const r = this.ok(t) && this.s[t].dev[d]; if (r && r.rack) r.cmd(op, c, j, a, b, this); }
+  rackCmd(t, d, op, c, j, a, b) { const r = this.ok(t) && (d < 0 ? this.s[t].inst : this.s[t].dev[d]); if (r && r.rack) r.cmd(op, c, j, a, b, this); }   // d = -1: the Instrument Rack
   mk(type) { const d = makeDevice(type, this.sr, this.sc); if (d && d.setTempo) d.setTempo(this.bpm); return d; }
   // Pitch bend (semitones, +-12 max, the UI wheel uses +-2): scales the frequency of the sounding voices and of the notes that start afterwards
   bend(t, st) {
@@ -205,6 +206,7 @@ export class Engine {
 
   // ---------------------------------------------------------------- readouts
   devOut(t, d, out) {
+    if (d === 999 || d >= 2000) { const r = this.ok(t) && this.s[t].inst; if (!r || !r.irack) return 0; if (d === 999) return r.readOut(out); const x = r.sub(((d - 2000) >> 4) & 15, (d - 2000) & 15); return x ? x.readOut(out) : 0; }   // Instrument Rack: 999 = chain meters, 2000 + chain * 16 + j = an effect inside
     if (d >= 1000 && this.ok(t)) { const q = d - 1000, r = this.s[t].dev[q >> 8], x = r && r.rack && r.sub((q >> 4) & 15, q & 15); return x ? x.readOut(out) : 0; }   // a device inside a rack: 1000 + rack index * 256 + chain * 16 + index
     return this.ok(t) && this.s[t].dev[d] ? this.s[t].dev[d].readOut(out) : 0;
   }
@@ -323,6 +325,7 @@ export class Engine {
           if (eon[i]) { const q = clamp(ep[i] + sh, 0, 127); tm[ep[i] & 127] = q; s.inst.noteOn(q, ev[i]); if (s.bend && s.inst.bendVoice) this.bendNew(s); if (epn[i] === epn[i]) s.nPan = epn[i]; if (this.midiFx) this.midiTo(idx, q, ev[i]); } else { const q = tm[ep[i] & 127]; tm[ep[i] & 127] = ep[i]; s.inst.noteOff(q); if (this.midiFx) this.midiTo(idx, q, 0); }   // a note's pan applies from its note-on (the latest note decides while several overlap)
         }
         if (cur < n) { s.inst.render(L, R, cur, n); this.balance(L, R, cur, n, s.nPan); }
+        if (s.inst.endBlock) s.inst.endBlock(L, R, n);
         if (s.inst.active()) active = true;
         const chk = L[0] + L[n - 1] + R[n - 1];
         if (!(chk > -1e6 && chk < 1e6)) throw new Error('nilai tidak valid');
