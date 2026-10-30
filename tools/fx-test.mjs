@@ -9,20 +9,25 @@ import { makeDevice } from '../js/engine/fx.js';
 const SR = 48000, N = 128, BLOCKS = Math.round(SR * 1.2 / N);
 const want = process.argv.slice(2).map(Number), types = Object.keys(DEVICES).map(Number).filter((t) => !want.length || want.includes(t));
 // parameters that cannot change the audio by design: display / meter options, momentary triggers, the Tuner reference
-const NO_AUDIO = { 13: 'all', 12: 'all', 16: 'all', 30: 'all', 32: 'all', 19: [15], 10: 'all', 45: 'all' };   // 45 Looper: state-driven, has its own test below   // 10 Autoduck: listens to another track's sidechain only
+const NO_AUDIO = { 47: [1], 13: 'all', 12: 'all', 16: 'all', 30: 'all', 32: 'all', 19: [15], 10: 'all', 45: 'all' };   // 45 Looper: state-driven, has its own test below   // 10 Autoduck: listens to another track's sidechain only
 // conditions a parameter needs before it can be heard (Live works the same: L Time only counts with Sync off, R only without Link ...)
 const PRE = {
   17: { 2: { 0: 0 }, 3: { 0: 1 }, 4: { 8: 0, 5: 6 }, 5: { 8: 0 }, 6: { 8: 0, 4: 0 }, 7: { 8: 0 }, 8: { 5: 6 }, 14: { 16: 1 } },
-  19: { 14: { 2: 1 } }, 21: { 14: { 6: 1 } }, 22: { 3: { 2: 1 } },
+  19: { 14: { 2: 1 } }, 21: { 13: { 0: 2 }, 14: { 6: 1 } }, 22: { 3: { 2: 1 } }, 18: { 5: { 4: 1 }, 15: { 14: 1 }, 25: { 24: 1 } }, 20: { 6: { 5: 1 } },
+  28: { 10: { 11: 1 }, 11: { 10: 1 } }, 29: { 8: { 7: 1 }, 9: { 7: 1 } }, 36: { 6: { 4: -1 } }, 37: { 5: { 2: -1 }, 6: { 2: -1 } }, 42: { 3: { 0: 2 } }, 43: { 1: { 0: 1 } },
+  44: { 16: { 15: 1 }, 17: { 15: 1 } },
+  46: { 0: { 3: 1 }, 1: { 3: 1 }, 2: { 3: 1 }, 4: { 3: 1, 6: 100 }, 5: { 3: 1 }, 6: { 3: 1, 4: 0 }, 7: { 3: 1, 2: 0 }, 8: { 3: 1 }, 9: { 3: 1 }, 15: { 14: 1 }, 16: { 14: 2 } },
+  47: { 3: { 0: 1 }, 10: { 9: 1, 11: 2 }, 11: { 9: 1 }, 13: { 0: 1 }, 14: { 0: 1 }, 16: { 15: 2 } },
   23: { 0: {}, 1: { 0: -12 }, 2: { 0: -12 }, 3: { 0: -12 }, 4: { 0: -12 }, 5: { 0: -12 }, 6: { 0: -12 } },
   25: { 3: { 2: 9 } }, 27: { 3: { 4: 1 }, 5: { 4: 1 }, 6: { 4: 1, 3: 3 } },
-  0: { 8: { 7: 1, 6: 2 } }, 1: { 5: { 4: 1 }, 6: { 4: 1 }, 8: { 7: 1 }, 9: { 7: 1 }, 12: { 7: 1 } }, 2: { 4: { 0: 9 }, 5: { 2: 9 }, 9: { 0: 9 } },
-  5: { 1: { 2: 12 } }, 6: { 6: { 7: 0, 8: 0 }, 9: { 8: 1 }, 10: { 8: 1, 7: 0 }, 15: { 16: 1 } },
+  0: { 8: { 7: 1, 6: 2 } }, 1: { 5: { 4: -1 }, 6: { 4: -1 }, 8: { 7: 1 }, 9: { 7: 1 }, 12: { 7: 1 } }, 2: { 4: { 0: 9 }, 5: { 2: 9 }, 9: { 0: 9 } },
+  5: { 1: { 2: 12 } }, 6: { 6: { 7: 0, 8: 0 }, 7: { 8: 1 }, 9: { 8: 1 }, 10: { 8: 1, 7: 0 }, 15: { 16: 1 } }, 4: { 11: { 3: 10 } }, 9: { 8: { 0: 5, 7: 1 }, 9: { 0: 5, 7: 1 } },
   41: { 2: { 3: 1 }, 3: { 2: -6 }, 4: { 2: -6, 3: 1 } },
   40: { 6: { 7: 0.3 }, 15: { 14: 1 }, 16: { 14: 1 }, 18: { 17: 1 }, 19: { 17: 1 }, 23: { 14: 1 }, 24: { 14: 1 }, 25: { 14: 1, 24: 1 }, 26: { 14: 1 }, 27: { 14: 1, 23: 1 } },
-  38: { 34: {}, 35: {}, 36: {} },
+  38: { 2: { 0: 1000, 3: 24, 5: -60 }, 6: { 0: 1000, 3: 24, 5: -60 }, 7: { 8: 0.5 }, 9: { 0: 1000, 3: 24, 5: -60 }, 10: { 0: 1000, 3: 24, 5: -60 },
+    20: { 21: 24, 23: -60 }, 24: { 21: 24, 23: -60, 27: 0.1 }, 25: { 26: 0.5 }, 28: { 21: 24, 23: -60, 27: 0.1 }, 16: { 17: 0.5 } },
   8: { 0: { 1: 9 }, 2: { 3: 9 }, 4: { 3: 9 }, 5: { 6: 9 }, 7: { 6: 9 }, 8: { 9: 9 } },
-  31: Object.fromEntries([...Array.from({ length: 8 }, (_, b) => [[b * 5 + 1, { [b * 5]: 1, [b * 5 + 3]: 9 }], [b * 5 + 2, { [b * 5]: 1, [b * 5 + 3]: 9 }], [b * 5 + 3, { [b * 5]: 1 }], [b * 5 + 4, { [b * 5]: 1, [b * 5 + 3]: 9 }]]).flat(), [40, { 8: 9 }]]),
+  31: Object.fromEntries([...Array.from({ length: 8 }, (_, b) => [[b * 5 + 1, { [b * 5]: 1, [b * 5 + 3]: 9 }], [b * 5 + 2, { [b * 5]: 1, [b * 5 + 3]: 9 }], [b * 5 + 3, { [b * 5]: 1 }], [b * 5 + 4, { [b * 5]: 1, [b * 5 + 3]: 9 }], [b * 5, { [b * 5 + 1]: 3, [b * 5 + 3]: 9 }]]).flat(), [40, { 8: 9 }], [3, { 0: 1, 1: 2, 3: 9 }], [38, { 35: 1, 36: 5, 38: 9 }]]),
 };
 // known gaps (work in progress, listed in docs/HANDOFF.md): reported as TODO, not as a failure
 const TODO = {};
@@ -32,8 +37,8 @@ function render(type, set, opts = {}) {
   const d = makeDevice(type, SR, new Float32Array(128).fill(0.5)); if (!d) return null;   // sc: sidechain levels per strip (Autoduck)
   if (d.setTempo) d.setTempo(120);
   DEVICES[type].params.forEach((p, k) => d.setParam(k, p.def));
-  set(d);
-  const L = new Float32Array(N), R = new Float32Array(N); let e = 0, peak = 0, beat = 0, ph = 0;
+  set(d); if (d.midiIn) { d.noteOn(48, 0.8); d.noteOn(55, 0.7); }   // MIDI-mode devices (Spectral Resonator) get a held chord
+  const L = new Float32Array(N), R = new Float32Array(N); let e = 0, peak = 0, beat = 0, ph = 0; seed = 1;   // same input every render, so only the parameter can make a difference
   const out = new Float32Array(BLOCKS * N * 2);
   for (let b = 0; b < BLOCKS; b++) {
     for (let i = 0; i < N; i++) { ph += 2 * Math.PI * 220 / SR; const nz = rnd() * 2 - 1; const s = Math.sin(ph) * 0.3 * (opts.burst ? (((b * N + i) % 12000) < 3000 ? 1 : 0.02) : 1); L[i] = s + nz * 0.1; R[i] = s * 0.9 - nz * 0.1; }

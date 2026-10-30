@@ -633,3 +633,19 @@
 .lk .lk-tabs.c { align-self: center; }
 .lk .lk-ch.spc .lv-btn, .lk .lv-btn.lk-ax { white-space: nowrap; }
 .lk .lk-ch.spc .lv-btn { padding: 0 4px; }
+/* spectral devices */
+.lk .lv-btn.lk-chk { align-self: flex-start; min-width: 0; padding: 0 6px 0 2px; gap: 6px; background: transparent; border-color: transparent; font-weight: var(--fw-sb); color: var(--lv-ink); }
+.lk .lv-btn.lk-chk::before { content: ''; width: 11px; height: 11px; border: 1px solid var(--lv-edge); background: var(--lv-well); }
+.lk .lv-btn.lk-chk.on { background: transparent; color: var(--lv-ink); } .lk .lv-btn.lk-chk.on::before { background: var(--lv-or); }
+.lk .lv-btn.lk-frz { width: 104px; height: 44px; font-size: 20px; }
+.lk .lv-btn.lk-frz.on { background: #8ff0e4; color: #1b1b1d; }
+.lk .lk-ch.v.wide .lv-btn { min-width: 104px; }
+.lk .lk-ch.ico .lv-btn { min-width: 34px; padding: 1px 4px; }
+.lk-son { position: relative; align-self: stretch; display: flex; }
+.lk-son .lk-d { flex: none; }
+.lk .lk-play { position: absolute; left: 4px; top: 4px; width: 20px; height: 20px; min-width: 0; padding: 0; border-radius: 50%; border: 1.5px solid #ffad32; background: transparent; color: #ffad32; font-size: 9px; }
+.lk .lk-play:not(.on) { opacity: .5; }
+.lk-sonw { position: relative; }
+.lk-harm { position: absolute; right: 6px; top: 4px; display: flex; align-items: center; gap: 4px; font: var(--fw-sb) var(--fs-2)/14px var(--font); color: #e4e4e6; }
+.lk .lv-btn.lk-chk, .lk .lv-btn.lk-chk.on { background: transparent !important; border-color: transparent !important; color: var(--lv-ink) !important; }
+.lk .lk-sec.box { padding: 4px 8px 8px; background: color-mix(in srgb, var(--lv-ink) 5%, transparent); border-radius: 4px; }

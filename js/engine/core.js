@@ -95,15 +95,23 @@ export class Engine {
   // Instrument pitch (-24..+24 semitones) is param 90 of every instrument: instruments with pitchNative (drums, samplers) shift themselves, the rest get transposed notes
   setPitch(t, v) { if (!this.ok(t) || t >= MASTER) return; const st = this.s[t]; st.pitch = clamp(Math.round(v) || 0, -24, 24); if (st.inst && st.inst.pitchNative) st.inst.setParam(90, st.pitch); }
   instParam(t, i, v) { if (i === 90) { this.setPitch(t, v); return; } if (this.ok(t) && this.s[t].inst) this.s[t].inst.setParam(i, v); }
-  resetTrack(t) { if (!this.ok(t)) return; const o = newStrip(); o.vol = t === MASTER ? 1 : 0.85; this.s[t] = o; }
+  resetTrack(t) { if (!this.ok(t)) return; const o = newStrip(); o.vol = t === MASTER ? 1 : 0.85; this.s[t] = o; this.midiScan(); }
   insertDevice(t, index, type) {
     if (!this.ok(t)) return;
     const st = this.s[t], d = makeDevice(type, this.sr, this.sc);
     if (!d || st.dev.length >= MAX_DEV) return;
     if (d.setTempo) d.setTempo(this.bpm);
-    st.dev.splice(clamp(index, 0, st.dev.length), 0, d);
+    st.dev.splice(clamp(index, 0, st.dev.length), 0, d); this.midiScan();
   }
-  removeDevice(t, i) { if (this.ok(t) && i >= 0 && i < this.s[t].dev.length) this.s[t].dev.splice(i, 1); }
+  removeDevice(t, i) { if (this.ok(t) && i >= 0 && i < this.s[t].dev.length) { this.s[t].dev.splice(i, 1); this.midiScan(); } }
+  // effects that listen to notes (Spectral Resonator in MIDI mode): d.midiFrom() = -1 off, 0 = own track, k = track k - 1
+  midiScan() { this.midiFx = false; if (!this.s) return; for (let t = 0; t < NSTRIPS; t++) for (const d of ((this.s[t] && this.s[t].dev) || [])) if (d.midiIn) this.midiFx = true; }
+  midiTo(src, p, v) {
+    for (let t = 0; t < NSTRIPS; t++) for (const d of this.s[t].dev) {
+      if (!d.midiIn) continue; const f = d.midiFrom();
+      if ((f === 0 && t === src) || f - 1 === src) { if (v > 0) d.noteOn(p, v); else d.noteOff(p); }
+    }
+  }
   devParam(t, d, p, v) { if (this.ok(t) && this.s[t].dev[d]) this.s[t].dev[d].setParam(p, v); }
   devBypass(t, d, b) { if (this.ok(t) && this.s[t].dev[d]) this.s[t].dev[d].bypass = !!b; }
   // Pitch bend (semitones, +-12 max, the UI wheel uses +-2): scales the frequency of the sounding voices and of the notes that start afterwards
@@ -298,7 +306,7 @@ export class Engine {
         let cur = 0;
         for (let i = 0; i < ne; i++) {
           if (eo[i] > cur) { s.inst.render(L, R, cur, eo[i]); this.balance(L, R, cur, eo[i], s.nPan); cur = eo[i]; }
-          if (eon[i]) { const q = clamp(ep[i] + sh, 0, 127); tm[ep[i] & 127] = q; s.inst.noteOn(q, ev[i]); if (s.bend && s.inst.bendVoice) this.bendNew(s); if (epn[i] === epn[i]) s.nPan = epn[i]; } else { const q = tm[ep[i] & 127]; tm[ep[i] & 127] = ep[i]; s.inst.noteOff(q); }   // a note's pan applies from its note-on (the latest note decides while several overlap)
+          if (eon[i]) { const q = clamp(ep[i] + sh, 0, 127); tm[ep[i] & 127] = q; s.inst.noteOn(q, ev[i]); if (s.bend && s.inst.bendVoice) this.bendNew(s); if (epn[i] === epn[i]) s.nPan = epn[i]; if (this.midiFx) this.midiTo(idx, q, ev[i]); } else { const q = tm[ep[i] & 127]; tm[ep[i] & 127] = ep[i]; s.inst.noteOff(q); if (this.midiFx) this.midiTo(idx, q, 0); }   // a note's pan applies from its note-on (the latest note decides while several overlap)
         }
         if (cur < n) { s.inst.render(L, R, cur, n); this.balance(L, R, cur, n, s.nPan); }
         if (s.inst.active()) active = true;

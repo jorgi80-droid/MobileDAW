@@ -506,9 +506,25 @@ Object.assign(DEVICES, {
   });
 }
 
+// ---- Live 12 effects, part 3: spectral devices (engine: js/engine/fx5.js)
+{
+  const pct = (n, d) => q(n, 0, 1, d, { unit: '%' }), NOTES = ['1/32', '1/16', '1/8', '1/4', '1/2', '1 Bar', '2 Bars', '4 Bars'];
+  Object.assign(DEVICES, {
+    46: { name: 'Spectral Time', kit: true, params: [onoff('Freezer On', 1), list('Freeze Mode', ['Manual', 'Retrigger'], 1), list('Retrigger', ['Onsets', 'Sync'], 1), onoff('Freeze'),
+      onoff('Interval Sync', 1), list('Interval', NOTES, 2), q('Interval Time', 10, 5000, 250, { curve: 'log', unit: 'ms' }), pct('Sensitivity', 0.5), list('Fade Type', ['Crossfade', 'Envelope'], 0), pct('X-Fade', 0.25),
+      onoff('Delay On', 1), q('Time', 10, 3500, 250, { curve: 'log', unit: 'ms' }), q('Feedback', 0, 0.98, 0.21, { unit: '%' }), q('Shift', -1000, 1000, 0, { unit: 'Hz' }),
+      list('Mode', ['Time', 'Notes', '16th', '16th Triplet', '16th Dotted'], 0), list('Notes', NOTES, 2), q('16th', 1, 16, 3, { step: 1, fmt: 'num' }), q('Stereo', -1, 1, 0, { fmt: 'pct1' }), pct('Mix', 0.5),
+      q('Tilt', -1000, 1000, 0, { unit: 'ms' }), q('Spray', 0, 1000, 0, { unit: 'ms' }), q('Mask', -1, 1, 0, { unit: '' })] },
+    47: { name: 'Spectral Resonator', kit: true, params: [list('Mode', ['Internal', 'MIDI'], 0), q('MIDI From', 0, 64, 0, { step: 1, fmt: 'midisrc' }), q('Freq', 20, 4000, 110, { curve: 'log', unit: 'Hz' }),
+      q('Transp.', -48, 48, 0, { step: 1, fmt: 'st' }), q('Decay', 0.01, 20, 2.6, { curve: 'log', unit: 's' }), pct('HF Damp', 0), pct('LF Damp', 0), q('Stretch', -1, 1, 0, { fmt: 'pct1' }), q('Shift', -48, 48, 0, { unit: 'st' }),
+      list('Mod', ['None', 'Chorus', 'Wander', 'Granular'], 0), pct('Mod Rate', 0.1), q('Pch.Mod', 0, 12, 0, { unit: 'st' }), q('Harmonics', 1, 256, 128, { step: 1, fmt: 'num' }), list('Polyphony', ['Mono', 'Poly'], 1),
+      q('Voices', 1, 16, 16, { step: 1, fmt: 'num' }), list('Unison', ['1', '2', '4', '8'], 0), pct('Uni.Amt', 0.2), q('Input Send', -36, 12, 0, { unit: 'dB' }), pct('Dry/Wet', 0.5)] },
+  });
+}
+
 // Audio effect categories as in Live 12's browser. Older devices that have no Live 12 counterpart stay loadable under 'Lainnya (lama)'.
-export const FX_GROUPS = [['loop', 'Delay & Loop', [19, 17, 6, 18, 43, 45]], ['drive', 'Drive & Color', [33, 34, 29, 37, 26, 27, 35, 36, 9, 3, 28]], ['dyn', 'Dynamics', [4, 23, 24, 5, 38]],
-  ['eq', 'EQ & Filters', [1, 25, 31, 2]], ['mod', 'Pitch & Modulation', [22, 20, 21, 42]], ['rev', 'Reverb & Resonance', [40, 44, 39, 7, 41]], ['util', 'Utilities', [0, 32, 30, 16]], ['old', 'Lainnya (lama)', [8, 13, 10, 12, 14, 15]]];
+export const FX_GROUPS = [['loop', 'Delay & Loop', [19, 17, 6, 18, 43, 45, 46]], ['drive', 'Drive & Color', [33, 34, 29, 37, 26, 27, 35, 36, 9, 3, 28]], ['dyn', 'Dynamics', [4, 23, 24, 5, 38]],
+  ['eq', 'EQ & Filters', [1, 25, 31, 2]], ['mod', 'Pitch & Modulation', [22, 20, 21, 42]], ['rev', 'Reverb & Resonance', [40, 44, 39, 7, 47, 41]], ['util', 'Utilities', [0, 32, 30, 16]], ['old', 'Lainnya (lama)', [8, 13, 10, 12, 14, 15]]];
 
 // Parameter <-> 0..1 mapping shared by knobs, automation editing and the engine sync.
 export const normOf = (p, v) => { const x = p.curve === 'log' ? Math.log(v / p.min) / Math.log(p.max / p.min) : (v - p.min) / (p.max - p.min); return x < 0 ? 0 : x > 1 ? 1 : x; };
@@ -669,6 +685,7 @@ export function fmtParam(p, v) {
     case 'div': return ['1/16', '1/8', '1/4', '1/2', '1 bar', '1/16T', '1/8T', '1/4T'][Math.round(v)] || '';
     case 'roar6': return ['Soft', 'Hard', 'Fold', 'Sine', 'Bit', 'Noise'][Math.round(v)] || '';
     case 'src': return v < 1 ? 'Off' : 'Trk ' + Math.round(v);
+    case 'midisrc': return v < 1 ? 'This Track' : 'Track ' + Math.round(v);
     case 'dist': return ['Soft', 'Hard', 'Fold'][Math.round(v)] || '';
     case 'width': return Math.round(v * 100) + ' %';
     case 'bassmono': return v < 20 ? 'Off' : Math.round(v) + ' Hz';

@@ -133,7 +133,7 @@ export class MultibandDyn extends Fx {
         let gdb = 0; const kn = soft ? 6 : 0;
         if (lev > s.ta - kn) gdb = -(lev - s.ta) * (1 - 1 / s.ra) * (lev > s.ta + kn || !kn ? 1 : 0.5);        // above: downward compression (ratio < 1 = upward expansion)
         else if (lev < s.tb && lev > -90) gdb = -(s.tb - lev) * (s.rb - 1);                                      // below: ratio > 1 = downward expansion, < 1 = upward compression
-        gdb = clamp(gdb, -60, 24); this.gr[b] = gdb;
+        gdb = clamp(gdb, -60, Math.min(24, 6 - Math.max(lev, linToDb(x)))); this.gr[b] = gdb;                                               // upward gain never lifts the band above +6 dBFS
         const g = dbToLin(gdb) * s.outG; ol += l * g; or += r * g;
       }
       L[i] = ol * out; R[i] = or * out;
@@ -359,7 +359,7 @@ export class HybridReverb extends Fx {
   process(L, R, n) {
     const p = this.p, send = p[0] <= -60 ? 0 : dbToLin(p[0]), pd = clamp(p[1], 0, 1000) * 0.001 * this.sr, pfb = clamp(p[2], 0, 0.9), route = Math.round(p[3]), blend = p[4], ir = ER[clamp(Math.round(p[5]), 0, 4)];
     const irD = p[6], irS = 0.3 + p[7] * 1.7, alg = Math.round(p[8]), frz = p[14] > 0.5, mix = p[21], st = p[18], vint = Math.round(p[19]), eqOn = p[15] > 0.5;
-    const sizeK = 0.5 + p[10] * 1.5, g = frz ? 1 : Math.pow(10, -3 * (this.len[4] * sizeK / this.sr) / Math.max(0.2, p[9])), damp = frz ? 0 : 0.05 + p[11] * 0.7, dif = 0.3 + p[12] * 0.45, md = p[13] * (alg === 3 ? 30 : 8);
+    const sizeK = 0.5 + p[10] * 1.5, g = frz ? 1 : Math.pow(10, -3 * (this.len[4] * sizeK / this.sr) / Math.max(0.2, p[9])), damp = frz ? 0 : clamp((0.05 + p[11] * 0.7) * [1.35, 0.5, 1, 1, 0.3][clamp(alg, 0, 4)], 0, 0.95), dif = clamp(0.3 + p[12] * 0.45 + [0, 0.12, 0, 0, -0.12][clamp(alg, 0, 4)], 0.1, 0.85), md = p[13] * (alg === 3 ? 30 : 8), nm = alg === 4 ? 8 : 2;   // Dark Hall darker, Quartz bright + dense, Prism bright, every line modulated
     for (let i = 0; i < n; i++) {
       const xin = frz ? 0 : (L[i] + R[i]) * 0.5 * send;
       const pdo = pd > 1 ? rd(this.pre, this.pm, this.pw, pd) : xin; this.pre[this.pw & this.pm] = xin + pdo * pfb; this.pw++;
@@ -372,7 +372,7 @@ export class HybridReverb extends Fx {
       for (let k = 0; k < 4; k++) { const a = this.ap[k], d = [142, 107, 379, 277][k], y = a.b[(a.w - d) & 1023]; const u = x + y * dif; a.b[a.w & 1023] = u; a.w++; x = y - u * dif; }
       this.ph += TWO_PI * (alg === 3 ? 0.3 : 0.8) / this.sr; if (this.ph > TWO_PI) this.ph -= TWO_PI;
       const o = this.o || (this.o = new Float64Array(8)); let sum = 0;
-      for (let k = 0; k < 8; k++) { const buf = this.fd[k], M = buf.length - 1, d = this.len[k] * sizeK + (k < 2 ? Math.sin(this.ph + k) * md : 0); o[k] = rd(buf, M, this.fw, clamp(d, 2, M - 2)); this.lp[k] += (o[k] - this.lp[k]) * (1 - damp); o[k] = this.lp[k]; sum += o[k]; }
+      for (let k = 0; k < 8; k++) { const buf = this.fd[k], M = buf.length - 1, d = this.len[k] * sizeK + (k < nm ? Math.sin(this.ph + k) * md : 0); o[k] = rd(buf, M, this.fw, clamp(d, 2, M - 2)); this.lp[k] += (o[k] - this.lp[k]) * (1 - damp); o[k] = this.lp[k]; sum += o[k]; }
       const hh = sum * 0.25;
       if (alg === 2) { this.shB[this.sh & 8191] = hh; this.sh++; }                                // shimmer: an octave-up copy is fed back
       const shim = alg === 2 ? (this.shB[(this.sh - 1 - ((this.sh * 0.5) % 2048 | 0)) & 8191] * 0.25) : 0;

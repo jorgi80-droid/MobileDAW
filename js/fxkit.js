@@ -48,7 +48,9 @@ function kit(ctx) {
   const out = () => { const o = eng.devOut(i, di); return Array.isArray(o) ? o : o ? Array.from(o) : []; };
   // a box whose content follows a parameter (Live: Sync on shows the 16th grid, off shows the time knob)
   const swap = (k, on, off) => { const box = h('div', { class: 'lk-swap' }); const fill = () => box.replaceChildren(get(k) > 0.5 ? on() : off()); fill(); draws.push(() => { const want = get(k) > 0.5; if (box._on !== want) { box._on = want; fill(); } }); box._on = get(k) > 0.5; return box; };
-  return { d, def, get, set, K, T, CY, CH, S, N, NT, dk, LN, TL, D, sec, row, col, sep, every, out, swap, redraw, reg, auto };
+  // like swap, for a list parameter: fn(value) builds the content (Spectral Time: Time / Notes / 16th knob by Mode)
+  const swapN = (k, fn) => { const box = h('div', { class: 'lk-swap' }); let cur = null; const fill = () => { const v = Math.round(get(k)); if (v !== cur) { cur = v; box.replaceChildren(fn(v)); } }; fill(); draws.push(fill); return box; };
+  return { d, def, get, set, K, swapN, T, CY, CH, S, N, NT, dk, LN, TL, D, sec, row, col, sep, every, out, swap, redraw, reg, auto };
 }
 // filter (band) display with a draggable ring: x = freq, y = width (or Q); used by the delays, Beat Repeat, Erosion, Vinyl
 function bandDisp(k, w, hh, kf, kw, o = {}) {
@@ -558,6 +560,55 @@ V[45] = (k) => {
   paint();
   return k.row(k.col(disp, k.row(big, lvBtn('■', () => { k.set(0, 0); o[0] = 0; paint(); }, { cls: 'lk-t', w: 40 }), lvBtn('Clear', () => { k.set(6, k.get(6) + 1); paint(); }, { cls: 'lk-t' }))), k.sep(),
     k.col(k.TL('Record', k.S(1, { w: 76 })), k.TL('Monitor', k.S(5, { w: 96 }))), k.sep(), k.col(k.K(2), k.T(3, 'Reverse')), k.col(k.K(4), k.K(7)));
+};
+
+// ================================================================================================ Live 12 set, part 3: spectral (engine: js/engine/fx5.js)
+// scrolling sonogram (cyan on dark, newest column right); col(o) returns the 48 band levels in dB or null; ▶ pauses it like Live's display button
+function sonogram(k, w, hh, col) {
+  const off = document.createElement('canvas'); off.width = w; off.height = hh; const og = off.getContext('2d'); og.fillStyle = DISPC.bg; og.fillRect(0, 0, w, hh);
+  let run = true;
+  const c = k.D(w, hh, (g) => { g.drawImage(off, 0, 0, w, hh); });
+  k.every(60, () => {
+    if (!run) return; const v = col(); if (!v) return;
+    og.drawImage(off, -2, 0); og.fillStyle = DISPC.bg; og.fillRect(w - 2, 0, 2, hh);
+    const nb = v.length, bh = hh / nb;
+    for (let j = 0; j < nb; j++) { const a = Math.max(0, Math.min(1, (v[j] + 84) / 66)); if (a < 0.03) continue; og.fillStyle = `rgba(110,226,236,${a.toFixed(3)})`; og.fillRect(w - 2, hh - (j + 1) * bh, 2, Math.ceil(bh)); }
+    c.paint();
+  });
+  const play = h('button', { class: 'lk-play on', 'aria-label': 'Display', onclick: () => { run = !run; play.classList.toggle('on', run); } }, '▶');
+  return h('div', { class: 'lk-son' }, c, play);
+}
+const chk = (k, j, text) => k.T(j, text, { cls: 'lk-chk' });     // Live section switch: orange square + title
+// Spectral Time: 1 Freezer (Manual / Retrigger, Onsets / Sync, Interval or Sensitivity, ms / note, Freeze, crossfade / envelope, X-Fade) |
+// 2 Delay (Time / Notes / 16th by Mode, Feedback, Shift, Mode, Stereo, Mix, Tilt, Spray, Mask) | sonogram, input / output meters
+V[46] = (k) => {
+  let lv = [0, 0], son = null;
+  const met = k.D(14, 120, (g, w, hh) => { for (let c = 0; c < 2; c++) { const db = 20 * Math.log10(lv[c] + 1e-9), y = Math.max(0, Math.min(1, (db + 60) / 60)); g.fillStyle = '#5fd08a'; g.fillRect(1 + c * 7, hh - y * hh, 5, y * hh); } });
+  k.every(60, () => { const r = k.out(); if (r.length >= 51) { lv = [r[0], r[1]]; son = r.slice(3, 51); met.paint(); } });
+  const frz = k.col(chk(k, 0, '1 Freezer'), k.row(
+    k.col(k.CH(1, ['Manual', 'Retrigger'], { v: true, cls: 'wide' }), k.CH(2, ['Onsets', 'Sync']),
+      k.row(k.swap(2, () => k.swap(4, () => k.K(5, { n: 'Interval' }), () => k.K(6, { n: 'Interval' })), () => k.K(7, { n: 'Sensitivity' })), k.CH(4, ['ms', '♪'], { v: true, cls: 'sm' })),
+      k.TL('Freeze', k.T(3, '✱', { cls: 'lk-frz' }))), k.sep(),
+    k.col(k.row(k.CH(8, [ico('M3 2L21 10M3 10L21 2'), ico('M3 10L12 2L21 10')].map((x) => x), { cls: 'ico' })), k.K(9))));
+  const dly = k.col(chk(k, 10, '2 Delay'),
+    k.row(k.swapN(14, (m) => (m === 0 ? k.K(11, { n: 'Time' }) : m === 1 ? k.K(15, { n: 'Time' }) : k.K(16, { n: 'Time' }))), k.K(12), k.K(13)),
+    k.row(k.TL('Mode', k.S(14, { w: 80 })), k.TL('Stereo', k.N(17, { w: 70, fill: false })), k.TL('Mix', k.N(18, { w: 70 }))),
+    k.row(k.K(19), k.K(20), k.K(21)));
+  const box = (el) => { const b = k.sec(null, el); b.classList.add('box'); return b; };
+  return k.row(met, box(frz), box(dly), sonogram(k, 200, 170, () => son));
+};
+// Spectral Resonator: Mode Internal / MIDI, MIDI From, Mono / Poly, Voices | Freq (Internal) or Transp. (MIDI), Stretch, Shift | Decay, HF / LF Damp |
+// None / Chorus / Wander / Granular, Mod Rate, Pch.Mod | sonogram with Harmonics | Unison, Uni.Amt, Input Send, Dry/Wet
+V[47] = (k) => {
+  let son = null; k.every(60, () => { const r = k.out(); if (r.length >= 49) son = r.slice(1, 49); });
+  const src = k.reg(lvSel(() => [{ label: 'This Track', value: 0 }, ...P.state.tracks.map((t, j) => ({ label: `${j + 1} ${t.name || 'Track'}`, value: j + 1 }))], () => Math.round(k.get(1)), (v) => k.set(1, v), { w: 108, cls: 'lk-s' }), 1);
+  const disp = h('div', { class: 'lk-sonw' }, sonogram(k, 230, 150, () => son), h('div', { class: 'lk-harm' }, h('span', {}, 'Harmonics'), k.NT(12, { w: 40, cls: 'or' })));
+  return k.row(
+    k.col(k.TL('Mode', k.CH(0, ['Internal', 'MIDI'])), k.TL('MIDI From', src), h('span', { class: 'lk-grow' }), k.CH(13, ['Mono', 'Poly']), k.TL('Voices', k.N(14, { w: 96 }))), k.sep(),
+    k.col(k.swap(0, () => k.K(3, { big: true }), () => k.K(2, { big: true })), k.TL('Stretch', k.N(7, { w: 64 })), k.TL('Shift', k.N(8, { w: 64 }))),
+    k.col(k.K(4), k.K(5), k.K(6)), k.sep(),
+    k.col(k.CH(9, ['None', 'Chorus', 'Wander', 'Granular'], { v: true }), k.K(10), k.TL('Pch.Mod', k.N(11, { w: 64, fill: false }))),
+    disp, k.col(k.TL('Unison', k.S(15, { w: 50 })), k.K(16), k.K(17), k.K(18)));
 };
 
 export const KIT = V;
