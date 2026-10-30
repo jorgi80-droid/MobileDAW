@@ -602,10 +602,13 @@ function render() {
   if (tab !== 'file') stopPreview();
   if (tab === 'file') stopAudition();
   const cl = chipsFor(); if (!cl.some(([k]) => k === cat)) cat = 'all';
-  const tabs = h('div', { class: 'btabs' },
-    h('div', { class: 'bt' }, ...TABS.map(([k, l]) => h('button', { class: 'b' + (tab === k ? ' on' : ''), onclick: () => { if (tab !== k) { stopAudition(); cat = 'all'; } tab = k; render(); } }, l))),
-    h('button', { class: 'b bx' + (pinned ? ' pinon' : ''), 'aria-label': 'Sematkan', title: 'Sematkan: drawer tetap terbuka saat arrangement disentuh', onclick: () => { pinned = !pinned; prefs.browserPin = pinned; savePrefs(); toast(pinned ? 'Drawer disematkan: tetap terbuka.' : 'Drawer menutup saat arrangement disentuh.', 1800); render(); } }, 'Pin'),
-    h('button', { class: 'b bx', 'aria-label': 'Tutup', onclick: closeBrowser }, '\u2715'));
+  // Live 12 browser: the categories in a sidebar on the left (Library), the search field, filters and the list on the right
+  const side = h('nav', { class: 'bside', 'aria-label': 'Kategori' },
+    h('div', { class: 'bs-h' }, 'Library'),
+    ...TABS.map(([k, l]) => h('button', { class: 'bs-i' + (tab === k ? ' on' : ''), 'data-k': k, onclick: () => { if (tab !== k) { stopAudition(); cat = 'all'; } tab = k; render(); } }, h('i', { 'aria-hidden': 'true' }), h('span', {}, l))),
+    h('div', { class: 'bs-sp' }),
+    h('button', { class: 'bs-i bs-pin' + (pinned ? ' on' : ''), 'aria-label': 'Sematkan', title: 'Sematkan: drawer tetap terbuka saat arrangement disentuh', onclick: () => { pinned = !pinned; prefs.browserPin = pinned; savePrefs(); toast(pinned ? 'Drawer disematkan: tetap terbuka.' : 'Drawer menutup saat arrangement disentuh.', 1800); render(); } }, h('i', { 'aria-hidden': 'true' }), h('span', {}, 'Pin')),
+    h('button', { class: 'bs-i bs-x', 'aria-label': 'Tutup', onclick: closeBrowser }, h('i', { 'aria-hidden': 'true' }), h('span', {}, 'Tutup')));
   const list = h('div', { class: 'blist' }), bhead = h('div', { class: 'bfhead' });
   if (tab === 'instr') list.append(...tabInstr()); else if (tab === 'fx') list.append(...tabFx()); else if (tab === 'file') tabFiles(list, bhead); else if (tab === 'preset') list.append(...tabPreset()); else tabProjects(list);
   const cnt = h('span', { class: 'cnt' });
@@ -614,8 +617,8 @@ function render() {
   const sbar = h('div', { class: 'sbar' }, h('span', { class: 'sico' }), search, cnt, clr);
   const chips = h('div', { class: 'chips' }, ...cl.map(([k, l]) => h('button', { class: 'chip' + (cat === k ? ' on' : ''), onclick: () => { cat = k; render(); } }, l)));
   pvBar = null;
-  aside.replaceChildren(tabs, sbar, chips, bhead, list);
-  { const on = aside.querySelector('.bt .b.on'); if (on) { const pn = on.parentNode; pn.scrollLeft = on.offsetLeft - (pn.clientWidth - on.offsetWidth) / 2; } }
+  { const pl = bhead.querySelector('.places'); if (pl) side.insertBefore(h('div', { class: 'bs-places' }, h('div', { class: 'bs-h' }, 'Places'), pl), side.querySelector('.bs-sp')); }   // Live: the folders (Places) live in the sidebar under the Library
+  aside.replaceChildren(side, h('div', { class: 'bmain' }, sbar, chips, bhead, list));
   { const on = aside.querySelector('.places .pl.on'); if (on) { const pn = on.parentNode; pn.scrollLeft = on.offsetLeft - (pn.clientWidth - on.offsetWidth) / 2; } }   // keep the active place centred in the strip
   applyFilter(list, cnt);
   curKey = tab + '|' + (tab === 'file' ? path : '');
