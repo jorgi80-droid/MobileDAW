@@ -14,8 +14,12 @@ import { MASTER, RET0 } from './engine.js';
 import { INSTRUMENTS, DEVICES } from './defs.js';
 const { state, PPQ, COLORS } = P;
 
-const HEAD = 132, NAMEW = 68, RULER = 28, HANDLE = 18, MROW = 10;       // track headers sit on the RIGHT of the clip area, like the Live reference
-const FOLD_H = 28, MIN_ROW = 56, ADD_H = 34, XROW_H = 44;                  // folded row / smallest unfolded row (name + buttons + volume fit) / "+" row
+// Live 12 layout: locator strip + beat ruler on top, time ruler at the bottom (with the grid / zoom fields at its right end), track
+// headers on the RIGHT: a title bar in the track colour, the mixer buttons under it, volume / pan sliders when the row is tall enough
+// and a level meter along the right edge of every header.
+let HEAD = 150;                                                 // header width, chosen by fit() from the canvas width
+const RULER = 36, MROW = 13, BOT = 20, HANDLE = 18, TH = 20, METW = 9;   // top ruler (locators + beats) / bottom time ruler / header title bar / meter strip
+const FOLD_H = 24, MIN_ROW = 52, ADD_H = 44, XROW_H = 48;                // folded row (title bar only) / smallest open row (title + buttons) / "+" row / Master + FX rows
 export const view = { x0: 0, ppt: 0.06, y0: 0, rowH: 72 };
 let CW = 0;                                                    // width of the clip area = canvas width - HEAD
 const sn = (n, f) => ({ 0: n, get 1() { return f(); } });   // snap values are read live: BAR / BEAT change with the time signature
@@ -27,6 +31,8 @@ let stretchMode = false;                                       // audio clips: t
 export const isStretch = () => stretchMode;
 const live = new Map();                                        // clip id -> stretch factor while dragging / rendering (the old waveform is scaled so the clip never jumps)
 const msel = new Set();   // ids of the picked clips: long-press a clip, or long-press an empty spot and drag a rectangle (no mode button)
+const fh = new Map();     // track id -> row height while a fold / unfold glides; hit tests read the same height, so nothing under the finger jumps
+const gl = new Map();     // clip id -> { c, s, l }: drawn start / length while a dragged clip glides onto its snapped position
 let canvas, ctx, W = 0, H = 0, dpr = 1, dirty = true, hooks = {}, sel = null, touchedAt = 0;
 
 export const invalidate = () => { dirty = true; };
@@ -54,40 +60,48 @@ const snapT = (t) => {
   return Math.round(Math.max(s0, Math.min(e0, s0 + Math.round((t - s0) / s) * s)));
 };
 const gridT = () => { for (const t of [120, 240, 480, 960, 1920, 3840, 7680, 15360, 30720]) if (t * view.ppt >= 14) return t; return 30720; };
+const gridName = () => { const s = snapTicks(); if (!s) return 'Off'; const k = s / (BEAT * 4); return k >= 1 ? (Number.isInteger(k) ? k + ' Bar' : (s / BAR).toFixed(1) + ' Bar') : '1/' + Math.round(1 / k); };
 const tx = (tick) => (tick - view.x0) * view.ppt;
 const xt = (x) => view.x0 + x / view.ppt;
-// rows have individual heights: a folded track is FOLD_H tall, the others view.rowH
+const LANE_B = () => H - BOT;                                  // bottom edge of the lanes (the time ruler sits below)
+// rows have individual heights: a folded track is FOLD_H tall, the others view.rowH (gliding while a fold animates)
 // below the tracks: the Master row and one row per effect track (Return A/B stay in the mixer), then the "+" row
-const snapRect = () => ({ x: CW + 5, y: 3, w: HEAD - 10, h: RULER - 7 });
-const badges = () => (CW < 150 ? [] : [['gridbtn', SNAPS[cfg.snap][0], { x: CW - 124, y: H - 28, w: 58, h: 22 }], ['zoombtn', (view.ppt / 0.06).toFixed(2) + 'x', { x: CW - 62, y: H - 28, w: 54, h: 22 }]]);
+const snapRect = () => ({ x: CW + 6, y: 7, w: HEAD - 12, h: RULER - 14 });
+const followRect = () => ({ x: CW + 6, y: H - BOT + 3, w: HEAD - 12, h: BOT - 6 });
+const badges = () => (CW < 170 ? [] : [['gridbtn', 'Grid ' + (SNAPS[cfg.snap][0] === 'Auto' ? gridName() : SNAPS[cfg.snap][0]), { x: CW - 150, y: H - BOT + 3, w: 92, h: BOT - 6 }], ['zoombtn', (view.ppt / 0.06).toFixed(2) + 'x', { x: CW - 54, y: H - BOT + 3, w: 50, h: BOT - 6 }]]);
 let pressed = null;                                           // which corner / badge button is under the finger (drawn highlighted)
 const nX = () => 1 + Math.max(0, state.returns.length - 2);
-const xInfo = (i) => { const j = i - state.tracks.length; return j === 0 ? { master: true, strip: MASTER, name: 'MASTER', color: state.master.color || '#4cd964', obj: state.master } : { master: false, k: j + 1, strip: RET0 + j + 1, name: state.returns[j + 1].name, color: state.returns[j + 1].color || '#35d0e0', obj: state.returns[j + 1] }; };
-const rh = (i) => (i >= state.tracks.length + nX() ? ADD_H : i === state.tracks.length ? FOLD_H : i > state.tracks.length ? XROW_H : state.tracks[i].fold ? FOLD_H : view.rowH);
+const xInfo = (i) => { const j = i - state.tracks.length; return j === 0 ? { master: true, strip: MASTER, name: 'Master', color: state.master.color || '#4cd964', obj: state.master } : { master: false, k: j + 1, strip: RET0 + j + 1, name: state.returns[j + 1].name, color: state.returns[j + 1].color || '#35d0e0', obj: state.returns[j + 1] }; };
+const rowTarget = (t) => (t.fold ? FOLD_H : view.rowH);
+const rh = (i) => { const n = state.tracks.length; if (i >= n) return i >= n + nX() ? ADD_H : XROW_H; const t = state.tracks[i], a = fh.size ? fh.get(t.id) : undefined; return a !== undefined ? a : rowTarget(t); };
 function rowY(i) { let y = RULER - view.y0; for (let k = 0; k < i; k++) y += rh(k); return y; }
 function rowAt(y) { let a = RULER - view.y0; const n = state.tracks.length + nX(); for (let i = 0; i <= n; i++) { const e = a + rh(i); if (y < e) return i; a = e; } return n + 1; }
 const contentH = () => { let y = 0; for (let i = 0; i <= state.tracks.length + nX(); i++) y += rh(i); return y; };
-// Header layout of one track. Controls only appear when the row is tall enough, so nothing can overlap.
+// Header layout of one track. Controls only appear when the row is tall enough, so nothing can overlap; a folded row keeps its activator.
 function hdr(i) {
-  const t = state.tracks[i], y = rowY(i), h = rh(i), x = CW + NAMEW, auto = t.kind === 'auto';
-  const r = { y, h, fold: { x: CW, y, w: 26, h: Math.min(h, 26) }, mute: { x: x + 3, y: y + 2, w: auto ? 58 : 28, h: 24 }, solo: auto ? null : { x: x + 33, y: y + 2, w: 28, h: 24 } };
-  if (!t.fold) { if (h >= 48) r.vol = { x: x + 4, y: y + 31, w: 56, h: 13 }; if (h >= 64) r.pan = { x: x + 4, y: y + 47, w: 56, h: 13 }; }
-  if (!t.fold && !auto && h >= 64) {                                   // status badges in the name block (Live: Arm, Monitor) + automation lane toggle
-    const by = y + h - 23, mon = t.kind !== 'audio';
-    r.arm = { x: CW + 2, y: by, w: 18, h: 18 };
-    if (mon) r.mon = { x: CW + 22, y: by, w: 22, h: 18 };
-    r.aut = { x: CW + (mon ? 46 : 22), y: by, w: 16, h: 18 };
+  const t = state.tracks[i], y = rowY(i), h = rh(i), x = CW, auto = t.kind === 'auto', L = x + 5, R = x + HEAD - METW - 5, th = Math.min(TH, h - 3);
+  const r = { y, h, th, title: { x, y, w: HEAD - METW, h: th }, fold: { x, y, w: 26, h: th } };
+  if (h < 46) { r.mute = { x: R - (auto ? 26 : 20), y: y + 3, w: auto ? 26 : 20, h: Math.max(10, th - 6) }; return r; }   // folded: the activator sits in the title bar, as in Live
+  const by = y + th + 4, bh = 20;
+  r.mute = { x: L, y: by, w: auto ? 36 : 26, h: bh };
+  if (!auto) {
+    r.solo = { x: L + 28, y: by, w: 22, h: bh }; r.arm = { x: L + 52, y: by, w: 22, h: bh };
+    r.aut = { x: R - 20, y: by, w: 20, h: bh };
+    if (t.kind !== 'audio' && R - 52 >= L + 76) r.mon = { x: R - 52, y: by, w: 30, h: bh };
+    if (h >= 70) { const sy = by + bh + 5, vw = Math.round((R - L) * 0.56); r.vol = { x: L, y: sy, w: vw, h: 15 }; r.pan = { x: L + vw + 4, y: sy, w: R - L - vw - 4, h: 15 }; }
   }
   return r;
 }
+function xhdr(i) { const y = rowY(i), h = rh(i); return { y, h, act: { x: CW + 5, y: y + TH + 4, w: 28, h: 20 } }; }
 const inRect = (r, x, y, p = 0) => x >= r.x - p && x <= r.x + r.w + p && y >= r.y - p && y <= r.y + r.h + p;
 
 function clampView() {
   view.x0 = Math.max(0, view.x0);                           // the arrangement starts flush at the left edge: tick 0 is the first pixel, clips can reach it
-  view.y0 = clamp(view.y0, 0, Math.max(0, contentH() - (H - RULER) + 20));
+  view.y0 = clamp(view.y0, 0, Math.max(0, contentH() - (H - RULER - BOT) + 20));
 }
 
 // ------------------------------------------------------------------ drawing
+const FONT = (w, s) => `${w} ${s}px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`;
 function noteBox(c) {
   let lo = 127, hi = 0;
   for (const n of c.notes) { if (n.p < lo) lo = n.p; if (n.p > hi) hi = n.p; }
@@ -98,7 +112,7 @@ function noteBox(c) {
 
 function washRgba(hex, a) { const m = /^#?([0-9a-f]{6})$/i.exec(String(hex)); if (!m) return `rgba(128,128,128,${a})`; const v = parseInt(m[1], 16); return `rgba(${v >> 16},${(v >> 8) & 255},${v & 255},${a})`; }
 const shadeCache = new Map();
-function shade(hex, k) {                 // darken a colour by k (0..1): Live's clip title strip is a deeper tone of the track colour
+function shade(hex, k) {                 // darken a colour by k (0..1): clip outlines and the note / waveform ink are deep tones of the track colour
   const key = hex + k; let r = shadeCache.get(key);
   if (r) return r;
   const n = parseInt(hex.slice(1, 7), 16), m = (v) => Math.round(v * (1 - k));
@@ -117,28 +131,40 @@ function tint(hex, k) {                 // mix a colour with white by k (0..1): 
   const n = parseInt(hex.slice(1, 7), 16), m = (v) => Math.round(v + (255 - v) * k);
   r = `rgb(${m(n >> 16)},${m((n >> 8) & 255)},${m(n & 255)})`; tintCache.set(key, r); return r;
 }
-const INK0 = 'rgba(12,12,18,.72)';
+const inkCache = new Map();
+function ink(hex) {                     // text on a colour: dark on light colours, white on dark ones
+  let r = inkCache.get(hex); if (r) return r;
+  const n = parseInt(String(hex).slice(1, 7), 16) || 0, l = 0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255);
+  r = l > 150 ? 'rgba(14,14,18,.9)' : 'rgba(255,255,255,.94)'; inkCache.set(hex, r); return r;
+}
 
 function drawClip(t, c, y, hh) {
-  const x = tx(c.start), w = c.len * view.ppt;
+  const g = gl.get(c.id), cs = g ? g.s : c.start, cl = g ? g.l : c.len;
+  const x = tx(cs), w = cl * view.ppt;
   if (x > CW || x + w < 0) return;
   const xs = Math.max(x, 0), xe = Math.min(x + w, CW);
   const isSel = state.sel.clip === c.id || msel.has(c.id);
-  const tall = hh >= 44, hd = tall ? 13 : 0;                 // folded / short rows: no title strip, only colour + content
+  const tall = hh >= 40, hd = tall ? 14 : 0, y0 = y + 1, h0 = hh - 2;   // folded / short rows: no title strip, only colour + content
+  const col = c.muted ? C('#7c7c82') : t.color;
   ctx.save();
-  ctx.beginPath(); ctx.rect(0, RULER, CW, H - RULER); ctx.clip();
-  ctx.fillStyle = c.muted ? C('#a9a9ae') : tint(t.color, tall ? 0.42 : 0.2); ctx.fillRect(x, y + 1, w, hh - 2);   // pale body, like Live
-  if (tall) { ctx.fillStyle = c.muted ? C('#85858a') : t.color; ctx.fillRect(x, y + 1, w, hd); }                   // saturated title strip
-  ctx.fillStyle = 'rgba(0,0,0,.45)'; ctx.fillRect(x, y + 1, 1, hh - 2); ctx.fillRect(x + w - 1, y + 1, 1, hh - 2); ctx.fillRect(x, y + 1, w, 1); ctx.fillRect(x, y + hh - 2, w, 1);
-  if (tall && w > 20) { ctx.fillStyle = INK0; ctx.font = '600 10px system-ui'; ctx.textBaseline = 'middle'; ctx.fillText(c.name || (c.sample ? c.sample.name : t.name), Math.max(x, 0) + 4, y + 1 + hd / 2 + 0.5, Math.max(0, xe - xs - 8)); }
-  const by = y + 3 + hd, bh = hh - 6 - hd, INK = c.muted ? 'rgba(12,12,18,.38)' : INK0;
+  const cy0 = Math.max(RULER, y0), cy1 = Math.min(LANE_B(), y0 + h0);              // clipped to the clip itself and the lane area: notes never spill while it glides
+  ctx.beginPath(); ctx.rect(xs, cy0, Math.max(0, xe - xs), Math.max(0, cy1 - cy0)); ctx.clip();
+  ctx.fillStyle = c.muted ? C('#a2a2a7') : tall ? tint(t.color, isSel ? 0.56 : 0.42) : t.color; ctx.fillRect(x, y0, w, h0);   // pale body under a saturated title strip, like Live
+  if (tall) { ctx.fillStyle = col; ctx.fillRect(x, y0, w, hd); ctx.fillStyle = 'rgba(0,0,0,.16)'; ctx.fillRect(x, y0 + hd - 1, w, 1); }
+  ctx.strokeStyle = shade(c.muted ? '#7c7c82' : t.color, 0.55); ctx.lineWidth = 1; ctx.strokeRect(Math.round(x) + 0.5, y0 + 0.5, Math.max(0, Math.round(w) - 1), h0 - 1);
+  if (tall && w > 18) {
+    ctx.fillStyle = ink(col); ctx.font = FONT(600, 10); ctx.textBaseline = 'middle';
+    ctx.fillText(c.name || (c.sample ? c.sample.name : t.name), xs + 5, y0 + hd / 2 + 0.5, Math.max(0, xe - xs - 10));
+  }
+  const by = y0 + hd + 2, bh = h0 - hd - 4, INK = c.muted ? 'rgba(20,20,24,.45)' : shade(t.color, 0.74);
   if (t.kind === 'auto' && c.pts && bh > 8) {
     const pts = [...c.pts].sort((a, b) => a.t - b.t), yy = (v) => by + bh - v * bh;
-    ctx.fillStyle = 'rgba(12,12,18,.16)'; ctx.strokeStyle = INK; ctx.lineWidth = 1.5; ctx.beginPath();
+    ctx.fillStyle = washRgba(t.color, 0.35); ctx.strokeStyle = INK; ctx.lineWidth = 1.5; ctx.beginPath();
     ctx.moveTo(x, yy(pts[0].v));
     for (const p of pts) ctx.lineTo(x + p.t * view.ppt, yy(p.v));
     ctx.lineTo(x + w, yy(pts[pts.length - 1].v)); ctx.stroke();
     ctx.lineTo(x + w, by + bh); ctx.lineTo(x, by + bh); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = INK; for (const p of pts) { const px = x + p.t * view.ppt; if (px >= xs - 3 && px <= xe + 3) ctx.fillRect(px - 2, yy(p.v) - 2, 4, 4); }   // breakpoints, as in Live's automation
   } else if (t.kind === 'audio' && (c.dsample || c.sample) && ((c.dsample || c.sample).pyr || (c.dsample || c.sample).peaks) && bh > 8) {
     const es = c.dsample || c.sample, lk = live.get(c.id) || 1, o = c.offset || 0;
     ctx.fillStyle = INK;
@@ -156,156 +182,206 @@ function drawClip(t, c, y, hh) {
         ctx.fill(peaksPath(es.peaks, { x0: px0, x1: px1, s0: sec0 / es.duration * N, spp: spp0 * N, mid: by + bh / 2, amp: bh * 0.5 * 0.96 }));
       }
     }
-  } else if (c.notes && bh > 8) {
-    const [lo, hi] = noteBox(c), span = hi - lo + 1, nh = Math.max(1.5, bh / span);
+  } else if (c.notes && bh > 6) {
+    const [lo, hi] = noteBox(c), span = hi - lo + 1, nh = Math.max(1.5, Math.min(bh / span, 6));
     ctx.fillStyle = INK;
     for (const g of P.loopSegs(c)) {                            // looped MIDI: the notes are drawn again in every repeat (no empty bars)
       const gx = x + g.o * view.ppt;
       if (gx > xe || gx + g.len * view.ppt < xs) continue;
       for (const n of c.notes) {
         if (n.t >= g.len) continue;
-        const nx = gx + n.t * view.ppt, nw = Math.max(1.5, Math.min(n.d, g.len - n.t) * view.ppt);
+        const nx = gx + n.t * view.ppt, nw = Math.max(1.5, Math.min(n.d, g.len - n.t) * view.ppt - 0.5);
         if (nx + nw < xs || nx > xe) continue;
-        ctx.fillRect(nx, by + (hi - n.p) / span * bh, nw, nh);
+        ctx.fillRect(nx, by + (hi - n.p) / span * (bh - nh) , nw, nh);
       }
     }
   }
-  if (c.ll > 0 && c.len > c.ll && w > 0) {                       // thin marks where the loop restarts
-    ctx.fillStyle = 'rgba(0,0,0,.28)';
-    for (const g of P.loopSegs(c)) { if (!g.o) continue; const gx = x + g.o * view.ppt; if (gx >= xs && gx <= xe) ctx.fillRect(Math.round(gx), y + 1, 1, hh - 2); }
+  if (c.ll > 0 && c.len > c.ll && w > 0) {                       // loop restarts: a notch in the title strip and a hairline through the body (Live's loop marks)
+    for (const g of P.loopSegs(c)) {
+      if (!g.o) continue; const gx = Math.round(x + g.o * view.ppt); if (gx < xs || gx > xe) continue;
+      ctx.fillStyle = 'rgba(0,0,0,.22)'; ctx.fillRect(gx, y0 + hd, 1, h0 - hd);
+      if (tall) { ctx.fillStyle = shade(t.color, 0.5); ctx.beginPath(); ctx.moveTo(gx - 4, y0); ctx.lineTo(gx + 4, y0); ctx.lineTo(gx, y0 + 5); ctx.closePath(); ctx.fill(); }
+    }
   }
   if (isSel) {
-    ctx.strokeStyle = C('#fff'); ctx.lineWidth = 2; ctx.strokeRect(x + 1, y + 2, w - 2, hh - 4);
-    const hy = y + hh / 2 - Math.min(12, hh / 2 - 4), hl = Math.min(24, hh - 8), st = stretchMode && t.kind === 'audio';
-    ctx.fillStyle = C('#fff'); ctx.fillRect(x + 2, hy, 4, hl);
-    if (st) { ctx.fillStyle = C('#ffa722'); ctx.fillRect(x + w - 10, hy - 2, 8, hl + 4); ctx.fillStyle = C('#1a1100'); ctx.fillRect(x + w - 8, hy + hl / 2 - 1, 4, 2); } else ctx.fillRect(x + w - 6, hy, 4, hl);
+    ctx.strokeStyle = C('#ffffff'); ctx.lineWidth = 2; ctx.strokeRect(x + 1, y0 + 1, w - 2, h0 - 2);
+    const hl = Math.min(26, h0 - hd - 10), hy = y0 + hd + (h0 - hd - hl) / 2, st = stretchMode && t.kind === 'audio';   // edge grips for touch: pills on both ends
+    if (hl > 6 && w > 26) {
+      ctx.fillStyle = 'rgba(12,12,16,.55)'; ctx.fillRect(x + 3, hy - 1, 6, hl + 2); ctx.fillRect(x + w - 9, hy - 1, 6, hl + 2);
+      ctx.fillStyle = C('#ffffff'); ctx.fillRect(x + 4, hy, 4, hl);
+      ctx.fillStyle = st ? C('#ffa722') : C('#ffffff'); ctx.fillRect(x + w - 8, hy, 4, hl);
+    }
   }
   ctx.restore();
 }
 
 function draw() {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.fillStyle = C('#1b1b1c'); ctx.fillRect(0, 0, W, H);
-  const n = state.tracks.length, g = gridT();
-  // rows
-  for (let i = Math.max(0, rowAt(RULER)); i <= Math.min(n - 1, rowAt(H)); i++) {
+  ctx.fillStyle = C('#1d1d1f'); ctx.fillRect(0, 0, W, H);
+  const n = state.tracks.length, g = gridT(), LB = LANE_B(), nn = n + nX();
+  ctx.save(); ctx.beginPath(); ctx.rect(0, RULER, CW, LB - RULER); ctx.clip();
+  // lanes: one flat grey per track, the selected track a step lighter (as Live highlights the selected track's lane)
+  for (let i = Math.max(0, rowAt(RULER)); i <= Math.min(n - 1, rowAt(LB)); i++) {
     const y = rowY(i), h = rh(i);
-    ctx.fillStyle = i % 2 ? C('#202022') : C('#232325'); ctx.fillRect(0, y, CW, h);
-    ctx.fillStyle = C('#0e0e0f'); ctx.fillRect(0, y + h - 1, CW, 1);
+    ctx.fillStyle = state.sel.track === i ? C('#2f2f33') : C('#272729'); ctx.fillRect(0, y, CW, h);
+    ctx.fillStyle = C('#141415'); ctx.fillRect(0, y + h - 1, CW, 1);
   }
   const xl = [];                                                                       // captions of the Master / effect lanes, drawn after the grid
-  for (let i = Math.max(n, rowAt(RULER)); i < n + nX() && i <= rowAt(H); i++) {          // Master / effect track rows: no clips, they only mix
+  for (let i = Math.max(n, rowAt(RULER)); i < nn && i <= rowAt(LB); i++) {             // Master / effect track rows: no clips, they only mix
     const y = rowY(i), h = rh(i), x = xInfo(i);
-    ctx.fillStyle = C('#232325'); ctx.fillRect(0, y, CW, h);                                   // theme background first, so the tint below is a real transparent wash in dark AND light themes
-    ctx.fillStyle = washRgba(x.color, 0.2); ctx.fillRect(0, y, CW, h); ctx.fillStyle = C('#0e0e0f'); ctx.fillRect(0, y + h - 1, CW, 1);   // lane = light transparent wash of the Master / FX track colour
+    ctx.fillStyle = state.sel.track === x.strip ? C('#2f2f33') : C('#252527'); ctx.fillRect(0, y, CW, h);   // theme background first, so the tint below is a real transparent wash in dark AND light themes
+    ctx.fillStyle = washRgba(x.color, 0.06); ctx.fillRect(0, y, CW, h); ctx.fillStyle = C('#141415'); ctx.fillRect(0, y + h - 1, CW, 1);
     const src = x.master ? state.tracks.filter((q) => q.kind !== 'auto' && !q.mute).length : state.tracks.filter((q) => q.out === x.k && !q.mute).length;
-    xl.push({ y, h, t: `Active Track : ${src}`, wash: washRgba(x.color, 0.2) });
+    xl.push({ y, h, t: `${src} track aktif → ${x.name}` });
   }
-  // grid + loop
+  const gy1 = Math.min(LB, rowY(nn));                                                   // grid only over the rows, not over the "+" row and the empty space below
+  // grid: beats faint, bars stronger (drawn per bar, so 7/8 and signature changes stay right)
   const tEnd = view.x0 + CW / view.ppt + g;
   eachGrid(view.x0 - g, tEnd, g, (t, j) => {
-    const x = Math.round(tx(t)) + 0.5;
+    const x = Math.round(tx(t));
     if (x < 0 || x > CW) return;
     const r = t - P.MM.T[j];
-    if (r % P.MM.bl[j] === 0) return;                         // bar lines are drawn below
-    ctx.fillStyle = r % P.MM.bt[j] === 0 ? C('#2c2c30') : C('#262629');
-    ctx.fillRect(x, RULER, 1, H - RULER);
+    if (r % P.MM.bl[j] === 0) return;
+    ctx.fillStyle = r % P.MM.bt[j] === 0 ? C('#323236') : C('#2b2b2e');
+    ctx.fillRect(x, RULER, 1, gy1 - RULER);
   });
-  ctx.fillStyle = C('#3b3b40');   // bar lines: drawn per bar, so they stay right when the bar length is not a multiple of the grid step (e.g. 7/8) and after a signature change
-  for (let b = Math.max(0, P.barAt(view.x0)); tx(P.barStart(b)) < CW; b++) { const x = Math.round(tx(P.barStart(b))) + 0.5; if (x >= 0) ctx.fillRect(x, RULER, 1, H - RULER); }
-  if (P.state.sigs.length) { ctx.fillStyle = 'rgba(255,167,34,.28)'; for (const c of P.state.sigs) { const x = Math.round(tx(P.barStart(c.bar))) + 0.5; if (x >= 0 && x <= CW) ctx.fillRect(x, RULER, 1, H - RULER); } }
-  for (const m of state.markers) { const x = Math.round(tx(m.t)) + 0.5; if (x < 0 || x > CW) continue; ctx.globalAlpha = 0.35; ctx.fillStyle = m.color; ctx.fillRect(x, RULER, 1, H - RULER); ctx.globalAlpha = 1; }
+  ctx.fillStyle = C('#404045');
+  for (let b = Math.max(0, P.barAt(view.x0)); tx(P.barStart(b)) < CW; b++) { const x = Math.round(tx(P.barStart(b))); if (x >= 0) ctx.fillRect(x, RULER, 1, gy1 - RULER); }
+  if (P.state.sigs.length) { ctx.fillStyle = 'rgba(255,167,34,.3)'; for (const c of P.state.sigs) { const x = Math.round(tx(P.barStart(c.bar))); if (x >= 0 && x <= CW) ctx.fillRect(x, RULER, 1, gy1 - RULER); } }
+  for (const m of state.markers) { const x = Math.round(tx(m.t)); if (x < 0 || x > CW) continue; ctx.globalAlpha = 0.4; ctx.fillStyle = m.color; ctx.fillRect(x, RULER, 1, gy1 - RULER); ctx.globalAlpha = 1; }
   const PU = state.punch;
-  if (PU.on && PU.end > PU.start) { const a0 = Math.max(0, tx(PU.start)); ctx.fillStyle = 'rgba(255,54,54,.07)'; ctx.fillRect(a0, RULER, Math.max(0, Math.min(CW, tx(PU.end)) - a0), H - RULER); ctx.fillStyle = 'rgba(255,54,54,.55)'; for (const e of [PU.start, PU.end]) { const lx = Math.round(tx(e)); if (lx >= 0 && lx <= CW) ctx.fillRect(lx, RULER, 1, H - RULER); } }
-  if (xl.length) {                                                                        // v63: caption sits on a small pill, grid lines no longer cut through the letters
-    ctx.font = '600 10px system-ui'; ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
+  if (PU.on && PU.end > PU.start) { const a0 = Math.max(0, tx(PU.start)); ctx.fillStyle = 'rgba(255,54,54,.07)'; ctx.fillRect(a0, RULER, Math.max(0, Math.min(CW, tx(PU.end)) - a0), gy1 - RULER); ctx.fillStyle = 'rgba(255,54,54,.55)'; for (const e of [PU.start, PU.end]) { const lx = Math.round(tx(e)); if (lx >= 0 && lx <= CW) ctx.fillRect(lx, RULER, 1, gy1 - RULER); } }
+  if (xl.length) {                                                                        // caption on a small pill, so the grid never cuts through the letters
+    ctx.font = FONT(600, 10); ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
     for (const l of xl) {
+      if (l.h < 22) continue;
       const w = Math.round(ctx.measureText(l.t).width + 20), x = Math.round(CW / 2 - w / 2), y = Math.round(l.y + l.h / 2 - 9);
-      ctx.fillStyle = C('#232325'); ctx.fillRect(x, y, w, 18); ctx.fillStyle = l.wash; ctx.fillRect(x, y, w, 18);
+      ctx.fillStyle = C('#1f1f21'); ctx.fillRect(x, y, w, 18); ctx.strokeStyle = C('#141415'); ctx.lineWidth = 1; ctx.strokeRect(x + 0.5, y + 0.5, w - 1, 17);
       ctx.fillStyle = C('#8b8b92'); ctx.fillText(l.t, CW / 2, l.y + l.h / 2 + 0.5);
     }
     ctx.textAlign = 'left';
   }
+  // the "+" row: Live's "Drop Files and Devices Here" area
+  { const y = rowY(nn), h = rh(nn);
+    if (y < LB && y + h > RULER && CW > 120) {
+      ctx.setLineDash([4, 4]); ctx.strokeStyle = C('#3c3c41'); ctx.lineWidth = 1; ctx.strokeRect(6.5, y + 6.5, CW - 13, h - 13); ctx.setLineDash([]);
+      ctx.fillStyle = C('#6c6c73'); ctx.font = FONT(500, 11); ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
+      ctx.fillText('Seret sample, instrumen, atau efek ke sini • ketuk + untuk track baru', CW / 2, y + h / 2 + 0.5, CW - 30); ctx.textAlign = 'left';
+    } }
+  ctx.restore();
   // clips
-  const first = Math.max(0, rowAt(RULER)), last = Math.min(n - 1, rowAt(H));
-  for (let i = first; i <= last; i++) { const y = rowY(i); for (const c of state.tracks[i].clips) drawClip(state.tracks[i], c, y, rh(i)); }
-  if (sel) { const a = Math.max(0, tx(sel.a)), b = Math.min(CW, tx(sel.b)); ctx.fillStyle = 'rgba(79,163,224,.22)'; ctx.fillRect(a, RULER, Math.max(0, b - a), H - RULER); }
+  const first = Math.max(0, rowAt(RULER)), last = Math.min(n - 1, rowAt(LB));
+  for (let i = first; i <= last; i++) { const y = rowY(i), h = rh(i); for (const c of state.tracks[i].clips) drawClip(state.tracks[i], c, y, h); }
+  if (sel) { const a = Math.max(0, tx(sel.a)), b = Math.min(CW, tx(sel.b)); ctx.fillStyle = 'rgba(120,182,230,.2)'; ctx.fillRect(a, RULER, Math.max(0, b - a), gy1 - RULER); }
   if (marq) {
     const ax = tx(marq.t0), bx = tx(marq.t1), ay = RULER - view.y0 + marq.y0, by = RULER - view.y0 + marq.y1;
     const x = Math.min(ax, bx), y = Math.min(ay, by), w = Math.abs(bx - ax), hh = Math.abs(by - ay);
-    ctx.save(); ctx.beginPath(); ctx.rect(0, RULER, CW, H - RULER); ctx.clip();
-    ctx.fillStyle = 'rgba(255,167,34,.16)'; ctx.fillRect(x, y, w, hh); ctx.strokeStyle = C('#ffa722'); ctx.lineWidth = 1; ctx.strokeRect(x + 0.5, y + 0.5, w, hh); ctx.restore();
+    ctx.save(); ctx.beginPath(); ctx.rect(0, RULER, CW, LB - RULER); ctx.clip();
+    ctx.fillStyle = 'rgba(120,182,230,.16)'; ctx.fillRect(x, y, w, hh); ctx.strokeStyle = 'rgba(160,205,240,.9)'; ctx.lineWidth = 1; ctx.strokeRect(x + 0.5, y + 0.5, w, hh); ctx.restore();
   }
   drawRuler(g);
+  drawTimeRuler();
   drawHeads();
   if (msel.size) placeBar();
 }
 
 const PUon = () => state.punch.on && state.punch.end > state.punch.start;
 function drawRuler(g) {
-  ctx.fillStyle = C('#2a2a2d'); ctx.fillRect(0, 0, CW, RULER);
-  ctx.fillStyle = C('#0e0e0f'); ctx.fillRect(0, RULER - 1, CW, 1);
+  ctx.fillStyle = C('#202022'); ctx.fillRect(0, 0, CW, MROW);                              // locator strip
+  ctx.fillStyle = C('#2c2c2f'); ctx.fillRect(0, MROW, CW, RULER - MROW);                   // beat time ruler
+  ctx.fillStyle = C('#141415'); ctx.fillRect(0, MROW - 1, CW, 1); ctx.fillRect(0, RULER - 1, CW, 1);
   ctx.save(); ctx.beginPath(); ctx.rect(0, 0, CW, RULER); ctx.clip();
-  ctx.font = '10px system-ui'; ctx.textBaseline = 'top'; ctx.fillStyle = C('#9a9aa2');
-  const barPx = BAR * view.ppt; let k = 1; while (barPx * k < 38) k *= 2;
-  const chg = new Map(P.state.sigs.map((c) => [c.bar, c]));
-  for (let b = Math.floor(Math.max(0, P.barAt(view.x0)) / k) * k; tx(P.barStart(b)) < CW; b++) {
-    const c = chg.get(b);
-    if (b % k && !c) continue;                                 // bars with a signature change are always labelled
-    const x = Math.round(tx(P.barStart(b))) + 0.5;
-    ctx.fillStyle = c ? C('#ffa722') : C('#9a9aa2');
-    ctx.fillRect(x, MROW + 1, 1, RULER - MROW - 2);
-    const lab = String(b + 1); ctx.fillText(lab, x + 3, MROW + 3);
-    const lx = x + 3 + ctx.measureText(lab).width + 5;                       // bar number, then signature change or time on the same line: one thin row instead of two
-    if (c) { ctx.font = '600 9px system-ui'; ctx.fillText(c.n + '/' + c.d, lx, MROW + 4); ctx.font = '10px system-ui'; }
-    else if (barPx * k >= 82) {
-      const sec = Math.max(0, P.tickToSec(P.barStart(b))), mm = Math.floor(sec / 60), ss = Math.floor(sec % 60);
-      ctx.font = '9px system-ui'; ctx.globalAlpha = 0.7; ctx.fillText(`${mm}:${String(ss).padStart(2, '0')}`, lx, MROW + 4); ctx.globalAlpha = 1; ctx.font = '10px system-ui';
+  if (sel) { ctx.fillStyle = 'rgba(120,182,230,.32)'; ctx.fillRect(tx(sel.a), MROW, tx(sel.b) - tx(sel.a), RULER - MROW - 1); }
+  // loop brace along the bottom of the beat ruler: grey when the loop is off, lit when it is on (Live's Arrangement Loop)
+  const LP = state.loop;
+  if (LP && LP.end > LP.start) {
+    const a = Math.round(tx(LP.start)), b = Math.round(tx(LP.end));
+    if (b > 0 && a < CW) {
+      ctx.fillStyle = LP.on ? T('--accent') : C('#4c4c52');
+      ctx.fillRect(a, RULER - 7, b - a, 5); ctx.fillRect(a, RULER - 11, 2, 9); ctx.fillRect(b - 2, RULER - 11, 2, 9);
     }
   }
-  ctx.fillStyle = C('#55555b');
-  eachGrid(view.x0 - g, view.x0 + CW / view.ppt + g, g, (t, j) => { if ((t - P.MM.T[j]) % P.MM.bl[j]) ctx.fillRect(Math.round(tx(t)), RULER - 4, 1, 3); });
-  if (PUon()) { ctx.fillStyle = C('#ff3636'); ctx.fillRect(tx(state.punch.start), RULER - 3, tx(state.punch.end) - tx(state.punch.start), 2); ctx.fillRect(tx(state.punch.start) - 1, RULER - 9, 4, 7); ctx.fillRect(tx(state.punch.end) - 3, RULER - 9, 4, 7); }
-  if (sel) { ctx.fillStyle = C('#4fa3e0'); ctx.fillRect(tx(sel.a), 0, tx(sel.b) - tx(sel.a), 3); }
-  ctx.font = '600 9px system-ui'; ctx.textBaseline = 'middle';
-  ctx.fillStyle = C('#1d1d20'); ctx.fillRect(0, 0, CW, MROW);
-  const ml = state.markers;
-  for (let k = 0; k < ml.length; k++) {
-    const m = ml[k], x = Math.round(tx(m.t));
-    if (x > CW + 4) break;
-    const nx = k + 1 < ml.length ? Math.round(tx(ml[k + 1].t)) : CW + 200, w = Math.min(nx - x - 3, ctx.measureText(m.name).width + 14);
-    if (x + Math.max(8, w) < 0) continue;
-    ctx.fillStyle = m.color; ctx.fillRect(x, 0, 1, MROW); ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x + 7, 0); ctx.lineTo(x, 7); ctx.closePath(); ctx.fill();
-    if (w > 18) { ctx.save(); ctx.beginPath(); ctx.rect(x + 1, 0, w, MROW); ctx.clip(); ctx.fillStyle = m.color; ctx.fillText(m.name, x + 9, MROW / 2 + 1); ctx.restore(); }
+  ctx.font = FONT(500, 10); ctx.textBaseline = 'top';
+  const barPx = BAR * view.ppt; let k = 1; while (barPx * k < 34) k *= 2;
+  const chg = new Map(P.state.sigs.map((c) => [c.bar, c]));
+  ctx.fillStyle = C('#4a4a50');
+  eachGrid(view.x0 - g, view.x0 + CW / view.ppt + g, g, (t, j) => { const r = (t - P.MM.T[j]) % P.MM.bl[j]; if (r) ctx.fillRect(Math.round(tx(t)), r % P.MM.bt[j] ? RULER - 4 : RULER - 6, 1, r % P.MM.bt[j] ? 3 : 5); });
+  for (let b = Math.floor(Math.max(0, P.barAt(view.x0)) / k) * k; tx(P.barStart(b)) < CW; b++) {
+    const c = chg.get(b), x = Math.round(tx(P.barStart(b)));
+    if (b % k && !c) { ctx.fillStyle = C('#4a4a50'); ctx.fillRect(x, RULER - 8, 1, 7); continue; }   // unlabelled bars: a longer tick
+    ctx.fillStyle = c ? C('#ffa722') : C('#6a6a70'); ctx.fillRect(x, MROW, 1, RULER - MROW - 1);
+    const lab = String(b + 1); ctx.fillStyle = c ? C('#ffa722') : C('#b4b4ba'); ctx.fillText(lab, x + 4, MROW + 3);
+    if (c) { ctx.font = FONT(700, 9); ctx.fillText(c.n + '/' + c.d, x + 8 + ctx.measureText(lab).width, MROW + 4); ctx.font = FONT(500, 10); }
   }
-  ctx.textBaseline = 'top'; ctx.font = '10px system-ui';
+  if (PUon()) { ctx.fillStyle = C('#ff3636'); ctx.fillRect(tx(state.punch.start), RULER - 3, tx(state.punch.end) - tx(state.punch.start), 2); ctx.fillRect(tx(state.punch.start) - 1, RULER - 11, 4, 9); ctx.fillRect(tx(state.punch.end) - 3, RULER - 11, 4, 9); }
+  // locators (markers): a flag with its name on the locator strip
+  ctx.font = FONT(600, 9); ctx.textBaseline = 'middle';
+  const ml = state.markers;
+  for (let k2 = 0; k2 < ml.length; k2++) {
+    const m = ml[k2], x = Math.round(tx(m.t));
+    if (x > CW + 4) break;
+    const nx = k2 + 1 < ml.length ? Math.round(tx(ml[k2 + 1].t)) : CW + 200, w = Math.min(nx - x - 3, ctx.measureText(m.name).width + 16);
+    if (x + Math.max(8, w) < 0) continue;
+    ctx.fillStyle = m.color; ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x + 8, MROW / 2 - 0.5); ctx.lineTo(x, MROW - 1); ctx.closePath(); ctx.fill();
+    if (w > 18) { ctx.save(); ctx.beginPath(); ctx.rect(x + 1, 0, w, MROW); ctx.clip(); ctx.fillText(m.name, x + 11, MROW / 2); ctx.restore(); }
+  }
+  ctx.textBaseline = 'top';
   ctx.restore();
 }
+// time ruler (min:sec) under the lanes, like the one at the bottom of Live's Arrangement; the grid and zoom fields sit at its right end
+function drawTimeRuler() {
+  const y = H - BOT;
+  ctx.fillStyle = C('#2c2c2f'); ctx.fillRect(0, y, CW, BOT); ctx.fillStyle = C('#141415'); ctx.fillRect(0, y, CW, 1);
+  ctx.save(); ctx.beginPath(); ctx.rect(0, y, CW, BOT); ctx.clip();
+  const s0 = Math.max(0, P.tickToSec(view.x0)), s1 = P.tickToSec(view.x0 + CW / view.ppt), pps = CW / Math.max(1e-6, s1 - s0);
+  let st = 1; for (const q of [0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300]) { st = q; if (q * pps >= 58) break; }
+  ctx.font = FONT(500, 9.5); ctx.textBaseline = 'middle';
+  for (let s = Math.floor(s0 / st) * st; s <= s1 + st; s += st) {
+    const x = Math.round(tx(P.secToTick(s))); if (x < -40 || x > CW) continue;
+    ctx.fillStyle = C('#55555b'); ctx.fillRect(x, y + 1, 1, 6);
+    const mm = Math.floor(s / 60), ss = s - mm * 60;
+    ctx.fillStyle = C('#9a9aa2'); ctx.fillText(`${mm}:${(st < 1 ? ss.toFixed(1) : String(Math.floor(ss))).padStart(st < 1 ? 4 : 2, '0')}`, x + 4, y + BOT / 2 + 1);
+  }
+  ctx.restore();
+  ctx.font = FONT(600, 10); ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
+  for (const [type, lbl, r] of badges()) {                   // Live-style fields: flat, 1 px border, lighter while pressed
+    ctx.fillStyle = C('#2c2c2f'); ctx.fillRect(r.x - 6, y + 1, r.w + 8, BOT - 1);
+    ctx.fillStyle = pressed === type ? C('#55555b') : C('#3a3a3e'); ctx.fillRect(r.x, r.y, r.w, r.h);
+    ctx.strokeStyle = C('#141415'); ctx.lineWidth = 1; ctx.strokeRect(r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
+    ctx.fillStyle = C('#d4d4d8'); ctx.fillText(lbl, r.x + r.w / 2, r.y + r.h / 2 + 0.5, r.w - 6);
+  }
+  ctx.textAlign = 'left';
+}
 
-// Overlay layer: only the playhead. It is redrawn every frame while playing, the heavy static layer is not.
+// Overlay layer: playhead + header meters. It is redrawn every frame while playing, the heavy static layer is not.
 const meterFrac = (lv) => clamp((20 * Math.log10(Math.max(lv, 1e-4)) + 60) / 66, 0, 1);
 let lastMeterKey = 0;
 const mDisp = []; let mT = 0;                 // displayed levels: instant attack, ~26 dB/s release (same ballistics as the mixer), so header bars glide instead of flickering
 function smoothMeters() {
   const now = performance.now(), dt = Math.min(0.12, (now - (mT || now)) / 1000); mT = now;
-  const m = state.meters, n = state.tracks.length * 2, k = Math.pow(10, -26 * dt / 20);
+  const m = state.meters, n = m.length, k = Math.pow(10, -26 * dt / 20);
   for (let j = 0; j < n; j++) { const lv = (m[j] || 0) / 1000; let d = mDisp[j] || 0; d = lv >= d ? lv : d * k; mDisp[j] = d < 1e-4 ? 0 : d; }
 }
+const stripOfRow = (i) => (i < state.tracks.length ? (state.tracks[i].kind === 'auto' ? -1 : i) : xInfo(i).strip);
 function meterKey() {                        // changes whenever a visible bar would change (24 steps), so the overlay is only redrawn when needed
-  let k = 0; const n = state.tracks.length;
-  for (let i = 0; i < n; i++) k = (k * 31 + Math.round(meterFrac(mDisp[i * 2] || 0) * 24) * 25 + Math.round(meterFrac(mDisp[i * 2 + 1] || 0) * 24)) | 0;
+  let k = 0; const nn = state.tracks.length + nX();
+  for (let i = 0; i < nn; i++) { const s = stripOfRow(i); if (s < 0) continue; k = (k * 31 + Math.round(meterFrac(mDisp[s * 2] || 0) * 24) * 25 + Math.round(meterFrac(mDisp[s * 2 + 1] || 0) * 24)) | 0; }
   return k;
 }
-function drawMeters() {                      // two thin level bars per track at the right edge of the name block, same scale as the mixer
-  const hx = CW, n = state.tracks.length, m = state.meters;
-  octx.save(); octx.beginPath(); octx.rect(hx, RULER, HEAD, H - RULER); octx.clip();
-  for (let i = Math.max(0, rowAt(RULER)); i <= Math.min(n - 1, rowAt(H)); i++) {
-    if (state.tracks[i].kind === 'auto') continue;
-    const y = rowY(i), hh = rh(i) - 7; if (hh < 6) continue;
+function drawMeters() {                      // Live: a slim stereo meter along the right edge of every track header, same scale as the mixer
+  const mx = CW + HEAD - METW + 1, nn = state.tracks.length + nX();
+  octx.save(); octx.beginPath(); octx.rect(CW, RULER, HEAD, LANE_B() - RULER); octx.clip();
+  for (let i = Math.max(0, rowAt(RULER)); i <= Math.min(nn - 1, rowAt(LANE_B())); i++) {
+    const s = stripOfRow(i); if (s < 0) continue;
+    const y = rowY(i) + 3, hh = rh(i) - 7; if (hh < 6) continue;
     for (let ch = 0; ch < 2; ch++) {
-      const f = meterFrac(mDisp[i * 2 + ch] || 0), bx = hx + NAMEW - 6 + ch * 3;
-      octx.fillStyle = 'rgba(16,16,17,.75)'; octx.fillRect(bx, y + 3, 2, hh);
-      if (f > 0.01) { octx.fillStyle = f > 0.93 ? '#e5484d' : f > 0.8 ? '#f0d84a' : '#4fae3a'; octx.fillRect(bx, y + 3 + hh * (1 - f), 2, hh * f); }
+      const f = meterFrac(mDisp[s * 2 + ch] || 0), bx = mx + 1 + ch * 3.5;
+      if (f > 0.01) {
+        const top = y + hh * (1 - f), yel = y + hh * (1 - 0.8), red = y + hh * (1 - 0.93);
+        octx.fillStyle = '#4fae3a'; octx.fillRect(bx, Math.max(top, yel), 2.5, y + hh - Math.max(top, yel));
+        if (top < yel) { octx.fillStyle = '#e8cf3a'; octx.fillRect(bx, Math.max(top, red), 2.5, yel - Math.max(top, red)); }
+        if (top < red) { octx.fillStyle = '#e5484d'; octx.fillRect(bx, top, 2.5, red - top); }
+      }
     }
   }
   octx.restore();
@@ -317,112 +393,117 @@ function drawHead(tick) {
   const px = tx(tick);
   if (px < -6 || px > CW + 6) return;
   octx.save(); octx.beginPath(); octx.rect(0, 0, CW, H); octx.clip();
-  octx.fillStyle = C('#ffa722');
-  if (px >= 0) octx.fillRect(Math.round(px * dpr) / dpr, RULER, 2, H - RULER);
-  octx.beginPath(); octx.moveTo(px - 5, 0); octx.lineTo(px + 5, 0); octx.lineTo(px, 8); octx.fill();
+  const x = Math.round(px * dpr) / dpr;
+  if (px >= 0) { octx.fillStyle = 'rgba(0,0,0,.35)'; octx.fillRect(x + 1.5, RULER, 1, LANE_B() - RULER); octx.fillStyle = C('#ffa722'); octx.fillRect(x, RULER, 1.5, LANE_B() - RULER); }
+  octx.fillStyle = C('#ffa722'); octx.beginPath(); octx.moveTo(x - 5.5, MROW); octx.lineTo(x + 6.5, MROW); octx.lineTo(x + 0.75, MROW + 8); octx.closePath(); octx.fill();
   octx.restore();
 }
 
 const VMAX = 1.4;
-const dbTxt = (v) => (v < 0.001 ? '-\u221E' : (20 * Math.log10(v)).toFixed(1));
-const panTxt = (p) => (Math.abs(p) < 0.02 ? 'C' : (p < 0 ? 'L' : 'R') + Math.round(Math.abs(p) * 50));
+const dbTxt = (v) => (v < 0.001 ? '-∞' : (20 * Math.log10(v)).toFixed(1));
+const panTxt = (p) => (Math.abs(p) < 0.02 ? 'C' : Math.round(Math.abs(p) * 50) + (p < 0 ? 'L' : 'R'));
 function cut2(txt, maxW) {                    // text that fits maxW, with an ellipsis when it does not
   if (ctx.measureText(txt).width <= maxW) return txt;
-  let t = txt; while (t.length > 1 && ctx.measureText(t + '\u2026').width > maxW) t = t.slice(0, -1);
-  return t + '\u2026';
+  let t = txt; while (t.length > 1 && ctx.measureText(t + '…').width > maxW) t = t.slice(0, -1);
+  return t + '…';
 }
-function foldIcon(cx, cy, folded) {            // circled triangle, as the fold button in Live's track headers
-  ctx.strokeStyle = 'rgba(15,15,20,.75)'; ctx.fillStyle = 'rgba(15,15,20,.75)'; ctx.lineWidth = 1.2;
-  ctx.beginPath(); ctx.arc(cx, cy, 7, 0, Math.PI * 2); ctx.stroke();
-  ctx.beginPath();
-  if (folded) { ctx.moveTo(cx - 2, cy - 3.5); ctx.lineTo(cx + 3.5, cy); ctx.lineTo(cx - 2, cy + 3.5); }
-  else { ctx.moveTo(cx - 3.5, cy - 2); ctx.lineTo(cx + 3.5, cy - 2); ctx.lineTo(cx, cy + 3.5); }
+function foldTri(cx, cy, folded, col) {        // Live's fold toggle: a small solid triangle (right = folded, down = open)
+  ctx.fillStyle = col; ctx.beginPath();
+  if (folded) { ctx.moveTo(cx - 2.5, cy - 4.5); ctx.lineTo(cx + 3.5, cy); ctx.lineTo(cx - 2.5, cy + 4.5); }
+  else { ctx.moveTo(cx - 4.5, cy - 2.5); ctx.lineTo(cx + 4.5, cy - 2.5); ctx.lineTo(cx, cy + 3.5); }
   ctx.closePath(); ctx.fill();
 }
-function drawBtn(r, label, active, col) {
-  ctx.fillStyle = active ? col : C('#4a4a50'); ctx.fillRect(r.x, r.y, r.w, r.h);
-  ctx.fillStyle = active ? '#15151a' : C('#c4c4ca'); ctx.font = '700 12px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText(label, r.x + r.w / 2, r.y + r.h / 2 + 0.5); ctx.textAlign = 'left';
+// header button: flat grey with a 1 px border when off, filled with its colour when on (activator yellow, solo blue, arm red)
+function drawBtn(r, label, on, col, quiet) {
+  if (quiet) { ctx.fillStyle = C('#3e3e43'); ctx.fillRect(r.x, r.y, r.w, r.h); ctx.strokeStyle = C('#141415'); ctx.lineWidth = 1; ctx.strokeRect(r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);   // quiet switch: only the text lights up (input monitoring is on by default)
+    ctx.fillStyle = on ? col : C('#8b8b92'); ctx.font = FONT(700, 10); ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(label, r.x + r.w / 2, r.y + r.h / 2 + 0.5, r.w - 2); ctx.textAlign = 'left'; return; }
+  ctx.fillStyle = on ? col : C('#3e3e43'); ctx.fillRect(r.x, r.y, r.w, r.h);
+  ctx.strokeStyle = C('#141415'); ctx.lineWidth = 1; ctx.strokeRect(r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
+  const cx = r.x + r.w / 2, cy = r.y + r.h / 2;
+  if (label === 'arm') { ctx.fillStyle = on ? '#ffffff' : C('#8b8b92'); ctx.beginPath(); ctx.arc(cx, cy, Math.min(4.5, r.h / 2 - 3), 0, 6.2832); ctx.fill(); return; }
+  if (label === 'aut') {                       // automation: a small breakpoint envelope
+    ctx.strokeStyle = on ? '#15151a' : C('#b4b4ba'); ctx.lineWidth = 1.4; ctx.beginPath(); ctx.moveTo(cx - 6, cy + 4); ctx.lineTo(cx - 2, cy - 3); ctx.lineTo(cx + 2, cy + 1); ctx.lineTo(cx + 6, cy - 4); ctx.stroke(); return;
+  }
+  ctx.fillStyle = on ? '#15151a' : C('#c8c8cc'); ctx.font = FONT(700, r.h < 16 ? 9 : 10.5); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(label, cx, cy + 0.5, r.w - 2); ctx.textAlign = 'left';
 }
-function drawBadge(r, label, on, col) {            // small status badge on the track colour: lit = state is on
-  ctx.fillStyle = on ? col : 'rgba(20,20,26,.38)'; ctx.fillRect(r.x, r.y, r.w, r.h);
-  ctx.fillStyle = on ? '#15151a' : 'rgba(255,255,255,.72)';
-  if (label === 'arm') { ctx.beginPath(); ctx.arc(r.x + r.w / 2, r.y + r.h / 2, 4.5, 0, 6.2832); if (on) ctx.fillStyle = '#fff'; ctx.fill(); return; }
-  ctx.font = '700 9px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(label, r.x + r.w / 2, r.y + r.h / 2 + 0.5); ctx.textAlign = 'left';
+// Live's header slider: a dark well, a grey fill up to the value (from the centre for pan) and the value written over it
+function drawSlider(r, frac, label, fromCenter) {
+  ctx.fillStyle = C('#19191a'); ctx.fillRect(r.x, r.y, r.w, r.h);
+  ctx.fillStyle = C('#5a5a60');
+  if (fromCenter) { const c = r.x + r.w / 2, e = r.x + frac * r.w; if (Math.abs(e - c) >= 1) ctx.fillRect(Math.min(c, e), r.y + 1, Math.abs(e - c), r.h - 2); }
+  else ctx.fillRect(r.x + 1, r.y + 1, Math.max(0, frac * (r.w - 2)), r.h - 2);
+  ctx.strokeStyle = C('#141415'); ctx.lineWidth = 1; ctx.strokeRect(r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
+  ctx.font = FONT(600, 9.5); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = C('#e4e4e6'); ctx.fillText(label, r.x + r.w / 2, r.y + r.h / 2 + 0.5, r.w - 4); ctx.textAlign = 'left';
 }
-function drawBar(r, frac, fillCol, label, fromCenter) {
-  ctx.fillStyle = C('#1b1b1c'); ctx.fillRect(r.x, r.y, r.w, r.h);
-  ctx.fillStyle = fillCol;
-  if (fromCenter) { const c = r.x + r.w / 2, e = r.x + frac * r.w; ctx.fillRect(Math.min(c, e), r.y, Math.abs(e - c) || 1, r.h); }
-  else ctx.fillRect(r.x, r.y, Math.max(1, frac * r.w), r.h);
-  if (fromCenter) { ctx.fillStyle = 'rgba(255,255,255,.28)'; ctx.fillRect(Math.round(r.x + r.w / 2), r.y, 1, r.h); }   // centre detent mark
-  ctx.font = '600 9px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.lineJoin = 'round'; ctx.lineWidth = 2.5; ctx.strokeStyle = 'rgba(12,12,14,.85)'; ctx.strokeText(label, r.x + r.w / 2, r.y + r.h / 2 + 0.5);   // dark halo: readable over any fill
-  ctx.fillStyle = '#fff'; ctx.fillText(label, r.x + r.w / 2, r.y + r.h / 2 + 0.5); ctx.textAlign = 'left';
+function drawSwitch(r, label, on, isPressed) {   // Live-style switch: LED + text in a flat field
+  ctx.fillStyle = isPressed ? C('#55555b') : C('#3a3a3e'); ctx.fillRect(r.x, r.y, r.w, r.h);
+  ctx.strokeStyle = C('#141415'); ctx.lineWidth = 1; ctx.strokeRect(r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
+  const ly = r.y + r.h / 2; ctx.fillStyle = on ? T('--accent') : C('#55555b'); ctx.beginPath(); ctx.arc(r.x + 10, ly, 3.5, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = on ? C('#e0e0e4') : C('#8b8b92'); ctx.font = FONT(600, 10); ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
+  ctx.fillText(label, r.x + r.w / 2 + 6, ly + 0.5, r.w - 24); ctx.textAlign = 'left';
 }
 function drawHeads() {
-  const hx = CW, n = state.tracks.length;
-  ctx.fillStyle = C('#242426'); ctx.fillRect(hx, 0, HEAD, H);
-  ctx.save(); ctx.beginPath(); ctx.rect(hx, RULER, HEAD, H - RULER); ctx.clip();
+  const hx = CW, n = state.tracks.length, LB = LANE_B();
+  ctx.fillStyle = C('#1f1f21'); ctx.fillRect(hx, 0, HEAD, H);
+  ctx.save(); ctx.beginPath(); ctx.rect(hx, RULER, HEAD, LB - RULER); ctx.clip();
   const nn = n + nX(), lanes = new Set();
   for (const q of state.tracks) if (q.kind === 'auto' && q.target) lanes.add(q.target.strip);
-  for (let i = Math.max(0, rowAt(RULER)); i <= Math.min(nn, rowAt(H)); i++) {
+  for (let i = Math.max(0, rowAt(RULER)); i <= Math.min(nn, rowAt(LB)); i++) {
     const y = rowY(i), h = rh(i);
-    if (i >= n && i < nn) {                                                                  // Master / effect track header
-      const x = xInfo(i), on = state.sel.track === x.strip, fx = !x.master, rt = fx ? state.returns[x.k] : null;
-      ctx.fillStyle = C('#34343a'); ctx.fillRect(hx + NAMEW, y, HEAD - NAMEW, h - 1);
-      ctx.fillStyle = x.color; ctx.fillRect(hx, y, NAMEW, h - 1);
-      if (on) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.strokeRect(hx + 1, y + 1, NAMEW - 2, h - 3); }
-      ctx.fillStyle = '#15151a'; ctx.font = '700 11px system-ui'; ctx.textBaseline = 'middle'; ctx.fillText(cut2(x.name, NAMEW - 12), hx + 6, y + h / 2 + 0.5);
-      if (fx) drawBtn({ x: hx + NAMEW + 3, y: y + 2, w: 58, h: 24 }, 'On', !rt.mute, C('#f2c744'));
-      else { ctx.fillStyle = C('#8b8b92'); ctx.font = '600 10px system-ui'; ctx.fillText('Mix', hx + NAMEW + 8, y + 14); }
-      ctx.fillStyle = C('#0e0e0f'); ctx.fillRect(hx + NAMEW, y, 1, h);
+    if (i === nn) {                                                                          // "+" row: one wide button
+      const r = { x: hx + 6, y: y + 8, w: HEAD - METW - 12, h: Math.min(28, h - 16) };
+      ctx.fillStyle = C('#2c2c2f'); ctx.fillRect(r.x, r.y, r.w, r.h); ctx.strokeStyle = C('#3c3c41'); ctx.lineWidth = 1; ctx.strokeRect(r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
+      ctx.fillStyle = C('#b4b4ba'); ctx.font = FONT(600, 11); ctx.textBaseline = 'middle'; ctx.textAlign = 'center'; ctx.fillText('+  Track', r.x + r.w / 2, r.y + r.h / 2 + 0.5); ctx.textAlign = 'left';
       continue;
     }
-    if (i === nn) {
-      ctx.fillStyle = C('#8b8b92'); ctx.font = '22px system-ui'; ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
-      ctx.fillText('+', hx + HEAD / 2, y + h / 2); ctx.textAlign = 'left'; continue;
+    const meterWell = () => { ctx.fillStyle = C('#161617'); ctx.fillRect(hx + HEAD - METW, y, METW, h - 1); ctx.fillStyle = C('#101011'); ctx.fillRect(hx + HEAD - METW + 2, y + 3, 2.5, h - 7); ctx.fillRect(hx + HEAD - METW + 5.5, y + 3, 2.5, h - 7); };
+    if (i >= n) {                                                                            // Master / effect track header
+      const x = xInfo(i), on = state.sel.track === x.strip, fx = !x.master, rt = fx ? state.returns[x.k] : null, r = xhdr(i);
+      ctx.fillStyle = on ? C('#3a3a3e') : C('#2c2c2f'); ctx.fillRect(hx, y, HEAD, h - 1);
+      ctx.fillStyle = x.color; ctx.fillRect(hx, y, HEAD - METW, Math.min(TH, h - 3));
+      ctx.fillStyle = ink(x.color); ctx.font = FONT(700, 11); ctx.textBaseline = 'middle'; ctx.fillText(cut2(x.name, HEAD - METW - 16), hx + 8, y + Math.min(TH, h - 3) / 2 + 0.5);
+      if (h >= 44) {
+        if (fx) drawBtn(r.act, x.k < 2 ? 'AB'[x.k] : 'F' + (x.k - 1), !rt.mute, T('--mute'));
+        ctx.fillStyle = C('#8b8b92'); ctx.font = FONT(500, 10); ctx.textBaseline = 'middle';
+        ctx.fillText(x.master ? 'Master • ' + dbTxt(state.master.vol) + ' dB' : 'FX track • ' + dbTxt(rt.vol) + ' dB', hx + (fx ? 40 : 8), r.act.y + r.act.h / 2 + 0.5, HEAD - METW - (fx ? 46 : 14));
+      }
+      meterWell();
+      ctx.fillStyle = C('#141415'); ctx.fillRect(hx, y + h - 1, HEAD, 1);
+      continue;
     }
-    const t = state.tracks[i], on = state.sel.track === i, r = hdr(i);
-    ctx.fillStyle = C('#34343a'); ctx.fillRect(hx + NAMEW, y, HEAD - NAMEW, h - 1);          // control column
-    ctx.fillStyle = t.color; ctx.fillRect(hx, y, NAMEW, h - 1);                                // name block, full height, in the track colour
-    if (on) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.strokeRect(hx + 1, y + 1, NAMEW - 2, h - 3); }   // selection = white frame, the colour itself never changes
-    foldIcon(hx + 13, y + Math.min(h, 26) / 2, !!t.fold);
-    ctx.fillStyle = '#15151a'; ctx.font = '600 11px system-ui'; ctx.textBaseline = 'middle';
-    if (t.fold) ctx.fillText(cut2(t.name, NAMEW - 30), hx + 24, y + h / 2 + 0.5);
+    const t = state.tracks[i], on = state.sel.track === i, r = hdr(i), auto = t.kind === 'auto';
+    ctx.fillStyle = on ? C('#3a3a3e') : C('#2c2c2f'); ctx.fillRect(hx, y, HEAD, h - 1);                    // selected track: the whole header a step lighter
+    ctx.fillStyle = t.color; ctx.fillRect(hx, y, HEAD - METW, r.th);                                      // title bar in the track colour
+    if (t.mute) { ctx.fillStyle = 'rgba(30,30,34,.35)'; ctx.fillRect(hx, y, HEAD - METW, r.th); }          // deactivated track: the title dims, as in Live
+    const ik = ink(t.color);
+    foldTri(hx + 12, y + r.th / 2, !!t.fold, ik);
+    ctx.fillStyle = ik; ctx.font = FONT(on ? 700 : 600, 11); ctx.textBaseline = 'middle';
+    const nameR = h < 46 ? r.mute.x - 4 : hx + HEAD - METW - 6;
+    ctx.fillText(cut2(t.name, nameR - hx - 24), hx + 22, y + r.th / 2 + 0.5);                           // one line + ellipsis, never split mid-word (as Live's track names)
+    if (h < 46) { drawBtn(r.mute, auto ? 'On' : String(i + 1), !t.mute, T('--mute')); }
     else {
-      ctx.fillText(cut2(t.name, NAMEW - 30), hx + 24, y + 13);                                   // one line + ellipsis, never split mid-word (as Live's track names)
-      if (h >= 64) { ctx.fillStyle = 'rgba(15,15,20,.6)'; ctx.font = '9px system-ui'; ctx.fillText(t.kind === 'audio' ? 'Audio' : t.kind === 'drum' ? 'Drum' : t.kind === 'auto' ? 'Otomasi' : 'MIDI', hx + 6, y + h - (r.arm ? 30 : 9)); }
+      drawBtn(r.mute, auto ? 'On' : String(i + 1), !t.mute, T('--mute'));
+      if (r.solo) drawBtn(r.solo, 'S', t.solo, T('--solo'));
+      if (r.arm) drawBtn(r.arm, 'arm', !!t.arm, T('--rec'));
+      if (r.mon) drawBtn(r.mon, 'In', t.mon !== false, T('--lv-orink'), true);
+      if (r.aut) drawBtn(r.aut, 'aut', lanes.has(t.id), T('--accent'));
+      if (auto && h >= 46) { ctx.fillStyle = C('#8b8b92'); ctx.font = FONT(500, 10); ctx.textBaseline = 'middle'; ctx.fillText(cut2('Otomasi', HEAD - METW - 50), r.mute.x + r.mute.w + 8, r.mute.y + r.mute.h / 2 + 0.5); }
+      if (r.vol) drawSlider(r.vol, Math.sqrt(clamp(t.vol / VMAX, 0, 1)), dbTxt(t.vol) + ' dB', false);
+      if (r.pan) drawSlider(r.pan, (clamp(t.pan, -1, 1) + 1) / 2, panTxt(t.pan), true);
     }
-    if (r.arm) drawBadge(r.arm, 'arm', !!t.arm, '#e5484d');
-    if (r.mon) drawBadge(r.mon, 'Mon', t.mon !== false, '#4fa3e0');
-    if (r.aut) drawBadge(r.aut, 'A', lanes.has(t.id), '#ffa722');
-    drawBtn(r.mute, t.kind === 'auto' ? 'On' : String(i + 1), !t.mute, C('#f2c744'));
-    if (r.solo) drawBtn(r.solo, 'S', t.solo, C('#4fa3e0'));
-    if (r.vol) drawBar(r.vol, Math.sqrt(clamp(t.vol / VMAX, 0, 1)), C('#8a8a92'), dbTxt(t.vol) + ' dB', false);
-    if (r.pan) drawBar(r.pan, (clamp(t.pan, -1, 1) + 1) / 2, C('#ffa722'), panTxt(t.pan), true);
-    ctx.fillStyle = C('#0e0e0f'); ctx.fillRect(hx + NAMEW, y, 1, h);
+    if (!auto) meterWell(); else { ctx.fillStyle = C('#161617'); ctx.fillRect(hx + HEAD - METW, y, METW, h - 1); }
+    ctx.fillStyle = C('#141415'); ctx.fillRect(hx, y + h - 1, HEAD, 1);
   }
   ctx.restore();
-  // corner: compact snap button with a border
-  ctx.fillStyle = C('#2a2a2d'); ctx.fillRect(hx, 0, HEAD, RULER); ctx.fillStyle = C('#0e0e0f'); ctx.fillRect(hx, RULER - 1, HEAD, 1); ctx.fillRect(hx, 0, 1, H);
-  {
-    // Live-style switch: flat control, LED on the left (accent when snapping), neutral text - same look as every toggle in the app
-    const r = snapRect(), off = cfg.snap === SNAPS.length - 1;
-    ctx.fillStyle = pressed === 'corner' ? C('#4a4a50') : C('#38383c'); ctx.fillRect(r.x, r.y, r.w, r.h);
-    ctx.strokeStyle = C('#0e0e0f'); ctx.lineWidth = 1; ctx.strokeRect(r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
-    const ly = r.y + r.h / 2; ctx.fillStyle = off ? C('#4a4a50') : T('--accent'); ctx.beginPath(); ctx.arc(r.x + 10, ly, 3.5, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = off ? C('#8b8b92') : C('#cfcfd2'); ctx.font = '600 10px system-ui'; ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
-    ctx.fillText('Snap  ' + SNAPS[cfg.snap][0], r.x + r.w / 2 + 6, ly + 0.5, r.w - 22); ctx.textAlign = 'left';
-  }
-  // bottom-right of the clip area: grid size + zoom, real buttons (tap the grid size for the snap list, the zoom for fit / reset / zoom steps)
-  ctx.font = '600 10px system-ui'; ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
-  for (const [type, lbl, r] of badges()) {
-    ctx.fillStyle = pressed === type ? 'rgba(90,90,98,.92)' : 'rgba(0,0,0,.55)'; ctx.fillRect(r.x, r.y, r.w, r.h);
-    ctx.strokeStyle = pressed === type ? 'rgba(255,167,34,.9)' : 'rgba(255,255,255,.2)'; ctx.lineWidth = 1; ctx.strokeRect(r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
-    ctx.fillStyle = C('#d6d6da'); ctx.fillText(lbl, r.x + r.w / 2, r.y + r.h / 2 + 0.5, r.w - 6);
-  }
-  ctx.textAlign = 'left';
+  ctx.fillStyle = C('#141415'); ctx.fillRect(hx, 0, 1, H);                                   // hairline between clip area and headers
+  // top corner: Snap switch (tap: snap, follow, select / fold options)
+  ctx.fillStyle = C('#2c2c2f'); ctx.fillRect(hx + 1, 0, HEAD - 1, RULER); ctx.fillStyle = C('#141415'); ctx.fillRect(hx, RULER - 1, HEAD, 1);
+  drawSwitch(snapRect(), 'Snap ' + SNAPS[cfg.snap][0], cfg.snap !== SNAPS.length - 1, pressed === 'corner');
+  // bottom corner: Follow switch (the arrangement scrolls with the playhead)
+  ctx.fillStyle = C('#2c2c2f'); ctx.fillRect(hx + 1, H - BOT, HEAD - 1, BOT); ctx.fillStyle = C('#141415'); ctx.fillRect(hx, H - BOT, HEAD, 1);
+  drawSwitch(followRect(), 'Follow', cfg.follow, pressed === 'follow');
 }
 
 // ------------------------------------------------------------------ motion
@@ -470,8 +551,28 @@ function stepMotion(dt) {
     if (Math.abs(mo.vy) < 10) mo.vy = 0;
     moved = true;
   }
+  if (fh.size) {                                             // fold / unfold: row heights glide to their new size
+    const k = ease(dt, 16);
+    for (const t of state.tracks) {
+      const a = fh.get(t.id); if (a === undefined) continue;
+      const tg = rowTarget(t), nv = a + (tg - a) * k;
+      if (Math.abs(tg - nv) < 0.5) fh.delete(t.id); else fh.set(t.id, nv);
+    }
+    for (const id of fh.keys()) if (!state.tracks.some((t) => t.id === id)) fh.delete(id);
+    clampView(); moved = true;
+  }
+  if (gl.size) {                                             // dragged clips glide onto their snapped position instead of jumping a grid step
+    const k = ease(dt, 30);
+    for (const [id, g] of gl) {
+      g.s += (g.c.start - g.s) * k; g.l += (g.c.len - g.l) * k;
+      if (Math.abs(g.c.start - g.s) * view.ppt < 0.3 && Math.abs(g.c.len - g.l) * view.ppt < 0.3) gl.delete(id);
+    }
+    moved = true;
+  }
   return moved;
 }
+function animRow(t) { if (!prefs.reduceMotion && !fh.has(t.id)) fh.set(t.id, rowTarget(t)); }   // call before t.fold changes
+function glideClip(c) { if (!prefs.reduceMotion && !gl.has(c.id)) gl.set(c.id, { c, s: c.start, l: c.len }); }   // call before c.start / c.len change
 
 let lastHeadPx = -1e9, headDirty = true;
 const FOLLOW_AT = 0.38;                       // playhead stays at this fraction of the width while the arrangement scrolls under it
@@ -526,13 +627,16 @@ function hit(x, y) {
     }
     return { type: 'ruler', tick: xt(x) };
   }
-  if (x < CW) for (const [type, , r] of badges()) if (inRect(r, x, y, 3)) return { type };      // grid-size and zoom buttons (bottom right of the clip area)
+  if (y >= H - BOT) {                                                                            // time ruler: grid / zoom fields at its right end, Follow under the headers
+    for (const [type, , r] of badges()) if (inRect(r, x, y, 3)) return { type };
+    return x >= CW ? { type: 'follow' } : { type: 'tbar', tick: xt(x) };
+  }
   const i = rowAt(y);
   if (x >= CW) {
     const n0 = state.tracks.length;
     if (i === n0 + nX()) return { type: 'add' };
     if (i < 0 || i > n0 + nX()) return { type: 'none' };
-    if (i >= n0) { const xi = xInfo(i); return { type: 'xhead', x: xi, mute: !xi.master && x >= CW + NAMEW && x <= CW + NAMEW + 64 && y - rowY(i) < 30 }; }
+    if (i >= n0) { const xi = xInfo(i); return { type: 'xhead', x: xi, mute: !xi.master && rh(i) >= 44 && inRect(xhdr(i).act, x, y, 3) }; }
     const r = hdr(i);
     for (const [k, key] of [[0, 'mute'], [1, 'solo'], [2, 'fold'], [3, 'vol'], [4, 'pan'], [5, 'arm'], [6, 'mon'], [7, 'aut']]) if (r[key] && inRect(r[key], x, y, key === 'vol' || key === 'pan' ? 1 : 2)) return { type: 'head', i, btn: k };
     return { type: 'head', i };
@@ -660,11 +764,11 @@ function laneMenu(i, x, y) {
   if (idef && idef.params.length) items.push({ label: 'Instrumen: ' + idef.name + '\u2026', fn: () => menu(list({ kind: 5, strip: sid }, idef.params, ''), r.left + x, r.top + y) });
   for (const d of t.devices) { const dd = DEVICES[d.type]; if (dd && dd.params && dd.params.length) items.push({ label: 'Efek: ' + dd.name + '\u2026', fn: () => menu(list({ kind: 4, strip: sid, devId: d.id }, dd.params, dd.name), r.left + x, r.top + y) }); }
   const mine = state.tracks.filter((q) => q.kind === 'auto' && q.target && q.target.strip === sid);
-  if (mine.length) { const allFold = mine.every((q) => q.fold); items.push({ sep: true }, { label: (allFold ? 'Buka' : 'Lipat') + ' semua lane track ini (' + mine.length + ')', fn: () => { for (const q of mine) q.fold = !allFold; clampView(); invalidate(); } }); }
+  if (mine.length) { const allFold = mine.every((q) => q.fold); items.push({ sep: true }, { label: (allFold ? 'Buka' : 'Lipat') + ' semua lane track ini (' + mine.length + ')', fn: () => { for (const q of mine) { animRow(q); q.fold = !allFold; } clampView(); invalidate(); } }); }
   menu(items, r.left + x, r.top + y);
 }
-function toggleFold(i) { const t = state.tracks[i]; if (!t) return; t.fold = !t.fold; clampView(); invalidate(); }
-function foldAll(on) { for (const t of state.tracks) t.fold = on; view.y0 = 0; clampView(); invalidate(); }
+function toggleFold(i) { const t = state.tracks[i]; if (!t) return; animRow(t); t.fold = !t.fold; clampView(); invalidate(); }
+function foldAll(on) { for (const t of state.tracks) { if (!!t.fold !== on) animRow(t); t.fold = on; } clampView(); invalidate(); }
 function swapTrack(i, j) { P.swapTracks(i, j); }
 
 function addMenu(x, y) {
@@ -704,7 +808,7 @@ function placeBar() {
   const w = selW || 200, bh = 32;
   let x = clamp((a + b) / 2 - w / 2, 4, Math.max(4, CW - w - 4));
   let y = bot + 6; if (y + bh > H - 4) y = top - bh - 6;
-  y = clamp(y, RULER + 4, Math.max(RULER + 4, H - bh - 4));
+  y = clamp(y, RULER + 4, Math.max(RULER + 4, H - BOT - bh - 4));
   selbar.style.transform = `translate(${Math.round(x)}px,${Math.round(y)}px)`;
   selbar.classList.toggle('hide', !!drag);
 }
@@ -777,7 +881,7 @@ function emptyMenu(i, tick, sx, sy) {
   ], sx, sy);
 }
 function edgeScrollY(y) {
-  if (y > H - 26) view.y0 += 9; else if (y < RULER + 22 && view.y0 > 0) view.y0 -= 9; else return;
+  if (y > H - BOT - 22) view.y0 += 9; else if (y < RULER + 22 && view.y0 > 0) view.y0 -= 9; else return;
   clampView();
 }
 
@@ -791,7 +895,7 @@ function zoomMenu() {
     { label: 'Zoom out', fn: () => zoomAt(1 / 1.7) },
     { sep: true },
     { label: 'Ikuti playhead', check: cfg.follow, fn: () => { prefs.follow = !prefs.follow; savePrefs(); cfg.follow = prefs.follow; invalidate(); } },
-  ], o.left + CW - 62, o.top + H - 30);
+  ], o.left + CW - 54, o.top + H - BOT);
 }
 
 // ------------------------------------------------------------------ markers
@@ -838,11 +942,12 @@ function setup() {
       touchedAt = performance.now();
       switch (t.type) {
         case 'corner': return menu([...SNAPS.map((s, k) => ({ label: s[0], check: cfg.snap === k, fn: () => { cfg.snap = k; invalidate(); } })), { sep: true }, { label: 'Ikuti playhead', check: cfg.follow, fn: () => { cfg.follow = !cfg.follow; } }, { label: 'Pilih semua klip', fn: () => selAll() }, { label: 'Batal pilihan', dim: !msel.size, fn: () => clearSel() }, { sep: true }, { label: 'Lipat semua track', fn: () => foldAll(true) }, { label: 'Buka semua track', fn: () => foldAll(false) }], canvasOrigin().left + Math.max(0, CW - 20), canvasOrigin().top + RULER);
-        case 'gridbtn': { const o = canvasOrigin(); return menu(SNAPS.map((s, k) => ({ label: s[0], check: cfg.snap === k, fn: () => { cfg.snap = k; invalidate(); } })), o.left + CW - 124, o.top + H - 30); }
+        case 'gridbtn': { const o = canvasOrigin(); return menu(SNAPS.map((s, k) => ({ label: s[0], check: cfg.snap === k, fn: () => { cfg.snap = k; invalidate(); } })), o.left + CW - 150, o.top + H - BOT); }
         case 'zoombtn': return zoomMenu();
         case 'marker': return markerMenu(t.m, x, y);
         case 'mrow': return markerRowMenu(t.tick, x, y);
-        case 'ruler': sel = null; P.seekTo(Math.max(0, snapT(t.tick))); return invalidate();
+        case 'ruler': case 'tbar': sel = null; P.seekTo(Math.max(0, snapT(t.tick))); return invalidate();
+        case 'follow': prefs.follow = !cfg.follow; savePrefs(); cfg.follow = prefs.follow; return invalidate();
         case 'add': return addMenu(x, y);
         case 'xhead':
           if (t.mute) P.toggleReturnMute(t.x.k); else P.selectTrack(t.x.strip);
@@ -883,7 +988,7 @@ function setup() {
       if (t.type === 'punchL' || t.type === 'punchR') { drag = { k: t.type }; return true; }
       if (t.type === 'marker') { drag = { k: 'marker', id: t.m.id }; return true; }
       if (t.type === 'head' && (t.btn === 3 || t.btn === 4)) { const rc = hdr(t.i)[t.btn === 3 ? 'vol' : 'pan']; if (rc) { drag = { k: t.btn === 3 ? 'hvol' : 'hpan', i: t.i, rc }; return true; } }
-      if (t.type === 'ruler') { drag = { k: 'sel', a: snapT(t.tick) }; sel = { a: drag.a, b: drag.a }; return true; }
+      if (t.type === 'ruler') { drag = { k: 'rpend', a: snapT(t.tick), tick0: t.tick, p0: view.ppt }; return true; }   // direction decides: Live zoom (vertical) or time selection (horizontal)
       if (t.type === 'clip' && msel.has(t.c.id)) {                // group move / group resize of every picked clip
         checkpoint(); P.selectClip(t.i, t.c.id);
         if (t.zone === 'left' && t.c.notes) P.bakeLoop(t.c, t.i);          // trimming the left edge of a looped clip: turn the repeats into real notes first
@@ -915,9 +1020,15 @@ function setup() {
       if (drag.k === 'marker') { P.editMarker(drag.id, { t: Math.max(0, snapT(tick)) }); invalidate(); return; }
       if (drag.k === 'punchL') { P.setPunch({ start: Math.min(snapT(tick), state.punch.end - BEAT) }); invalidate(); return; }
       if (drag.k === 'punchR') { P.setPunch({ end: Math.max(snapT(tick), state.punch.start + BEAT) }); invalidate(); return; }
+      if (drag.k === 'rpend') {
+        if (Math.abs(dy) > Math.abs(dx) * 1.15) { drag.k = 'rzoom'; stopMotion(); } else { drag.k = 'sel'; sel = { a: drag.a, b: drag.a }; }
+      }
+      if (drag.k === 'rzoom') {                                  // Live's beat ruler: drag down = zoom in, up = zoom out, sideways = scroll; the bar under the finger stays under it
+        view.ppt = clamp(drag.p0 * Math.exp(dy * 0.011), PMIN, PMAX); view.x0 = Math.max(0, drag.tick0 - x / view.ppt); clampView(); invalidate(); return;
+      }
       if (drag.k === 'sel') { sel = { a: Math.min(drag.a, snapT(tick)), b: Math.max(drag.a, snapT(tick)) }; }
       else if (drag.k === 'marq') {
-        marq.t1 = xt(clamp(x, 0, CW)); marq.y1 = clamp(y, RULER, H) - RULER + view.y0;
+        marq.t1 = xt(clamp(x, 0, CW)); marq.y1 = clamp(y, RULER, H - BOT) - RULER + view.y0;
         const o = canvasOrigin();
         if (Math.hypot(x - (marq.sx - o.left), y - (marq.sy - o.top)) > 10) marq.moved = true;
         const ta = Math.min(marq.t0, marq.t1), tb = Math.max(marq.t0, marq.t1), ya = Math.min(marq.y0, marq.y1), yb = Math.max(marq.y0, marq.y1);
@@ -927,7 +1038,7 @@ function setup() {
       } else if (drag.k === 'gmove') {
         const minS = Math.min(...drag.items.map((it) => it.start));
         const d = Math.max(snapT(drag.refStart + (tick - drag.t0)) - drag.refStart, -minS), tr = new Set();
-        for (const it of drag.items) it.c.start = it.start + d;
+        for (const it of drag.items) { if (it.c.start !== it.start + d) glideClip(it.c); it.c.start = it.start + d; }
         // vertical drag moves the whole group by the same number of tracks; shrink the step until every clip lands on a track of its own kind
         let dr = clamp(rowAt(y), 0, state.tracks.length - 1) - drag.row0;
         const okRow = (n) => drag.items.every((it) => { const t = state.tracks[it.i + n]; return t && t.kind === state.tracks[it.i].kind; });
@@ -941,12 +1052,14 @@ function setup() {
         P.emit('notes');
       } else if (drag.k === 'gresize') {
         const s = snapTicks() || 1, d = snapT(drag.refEnd + (tick - drag.t0)) - drag.refEnd, tr = new Set();
-        for (const it of drag.items) { it.c.len = Math.max(s, it.len + d); applyLoop(it.c, it.ll0, it.len, it.had); tr.add(it.i); }
+        for (const it of drag.items) { if (it.c.len !== Math.max(s, it.len + d)) glideClip(it.c); it.c.len = Math.max(s, it.len + d); applyLoop(it.c, it.ll0, it.len, it.had); tr.add(it.i); }
         for (const i of tr) P.touchClips(i);
         P.emit('notes');
       }
       else if (drag.k === 'move') {
-        drag.c.start = Math.max(0, snapT(drag.start + (tick - drag.t0)));
+        const ns = Math.max(0, snapT(drag.start + (tick - drag.t0)));
+        if (ns !== drag.c.start) glideClip(drag.c);
+        drag.c.start = ns;
         const r = clamp(rowAt(y), 0, state.tracks.length - 1);
         if (r !== drag.i && P.moveClipToTrack(drag.i, drag.c.id, r)) drag.i = r;
         P.touchClips(drag.i); P.emit('notes');
@@ -958,8 +1071,9 @@ function setup() {
         live.set(drag.c.id, drag.c.len / drag.len);                  // waveform follows the finger (scaled), the real render happens on release
         P.emit('notes');
       } else if (drag.k === 'resize') {
-        const s = snapTicks() || 1;
-        drag.c.len = Math.max(s, snapT(drag.start + drag.len + (tick - drag.t0)) - drag.start);
+        const s = snapTicks() || 1, nl = Math.max(s, snapT(drag.start + drag.len + (tick - drag.t0)) - drag.start);
+        if (nl !== drag.c.len) glideClip(drag.c);
+        drag.c.len = nl;
         applyLoop(drag.c, drag.ll0, drag.len, drag.had);
         P.touchClips(drag.i); P.emit('notes');
       } else if (drag.k === 'resizeL') {
@@ -1038,7 +1152,7 @@ function setup() {
   ov.addEventListener('pointerdown', (e) => {
     const r = ov.getBoundingClientRect(); canvas._last = hit(e.clientX - r.left, e.clientY - r.top);
     down.add(e.pointerId); touching = true; touchedAt = performance.now(); stopMotion();   // a touch stops any glide or fling right where it is
-    const ty = canvas._last.type; if (ty === 'corner' || ty === 'gridbtn' || ty === 'zoombtn') { pressed = ty; invalidate(); }
+    const ty = canvas._last.type; if (ty === 'corner' || ty === 'gridbtn' || ty === 'zoombtn' || ty === 'follow') { pressed = ty; invalidate(); }
   }, true);
   const release = (e) => { down.delete(e.pointerId); if (!down.size) touching = false; if (pressed) { pressed = null; invalidate(); } };
   ov.addEventListener('pointerup', release, true); ov.addEventListener('pointercancel', release, true);
@@ -1049,7 +1163,7 @@ function fit() {
   const r = hostEl.getBoundingClientRect();
   const nd = Math.min(window.devicePixelRatio || 1, 3), nw = Math.max(1, Math.round(r.width)), nh = Math.max(1, Math.round(r.height));
   if (nw === W && nh === H && nd === dpr) return;            // nothing changed: do not clear the canvases
-  dpr = nd; W = nw; H = nh; CW = Math.max(60, W - HEAD);
+  dpr = nd; W = nw; H = nh; HEAD = W >= 1100 ? 172 : W >= 760 ? 152 : 132; CW = Math.max(60, W - HEAD);
   for (const c of [canvas, ov]) { c.width = Math.round(W * dpr); c.height = Math.round(H * dpr); c.style.width = W + 'px'; c.style.height = H + 'px'; }
   clampView();
   draw(); drawHead(P.currentTick()); dirty = false; headDirty = false;   // redraw in the same frame: no black flash while resizing
@@ -1059,7 +1173,7 @@ export const fitNow = () => fit();
 export function dropInfo(cx, cy) {
   if (!canvas) return null;
   const r = canvas.getBoundingClientRect(), x = cx - r.left, y = cy - r.top;
-  if (x < 0 || y < RULER || x > r.width || y > r.height) return null;
+  if (x < 0 || y < RULER || x > r.width || y > r.height - BOT) return null;
   const n = state.tracks.length, i = Math.min(rowAt(y), n + nX()), top = r.top + rowY(i);
   const base = { i, tick: x < CW ? Math.max(0, xt(x)) : null, top, h: rh(i), left: r.left, width: r.width };
   if (i < n) return { ...base, kind: 'track' };
@@ -1075,5 +1189,5 @@ export function initTimeline(host, h) {
   new ResizeObserver(fit).observe(host);
   window.addEventListener('themechange', invalidate); window.addEventListener('applayout', fit);
   fit(); setup(); buildSelBar(host);
-  P.onChange((w) => { if (w === 'all') { stopMotion(); view.x0 = 0; view.y0 = 0; sel = null; msel.clear(); } if (msel.size && !drag) updateBar(); invalidate(); });
+  P.onChange((w) => { if (w === 'all') { stopMotion(); view.x0 = 0; view.y0 = 0; sel = null; msel.clear(); fh.clear(); gl.clear(); } if (msel.size && !drag) updateBar(); invalidate(); });
 }

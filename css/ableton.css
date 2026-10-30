@@ -174,3 +174,7 @@
 #app .ed-tools .b.on::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 6px var(--accent); flex: none; }
 #app .ed-tools .ed-sep { height: 20px; margin: 0 2px; }
 .clip-title { font-weight: 700; letter-spacing: .02em; }
+
+/* ===== Arrangement (Live 12): the divider above the Device / Clip tabs no longer reaches 16 px into the arrangement - the time ruler,
+   Grid / zoom fields and Follow live there now. The tab bar itself stays the grab area. ===== */
+#split::before { top: -3px; }
