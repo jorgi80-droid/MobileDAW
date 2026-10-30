@@ -1,9 +1,9 @@
 // Live 12 device panels for the effects of js/engine/fx3.js (defs.js: kit: true). Every control is bound to a real engine parameter;
 // the layout follows the owner's reference images of Live 12 (sections side by side, label above / value below each knob, orange toggles,
 // cyan value boxes, dark displays with a cyan curve and hollow orange rings that can be dragged).
-import { h, knob, menu } from './ui.js';
+import { h, knob, menu, ask } from './ui.js';
 import { C } from './theme.js';
-import { fmtParam, normOf, valOf, MOD_MAP, DEVICES, INSTRUMENTS } from './defs.js';
+import { fmtParam, normOf, valOf, MOD_MAP, DEVICES, INSTRUMENTS, FX_GROUPS } from './defs.js';
 import { lvNum, lvTog, lvBtn, lvChoice, lvSel, lvDisp, lvDrag, lvRing, lvPath, lvTabs, DISPC } from './liveui.js';
 import { eq8Stages } from './engine/fx3.js';
 import { offerAutomation } from './automate.js';
@@ -23,8 +23,8 @@ function kit(ctx) {
   const { i, di, d, def } = ctx, draws = [], ctls = [];
   const get = (k) => d.params[k];
   const redraw = () => { for (const f of draws) f(); };
-  const set = (k, v) => { P.setDeviceParam(i, di, k, v); redraw(); for (const c of ctls) if (c.update && c._k !== k) c.update(); };
-  const auto = (k) => (rect) => offerAutomation(rect, { kind: 4, strip: P.stripOf(i), devId: d.id, param: k, def: def.params[k] }, `${def.name} ${def.params[k].n}`);
+  const set = (k, v) => { if (ctx.setParam) ctx.setParam(k, v); else P.setDeviceParam(i, di, k, v); redraw(); for (const c of ctls) if (c.update && c._k !== k) c.update(); };
+  const auto = (k) => (ctx.nested ? null : (rect) => offerAutomation(rect, { kind: 4, strip: P.stripOf(i), devId: d.id, param: k, def: def.params[k] }, `${def.name} ${def.params[k].n}`));   // devices inside a rack have no automation lanes (map them to a macro)
   const reg = (el, k) => { el._k = k; ctls.push(el); return el; };
   const lbl = (k, o) => (o && o.n != null ? o.n : def.params[k].n.replace(/^(L\+R|L|R) /, ''));
   const K = (k, o = {}) => { const el = knob({ ...def.params[k], n: lbl(k, o) }, () => get(k), (v) => set(k, v), fmtParam, C('#7ac5ff'), auto(k)); el.classList.add('lk-k'); if (o.big) el.classList.add('big'); if (o.col) el.style.setProperty('--lv-arc', o.col); return reg(el, k); };
@@ -45,7 +45,7 @@ function kit(ctx) {
   const col = (...kids) => h('div', { class: 'lk-col' }, ...kids.filter(Boolean));
   const sep = () => h('div', { class: 'lk-sep' });
   const every = (ms, fn) => ctx.every(ms, fn);
-  const out = () => { const o = eng.devOut(i, di); return Array.isArray(o) ? o : o ? Array.from(o) : []; };
+  const out = () => { const o = eng.devOut(i, ctx.outD != null ? ctx.outD : di); return Array.isArray(o) ? o : o ? Array.from(o) : []; };
   // a box whose content follows a parameter (Live: Sync on shows the 16th grid, off shows the time knob)
   const swap = (k, on, off) => { const box = h('div', { class: 'lk-swap' }); const fill = () => box.replaceChildren(get(k) > 0.5 ? on() : off()); fill(); draws.push(() => { const want = get(k) > 0.5; if (box._on !== want) { box._on = want; fill(); } }); box._on = get(k) > 0.5; return box; };
   // like swap, for a list parameter: fn(value) builds the content (Spectral Time: Time / Notes / 16th knob by Mode)
@@ -709,6 +709,97 @@ V[50] = (k) => {
   });
   k.every(50, () => { const r = k.out(); if (r.length >= 257) { env = r.slice(1, 129); lv = r.slice(129, 257); disp.paint(); } });
   return k.col(k.dk(mapBar(k, { noMode: true }), disp), k.row(k.K(0), k.K(1), k.K(2), k.swap(4, () => k.K(5, { n: 'Delay' }), () => k.K(3)), k.CH(4, ['ms', '♪'], { v: true, cls: 'sm' })));
+};
+
+// ================================================================================================ Audio Effect Rack (engine: js/engine/fx7.js)
+// Left strip: macros / chain list / devices toggles. Macros: 8 knobs (Map mode: tap a macro, then a device and a parameter inside the rack).
+// Chain list: Auto Select, Chain (select editor) / Hide; per chain: name (tap = select, double tap = rename), meter, volume, pan, activator, solo,
+// chain menu; Create Chain; tapping "Drop Audio Effects Here" = new chain with an effect. Devices: the selected chain's devices as Live cards.
+const RK = new Map(), RACK_FX = () => FX_GROUPS.map(([, label, ks]) => [label, ks.filter((t) => DEVICES[t] && DEVICES[t].kit && !DEVICES[t].mod && !DEVICES[t].rack)]).filter(([, ks]) => ks.length);
+const fxMenu = (r, fn) => menu(RACK_FX().flatMap(([label, ks]) => [{ label: label.toUpperCase(), dim: true }, ...ks.map((t) => ({ label: DEVICES[t].name, fn: () => fn(t) }))]), r.left, Math.max(8, r.top - 120));
+const icoBtn = (svg, title, on, fn) => { const b = h('button', { class: 'lk-rki' + (on ? ' on' : ''), 'aria-label': title, title, onclick: fn }); b.innerHTML = `<svg viewBox="0 0 16 16" width="14" height="14">${svg}</svg>`; return b; };
+V[51] = (k) => {
+  const { i, di } = k.ctx, d = k.d, st = RK.get(d.id) || { mac: false, list: true, dev: true, sel: 0, zones: false, auto: false, map: false }; RK.set(d.id, st);
+  const root = h('div', { class: 'lk-rack' }); let pk = [];
+  st.sel = Math.max(0, Math.min(st.sel, d.chains.length - 1));
+  const redo = () => { root.replaceChildren(...build()); };
+  const meterEls = [];
+  k.every(60, () => { const r = k.out(); if (r.length) { pk = r; for (const [c, m] of meterEls) { const v = Math.max(0, Math.min(1, (20 * Math.log10((pk[c] || 0) + 1e-9) + 60) / 60)); m.style.setProperty('--m', String(v)); } } });
+  function build() {
+    meterEls.length = 0;
+    const strip = h('div', { class: 'lk-rks' },
+      icoBtn('<circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="2"/><path d="M8 8L4 4" stroke="currentColor" stroke-width="2"/>', 'Macro', st.mac, () => { st.mac = !st.mac; redo(); }),
+      icoBtn('<path d="M4 5h8M4 8h8M4 11h8" stroke="currentColor" stroke-width="1.6"/>', 'Daftar chain', st.list, () => { st.list = !st.list; redo(); }),
+      icoBtn('<rect x="3" y="5" width="10" height="6" fill="none" stroke="currentColor" stroke-width="1.6"/>', 'Device', st.dev, () => { st.dev = !st.dev; redo(); }));
+    const parts = [strip];
+    if (st.mac) {
+      const mk = (m) => {
+        const mm = d.macroMap && d.macroMap[m], ch = mm && d.chains.find((c) => c.id === mm.c), x = ch && ch.devices.find((q) => q.id === mm.id), name = x ? DEVICES[x.type].params[mm.k].n : 'Macro ' + (m + 1);
+        const kn = k.K(33 + m, { n: name }); if (!st.map) return kn;
+        const b = h('button', { class: 'lk-mmap' + (x ? ' on' : ''), onclick: (e) => {
+          const r = e.currentTarget.getBoundingClientRect(), items = [];
+          d.chains.forEach((c, ci) => { items.push({ label: c.name.toUpperCase(), dim: true }); c.devices.forEach((q) => items.push({ label: '   ' + DEVICES[q.type].name + '…', fn: () => menu(DEVICES[q.type].params.map((pp, kk) => (pp.hidden ? null : { label: pp.n, fn: () => P.rackMapMacro(i, di, m, { c: c.id, id: q.id, k: kk }) })).filter(Boolean), r.left, r.bottom + 1) })); });
+          if (x) items.push({ sep: true }, { label: 'Hapus map', fn: () => P.rackMapMacro(i, di, m, null) });
+          menu(items.length ? items : [{ label: 'Tambahkan efek ke chain dulu', dim: true }], r.left, r.bottom + 1);
+        } }, x ? name : 'Map');
+        return h('div', { class: 'lk-mcell' }, kn, b);
+      };
+      parts.push(h('div', { class: 'lk-rkm' }, h('div', { class: 'lk-rkmh' }, lvTog('Map', () => st.map, (b) => { st.map = b; redo(); }, { cls: 'lk-t lk-mapt' })), h('div', { class: 'lk-mgrid' }, ...Array.from({ length: 8 }, (_, m) => mk(m)))));
+    }
+    if (st.list) {
+      const rows = d.chains.map((c, ci) => {
+        const o = ci * 4, sel = ci === st.sel, met = h('i', { class: 'lk-cmet' }); meterEls.push([ci, met]); let lt = 0;
+        const name = h('button', { class: 'lk-cname' + (sel ? ' on' : ''), onclick: () => { const now = performance.now(); if (now - lt < 320) ask('Nama chain', c.name, (v) => P.rackRenameChain(i, di, ci, String(v).trim())); lt = now; if (!sel) { st.sel = ci; redo(); } } }, c.name);
+        const more = icoBtn('<path d="M3 8a5 5 0 0 1 9-3M13 8a5 5 0 0 1-9 3" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M12 2v3H9M4 14v-3h3" fill="none" stroke="currentColor" stroke-width="1.5"/>', 'Menu chain', false, (e) => {
+          const r = e.currentTarget.getBoundingClientRect();
+          menu([{ label: 'Ganti nama…', fn: () => ask('Nama chain', c.name, (v) => P.rackRenameChain(i, di, ci, String(v).trim())) }, { label: 'Duplikat', dim: d.chains.length >= 8, fn: () => P.rackDuplicateChain(i, di, ci) },
+            { label: 'Tambah efek…', fn: () => fxMenu(r, (t) => P.rackAddDevice(i, di, ci, t)) }, { sep: true }, { label: 'Hapus chain', fn: () => { P.rackRemoveChain(i, di, ci); if (st.sel >= d.chains.length) st.sel = Math.max(0, d.chains.length - 1); } }], r.left - 120, r.bottom);
+        });
+        return h('div', { class: 'lk-crow' + (sel ? ' sel' : '') }, name, met, k.N(o, { w: 58 }), k.N(o + 1, { w: 48, fill: false }), k.T(o + 2, '🔈', { cls: 'lk-spk', w: 24 }), k.T(o + 3, 'S', { w: 22 }), more);
+      });
+      const zones = st.zones ? zoneEditor() : null;
+      const drop = h('button', { class: 'lk-rdrop', onclick: (e) => fxMenu(e.currentTarget.getBoundingClientRect(), (t) => { const c = P.rackAddChain(i, di); if (c >= 0) { P.rackAddDevice(i, di, c, t); st.sel = c; } }) }, 'Drop Audio Effects Here');
+      const head = h('div', { class: 'lk-rkh' }, k.reg(lvTog('⇥', () => st.auto, (b) => { st.auto = b; }, { cls: 'lk-t', w: 26 }), -2), h('span', { class: 'lk-grow' }),
+        lvTog('Chain', () => st.zones, (b) => { st.zones = b; redo(); }, { cls: 'lk-t' }), lvTog('Hide', () => !st.zones, (b) => { st.zones = !b; redo(); }, { cls: 'lk-t lk-hide' }));
+      parts.push(h('div', { class: 'lk-rkl' }, head, h('div', { class: 'lk-cbox' }, ...rows, zones, h('button', { class: 'lv-btn lk-cchain', disabled: d.chains.length >= 8, onclick: () => { const c = P.rackAddChain(i, di); if (c >= 0) st.sel = c; } }, 'Create Chain'), drop)));
+    }
+    if (st.dev) {
+      const ch = d.chains[st.sel], cards = [];
+      if (ch) ch.devices.forEach((x, j) => {
+        const def = DEVICES[x.type]; if (!def) return;
+        const ctx = { i, di, d: x, def, nested: true, outD: 1000 + di * 256 + st.sel * 16 + j, every: k.ctx.every, setParam: (kk, v) => P.rackParam(i, di, st.sel, j, kk, v) };
+        let kv = null; try { kv = kitView(ctx); } catch (e) { console.error('rack', e); }
+        const pw = h('button', { class: 'pw' + (x.bypass ? '' : ' on'), 'aria-label': 'Bypass', onclick: () => P.rackBypass(i, di, st.sel, j) });
+        const more = h('button', { class: 'dv-more', 'aria-label': 'Menu device', onclick: (e) => { const r = e.currentTarget.getBoundingClientRect(), n = ch.devices.length;
+          menu([{ label: 'Geser ke kiri', dim: j <= 0, fn: () => P.rackMoveDevice(i, di, st.sel, j, j - 1) }, { label: 'Geser ke kanan', dim: j >= n - 1, fn: () => P.rackMoveDevice(i, di, st.sel, j, j + 1) }, { sep: true },
+            { label: x.bypass ? 'Aktifkan' : 'Bypass', fn: () => P.rackBypass(i, di, st.sel, j) }, { label: 'Hapus device', fn: () => P.rackRemoveDevice(i, di, st.sel, j) }], r.left - 120, r.bottom); } }, '⋯');
+        cards.push(h('div', { class: 'card lkcard lk-rcard' + (x.bypass ? ' off' : '') }, h('h4', {}, pw, h('span', {}, def.name), more), kv ? kv.el : null));
+      });
+      parts.push(h('div', { class: 'lk-rkd' }, ...cards, h('button', { class: 'lk-rdrop2', disabled: !ch, onclick: (e) => fxMenu(e.currentTarget.getBoundingClientRect(), (t) => P.rackAddDevice(i, di, st.sel, t)) }, 'Drop Audio Effects Here')));
+    }
+    return parts;
+  }
+  // Chain Select Editor: ruler 0..127 with the selector (drag), one zone bar per chain (drag the edges or the middle)
+  function zoneEditor() {
+    const W = 300, RH = 16, H = 14 + d.chains.length * RH;
+    const c = k.D(W, H, (g) => {
+      g.fillStyle = DISPC.grid; for (let v = 0; v <= 127; v += 16) { const x = 4 + v / 127 * (W - 8); g.fillRect(Math.round(x), 0, 1, H); }
+      d.chains.forEach((_, ci) => { const lo = k.get(106 + ci * 2), hi = k.get(107 + ci * 2), x0 = 4 + lo / 127 * (W - 8), x1 = 4 + hi / 127 * (W - 8); g.fillStyle = ci === st.sel ? '#4fc3f0' : '#3c7e8d'; g.fillRect(x0, 14 + ci * RH + 2, Math.max(2, x1 - x0), RH - 4); });
+      const sx = 4 + k.get(105) / 127 * (W - 8); g.fillStyle = DISPC.or; g.fillRect(Math.round(sx) - 1, 0, 2, H); g.beginPath(); g.moveTo(sx - 5, 0); g.lineTo(sx + 5, 0); g.lineTo(sx, 7); g.fill();
+    }, {
+      onDown: (x, y) => { const v = Math.round((x - 4) / (W - 8) * 127); if (y < 14) return { sel: true }; const ci = Math.floor((y - 14) / RH); if (ci < 0 || ci >= d.chains.length) return false; const lo = k.get(106 + ci * 2), hi = k.get(107 + ci * 2);
+        const edge = Math.abs(v - lo) < 6 ? 'lo' : Math.abs(v - hi) < 6 ? 'hi' : 'mid'; return { ci, edge, lo, hi, v }; },
+      onMove: (x, y, dx, dy, s) => {
+        const v = Math.max(0, Math.min(127, Math.round((x - 4) / (W - 8) * 127)));
+        if (s.sel) { k.set(105, v); if (st.auto) { const hit = d.chains.findIndex((_, ci) => v >= k.get(106 + ci * 2) && v <= k.get(107 + ci * 2)); if (hit >= 0 && hit !== st.sel) { st.sel = hit; redo(); } } return; }
+        const a = 106 + s.ci * 2;
+        if (s.edge === 'lo') k.set(a, Math.min(v, k.get(a + 1))); else if (s.edge === 'hi') k.set(a + 1, Math.max(v, k.get(a)));
+        else { const dv = Math.max(-s.lo, Math.min(127 - s.hi, v - s.v)); k.set(a, s.lo + dv); k.set(a + 1, s.hi + dv); }
+      } });
+    return h('div', { class: 'lk-zone' }, c, k.LN('Chain Select', k.N(105, { w: 52 })));
+  }
+  root.replaceChildren(...build());
+  return root;
 };
 
 export const KIT = V;

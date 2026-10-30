@@ -114,6 +114,9 @@ export class Engine {
   }
   devParam(t, d, p, v) { if (this.ok(t) && this.s[t].dev[d]) this.s[t].dev[d].setParam(p, v); }
   devBypass(t, d, b) { if (this.ok(t) && this.s[t].dev[d]) this.s[t].dev[d].bypass = !!b; }
+  // Audio Effect Rack (fx7.js): op 0 reset, 1 insert type a at chain c / index j, 2 parameter a = b, 3 bypass a, 4 remove
+  rackCmd(t, d, op, c, j, a, b) { const r = this.ok(t) && this.s[t].dev[d]; if (r && r.rack) r.cmd(op, c, j, a, b, this); }
+  mk(type) { const d = makeDevice(type, this.sr, this.sc); if (d && d.setTempo) d.setTempo(this.bpm); return d; }
   // Pitch bend (semitones, +-12 max, the UI wheel uses +-2): scales the frequency of the sounding voices and of the notes that start afterwards
   bend(t, st) {
     if (!this.ok(t) || t >= MASTER) return; const s = this.s[t]; st = clamp(+st || 0, -12, 12);
@@ -201,7 +204,10 @@ export class Engine {
   panic() { for (let t = 0; t < MAX_TRACKS; t++) this.s[t].nPan = 0; for (let t = 0; t < MAX_TRACKS; t++) if (this.s[t].inst) this.s[t].inst.allOff(); }
 
   // ---------------------------------------------------------------- readouts
-  devOut(t, d, out) { return this.ok(t) && this.s[t].dev[d] ? this.s[t].dev[d].readOut(out) : 0; }
+  devOut(t, d, out) {
+    if (d >= 1000 && this.ok(t)) { const q = d - 1000, r = this.s[t].dev[q >> 8], x = r && r.rack && r.sub((q >> 4) & 15, q & 15); return x ? x.readOut(out) : 0; }   // a device inside a rack: 1000 + rack index * 256 + chain * 16 + index
+    return this.ok(t) && this.s[t].dev[d] ? this.s[t].dev[d].readOut(out) : 0;
+  }
   // m = Int32Array(2 * NSTRIPS) of peaks * 1000
   fillMeters(m) { for (let i = 0; i < NSTRIPS; i++) { m[i * 2] = Math.round(this.s[i].peakL * 1000); m[i * 2 + 1] = Math.round(this.s[i].peakR * 1000); } }
   tickPos() { return this.f2t(this.pos); }

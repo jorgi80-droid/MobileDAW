@@ -292,6 +292,7 @@ function syncDevices(i) {
     eng.insertDevice(i, di, d.type);
     d.params.forEach((v, pi) => eng.devParam(i, di, pi, v));
     if (d.bypass) eng.devBypass(i, di, true);
+    if (d.chains) rackSync(i, di);
   });
 }
 
@@ -705,11 +706,13 @@ export function addDevice(i, type) {
   const t = tr(i);
   if (t.devices.length >= 16) return;
   const d = { id: uid(), type, params: DEVICES[type].params.map((p) => p.def), bypass: false };
+  if (type === RACK) { d.chains = [{ id: uid(), name: 'Chain', devices: [] }]; d.macroMap = []; d.params[32] = 1; }
   t.devices.push(d);
   if (HK.on) HK.add({ t: 'dpres', s: stripOf(i), d, di: t.devices.length - 1, present: true });
   const di = t.devices.length - 1;
   eng.insertDevice(i, di, type);
   d.params.forEach((v, pi) => eng.devParam(i, di, pi, v));
+  if (d.chains) rackSync(i, di);
   emit('devices');
 }
 export function removeDevice(i, di) { const d0 = tr(i).devices[di]; if (HK.on && d0) HK.add({ t: 'dpres', s: stripOf(i), d: d0, di, present: false }); tr(i).devices.splice(di, 1); eng.removeDevice(i, di); emit('devices'); }
@@ -731,6 +734,7 @@ export function moveDevice(i, from, to) {
   eng.insertDevice(i, to, d.type);
   d.params.forEach((v, pi) => eng.devParam(i, to, pi, v));
   if (d.bypass) eng.devBypass(i, to, true);
+  if (d.chains) rackSync(i, to);
   emit('devices');
 }
 
@@ -756,6 +760,53 @@ export function fixMods() {
   for (const i of allStrips()) { const t = tr(i); if (t && t.devices) t.devices.forEach((d, di) => { if (MOD_MAP[d.type] != null) writeMap(i, di, d); }); }
 }
 export function setModMap(i, di, m) { const d = tr(i).devices[di]; d.map = m || null; writeMap(i, di, d); emit('devices'); }
+
+// ---- Audio Effect Rack (type 51, engine fx7.js): d.chains = [{ id, name, devices: [{ id, type, params, bypass }] }], the chain mixer and the macros
+// are d.params (chain c at 4c: volume, pan, activator, solo; 32 chain count; 33.. macros); d.macroMap[m] = { c: chain id, id: device id, k } is
+// written into the hidden macro map parameters (41 + 8m) by fixMacros. Every structural change is one undo step (a snapshot of the rack).
+export const RACK = 51, RACK_MAX_CH = 8;
+const fillParams = (x) => { const dp = DEVICES[x.type].params; for (let k = 0; k < dp.length; k++) if (!Number.isFinite(x.params[k])) x.params[k] = dp[k].def; };
+const rackSnap = (d) => JSON.stringify({ c: d.chains, p: d.params, mm: d.macroMap || [] });
+const rackUndo = (i, d, key) => { if (HK.on && !(key && HK.hit(key))) HK.add({ t: 'rack', s: stripOf(i), d: d.id, v: rackSnap(d) }); };
+const rackP = (i, di, d, k, v) => { if (d.params[k] !== v) { d.params[k] = v; eng.devParam(i, di, k, v); } };
+export function rackSync(i, di) {
+  const d = tr(i).devices[di]; if (!d || !d.chains) return;
+  eng.rackCmd(i, di, 0, 0, 0, 0, 0);
+  d.chains.forEach((c, ci) => c.devices.forEach((x, j) => { if (!DEVICES[x.type]) return; fillParams(x); eng.rackCmd(i, di, 1, ci, j, x.type, 0); x.params.forEach((v, k) => eng.rackCmd(i, di, 2, ci, j, k, v)); if (x.bypass) eng.rackCmd(i, di, 3, ci, j, 1, 0); }));
+  rackP(i, di, d, 32, d.chains.length); fixMacros(i, di);
+}
+function fixMacros(i, di) {
+  const d = tr(i).devices[di]; if (!d.macroMap) d.macroMap = [];
+  for (let m = 0; m < 8; m++) {
+    const mm = d.macroMap[m], ci = mm ? d.chains.findIndex((c) => c.id === mm.c) : -1, j = ci >= 0 ? d.chains[ci].devices.findIndex((x) => x.id === mm.id) : -1;
+    const q = j >= 0 && DEVICES[d.chains[ci].devices[j].type].params[mm.k]; if (mm && !q) d.macroMap[m] = null;
+    (q ? [ci, j, mm.k, q.min, q.max, q.curve === 'log' ? 1 : 0] : [-1, 0, 0, 0, 1, 0]).forEach((v, n) => rackP(i, di, d, 41 + m * 8 + n, v));
+  }
+}
+const rk = (i, di) => tr(i).devices[di];
+export function rackAddChain(i, di) { const d = rk(i, di); if (d.chains.length >= RACK_MAX_CH) return -1; rackUndo(i, d); const c = d.chains.length; d.chains.push({ id: uid(), name: 'Chain', devices: [] }); [0, 0, 1, 0].forEach((v, n) => rackP(i, di, d, c * 4 + n, v)); rackP(i, di, d, 106 + c * 2, 0); rackP(i, di, d, 107 + c * 2, 127); rackSync(i, di); emit('devices'); return c; }
+export function rackRemoveChain(i, di, c) {
+  const d = rk(i, di); rackUndo(i, d); d.chains.splice(c, 1);
+  for (let x = c; x < RACK_MAX_CH; x++) { for (let n = 0; n < 4; n++) rackP(i, di, d, x * 4 + n, x + 1 < RACK_MAX_CH ? d.params[(x + 1) * 4 + n] : [0, 0, 1, 0][n]); for (let n = 0; n < 2; n++) rackP(i, di, d, 106 + x * 2 + n, x + 1 < RACK_MAX_CH ? d.params[106 + (x + 1) * 2 + n] : [0, 127][n]); }
+  rackSync(i, di); emit('devices');
+}
+export function rackDuplicateChain(i, di, c) {
+  const d = rk(i, di); if (d.chains.length >= RACK_MAX_CH) return; rackUndo(i, d); const n = d.chains.length, src = d.chains[c];
+  d.chains.push({ id: uid(), name: src.name, devices: src.devices.map((x) => ({ ...x, id: uid(), params: x.params.slice() })) });
+  for (let k = 0; k < 4; k++) rackP(i, di, d, n * 4 + k, d.params[c * 4 + k]); rackP(i, di, d, 106 + n * 2, d.params[106 + c * 2]); rackP(i, di, d, 107 + n * 2, d.params[107 + c * 2]);
+  rackSync(i, di); emit('devices');
+}
+export function rackRenameChain(i, di, c, name) { const d = rk(i, di); rackUndo(i, d); d.chains[c].name = name || 'Chain'; emit('devices'); }
+export function rackAddDevice(i, di, c, type) {
+  const d = rk(i, di), ch = d.chains[c]; if (!ch || ch.devices.length >= 16) return; rackUndo(i, d);
+  const x = { id: uid(), type, params: DEVICES[type].params.map((p) => p.def), bypass: false }; ch.devices.push(x); const j = ch.devices.length - 1;
+  eng.rackCmd(i, di, 1, c, j, type, 0); x.params.forEach((v, k) => eng.rackCmd(i, di, 2, c, j, k, v)); fixMacros(i, di); emit('devices');
+}
+export function rackRemoveDevice(i, di, c, j) { const d = rk(i, di); rackUndo(i, d); d.chains[c].devices.splice(j, 1); eng.rackCmd(i, di, 4, c, j, 0, 0); fixMacros(i, di); emit('devices'); }
+export function rackMoveDevice(i, di, c, j, to) { const d = rk(i, di), a = d.chains[c].devices; if (to < 0 || to >= a.length) return; rackUndo(i, d); a.splice(to, 0, a.splice(j, 1)[0]); rackSync(i, di); emit('devices'); }
+export function rackParam(i, di, c, j, k, v) { const d = rk(i, di), x = d.chains[c].devices[j]; rackUndo(i, d, 'rk' + d.id + '.' + x.id + '.' + k); x.params[k] = v; eng.rackCmd(i, di, 2, c, j, k, v); }
+export function rackBypass(i, di, c, j) { const d = rk(i, di), x = d.chains[c].devices[j]; rackUndo(i, d); x.bypass = !x.bypass; eng.rackCmd(i, di, 3, c, j, x.bypass ? 1 : 0, 0); emit('devices'); }
+export function rackMapMacro(i, di, m, map) { const d = rk(i, di); rackUndo(i, d); if (!d.macroMap) d.macroMap = []; d.macroMap[m] = map || null; fixMacros(i, di); emit('devices'); }
 
 // ------------------------------------------------------------------ clips + notes
 
@@ -1550,6 +1601,7 @@ function placeDevice(i, di, d) {
   eng.insertDevice(i, di, d.type);
   d.params.forEach((v, pi) => eng.devParam(i, di, pi, v));
   if (d.bypass) eng.devBypass(i, di, true);
+  if (d.chains) rackSync(i, di);
   emit('devices');
 }
 export function swapRec(e) {
@@ -1605,6 +1657,7 @@ export function swapRec(e) {
       else { placeDevice(i, Math.min(e.di, t.devices.length), e.d); e.present = true; }
       return;
     }
+    case 'rack': { if (!t) return; const di = t.devices.findIndex((x) => x.id === e.d); if (di < 0) return; const d = t.devices[di], cur = rackSnap(d), o = JSON.parse(e.v); d.chains = o.c; d.params = o.p; d.macroMap = o.mm || []; d.params.forEach((v, pi) => eng.devParam(i, di, pi, v)); rackSync(i, di); e.v = cur; emit('devices'); return; }
     case 'dmv': { if (!t) return; const cur = t.devices.findIndex((x) => x.id === e.d); if (cur < 0) return; moveDevice(i, cur, cur === e.b ? e.a : e.b); return; }
     case 'inst': { if (!t) return; const cur = t.inst; t.inst = e.v; e.v = cur; syncTrackFull(i); emit('devices'); return; }
     case 'ipar': {

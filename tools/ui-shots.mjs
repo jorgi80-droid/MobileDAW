@@ -1,6 +1,6 @@
 // UI screenshots of the main views with a fixed test project (drums, bass, lead, pad, audio loop, automation lane, effects), for
 // before / after comparisons of UI work. Serves the repo itself, drives the app with the preinstalled Playwright Chromium.
-// Usage: node tools/ui-shots.mjs <out-dir> [arr] [clip] [dev] [mix] [win] [keys] [devs]      env: THEME=light|dark|..., VW / VH = viewport (default 1180 x 560), FX=33,34 = only these effects in devs
+// Usage: node tools/ui-shots.mjs <out-dir> [arr] [clip] [dev] [mix] [win] [keys] [devs] [rack]      env: THEME=light|dark|..., VW / VH = viewport (default 1180 x 560), FX=33,34 = only these effects in devs
 // Compare two runs (e.g. one on the previous commit, one on the working tree) side by side.
 import http from 'node:http'; import fs from 'node:fs'; import path from 'node:path'; import { fileURLToPath } from 'node:url'; import { createRequire } from 'node:module';
 const { chromium } = createRequire(import.meta.url)('playwright');
@@ -91,6 +91,14 @@ if (go('keys')) {
   await ev(async () => (await import('./js/editor.js')).setTheory(9, 'Minor'));      // scale highlight: A minor
   await sel(2); await shot('keys-midi'); await btn('btn-max'); await shot('keys-midi-max'); await btn('btn-max');
   await sel(0); await shot('keys-drum'); await btn('btn-max'); await shot('keys-drum-max'); await btn('btn-max');
+}
+if (want.includes('rack')) {                             // Audio Effect Rack with two chains (chain list, devices; then macros + chain select editor)
+  await sel(2); await tab('dev');
+  await ev(async () => { const P = await import('./js/project.js'); P.state.tracks[2].devices = []; P.syncAll(); P.addDevice(2, 51); P.rackAddDevice(2, 0, 0, 2); const c = P.rackAddChain(2, 0); P.rackAddDevice(2, 0, c, 0); P.emit('all'); });
+  await btn('btn-max'); await shot('rack'); 
+  await ev(() => { for (const b of document.querySelectorAll('.lk-rki')) if (b.title === 'Macro') b.click(); });
+  await ev(() => { const b = [...document.querySelectorAll('.lk-rkh .lv-btn')].find((x) => x.textContent === 'Chain'); if (b) b.click(); });
+  await shot('rack-macro'); await btn('btn-max');
 }
 if (go('devs')) {                                        // every instrument and every effect, normal and maximised panel
   const list = await ev(async () => { const D = await import('./js/defs.js'); return { inst: [...D.INST_LIST], fx: Object.keys(D.DEVICES).map(Number) }; });

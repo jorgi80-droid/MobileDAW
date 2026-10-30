@@ -23,7 +23,8 @@ Baca juga `README-ANDROID.md` (build, install, status fase 2).
 | UI Live 12 lanjutan: menu konteks + action bar, Clip View audio (kotak Audio/Pitch/Warp/Region), Fold piano roll, tampilan Drum Rack, Browser (sidebar Library + Places) | selesai (`docs/redesign/6..10-*.jpg`) |
 | Logika bar & loop gaya FL Studio Mobile (editor terbuka ke kanan, isi klip tumbuh per bar, klip loop diedit sebagai sumber loop, "Lepas loop") | selesai (`docs/redesign/5-*.jpg`) |
 | Perombakan UI Live 12 tahap 2 (Fase 0-8): fondasi CSS/token, control bar + jendela global, internal device, tab Keys, arrangement (tinggi baris, overview, loop brace), Clip View (Transform + Envelopes), mixer (lebar strip, input return, send di header) | selesai (`docs/redesign/11..17-*.jpg`, `docs/redesign/PERF.md`) |
-| **Instrument / Effect Rack dengan macro (fitur baru: butuh rantai paralel di engine JS + C++ dan golden test)** | **belum** |
+| Audio Effect Rack dengan macro (engine JS; port C++ belum) | selesai |
+| **Instrument Rack (instrumen per chain)** | **belum** |
 | **Port C++: GMS, Moisture, Osphere, DirectWave/Keystone/Sampler, Drum Sampler, SoundFont, Wavetable** | **belum** |
 | **Port C++: semua efek (Utility, EQ Three, Parametric EQ, Compressor, Limiter, Saturator, Auto Filter, Echo, Reverb, Roar, Autoduck, Stereolizer, Spacer, Level/Analyzer/MiniMeters)** | **belum** |
 | Ekspor WAV lewat engine native; angka CPU/underrun Web vs Native dari HP | belum |
@@ -140,7 +141,17 @@ Permintaan pemilik: SEMUA efek dan instrumen diganti dengan set stok Ableton Liv
     target tiap blok; `runMods()` menjaga modulator tetap jalan di strip yang diam. Mode Remap (Min..Max) / Mod (sekitar nilai target, ± bipolar).
 - fx-test (diperbaiki): dulu noise uji berbeda tiap render sehingga semua parameter tampak "terdengar". Sekarang input identik; prasyarat
   ditulis di `PRE` (sama seperti Live: Attack envelope butuh Env Amount, dst.). Modulator dites lewat pemetaan (remap/mod) di akhir tes.
-- Belum ada: Audio Effect Rack (rantai paralel + macro), External Audio Effect (tidak mungkin di HP: jangan dibuat).
+- Audio Effect Rack (51, jadi; `docs/redesign/25-audio-effect-rack.jpg`): engine `js/engine/fx7.js` (maks 8 chain paralel, mixer per chain
+  vol/pan/aktivator/solo, 8 macro dengan Map ke parameter device di dalam rack (Min/Max, kurva log), Chain Select Editor (zona 0..127 per chain
+  + Chain Selector)). Perintah engine satu pintu `rackCmd(t, d, op, c, j, a, b)` (0 reset, 1 sisip, 2 parameter, 3 bypass, 4 hapus) lewat
+  web.js / worklet.js / engine.js; device di dalam rack dibuat engine (`e.mk(type)`). devOut device di dalam rack: indeks
+  `1000 + rack * 256 + chain * 16 + j`. Project: `d.chains = [{ id, name, devices }]`, `d.macroMap[m] = { c, id, k }`; fungsi `rack*` di
+  project.js (setiap perubahan struktur = satu langkah undo berupa snapshot, `case 'rack'` di swapRec); `rackSync` dipanggil di semua tempat
+  device dikirim ulang ke engine (muat proyek, pindah device, undo). Isi rack: hanya efek kit (tanpa modulator / rack bersarang); device di
+  dalam rack tidak punya lane otomasi (pakai macro). UI: `V[51]` di fxkit.js (`ctx.setParam` / `ctx.outD` / `ctx.nested` untuk kartu di dalam).
+  `node tools/ui-shots.mjs <folder> rack` = screenshot rack berisi dua chain.
+- Belum ada: Instrument Rack / Drum Rack baru (pola sama dengan Audio Effect Rack, plus instrumen per chain), External Audio Effect
+  (tidak mungkin di HP: jangan dibuat).
 - Instrumen (belum mulai): Analog, Operator, Wavetable (redesign), Drift, Meld, Simpler, Sampler (redesign), Drum Rack (redesign), Impulse,
   Electric, Collision, Tension, Poli, Granulator III, DS Kick / Snare / Tom / HH / Clap / FM. Tipe instrumen lama tetap bisa dimuat (proyek lama).
 - Aturan: parameter baru selalu DITAMBAHKAN di akhir (indeks lama tetap), `migrate()` bila arti berubah; efek tanpa padanan Live 12 masuk

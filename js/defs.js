@@ -542,9 +542,21 @@ export const MOD_MAP = { 48: 14, 49: 35, 50: 6 };
   });
 }
 
+// ---- Audio Effect Rack (engine: js/engine/fx7.js; project: d.chains, d.macroMap)
+{
+  const H = { hidden: true }, P = [];
+  for (let c = 0; c < 8; c++) P.push(q(`Chain ${c + 1} Volume`, -60, 6, 0, { fmt: 'dbinf' }), q(`Chain ${c + 1} Pan`, -1, 1, 0, { fmt: 'pan' }), onoff(`Chain ${c + 1} On`, 1), onoff(`Chain ${c + 1} Solo`));
+  P.push(q('Chains', 0, 8, 1, { step: 1, ...H }));
+  for (let m = 0; m < 8; m++) P.push(q(`Macro ${m + 1}`, 0, 1, 0, { fmt: 'macro' }));
+  for (let m = 0; m < 8; m++) P.push(q(`M${m + 1} Chain`, -1, 7, -1, { step: 1, ...H }), q(`M${m + 1} Device`, 0, 15, 0, { step: 1, ...H }), q(`M${m + 1} Param`, 0, 255, 0, { step: 1, ...H }),
+    q(`M${m + 1} Lo`, -1e6, 1e6, 0, H), q(`M${m + 1} Hi`, -1e6, 1e6, 1, H), q(`M${m + 1} Log`, 0, 1, 0, { step: 1, ...H }), q(`M${m + 1} Min`, 0, 1, 0, { unit: '%' }), q(`M${m + 1} Max`, 0, 1, 1, { unit: '%' }));
+  P.push(q('Chain Selector', 0, 127, 0, { step: 1, fmt: 'num' })); for (let c = 0; c < 8; c++) P.push(q(`Chain ${c + 1} Zone Low`, 0, 127, 0, { step: 1, fmt: 'num' }), q(`Chain ${c + 1} Zone High`, 0, 127, 127, { step: 1, fmt: 'num' }));
+  DEVICES[51] = { name: 'Audio Effect Rack', kit: true, rack: true, params: P };
+}
+
 // Audio effect categories as in Live 12's browser. Older devices that have no Live 12 counterpart stay loadable under 'Lainnya (lama)'.
 export const FX_GROUPS = [['loop', 'Delay & Loop', [19, 17, 6, 18, 43, 45, 46]], ['drive', 'Drive & Color', [33, 34, 29, 37, 26, 27, 35, 36, 9, 3, 28]], ['dyn', 'Dynamics', [4, 23, 24, 5, 38]],
-  ['eq', 'EQ & Filters', [1, 25, 31, 2]], ['mod', 'Pitch & Modulation', [22, 20, 21, 42]], ['rev', 'Reverb & Resonance', [40, 44, 39, 7, 47, 41]], ['modu', 'Modulators', [50, 48, 49]], ['util', 'Utilities', [0, 32, 30, 16]], ['old', 'Lainnya (lama)', [8, 13, 10, 12, 14, 15]]];
+  ['eq', 'EQ & Filters', [1, 25, 31, 2]], ['mod', 'Pitch & Modulation', [22, 20, 21, 42]], ['rev', 'Reverb & Resonance', [40, 44, 39, 7, 47, 41]], ['modu', 'Modulators', [50, 48, 49]], ['util', 'Utilities', [51, 0, 32, 30, 16]], ['old', 'Lainnya (lama)', [8, 13, 10, 12, 14, 15]]];
 
 // Parameter <-> 0..1 mapping shared by knobs, automation editing and the engine sync.
 export const normOf = (p, v) => { const x = p.curve === 'log' ? Math.log(v / p.min) / Math.log(p.max / p.min) : (v - p.min) / (p.max - p.min); return x < 0 ? 0 : x > 1 ? 1 : x; };
@@ -713,6 +725,7 @@ export function fmtParam(p, v) {
     case 'bpm': return v.toFixed(1) + ' BPM';
     case 'st': return (v > 0 ? '+' : '') + Math.round(v) + ' st';
     case 'num': return String(Math.round(v));
+    case 'macro': return String(Math.round(v * 127));
     case 'steps': return v < 2 ? 'Off' : String(Math.round(v));
     case 'interp': return Math.round(v) ? 'High' : 'Norm';
     case 'suboct': return ['0', '-1', '-2'][Math.round(v)] || '0';

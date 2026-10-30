@@ -57,7 +57,7 @@ const nativeEng = {
   trackClips: (t, flat, n) => call('trackClips', t, flat.filter((_, k) => k % 7 < 4), n),
   resetTrack: (t) => call('resetTrack', t),
   insertDevice: (t, i, type) => call('insertDevice', t, i, type), removeDevice: (t, i) => call('removeDevice', t, i),
-  devParam: (t, d, p, v) => call('devParam', t, d, p, v), devBypass: (t, d, b) => call('devBypass', t, d, b),
+  devParam: (t, d, p, v) => call('devParam', t, d, p, v), devBypass: (t, d, b) => call('devBypass', t, d, b), rackCmd: (t, d, op, c, j, a, b) => call('rackCmd', t, d, op, c, j, a, b),
   preview: (t, pitch, vel, on) => call('preview', t, pitch, vel, on),
   bend: (t, st) => call('bend', t, st),
   send: (t, idx, v) => call('trackSend', t, idx, v), automation: (flat, n) => call('automation', flat, n),

@@ -9,7 +9,7 @@ import { makeDevice } from '../js/engine/fx.js';
 const SR = 48000, N = 128, BLOCKS = Math.round(SR * 1.2 / N);
 const want = process.argv.slice(2).map(Number), types = Object.keys(DEVICES).map(Number).filter((t) => !want.length || want.includes(t));
 // parameters that cannot change the audio by design: display / meter options, momentary triggers, the Tuner reference
-const NO_AUDIO = { 48: 'all', 49: 'all', 50: 'all', 47: [1], 13: 'all', 12: 'all', 16: 'all', 30: 'all', 32: 'all', 19: [15], 10: 'all', 45: 'all' };   // 45 Looper: state-driven, has its own test below   // 10 Autoduck: listens to another track's sidechain only
+const NO_AUDIO = { 51: 'all', 48: 'all', 49: 'all', 50: 'all', 47: [1], 13: 'all', 12: 'all', 16: 'all', 30: 'all', 32: 'all', 19: [15], 10: 'all', 45: 'all' };   // 45 Looper: state-driven, has its own test below   // 10 Autoduck: listens to another track's sidechain only
 // conditions a parameter needs before it can be heard (Live works the same: L Time only counts with Sync off, R only without Link ...)
 const PRE = {
   17: { 2: { 0: 0 }, 3: { 0: 1 }, 4: { 8: 0, 5: 6 }, 5: { 8: 0 }, 6: { 8: 0, 4: 0 }, 7: { 8: 0 }, 8: { 5: 6 }, 14: { 16: 1 } },
@@ -95,6 +95,20 @@ for (const t of [48, 49, 50]) {
   const [rm, md] = res, ok = rm.none === null && rm.hi > rm.lo * 1.05 && rm.lo >= 20 * 0.99 && rm.hi <= 20000 * 1.01 && md.lo < 1000 * 1.01 && md.hi > 1000 * 0.99 && md.hi > md.lo * 1.05;
   if (!ok) { bad++; console.log(`FAIL ${t} ${DEVICES[t].name} mapping: remap ${rm.lo.toFixed(0)}..${rm.hi.toFixed(0)}, mod ${md.lo.toFixed(0)}..${md.hi.toFixed(0)}`); }
   else console.log(`ok   ${t} ${DEVICES[t].name} mapping (remap ${rm.lo.toFixed(0)}..${rm.hi.toFixed(0)} Hz, mod ${md.lo.toFixed(0)}..${md.hi.toFixed(0)} Hz)`);
+}
+// Audio Effect Rack (51): two parallel chains (Utility -6 dB | Utility +6 dB with mute) sum; chain volume, activator and solo act; a macro mapped to
+// a device inside moves that parameter; no chains = the audio passes
+if (!want.length || want.includes(51)) {
+  const fe = { mk: (t) => makeDevice(t, SR) }, rack = () => { const r = makeDevice(51, SR); DEVICES[51].params.forEach((p, k) => r.setParam(k, p.def)); return r; };
+  const run = (r) => { const L = new Float32Array(N).fill(0.25), R = new Float32Array(N).fill(0.25); for (let b = 0; b < 4; b++) { L.fill(0.25); R.fill(0.25); r.process(L, R, N); } return L[N - 1]; };
+  const r = rack(); r.setParam(32, 2); r.cmd(1, 0, 0, 0, 0, fe); r.cmd(2, 0, 0, 0, -6.0206, fe); r.cmd(1, 1, 0, 0, 0, fe); r.cmd(2, 1, 0, 0, 6.0206, fe);
+  const both = run(r); r.setParam(6, 0); const one = run(r); r.setParam(6, 1); r.setParam(3, 1); const solo = run(r); r.setParam(3, 0); r.setParam(4, -60); const vol = run(r); r.setParam(4, 0);   // chain 2 at -inf: chain 1 only
+  [0, 0, 0, -24, 24, 0, 0, 1].forEach((v, n) => r.setParam(41 + n, v)); r.setParam(33, 1); const mac = run(r);     // macro 1 -> first chain, device 0, Gain (-24..24): full = +24 dB there
+  [0, 0, 0, 0, 0, 0, 0, 0].forEach((v, n) => r.setParam(41 + n, n === 0 ? -1 : v)); r.setParam(107, 63); r.setParam(105, 100); const zone = run(r); r.setParam(105, 0);   // selector outside chain 1's zone: chain 2 only
+  const e = rack(); e.setParam(32, 0); const pass = run(e);
+  const near = (a, b) => Math.abs(a - b) < 1e-3, ok2 = near(both, 0.625) && near(one, 0.125) && near(solo, 0.125) && near(vol, 0.125) && Math.abs(mac - (0.25 * 15.8489 + 0.5)) < 0.01 && near(pass, 0.25) && near(zone, 0.5);
+  if (!ok2) { bad++; console.log(`FAIL 51 Audio Effect Rack: both ${both.toFixed(4)} one ${one.toFixed(4)} solo ${solo.toFixed(4)} vol ${vol.toFixed(4)} macro ${mac.toFixed(4)} pass ${pass.toFixed(4)} zone ${zone.toFixed(4)}`); }
+  else console.log('ok   51 Audio Effect Rack (parallel chains, volume, activator, solo, macro, chain select zones, empty rack)');
 }
 console.log(bad ? `\n${bad} device(s) FAILED` : '\nALL EFFECTS OK');
 process.exit(bad ? 1 : 0);
