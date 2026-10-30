@@ -288,7 +288,7 @@ function syncDevices(i) {
   if (t.devices.some((d) => !DEVICES[d.type])) t.devices = t.devices.filter((d) => DEVICES[d.type]);   // devices that no longer exist (MultiFX was removed) are dropped
   t.devices.forEach((d, di) => {
     const dp = DEVICES[d.type] && DEVICES[d.type].params;     // projects saved before a parameter existed: fill the new ones with their defaults
-    if (dp) { if (!Array.isArray(d.params)) d.params = []; for (let k = 0; k < dp.length; k++) if (!Number.isFinite(d.params[k])) d.params[k] = dp[k].def; }
+    if (dp) { if (!Array.isArray(d.params)) d.params = []; const n0 = d.params.length; for (let k = 0; k < dp.length; k++) if (!Number.isFinite(d.params[k])) d.params[k] = dp[k].def; if (n0 < dp.length && DEVICES[d.type].migrate) DEVICES[d.type].migrate(d.params, n0); }
     eng.insertDevice(i, di, d.type);
     d.params.forEach((v, pi) => eng.devParam(i, di, pi, v));
     if (d.bypass) eng.devBypass(i, di, true);

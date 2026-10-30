@@ -25,7 +25,7 @@ if (miss.length || gone.length) { bad++; console.log('not in ASSETS: ' + miss.jo
 console.log(`${miss.length || gone.length ? 'FAIL' : 'ok  '} sw.js ASSETS lists every web file`);
 // 3. the tests
 for (const t of ['browser-test', 'clipview-test', 'header-test', 'combine-test', 'dsp-quality-test', 'presets-test']) run(t, ['tools/' + t + '.mjs']);
-run('fx-test (Live 12 effects)', ['tools/fx-test.mjs', ...Array.from({ length: 14 }, (_, k) => String(17 + k))]);
+run('fx-test (every effect: no dummy parameters, no NaN)', ['tools/fx-test.mjs']);
 // 4. wavetable tables: sliced build must equal the all-at-once build
 const h = (m) => { const r = run('tables-test ' + m, ['tools/tables-test.mjs', m]); return ((r.stdout || '').match(/hash (\w+)/) || [])[1]; };
 const a = h('sync'), b = h('sliced');

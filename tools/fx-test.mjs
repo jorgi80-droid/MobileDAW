@@ -9,13 +9,17 @@ import { makeDevice } from '../js/engine/fx.js';
 const SR = 48000, N = 128, BLOCKS = Math.round(SR * 1.2 / N);
 const want = process.argv.slice(2).map(Number), types = Object.keys(DEVICES).map(Number).filter((t) => !want.length || want.includes(t));
 // parameters that cannot change the audio by design: display / meter options, momentary triggers, the Tuner reference
-const NO_AUDIO = { 13: 'all', 12: 'all', 16: 'all', 30: 'all', 19: [15], 0: [] };
+const NO_AUDIO = { 13: 'all', 12: 'all', 16: 'all', 30: 'all', 32: 'all', 19: [15], 10: 'all' };   // 10 Autoduck: listens to another track's sidechain only
 // conditions a parameter needs before it can be heard (Live works the same: L Time only counts with Sync off, R only without Link ...)
 const PRE = {
   17: { 2: { 0: 0 }, 3: { 0: 1 }, 4: { 8: 0, 5: 6 }, 5: { 8: 0 }, 6: { 8: 0, 4: 0 }, 7: { 8: 0 }, 8: { 5: 6 }, 14: { 16: 1 } },
   19: { 14: { 2: 1 } }, 21: { 14: { 6: 1 } }, 22: { 3: { 2: 1 } },
   23: { 0: {}, 1: { 0: -12 }, 2: { 0: -12 }, 3: { 0: -12 }, 4: { 0: -12 }, 5: { 0: -12 }, 6: { 0: -12 } },
   25: { 3: { 2: 9 } }, 27: { 3: { 4: 1 }, 5: { 4: 1 }, 6: { 4: 1, 3: 3 } },
+  0: { 8: { 7: 1, 6: 2 } }, 1: { 5: { 4: 1 }, 6: { 4: 1 }, 8: { 7: 1 }, 9: { 7: 1 }, 12: { 7: 1 } }, 2: { 4: { 0: 9 }, 5: { 2: 9 }, 9: { 0: 9 } },
+  5: { 1: { 2: 12 } }, 6: { 6: { 7: 0, 8: 0 }, 9: { 8: 1 }, 10: { 8: 1, 7: 0 }, 15: { 16: 1 } },
+  8: { 0: { 1: 9 }, 2: { 3: 9 }, 4: { 3: 9 }, 5: { 6: 9 }, 7: { 6: 9 }, 8: { 9: 9 } },
+  31: Object.fromEntries([...Array.from({ length: 8 }, (_, b) => [[b * 5 + 1, { [b * 5]: 1, [b * 5 + 3]: 9 }], [b * 5 + 2, { [b * 5]: 1, [b * 5 + 3]: 9 }], [b * 5 + 3, { [b * 5]: 1 }], [b * 5 + 4, { [b * 5]: 1, [b * 5 + 3]: 9 }]]).flat(), [40, { 8: 9 }]]),
 };
 let bad = 0, seed = 1;
 const rnd = () => ((seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 4294967296);

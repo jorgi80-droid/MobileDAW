@@ -10,7 +10,7 @@ class Fx { constructor(sr, sc) { this.sr = sr; this.sc = sc; this.bypass = false
 // readOut: 0 current cutoff Hz, 1 envelope 0..1, 2 LFO -1..1
 export class AutoFilter extends Fx {
   constructor(sr) {
-    super(sr); this.type = 0; this.f = 20000; this.q = 0.707; this.slope = 0; this.envAmt = 0; this.atk = 6; this.rel = 200; this.lfoAmt = 0; this.rate = 1; this.shape = 0;
+    super(sr); this.type = 0; this.f = 20000; this.q = 0.707; this.slope = 0; this.envAmt = 0; this.atk = 6; this.rel = 200; this.lfoAmt = 0; this.rate = 1; this.shape = 0; this.drive = 1; this.mix = 1; this.phs = 0; this.curR = -99;
     this.b = [[new Biquad(), new Biquad()], [new Biquad(), new Biquad()]];     // [stage][channel]
     this.env = 0; this.ph = 0; this.sh = 0; this.lfo = 0; this.cur = -99; this.fc = 20000; this.dirty = true; this.cnt = 0; this.envN = 0; this.upA(); this.upR();
   }
@@ -21,14 +21,16 @@ export class AutoFilter extends Fx {
       case 0: this.type = Math.round(clamp(v, 0, 3)); break; case 1: this.f = clamp(v, 20, 20000); break; case 2: this.q = clamp(v, 0.3, 12); break;
       case 3: this.slope = v > 0.5 ? 1 : 0; break; case 4: this.envAmt = clamp(v, -1, 1); break; case 5: this.atk = v; this.upA(); break; case 6: this.rel = v; this.upR(); break;
       case 7: this.lfoAmt = clamp(v, 0, 1); break; case 8: this.rate = clamp(v, 0.05, 20); break; case 9: this.shape = Math.round(clamp(v, 0, 4)); break;
+      case 10: this.drive = dbToLin(clamp(v, 0, 24)); break; case 11: this.mix = clamp(v, 0, 1); break; case 12: this.phs = clamp(v, 0, 360) / 360; break;
     }
     this.dirty = true;
   }
-  coef(f) {
-    const s = this.sr, q = this.slope ? this.q * 0.8 : this.q, a = this.b[0][0];
+  coef(f, ch = -1) {   // ch -1: both channels, 0 / 1: one channel (stereo LFO phase)
+    const s = this.sr, q = this.slope ? this.q * 0.8 : this.q, a = this.b[0][ch < 0 ? 0 : ch];
     if (this.type === 0) a.lowpass(s, f, q); else if (this.type === 1) a.highpass(s, f, q); else if (this.type === 2) a.bandpass(s, f, q); else a.notch(s, f, q);
-    this.b[0][1].copy(a); this.b[1][0].copy(a); this.b[1][1].copy(a);
+    if (ch < 0) { this.b[0][1].copy(a); this.b[1][0].copy(a); this.b[1][1].copy(a); } else this.b[1][ch].copy(a);
   }
+  lfoAt(p) { switch (this.shape) { case 0: return Math.sin(TWO_PI * p); case 1: return -(4 * Math.abs(p - Math.floor(p + 0.5)) - 1); case 2: return 1 - 2 * (p - Math.floor(p)); case 3: return (p - Math.floor(p)) < 0.5 ? 1 : -1; default: return this.sh; } }
   process(L, R, n) {
     const moving = this.envAmt !== 0 || this.lfoAmt > 0, aC = this.aC, rC = this.rC, inc = this.rate / this.sr, s0 = this.b[0], s1 = this.b[1], two = this.slope === 1;
     let env = this.env;
@@ -42,11 +44,17 @@ export class AutoFilter extends Fx {
         this.lfo = l;
         const envN = clamp((linToDb(env) + 48) / 48, 0, 1); this.envN = envN;
         const oct = this.envAmt * 4 * envN + this.lfoAmt * 3 * l, f = clamp(this.f * Math.pow(2, oct), 20, 20000);
-        if (this.dirty || Math.abs(oct - this.cur) > 0.003) { this.cur = oct; this.fc = f; this.coef(f); this.dirty = false; }
+        if (this.phs > 0) {                                                 // stereo: the right channel's LFO runs Phase degrees ahead
+          const oR = this.envAmt * 4 * envN + this.lfoAmt * 3 * this.lfoAt(p + this.phs);
+          if (this.dirty || Math.abs(oct - this.cur) > 0.003) { this.cur = oct; this.fc = f; this.coef(f, 0); }
+          if (this.dirty || Math.abs(oR - this.curR) > 0.003) { this.curR = oR; this.coef(clamp(this.f * Math.pow(2, oR), 20, 20000), 1); }
+          this.dirty = false;
+        } else if (this.dirty || Math.abs(oct - this.cur) > 0.003) { this.cur = oct; this.fc = f; this.coef(f); this.dirty = false; }
       }
-      let l = s0[0].process(L[i]), r = s0[1].process(R[i]);
+      const dl = this.drive !== 1 ? Math.tanh(L[i] * this.drive) : L[i], dr = this.drive !== 1 ? Math.tanh(R[i] * this.drive) : R[i];
+      let l = s0[0].process(dl), r = s0[1].process(dr);
       if (two) { l = s1[0].process(l); r = s1[1].process(r); }
-      L[i] = l; R[i] = r;
+      L[i] = L[i] * (1 - this.mix) + l * this.mix; R[i] = R[i] * (1 - this.mix) + r * this.mix;
     }
     this.env = env;
   }

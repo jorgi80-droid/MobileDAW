@@ -439,9 +439,36 @@ Object.assign(DEVICES, {
   30: { name: 'Tuner', kit: true, params: [q('Reference', 410, 480, 440, { unit: 'Hz' })] },
 });
 
+// Live 12 redesign of the original effects: the indices stay, new parameters are appended (an older project gets their defaults on load,
+// migrate() maps an old meaning onto the new parameters where one changed).
+{
+  const D = DEVICES, rn = (t, k, n) => { D[t].params[k].n = n; }, show = (t, ...ks) => { for (const k of ks) delete D[t].params[k].hidden; };
+  Object.assign(D[0], { kit: true, migrate: (p, n0) => { if (n0 <= 4 && p[2] > 0.5) p[4] = 1; } });          // old Invert flipped both channels
+  rn(0, 1, 'Balance'); rn(0, 2, 'Phase L');
+  D[0].params.push(onoff('Phase R'), list('Channel', ['Stereo', 'Left', 'Right', 'Swap'], 0), q('Width', 0, 4, 1, { fmt: 'width' }), onoff('Bass Mono'),
+    q('Bass Freq', 50, 500, 120, { curve: 'log', unit: 'Hz' }), onoff('Mute'), onoff('DC'));
+  Object.assign(D[1], { kit: true }); show(1, 0, 3, 9);
+  D[1].params.push(q('Drive', 0, 24, 0, { unit: 'dB' }), q('Dry/Wet', 0, 1, 1, { unit: '%' }), q('LFO Phase', 0, 360, 0, { fmt: 'deg' }));
+  Object.assign(D[2], { kit: true }); rn(2, 0, 'GainLow'); rn(2, 1, 'GainMid'); rn(2, 2, 'GainHi'); rn(2, 4, 'FreqLow'); rn(2, 5, 'FreqHi'); D[2].params[3].hidden = true;   // the crossover EQ has no mid frequency
+  D[2].params.push(onoff('Low On', 1), onoff('Mid On', 1), onoff('High On', 1), list('Slope', ['24', '48'], 0));
+  Object.assign(D[3], { kit: true }); rn(3, 1, 'Dry/Wet');
+  D[3].params.push(list('Type', ['Analog Clip', 'Soft Sine', 'Medium Curve', 'Hard Curve', 'Sinoid Fold', 'Digital Clip'], 0), onoff('Soft Clip'));
+  Object.assign(D[4], { kit: true }); rn(4, 4, 'Output'); rn(4, 6, 'Dry/Wet');
+  D[4].params.push(list('Mode', ['Peak', 'RMS', 'Expand'], 0), onoff('Makeup'), list('Lookahead', ['0 ms', '1 ms', '10 ms'], 0), list('Env', ['Lin', 'Log'], 1), onoff('Auto Release'));
+  Object.assign(D[5], { kit: true });
+  Object.assign(D[6], { kit: true }); show(6, 3, 7, 8, 9, 10);
+  Object.assign(D[7], { kit: true }); rn(7, 1, 'Damping'); rn(7, 2, 'Dry/Wet'); rn(7, 3, 'Predelay');
+  D[7].params.push(q('Width', 0, 1, 1, { unit: '%' }), onoff('Freeze'), q('Lo Cut', 20, 2000, 20, { curve: 'log', unit: 'Hz' }), q('Hi Cut', 1000, 20000, 20000, { curve: 'log', unit: 'Hz' }));
+  D[31] = { name: 'EQ Eight', kit: true, params: [...Array.from({ length: 8 }, (_, b) => [onoff((b + 1) + ' On', b === 0 || b === 7 ? 0 : 1), list((b + 1) + ' Type', ['Low Cut 48', 'Low Cut 12', 'Low Shelf', 'Bell', 'Notch', 'High Shelf', 'High Cut 12', 'High Cut 48'], [1, 2, 3, 3, 3, 3, 5, 6][b]),
+    q((b + 1) + ' Freq', 10, 22000, [30, 100, 250, 1000, 2500, 5000, 10000, 18000][b], { curve: 'log', unit: 'Hz' }), q((b + 1) + ' Gain', -15, 15, 0, { unit: 'dB' }), q((b + 1) + ' Q', 0.1, 18, 0.71, { curve: 'log', unit: '' })]).flat(),
+    q('Scale', -2, 2, 1, { fmt: 'width' }), q('Gain', -12, 12, 0, { unit: 'dB' })] };
+  D[32] = { name: 'Spectrum', kit: true, params: [list('Block', ['1024', '2048', '4096', '8192', '16384'], 2), list('Channel', ['L', 'R', 'L+R'], 2), q('Avg', 1, 20, 4, { step: 1, fmt: 'num' }),
+    list('Graph', ['Line', 'Bins'], 0), onoff('Max'), list('Scale X', ['Lin', 'Log', 'ST'], 1), onoff('Auto', 1)] };
+}
+
 // Audio effect categories as in Live 12's browser. Older devices that have no Live 12 counterpart stay loadable under 'Lainnya (lama)'.
 export const FX_GROUPS = [['loop', 'Delay & Loop', [19, 17, 6, 18]], ['drive', 'Drive & Color', [29, 26, 27, 9, 3, 28]], ['dyn', 'Dynamics', [4, 23, 24, 5]],
-  ['eq', 'EQ & Filters', [1, 25, 8, 2]], ['mod', 'Pitch & Modulation', [22, 20, 21]], ['rev', 'Reverb & Resonance', [7]], ['util', 'Utilities', [0, 13, 30, 16]], ['old', 'Lainnya (lama)', [10, 12, 14, 15]]];
+  ['eq', 'EQ & Filters', [1, 25, 31, 2]], ['mod', 'Pitch & Modulation', [22, 20, 21]], ['rev', 'Reverb & Resonance', [7]], ['util', 'Utilities', [0, 32, 30, 16]], ['old', 'Lainnya (lama)', [8, 13, 10, 12, 14, 15]]];
 
 // Parameter <-> 0..1 mapping shared by knobs, automation editing and the engine sync.
 export const normOf = (p, v) => { const x = p.curve === 'log' ? Math.log(v / p.min) / Math.log(p.max / p.min) : (v - p.min) / (p.max - p.min); return x < 0 ? 0 : x > 1 ? 1 : x; };

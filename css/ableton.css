@@ -597,3 +597,8 @@
 .lk-swap { display: flex; flex-direction: column; align-items: center; }
 .lk-mid { align-self: center; margin-top: 18px; }
 .lk-bar { align-self: stretch; display: flex; align-items: center; gap: var(--sp-3); padding: 3px 4px; margin-top: -4px; background: var(--lv-well); border: 1px solid var(--lv-edge); border-top: 0; }
+.lk-page { display: flex; }
+.lk .lk-tabs { align-self: flex-start; }
+.lk-eq8 { display: grid; grid-template-columns: repeat(8, 1fr); gap: 2px; width: 100%; }
+.lk-cell { display: flex; flex-direction: column; gap: 2px; align-items: center; }
+.lk-cell .lk-s { min-width: 0 !important; width: 100% !important; padding: 0 2px; }

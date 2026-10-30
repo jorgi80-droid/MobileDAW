@@ -1,6 +1,6 @@
 // Effects of the web engine. Interface: setParam(i, v), process(L, R, n) in place, readOut(out) -> count, bypass flag.
 import { AutoFilter, Echo, Roar } from './fx2.js';
-import { Delay, FilterDelay, BeatRepeat, ChorusEnsemble, PhaserFlanger, AutoPan, Gate, GlueComp, ChannelEq, Erosion, Redux, VinylDist, DrumBuss, Tuner } from './fx3.js';
+import { Delay, FilterDelay, BeatRepeat, ChorusEnsemble, PhaserFlanger, AutoPan, Gate, GlueComp, ChannelEq, Erosion, Redux, VinylDist, DrumBuss, Tuner, EqEight, Spectrum } from './fx3.js';
 import { TWO_PI, clamp, dbToLin, linToDb, Biquad, fft, fastLog2, fastPow2, fastTanh, Os4, OS4_LATENCY } from './dsp.js';
 
 const tanh = fastTanh;
@@ -8,47 +8,87 @@ const DB_PER_LOG2 = 6.0205999;   // 20*log10(2)
 
 class Fx { constructor(sr, sc) { this.sr = sr; this.sc = sc; this.bypass = false; } readOut() { return 0; } }
 
-// 0 gain dB, 1 pan, 2 invert, 3 mono
+// 0 gain dB, 1 balance, 2 phase L, 3 mono, 4 phase R, 5 channel (stereo / left / right / swap), 6 width, 7 bass mono, 8 bass mono Hz, 9 mute, 10 DC filter
 class Utility extends Fx {
-  constructor(sr) { super(sr); this.gdb = 0; this.pan = 0; this.inv = 0; this.mono = 0; this.g = 0; this.gInit = false; }   // g is always a number: a null-initialised field is boxed, and every `this.g += step` then allocated
-  setParam(i, v) { if (i === 0) this.gdb = v; else if (i === 1) this.pan = clamp(v, -1, 1); else if (i === 2) this.inv = v > 0.5 ? 1 : 0; else if (i === 3) this.mono = v > 0.5 ? 1 : 0; }
+  constructor(sr) {
+    super(sr); this.gdb = 0; this.pan = 0; this.inv = 0; this.mono = 0; this.invR = 0; this.ch = 0; this.width = 1; this.bm = 0; this.bmf = 120; this.mute = 0; this.dc = 0; this.g = 0; this.gInit = false;
+    this.lo = [new Biquad(), new Biquad()]; this.hi = [new Biquad(), new Biquad()]; this.dcx = [0, 0]; this.dcy = [0, 0]; this.upd();
+  }
+  upd() { this.lo[0].lowpass(this.sr, this.bmf, 0.707); this.lo[1].copy(this.lo[0]); this.hi[0].highpass(this.sr, this.bmf, 0.707); this.hi[1].copy(this.hi[0]); }
+  setParam(i, v) {
+    switch (i) {
+      case 0: this.gdb = v; break; case 1: this.pan = clamp(v, -1, 1); break; case 2: this.inv = v > 0.5 ? 1 : 0; break; case 3: this.mono = v > 0.5 ? 1 : 0; break;
+      case 4: this.invR = v > 0.5 ? 1 : 0; break; case 5: this.ch = Math.round(clamp(v, 0, 3)); break; case 6: this.width = clamp(v, 0, 4); break; case 7: this.bm = v > 0.5 ? 1 : 0; break;
+      case 8: this.bmf = clamp(v, 50, 500); this.upd(); break; case 9: this.mute = v > 0.5 ? 1 : 0; break; case 10: this.dc = v > 0.5 ? 1 : 0; break;
+    }
+  }
   process(L, R, n) {
-    const tg = dbToLin(this.gdb) * (this.inv ? -1 : 1);
+    const tg = this.mute ? 0 : dbToLin(this.gdb);
     if (!this.gInit) { this.g = tg; this.gInit = true; }
     const step = (tg - this.g) / n, pl = Math.cos(Math.max(0, this.pan) * Math.PI / 2), pr = Math.cos(Math.max(0, -this.pan) * Math.PI / 2);
+    const sl = this.inv ? -1 : 1, sr = this.invR ? -1 : 1, w = this.mono ? 0 : this.width, ch = this.ch, dcR = 0.995;
     for (let i = 0; i < n; i++) {
       this.g += step;
-      let l = L[i], r = R[i];
-      if (this.mono) { l = r = (l + r) * 0.5; }
+      let l = L[i] * sl, r = R[i] * sr;
+      if (ch === 1) r = l; else if (ch === 2) l = r; else if (ch === 3) { const t = l; l = r; r = t; }
+      if (this.dc) { const yl = l - this.dcx[0] + dcR * this.dcy[0], yr = r - this.dcx[1] + dcR * this.dcy[1]; this.dcx[0] = l; this.dcx[1] = r; this.dcy[0] = yl; this.dcy[1] = yr; l = yl; r = yr; }
+      const m = (l + r) * 0.5; let s = (l - r) * 0.5 * w;
+      if (this.bm) { s = this.hi[0].process(s); this.lo[0].process(0); }   // Bass Mono: the side signal loses everything below the frequency
+      l = m + s; r = m - s;
       L[i] = l * this.g * pl; R[i] = r * this.g * pr;
     }
   }
 }
 
-// 0 low dB, 1 mid dB, 2 high dB, 3 mid Hz
-class Eq3 extends Fx {
-  constructor(sr) { super(sr); this.g = [0, 0, 0]; this.mf = 1000; this.lf = 250; this.hf = 4000; this.b = [0, 1, 2].map(() => [new Biquad(), new Biquad()]); this.upd(); }
-  upd() {
-    this.b[0][0].lowShelf(this.sr, this.lf, 0.707, this.g[0]); this.b[1][0].peaking(this.sr, this.mf, 0.8, this.g[1]); this.b[2][0].highShelf(this.sr, this.hf, 0.707, this.g[2]);
-    for (const x of this.b) x[1].copy(x[0]);
+// Linkwitz-Riley crossover: 24 dB/oct = two Butterworth 2-pole stages, 48 dB/oct = Butterworth 4-pole squared
+class Xover {
+  constructor(sr) { this.sr = sr; this.l = []; this.h = []; }
+  set(f, steep) {
+    const qs = steep ? [0.5412, 1.3066, 0.5412, 1.3066] : [0.7071, 0.7071];
+    if (this.l.length !== qs.length) { this.l = qs.map(() => new Biquad()); this.h = qs.map(() => new Biquad()); }
+    qs.forEach((q, k) => { this.l[k].lowpass(this.sr, f, q); this.h[k].highpass(this.sr, f, q); });
   }
-  setParam(i, v) { if (i < 3) this.g[i] = clamp(v, -15, 15); else if (i === 3) this.mf = v; else if (i === 4) this.lf = clamp(v, 40, 800); else if (i === 5) this.hf = clamp(v, 1000, 16000); this.upd(); }
-  process(L, R, n) { const [a, b, c] = this.b; for (let i = 0; i < n; i++) { L[i] = c[0].process(b[0].process(a[0].process(L[i]))); R[i] = c[1].process(b[1].process(a[1].process(R[i]))); } }
+  lp(x) { for (const b of this.l) x = b.process(x); return x; }
+  hp(x) { for (const b of this.h) x = b.process(x); return x; }
+}
+// EQ Three (Live): 0 low dB 1 mid dB 2 high dB (3 old mid Hz, unused) 4 low/mid split Hz 5 mid/high split Hz 6..8 band on (kill when off) 9 slope (24 / 48)
+class Eq3 extends Fx {
+  constructor(sr) { super(sr); this.g = [0, 0, 0]; this.on = [1, 1, 1]; this.lf = 250; this.hf = 4000; this.steep = 0; this.x = [0, 1].map(() => [new Xover(sr), new Xover(sr), new Xover(sr)]); this.upd(); }
+  upd() { const hf = Math.max(this.hf, this.lf * 1.05); for (const c of this.x) { c[0].set(this.lf, this.steep); c[1].set(hf, this.steep); c[2].set(hf, this.steep); } }
+  setParam(i, v) {
+    if (i < 3) this.g[i] = clamp(v, -15, 15); else if (i === 4) { this.lf = clamp(v, 40, 800); this.upd(); } else if (i === 5) { this.hf = clamp(v, 1000, 16000); this.upd(); }
+    else if (i >= 6 && i <= 8) this.on[i - 6] = v > 0.5 ? 1 : 0; else if (i === 9) { this.steep = v > 0.5 ? 1 : 0; this.upd(); }
+  }
+  process(L, R, n) {
+    const gl = this.on[0] ? dbToLin(this.g[0]) : 0, gm = this.on[1] ? dbToLin(this.g[1]) : 0, gh = this.on[2] ? dbToLin(this.g[2]) : 0;
+    for (let c = 0; c < 2; c++) {
+      const X = c ? R : L, [a, b, ap] = this.x[c];
+      for (let i = 0; i < n; i++) {
+        const x = X[i], low = a.lp(x), rest = a.hp(x), mid = b.lp(rest), high = b.hp(rest), lowA = ap.lp(low) + ap.hp(low);   // the low band passes the upper split's all-pass so the bands sum flat
+        X[i] = lowA * gl + mid * gm + high * gh;
+      }
+    }
+  }
 }
 
 // 0 drive dB, 1 mix, 2 output dB
 class Saturator extends Fx {
-  constructor(sr) { super(sr); this.drive = 1; this.mix = 1; this.out = 1; this.tb = [new Biquad(), new Biquad()]; this.tone = 20000; this.tb[0].lowpass(sr, 20000, 0.707); this.tb[1].copy(this.tb[0]); }
-  setParam(i, v) { if (i === 0) this.drive = dbToLin(clamp(v, 0, 36)); else if (i === 1) this.mix = clamp(v, 0, 1); else if (i === 2) this.out = dbToLin(clamp(v, -24, 6)); else if (i === 3) { this.tone = clamp(v, 500, 20000); this.tb[0].lowpass(this.sr, this.tone, 0.707); this.tb[1].copy(this.tb[0]); } }
+  constructor(sr) { super(sr); this.type = 0; this.clip = 0; this.drive = 1; this.mix = 1; this.out = 1; this.tb = [new Biquad(), new Biquad()]; this.tone = 20000; this.tb[0].lowpass(sr, 20000, 0.707); this.tb[1].copy(this.tb[0]); }
+  setParam(i, v) { if (i === 4) { this.type = Math.round(clamp(v, 0, 5)); return; } if (i === 5) { this.clip = v > 0.5 ? 1 : 0; return; } if (i === 0) this.drive = dbToLin(clamp(v, 0, 36)); else if (i === 1) this.mix = clamp(v, 0, 1); else if (i === 2) this.out = dbToLin(clamp(v, -24, 6)); else if (i === 3) { this.tone = clamp(v, 500, 20000); this.tb[0].lowpass(this.sr, this.tone, 0.707); this.tb[1].copy(this.tb[0]); } }
   // v68: the shaper runs 4x oversampled (no alias tones at high drive); the dry signal goes through the same fixed delay so Mix stays phase-aligned
   process(L, R, n) {
     if (!this.os) { this.os = [new Os4(), new Os4()]; this.dl = new Float64Array(OS4_LATENCY); this.dr = new Float64Array(OS4_LATENCY); this.dp = 0; }
+    { const d = this.drive, t = this.type | 0;   // Live Saturator curves: Analog Clip (tanh), Soft Sine, Medium Curve, Hard Curve, Sinoid Fold, Digital Clip
+      this.shp = t === 1 ? (x) => Math.sin(clamp(x * d, -1.5708, 1.5708)) : t === 2 ? (x) => { const y = x * d; return y / (1 + Math.abs(y)) * 1.5; } : t === 3 ? (x) => { const y = clamp(x * d, -1.5, 1.5); return y - y * y * y / 6.75; }
+        : t === 4 ? (x) => Math.sin(x * d) : (x) => clamp(x * d, -1, 1); }
     const d = this.drive, m = this.mix, o = this.out, norm = 1 / tanh(Math.max(d, 1)), lp = this.tone < 19500, a = this.tb[0], b = this.tb[1], ul = this.os[0], ur = this.os[1], DL = this.dl, DR = this.dr;
     let dp = this.dp;
     for (let i = 0; i < n; i++) {
       const xl = L[i], xr = R[i];
-      let u = ul.up(xl); let l = ul.down(tanh(u[0] * d) * norm, tanh(u[1] * d) * norm, tanh(u[2] * d) * norm, tanh(u[3] * d) * norm);
-      u = ur.up(xr); let r = ur.down(tanh(u[0] * d) * norm, tanh(u[1] * d) * norm, tanh(u[2] * d) * norm, tanh(u[3] * d) * norm);
+      const sh = this.type ? this.shp : (x) => tanh(x * d) * norm;
+      let u = ul.up(xl); let l = ul.down(sh(u[0]), sh(u[1]), sh(u[2]), sh(u[3]));
+      u = ur.up(xr); let r = ur.down(sh(u[0]), sh(u[1]), sh(u[2]), sh(u[3]));
+      if (this.clip) { l = tanh(l); r = tanh(r); }
       if (lp) { l = a.process(l); r = b.process(r); }
       const yl = DL[dp], yr = DR[dp]; DL[dp] = xl; DR[dp] = xr; if (++dp >= OS4_LATENCY) dp = 0;
       L[i] = (yl * (1 - m) + l * m) * o; R[i] = (yr * (1 - m) + r * m) * o;
@@ -57,27 +97,46 @@ class Saturator extends Fx {
   }
 }
 
-// 0 threshold dB, 1 ratio, 2 attack ms, 3 release ms, 4 makeup dB
+// 0 threshold dB, 1 ratio, 2 attack ms, 3 release ms, 4 output dB, 5 knee dB, 6 dry/wet, 7 mode (peak / RMS / expand), 8 auto makeup, 9 lookahead (0 / 1 / 10 ms),
+// 10 release envelope (lin / log), 11 auto release
 class Compressor extends Fx {
-  constructor(sr) { super(sr); this.thr = -18; this.ratio = 4; this.atk = 10; this.rel = 120; this.mk = 1; this.gr = 0; this.knee = 6; this.cmix = 1; this.pin = 0; this.pout = 0; this.upd(); }
-  upd() { this.aC = Math.exp(-1 / (Math.max(0.05, this.atk) * 0.001 * this.sr)); this.rC = Math.exp(-1 / (Math.max(1, this.rel) * 0.001 * this.sr)); }
-  setParam(i, v) { if (i === 0) this.thr = v; else if (i === 1) this.ratio = Math.max(1, v); else if (i === 2) { this.atk = v; this.upd(); } else if (i === 3) { this.rel = v; this.upd(); } else if (i === 4) this.mk = dbToLin(v); else if (i === 5) this.knee = clamp(v, 0, 24); else if (i === 6) this.cmix = clamp(v, 0, 1); }
+  constructor(sr) {
+    super(sr); this.thr = -18; this.ratio = 4; this.atk = 10; this.rel = 120; this.mk = 1; this.gr = 0; this.knee = 6; this.cmix = 1; this.pin = 0; this.pout = 0;
+    this.mode = 0; this.auto = 0; this.la = 0; this.lin = 0; this.arel = 0; this.rms = 0; this.slow = 0; this.dl = new Float32Array(Math.ceil(sr * 0.011)); this.dr = new Float32Array(this.dl.length); this.dp = 0; this.upd();
+  }
+  upd() { this.aC = Math.exp(-1 / (Math.max(0.05, this.atk) * 0.001 * this.sr)); this.rC = Math.exp(-1 / (Math.max(1, this.rel) * 0.001 * this.sr)); this.linStep = 60 / (Math.max(1, this.rel) * 0.001 * this.sr); }
+  setParam(i, v) {
+    switch (i) {
+      case 0: this.thr = v; break; case 1: this.ratio = Math.max(1, v); break; case 2: this.atk = v; this.upd(); break; case 3: this.rel = v; this.upd(); break;
+      case 4: this.mk = dbToLin(v); break; case 5: this.knee = clamp(v, 0, 24); break; case 6: this.cmix = clamp(v, 0, 1); break; case 7: this.mode = Math.round(clamp(v, 0, 2)); break;
+      case 8: this.auto = v > 0.5 ? 1 : 0; break; case 9: this.la = [0, Math.round(this.sr * 0.001), Math.round(this.sr * 0.01)][Math.round(clamp(v, 0, 2))]; break;
+      case 10: this.lin = v < 0.5 ? 1 : 0; break; case 11: this.arel = v > 0.5 ? 1 : 0; break;
+    }
+  }
   process(L, R, n) {
-    const knee = Math.max(0.01, this.knee), cm = this.cmix, slope = 1 / this.ratio - 1, thr = this.thr, aC = this.aC, rC = this.rC, mk = this.mk;
-    let gr = this.gr, pin = this.pin, pout = this.pout;
+    const knee = Math.max(0.01, this.knee), cm = this.cmix, thr = this.thr, aC = this.aC, rC = this.rC, mode = this.mode, ratio = this.ratio;
+    const mk = this.mk * (this.auto ? dbToLin(-thr * (1 - 1 / ratio) * 0.5) : 1), la = this.la, D = this.dl.length, rmsC = 1 - Math.exp(-1 / (0.01 * this.sr)), slC = 1 - Math.exp(-1 / (1.5 * this.sr));
+    let gr = this.gr, pin = this.pin, pout = this.pout, dp = this.dp;
     for (let i = 0; i < n; i++) {
-      const a = L[i] < 0 ? -L[i] : L[i], b = R[i] < 0 ? -R[i] : R[i];
-      if (a > pin) pin = a; if (b > pin) pin = b;
-      const over = DB_PER_LOG2 * fastLog2((a > b ? a : b) + 1e-9) - thr;
+      const a = L[i] < 0 ? -L[i] : L[i], b = R[i] < 0 ? -R[i] : R[i], pk = a > b ? a : b;
+      if (pk > pin) pin = pk;
+      let lev = pk;
+      if (mode === 1) { this.rms += (pk * pk - this.rms) * rmsC; lev = Math.sqrt(this.rms); }
+      const over = DB_PER_LOG2 * fastLog2(lev + 1e-9) - thr;
       let red = 0;
-      if (2 * over > knee) red = slope * over; else if (2 * over > -knee) red = slope * (over + knee / 2) * (over + knee / 2) / (2 * knee);
-      red = -red;
-      gr = red > gr ? aC * gr + (1 - aC) * red : rC * gr + (1 - rC) * red;
+      if (mode === 2) { if (over < 0) red = Math.min(60, -over * (ratio - 1)); }                       // expander: below the threshold the gap grows by the ratio
+      else { const slope = 1 / ratio - 1; if (2 * over > knee) red = -slope * over; else if (2 * over > -knee) red = -slope * (over + knee / 2) * (over + knee / 2) / (2 * knee); }
+      if (red > gr) gr = aC * gr + (1 - aC) * red;
+      else if (this.lin) gr = Math.max(red, gr - this.linStep);
+      else if (this.arel) { this.slow += (red - this.slow) * slC; const f = rC * gr + (1 - rC) * red; gr = Math.max(f, Math.min(gr, this.slow)); }
+      else gr = rC * gr + (1 - rC) * red;
       const g = fastPow2(-gr * 0.16609640) * mk;
-      L[i] = L[i] * (1 - cm) + L[i] * g * cm; R[i] = R[i] * (1 - cm) + R[i] * g * cm;
+      let xl = L[i], xr = R[i];
+      if (la) { const p = (dp - la + D) % D; this.dl[dp] = xl; this.dr[dp] = xr; xl = this.dl[p]; xr = this.dr[p]; dp = (dp + 1) % D; }
+      L[i] = xl * (1 - cm) + xl * g * cm; R[i] = xr * (1 - cm) + xr * g * cm;
       const oa = L[i] < 0 ? -L[i] : L[i], ob = R[i] < 0 ? -R[i] : R[i]; if (oa > pout) pout = oa; if (ob > pout) pout = ob;
     }
-    this.gr = gr; this.pin = pin; this.pout = pout;
+    this.gr = gr; this.pin = pin; this.pout = pout; this.dp = dp;
   }
   readOut(o) { o[0] = this.gr; o[1] = linToDb(this.pin); o[2] = linToDb(this.pout); this.pin *= 0.5; this.pout *= 0.5; return 3; }
 }
@@ -139,13 +198,15 @@ class Reverb extends Fx {
       this.al.push(al); this.ao.push(ao); this.abuf.push(new Float32Array(tot2)); this.aidx.push(new Int32Array(4));
     }
     this.tmp = new Float32Array(1024); this.pdl = new Float32Array(Math.ceil(sr * 0.12)); this.pdw = 0; this.pd = 0;
-    this.size = 0.6; this.damp = 0.5; this.mix = 0.25; this.upd();
+    this.size = 0.6; this.damp = 0.5; this.mix = 0.25; this.width = 1; this.freeze = 0; this.lc = new Biquad(); this.hc = new Biquad(); this.lcf = 20; this.hcf = 20000; this.upF(); this.upd();
   }
-  upd() { this.fb = 0.7 + 0.28 * this.size; this.d1 = this.damp * 0.4; }
-  setParam(i, v) { if (i === 0) this.size = clamp(v, 0, 1); else if (i === 1) this.damp = clamp(v, 0, 1); else if (i === 2) this.mix = clamp(v, 0, 1); else if (i === 3) this.pd = Math.floor(clamp(v, 0, 100) * 0.001 * this.sr); this.upd(); }
+  upF() { this.lc.highpass(this.sr, this.lcf, 0.707); this.hc.lowpass(this.sr, this.hcf, 0.707); }
+  upd() { this.fb = this.freeze ? 1 : 0.7 + 0.28 * this.size; this.d1 = this.freeze ? 0 : this.damp * 0.4; }
+  setParam(i, v) { if (i === 4) { this.width = clamp(v, 0, 1); return; } if (i === 5) { this.freeze = v > 0.5 ? 1 : 0; this.upd(); return; } if (i === 6) { this.lcf = clamp(v, 20, 2000); this.upF(); return; } if (i === 7) { this.hcf = clamp(v, 1000, 20000); this.upF(); return; } if (i === 0) this.size = clamp(v, 0, 1); else if (i === 1) this.damp = clamp(v, 0, 1); else if (i === 2) this.mix = clamp(v, 0, 1); else if (i === 3) this.pd = Math.floor(clamp(v, 0, 100) * 0.001 * this.sr); this.upd(); }
   process(L, R, n) {
     const tmp = this.tmp, pd = this.pd, pl = this.pdl, pn = pl.length;
-    for (let i = 0; i < n; i++) { const x = (L[i] + R[i]) * 0.015; if (pd > 0) { pl[this.pdw] = x; let rp = this.pdw - pd; if (rp < 0) rp += pn; tmp[i] = pl[rp]; if (++this.pdw >= pn) this.pdw = 0; } else tmp[i] = x; }
+    if (!this.wv) this.wv = [new Float32Array(1024), new Float32Array(1024)];
+    for (let i = 0; i < n; i++) { const x = this.freeze ? 0 : this.hc.process(this.lc.process((L[i] + R[i]) * 0.015)); if (pd > 0) { pl[this.pdw] = x; let rp = this.pdw - pd; if (rp < 0) rp += pn; tmp[i] = pl[rp]; if (++this.pdw >= pn) this.pdw = 0; } else tmp[i] = x; }
     const wet = this.mix * 3, dry = 1 - this.mix * 0.5, fb = this.fb, d1 = this.d1, d0 = 1 - d1;
     for (let c = 0; c < 2; c++) {
       const X = c === 0 ? L : R, cl = this.cl[c], co = this.co[c], cb = this.cbuf[c], ci = this.cidx[c], cs = this.cst[c], al = this.al[c], ao = this.ao[c], ab = this.abuf[c], ai = this.aidx[c];
@@ -162,9 +223,11 @@ class Reverb extends Fx {
           ab[p] = out + y * 0.5; out = y - out;
           if (++j >= al[k]) j = 0; ai[k] = j;
         }
-        X[i] = X[i] * dry + out * wet;
+        this.wv[c][i] = out * wet;
       }
     }
+    const wl = this.wv[0], wr = this.wv[1], w = this.width;
+    for (let i = 0; i < n; i++) { const m = (wl[i] + wr[i]) * 0.5, sd = (wl[i] - wr[i]) * 0.5 * w; L[i] = L[i] * dry + m + sd; R[i] = R[i] * dry + m - sd; }
   }
 }
 
@@ -558,5 +621,5 @@ class MiniMeters extends Fx {
 }
 
 const TYPES = [Utility, AutoFilter, Eq3, Saturator, Compressor, Limiter, Echo, Reverb, ParametricEq, Roar, Autoduck, null, Levelness, Analyzer, Stereolizer, Spacer, MiniMeters,
-  Delay, FilterDelay, BeatRepeat, ChorusEnsemble, PhaserFlanger, AutoPan, Gate, GlueComp, ChannelEq, Erosion, Redux, VinylDist, DrumBuss, Tuner];   // 17.. = Live 12 set (fx3.js)
+  Delay, FilterDelay, BeatRepeat, ChorusEnsemble, PhaserFlanger, AutoPan, Gate, GlueComp, ChannelEq, Erosion, Redux, VinylDist, DrumBuss, Tuner, EqEight, Spectrum];   // 17.. = Live 12 set (fx3.js)
 export function makeDevice(type, sr, sc) { const C = TYPES[type]; return C ? new C(sr, sc) : null; }

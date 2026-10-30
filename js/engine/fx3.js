@@ -2,7 +2,7 @@
 // Glue Compressor, Channel EQ, Erosion, Redux, Vinyl Distortion, Drum Buss, Tuner.
 // Interface as in fx.js: setParam(i, v), process(L, R, n) in place, readOut(out) -> count, bypass flag; optional setTempo(bpm) and
 // tr(playing, beat) (transport, called once per block by the engine before process).
-import { TWO_PI, clamp, dbToLin, linToDb, Biquad, fastTanh, lcg } from './dsp.js';
+import { TWO_PI, clamp, dbToLin, linToDb, Biquad, fastTanh, lcg, fft } from './dsp.js';
 
 class Fx { constructor(sr) { this.sr = sr; this.bypass = false; this.bpm = 120; } readOut() { return 0; } setTempo(b) { this.bpm = b; } }
 const tanh = fastTanh;
@@ -407,4 +407,55 @@ export class Tuner extends Fx {
     this.hz = sr / lag; this.cl = 1 - bestV; void prev;
   }
   readOut(o) { this.detect(); o[0] = this.cl > 0 ? this.hz : 0; o[1] = this.cl; o[2] = linToDb(this.lv); o[3] = this.p[0]; return 4; }
+}
+
+// ================================================================================================ EQ Eight
+// 8 bands x 5 params (on, type, freq, gain dB, Q) = 0..39, 40 scale (gain multiplier), 41 output dB.
+// types: 0 low cut 48, 1 low cut 12, 2 low shelf, 3 bell, 4 notch, 5 high shelf, 6 high cut 12, 7 high cut 48
+export const EQ8_TYPES = ['Low Cut 48', 'Low Cut 12', 'Low Shelf', 'Bell', 'Notch', 'High Shelf', 'High Cut 12', 'High Cut 48'];
+export function eq8Stages(sr, type, f, g, q) {                      // the biquad stages of one band (shared with the display)
+  const st = [], one = () => { const b = new Biquad(); st.push(b); return b; };
+  if (type === 0 || type === 7) { for (const qq of [0.5412, 1.3066, 0.5412, 1.3066]) type === 0 ? one().highpass(sr, f, qq * q / 0.7071) : one().lowpass(sr, f, qq * q / 0.7071); }
+  else if (type === 1) one().highpass(sr, f, q); else if (type === 6) one().lowpass(sr, f, q);
+  else if (type === 2) one().lowShelf(sr, f, q, g); else if (type === 5) one().highShelf(sr, f, q, g);
+  else if (type === 4) one().notch(sr, f, q); else one().peaking(sr, f, q, g);
+  return st;
+}
+export class EqEight extends Fx {
+  constructor(sr) {
+    super(sr); this.p = []; const T = [1, 2, 3, 3, 3, 3, 5, 6], F = [30, 100, 250, 1000, 2500, 5000, 10000, 18000];
+    for (let b = 0; b < 8; b++) this.p.push(b === 0 || b === 7 ? 0 : 1, T[b], F[b], 0, 0.71); this.p.push(1, 0);
+    this.st = [[], []]; this.upd();
+  }
+  setParam(i, v) { this.p[i] = v; this.upd(); }
+  upd() {
+    const p = this.p, sc = p[40]; this.st = [[], []];
+    for (let b = 0; b < 8; b++) { const o = b * 5; if (p[o] < 0.5) continue; const t = Math.round(p[o + 1]); for (const c of [0, 1]) this.st[c].push(...eq8Stages(this.sr, t, clamp(p[o + 2], 10, 22000), clamp(p[o + 3] * sc, -24, 24), clamp(p[o + 4], 0.1, 18))); }
+  }
+  process(L, R, n) {
+    const g = dbToLin(this.p[41]), a = this.st[0], b = this.st[1];
+    for (let i = 0; i < n; i++) { let l = L[i], r = R[i]; for (let k = 0; k < a.length; k++) { l = a[k].process(l); r = b[k].process(r); } L[i] = l * g; R[i] = r * g; }
+  }
+}
+
+// ================================================================================================ Spectrum (pass-through analyser)
+// 0 block (1024..16384) 1 channel (L / R / L+R) 2 averaging 3 graph (line / bins) 4 max hold 5 scale X (lin / log / ST) 6 auto range  - display options only
+export class Spectrum extends Fx {
+  constructor(sr) { super(sr); this.p = [2, 2, 4, 0, 0, 1, 1]; this.N = 16384; this.buf = new Float32Array(this.N); this.w = 0; this.avg = new Float32Array(256).fill(-150); }
+  setParam(i, v) { this.p[i] = v; }
+  process(L, R, n) { const ch = Math.round(this.p[1]); for (let i = 0; i < n; i++) this.buf[this.w++ & (this.N - 1)] = ch === 0 ? L[i] : ch === 1 ? R[i] : (L[i] + R[i]) * 0.5; }
+  readOut(o) {
+    const n = [1024, 2048, 4096, 8192, 16384][clamp(Math.round(this.p[0]), 0, 4)], re = new Float64Array(n), im = new Float64Array(n), M = this.N - 1;
+    for (let k = 0; k < n; k++) { const wdw = 0.5 - 0.5 * Math.cos(2 * Math.PI * k / (n - 1)); re[k] = this.buf[(this.w - n + k) & M] * wdw; }
+    fft(re, im, n);
+    const scale = Math.round(this.p[5]), a = 1 / Math.max(1, Math.round(this.p[2])), bins = 256, nyq = this.sr / 2;
+    for (let b = 0; b < bins; b++) {
+      const f0 = scale === 0 ? b / bins * nyq : 20 * Math.pow(1000, b / bins), f1 = scale === 0 ? (b + 1) / bins * nyq : 20 * Math.pow(1000, (b + 1) / bins);
+      let k0 = Math.floor(f0 / nyq * n / 2), k1 = Math.max(k0 + 1, Math.ceil(f1 / nyq * n / 2)), m = 0;
+      for (let k = k0; k < k1 && k < n / 2; k++) { const v = re[k] * re[k] + im[k] * im[k]; if (v > m) m = v; }
+      const db = 10 * Math.log10(m / (n * n / 16) + 1e-16);
+      this.avg[b] += (db - this.avg[b]) * a; o[b] = this.avg[b];
+    }
+    return bins;
+  }
 }

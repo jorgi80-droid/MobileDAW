@@ -4,7 +4,8 @@
 import { h, knob } from './ui.js';
 import { C } from './theme.js';
 import { fmtParam } from './defs.js';
-import { lvNum, lvTog, lvChoice, lvSel, lvDisp, lvDrag, lvRing, lvPath, DISPC } from './liveui.js';
+import { lvNum, lvTog, lvChoice, lvSel, lvDisp, lvDrag, lvRing, lvPath, lvTabs, DISPC } from './liveui.js';
+import { eq8Stages } from './engine/fx3.js';
 import { offerAutomation } from './automate.js';
 import { Biquad } from './engine/dsp.js';
 import { eng } from './engine.js';
@@ -29,7 +30,7 @@ function kit(ctx) {
   const K = (k, o = {}) => { const el = knob({ ...def.params[k], n: lbl(k, o) }, () => get(k), (v) => set(k, v), fmtParam, C('#7ac5ff'), auto(k)); el.classList.add('lk-k'); if (o.big) el.classList.add('big'); return reg(el, k); };
   const T = (k, text, o = {}) => reg(lvTog(text, () => get(k) > 0.5, (b) => set(k, b ? 1 : 0), { cls: 'lk-t ' + (o.cls || ''), w: o.w }), k);
   const CH = (k, labels, o = {}) => { const p = def.params[k]; return reg(lvChoice(labels.map((l) => ({ label: l })), () => Math.round(get(k) - p.min), (j) => set(k, j + p.min), { cls: 'lk-ch ' + (o.v ? 'v ' : '') + (o.cls || '') }), k); };
-  const S = (k, o = {}) => { const p = def.params[k]; return reg(lvSel(() => p.items.map((l, j) => ({ label: l, value: j + p.min })), () => Math.round(get(k)), (v) => set(k, v), { w: o.w || 76, cls: 'lk-s' }), k); };
+  const S = (k, o = {}) => { const p = def.params[k], items = p.items || Array.from({ length: Math.round(p.max - p.min) + 1 }, (_, j) => fmtParam(p, p.min + j)); return reg(lvSel(() => items.map((l, j) => ({ label: l, value: j + p.min })), () => Math.round(get(k)), (v) => set(k, v), { w: o.w || 76, cls: 'lk-s', show: o.short ? (v) => o.short[Math.round(v - p.min)] : null }), k); };
   const N = (k, o = {}) => reg(lvNum(def.params[k], () => get(k), (v) => set(k, v), fmtParam, { fill: o.fill !== false, w: o.w || 64, onLong: auto(k), label: def.params[k].n, cls: 'lk-n' }), k);
   const LN = (text, el) => h('div', { class: 'lk-ln' }, h('span', {}, text), el);           // label left, control right (Live rows like "Freq [5.08 kHz]")
   const TL = (text, ...kids) => h('div', { class: 'lk-tl' }, h('span', { class: 'lk-lb' }, text), ...kids);   // title above a control
@@ -203,6 +204,138 @@ V[30] = (k) => {
   k.every(80, () => { const r = k.out(); if (r.length) { hz = r[0]; cl = r[1]; } disp.paint(); });
   const opt = (label2, key) => { const b = h('button', { class: 'lv-btn lk-t' + (ui[key] ? ' on' : ''), onclick: () => { ui[key] = !ui[key]; b.classList.toggle('on', ui[key]); disp.paint(); } }, label2); return b; };
   return k.col(disp, k.row(opt('Strobe', 'strobe'), opt('Hz', 'hz'), h('span', { class: 'lk-grow' }), k.LN('Reference', k.N(0, { w: 64 }))));
+};
+
+// ================================================================================================ redesigned originals
+// Utility: Input (phase L / R, channel, width, mono, bass mono + freq) | Output (gain, balance, mute, DC)
+V[0] = (k) => k.row(
+  k.sec('Input', k.row(k.T(2, 'ØL', { w: 34 }), k.T(4, 'ØR', { w: 34 })), k.S(5, { w: 76 }), k.K(6), k.T(3, 'Mono', { w: 72 }), k.row(k.T(7, 'Bass Mono'), k.N(8, { w: 56 }))), k.sep(),
+  k.sec('Output', k.K(0, { n: 'Gain' }), k.K(1), k.row(k.T(9, 'Mute', { w: 40 }), k.T(10, 'DC', { w: 30 }))));
+// Auto Filter: Freq / type / slope / Res | filter + LFO display, LFO amount / rate / wave / phase, envelope | Drive / Dry/Wet
+V[1] = (k) => {
+  let fc = 0, lfo = 0;
+  const disp = k.D(214, 76, (g, w, hh) => {
+    grid(g, w, hh); const b = new Biquad(), t = Math.round(k.get(0)), q = k.get(3) > 0.5 ? k.get(2) * 0.8 : k.get(2);
+    const draw = (f, col, fill) => { if (t === 0) b.lowpass(SR, f, q); else if (t === 1) b.highpass(SR, f, q); else if (t === 2) b.bandpass(SR, f, q); else b.notch(SR, f, q);
+      const pts = []; for (let x = 0; x <= w; x += 2) { let m = mag(b, xl(x, w)); if (k.get(3) > 0.5) m *= m; pts.push([x, hh - 6 - Math.min(2, m) / 2 * (hh - 12)]); } lvPath(g, pts, col, fill ? hh : null, 1.7); };
+    if (fc > 20 && Math.abs(fc - k.get(1)) > k.get(1) * 0.01) draw(fc, DISPC.or, false);
+    draw(k.get(1), DISPC.bl, true); lvRing(g, lx(k.get(1), w), hh * 0.3, 4.5);
+    g.fillStyle = 'rgba(0,0,0,.35)'; g.fillRect(0, hh - 13, w, 13); label(g, 'LFO', 4, hh - 3, DISPC.ink, 9); label(g, 'Ø ' + Math.round(k.get(12)) + '°', 40, hh - 3, DISPC.or, 9);
+  }, { onDown: () => ({ f: k.get(1), q: k.get(2) }), onMove: (x, y, dx, dy, s) => { k.set(1, Math.max(20, Math.min(20000, s.f * Math.pow(2, dx / 21)))); k.set(2, Math.max(0.3, Math.min(12, s.q * Math.pow(2, -dy / 30)))); } });
+  k.every(60, () => { const r = k.out(); if (r.length) { fc = r[0]; lfo = r[2]; disp.paint(); } });
+  return k.row(k.col(k.K(1, { n: 'Freq' }), k.S(0, { w: 76 }), k.CH(3, ['12', '24']), k.K(2, { n: 'Res' })), k.sep(),
+    k.col(disp, k.row(k.K(7, { n: 'LFO Amt' }), k.K(8, { n: 'Rate' }), k.col(k.S(9, { w: 64 }), k.K(12, { n: 'Phase' })), k.K(4, { n: 'Envelope' }), k.K(5, { n: 'Attack' }), k.K(6, { n: 'Release' }))), k.sep(),
+    k.col(k.K(10), k.K(11)));
+};
+// EQ Three: GainLow / GainMid / GainHi with L / M / H kill switches, FreqLow, 24 / 48, FreqHi
+V[2] = (k) => k.col(k.row(k.col(k.K(0), k.T(6, 'L', { w: 30 })), k.col(k.K(1), k.T(7, 'M', { w: 30 })), k.col(k.K(2), k.T(8, 'H', { w: 30 }))),
+  k.row(k.K(4), k.CH(9, ['24', '48'], { v: true }), k.K(5)));
+// Saturator: curve display, Drive, type, soft clip | Tone, Output, Dry/Wet
+V[3] = (k) => {
+  const disp = k.D(150, 90, (g, w, hh) => {
+    const d = Math.pow(10, k.get(0) / 20), t = Math.round(k.get(4)), cl = (x, a, b) => Math.max(a, Math.min(b, x));
+    const fn = [(x) => Math.tanh(x * d) / Math.tanh(Math.max(d, 1)), (x) => Math.sin(cl(x * d, -1.5708, 1.5708)), (x) => { const y = x * d; return y / (1 + Math.abs(y)) * 1.5; }, (x) => { const y = cl(x * d, -1.5, 1.5); return y - y * y * y / 6.75; }, (x) => Math.sin(x * d), (x) => cl(x * d, -1, 1)][t];
+    g.fillStyle = DISPC.grid; g.fillRect(0, hh / 2, w, 1); g.fillRect(w / 2, 0, 1, hh);
+    const pts = []; for (let x = 0; x <= w; x += 2) { let y = fn((x / w) * 2 - 1); if (k.get(5) > 0.5) y = Math.tanh(y); pts.push([x, hh / 2 - cl(y, -1.3, 1.3) * (hh / 2 - 8)]); }
+    lvPath(g, pts, DISPC.bl, null, 1.8);
+  });
+  return k.row(k.col(disp, k.S(4, { w: 110 }), k.T(5, 'Soft Clip')), k.sep(), k.col(k.K(0, { big: true }), k.K(3, { n: 'Tone' })), k.sep(), k.col(k.K(2), k.K(1)));
+};
+// Compressor: Ratio / Attack / Release (+ Auto) | transfer display with GR and Out meters, Knee / Lookahead / Env | Makeup, Peak / RMS / Expand, Output, Dry/Wet
+V[4] = (k) => {
+  let o = [0, -80, -80], grs = 0;
+  const disp = k.D(250, 112, (g, w, hh) => {
+    const L0 = 34, W0 = 150, cx = (db) => L0 + ((db + 60) / 60) * W0, cy = (db) => hh - 14 - ((Math.max(-60, Math.min(12, db)) + 60) / 72) * (hh - 22);
+    const thr = k.get(0), ratio = Math.max(1, k.get(1)), knee = Math.max(0.01, k.get(5)), mode = Math.round(k.get(7));
+    const tf = (x) => { if (mode === 2) return x < thr ? thr + (x - thr) * ratio : x; const over = x - thr, slope = 1 / ratio - 1; let r = 0; if (2 * over > knee) r = slope * over; else if (2 * over > -knee) r = slope * (over + knee / 2) * (over + knee / 2) / (2 * knee); return x + r; };
+    g.fillStyle = DISPC.grid; for (const v of [-48, -36, -24, -12, 0]) { g.fillRect(Math.round(cx(v)), 6, 1, hh - 20); g.fillRect(L0, Math.round(cy(v)), W0, 1); }
+    const pts = []; for (let x = -60; x <= 0; x += 1) pts.push([cx(x), cy(tf(x))]); lvPath(g, pts, DISPC.bl, null, 1.8); lvRing(g, cx(thr), cy(tf(thr)), 4.5);
+    const met = (x, db, col) => { const y = cy(db); g.fillStyle = '#1b1b1d'; g.fillRect(x, 6, 10, hh - 20); g.fillStyle = col; g.fillRect(x, y, 10, hh - 14 - y); };
+    met(8, o[1], '#5fd08a'); g.fillStyle = '#1b1b1d'; g.fillRect(W0 + 46, 6, 10, hh - 20); g.fillStyle = '#ffad32'; g.fillRect(W0 + 46, 6, 10, Math.min(hh - 20, grs * 2)); met(W0 + 72, o[2], '#5fd08a');
+    label(g, 'Thresh', L0 + 2, 12, DISPC.ink); label(g, 'GR', W0 + 44, hh - 3, DISPC.ink, 8); label(g, 'Out', W0 + 70, hh - 3, DISPC.ink, 8); label(g, thr.toFixed(1) + ' dB', L0 + 2, hh - 3, DISPC.bl, 9);
+  }, { onDown: () => ({ t: k.get(0) }), onMove: (x, y, dx, dy, s) => k.set(0, Math.max(-60, Math.min(0, s.t - dy * 0.4))) });
+  k.every(50, () => { const r = k.out(); if (r.length) { o = r; grs += (r[0] - grs) * 0.4; disp.paint(); } });
+  return k.row(k.col(k.K(1), k.K(2), k.K(3), k.T(11, 'Auto')), k.sep(),
+    k.col(disp, h('div', { class: 'lk-bar' }, k.LN('Knee', k.N(5, { w: 56 })), k.LN('Look', k.S(9, { w: 58 })), k.LN('Env', k.CH(10, ['Lin', 'Log'])))), k.sep(),
+    k.col(k.T(8, 'Makeup', { w: 68 }), k.CH(7, ['Peak', 'RMS', 'Expand'], { v: true }), k.K(4), k.K(6)));
+};
+// Limiter: gain reduction display | Gain, Ceiling, Release
+V[5] = (k) => {
+  let o = [0, -80, -80];
+  const disp = k.D(150, 90, (g, w, hh) => { const y = (db) => 6 + (Math.min(0, Math.max(-48, db)) / -48) * (hh - 18);
+    for (const [x, db, col, t] of [[10, o[1], '#5fd08a', 'In'], [60, -o[0], '#ffad32', 'GR'], [110, o[2], '#5fd08a', 'Out']]) { g.fillStyle = '#1b1b1d'; g.fillRect(x, 6, 26, hh - 18); g.fillStyle = col; if (t === 'GR') g.fillRect(x, 6, 26, Math.min(hh - 18, o[0] * (hh - 18) / 24)); else g.fillRect(x, y(db), 26, hh - 12 - y(db)); label(g, t, x + 4, hh - 2, DISPC.ink, 8); }
+    g.fillStyle = DISPC.or; g.fillRect(104, y(k.get(0)), 38, 2); });
+  k.every(50, () => { const r = k.out(); if (r.length) { o = r; disp.paint(); } });
+  return k.row(disp, k.sep(), k.col(k.K(2), k.K(0)), k.col(k.K(1)));
+};
+// Echo: Echo / Modulation / Character tabs. Echo: Left + Right (sync + note or time, link), tunnel display with filter, Input / Feedback, Reverb / Stereo, Output / Dry/Wet, Stereo / Ping Pong
+V[6] = (k) => {
+  const page = h('div', { class: 'lk-page' });
+  const tunnel = k.D(200, 92, (g, w, hh) => {
+    const fb = k.get(1), tl = k.get(0), tr = k.get(6);
+    for (let r = 0; r < 9; r++) { const a = Math.pow(fb, r), rad = 18 + r * 9 * (0.6 + tl / 1500); if (rad > w / 2) break; g.strokeStyle = r % 2 ? DISPC.bl : DISPC.or; g.globalAlpha = Math.max(0.15, a); g.lineWidth = 1.5; g.beginPath(); g.arc(w / 2, hh - 4, rad * (r % 2 ? tr / Math.max(1, tl) : 1), Math.PI, 0); g.stroke(); }
+    g.globalAlpha = 1; g.fillStyle = DISPC.or; for (let y = 6; y < hh - 4; y += 6) g.fillRect(w / 2 - 1, y, 2, 2);
+  });
+  const filt = k.D(200, 34, (g, w, hh) => { grid(g, w, hh); const hp = new Biquad(), lp = new Biquad(); hp.highpass(SR, k.get(5), 0.707); lp.lowpass(SR, k.get(4), 0.707);
+    const pts = []; for (let x = 0; x <= w; x += 2) { const f = xl(x, w); pts.push([x, hh - 3 - Math.min(1.2, mag(hp, f) * mag(lp, f)) / 1.2 * (hh - 8)]); } lvPath(g, pts, DISPC.bl, hh, 1.5); lvRing(g, lx(k.get(5), w), hh / 2, 3.5); lvRing(g, lx(k.get(4), w), hh / 2, 3.5); },
+    { onDown: (x) => ({ hp: Math.abs(x - lx(k.get(5), 200)) < Math.abs(x - lx(k.get(4), 200)), f: 0 }), onMove: (x, y, dx, dy, s) => { if (s.hp) k.set(5, Math.max(20, Math.min(2000, xl(x, 200)))); else k.set(4, Math.max(200, Math.min(20000, xl(x, 200)))); } });
+  const side = (n, kt, kd) => k.col(h('div', { class: 'lk-st c' }, n), k.T(8, 'Sync', { w: 48 }), k.swap(8, () => k.S(kd, { w: 56 }), () => k.N(kt, { w: 56 })));
+  const tabs = [
+    () => k.row(k.col(k.row(side('Left', 0, 9), h('div', { class: 'lk-mid' }, k.T(7, '⇄', { cls: 'link', w: 24 })), side('Right', 6, 10)), k.row(k.K(13), k.K(1))), k.sep(),
+      k.col(tunnel, filt, k.row(k.LN('HP', k.N(5, { w: 58 })), k.LN('LP', k.N(4, { w: 64 })))), k.sep(),
+      k.col(k.row(k.K(11), k.K(12)), k.CH(3, ['Stereo', 'Ping Pong'], { v: true }), k.row(k.K(14), k.K(2)))),
+    () => k.row(k.K(15, { n: 'Rate', big: true }), k.K(16, { n: 'Amount', big: true })),
+    () => k.row(k.K(17, { n: 'Drive', big: true }), k.K(14), k.K(2)),
+  ];
+  const t = lvTabs([{ label: 'Echo' }, { label: 'Modulation' }, { label: 'Character' }], 0, (j) => page.replaceChildren(tabs[j]()), { cls: 'lk-tabs' });
+  page.replaceChildren(tabs[0]());
+  return k.col(t, page);
+};
+// Reverb: Input Processing (Lo Cut / Hi Cut), Predelay, decay display, Global (Size / Damping), Freeze, Width, Dry/Wet
+V[7] = (k) => {
+  const disp = k.D(170, 76, (g, w, hh) => { const sz = k.get(0), dm = k.get(1), pd = k.get(3) / 100; const pts = [], x0 = 6 + pd * 30; pts.push([6, hh - 4], [x0, hh - 4]);
+    for (let x = x0; x <= w - 4; x += 2) pts.push([x, 8 + (hh - 14) * (1 - Math.exp(-(x - x0) / (w * (0.08 + sz * 0.5)))) * (0.6 + dm * 0.4)]); lvPath(g, pts.map(([x, y], i) => [x, i < 2 ? y : hh - (y - 4)]), DISPC.bl, hh, 1.7);
+    label(g, (0.3 + sz * 8).toFixed(1) + ' s', w - 34, 12, DISPC.or); if (k.get(5) > 0.5) label(g, 'FREEZE', 6, 12, '#4fc3f0'); },
+    { onDown: () => ({ s: k.get(0) }), onMove: (x, y, dx, dy, s) => k.set(0, Math.max(0, Math.min(1, s.s + dx / 150))) });
+  return k.row(k.sec('Input Processing', k.K(6), k.K(7)), k.sep(), k.sec('Early', k.K(3)), k.sep(),
+    k.col(disp, k.row(k.K(0, { n: 'Size' }), k.K(1), k.T(5, 'Freeze'))), k.sep(), k.col(k.K(4, { n: 'Stereo' }), k.K(2)));
+};
+// EQ Eight: band knobs (selected band) | curve display with numbered rings, band cells (on + type) | Scale, Gain
+V[31] = (k) => {
+  let sel = 2; const W = 300, H = 120, ctlBox = h('div', { class: 'lk-col' });
+  const yd = (db) => H / 2 - db / 15 * (H / 2 - 8), dy = (y) => (H / 2 - y) / (H / 2 - 8) * 15;
+  const disp = k.D(W, H, (g) => {
+    grid(g, W, H); g.fillStyle = DISPC.grid; for (const v of [-12, -6, 0, 6, 12]) g.fillRect(0, Math.round(yd(v)), W, 1); for (const v of [12, 6, 0, -6, -12]) label(g, String(v), 3, yd(v) - 2, DISPC.ink, 8);
+    const sc = k.get(40), st = []; for (let b = 0; b < 8; b++) if (k.get(b * 5) > 0.5) st.push(...eq8Stages(SR, Math.round(k.get(b * 5 + 1)), k.get(b * 5 + 2), k.get(b * 5 + 3) * sc, k.get(b * 5 + 4)));
+    const pts = []; for (let x = 0; x <= W; x += 2) { let m = 1; const f = xl(x, W); for (const b of st) m *= mag(b, f); pts.push([x, yd(20 * Math.log10(m + 1e-9) + k.get(41))]); }
+    lvPath(g, pts, DISPC.bl, H / 2, 1.8);
+    for (let b = 0; b < 8; b++) { if (k.get(b * 5) < 0.5) continue; const t = Math.round(k.get(b * 5 + 1)), gy = t === 2 || t === 3 || t === 5 ? yd(k.get(b * 5 + 3) * sc) : H / 2; g.globalAlpha = b === sel ? 1 : 0.75; lvRing(g, lx(k.get(b * 5 + 2), W), gy, 6.5); label(g, String(b + 1), lx(k.get(b * 5 + 2), W), gy + 3, DISPC.or, 8, 'center'); g.globalAlpha = 1; }
+  }, { onDown: (x, y) => { let best = sel, bd = 1e9; for (let b = 0; b < 8; b++) { if (k.get(b * 5) < 0.5) continue; const dd = Math.abs(lx(k.get(b * 5 + 2), W) - x) + Math.abs(yd(k.get(b * 5 + 3)) - y) * 0.5; if (dd < bd) { bd = dd; best = b; } } if (best !== sel) { sel = best; fillCtl(); } return { f: k.get(sel * 5 + 2), g: k.get(sel * 5 + 3) }; },
+    onMove: (x, y, ddx, ddy, s) => { k.set(sel * 5 + 2, Math.max(10, Math.min(22000, s.f * Math.pow(2, ddx / (W / 10))))); k.set(sel * 5 + 3, Math.max(-15, Math.min(15, s.g - ddy * 15 / (H / 2 - 8)))); } });
+  function fillCtl() { ctlBox.replaceChildren(h('div', { class: 'lk-st c' }, 'Band ' + (sel + 1)), k.K(sel * 5 + 2, { n: 'Freq' }), k.K(sel * 5 + 3, { n: 'Gain' }), k.K(sel * 5 + 4, { n: 'Q' })); disp.paint(); }
+  fillCtl();
+  const cells = h('div', { class: 'lk-eq8' }, ...Array.from({ length: 8 }, (_, b) => { const c = h('div', { class: 'lk-cell' }, k.S(b * 5 + 1, { w: 34, short: ['LC48', 'LC12', 'LS', 'Bell', 'Ntch', 'HS', 'HC12', 'HC48'] }), k.T(b * 5, String(b + 1), { w: 34 })); c.addEventListener('pointerdown', () => { if (sel !== b) { sel = b; fillCtl(); } }, true); return c; }));
+  return k.row(ctlBox, k.sep(), k.col(disp, cells), k.sep(), k.col(k.TL('Scale', k.N(40, { w: 60 })), k.TL('Gain', k.N(41, { w: 60 }))));
+};
+// Spectrum: Block / Channel / Avg / Graph / Max / Scale X / Auto | spectrum display (L+R or one channel, bins or line, peak hold)
+V[32] = (k) => {
+  let sp = null, mx = null; const W = 300, H = 132;
+  const disp = k.D(W, H, (g) => {
+    const lin = Math.round(k.get(5)) === 0, auto = k.get(6) > 0.5; let lo = -120, hi = 0;
+    if (sp && auto) { let a = -200, b = 0; for (const v of sp) { if (v > a) a = v; } hi = Math.min(0, Math.ceil(a / 6) * 6 + 6); lo = hi - 72; }
+    const yd = (db) => 4 + (hi - Math.max(lo, Math.min(hi, db))) / (hi - lo) * (H - 18), N = sp ? sp.length : 256;
+    g.fillStyle = DISPC.grid; for (let d = Math.ceil(lo / 12) * 12; d <= hi; d += 12) { g.fillRect(0, Math.round(yd(d)), W, 1); label(g, String(d), 3, yd(d) - 2, DISPC.ink, 8); }
+    const st = Math.round(k.get(5)) === 2;
+    if (st) for (let o = 1; o <= 9; o++) { const f = 32.703 * Math.pow(2, o - 1), x = Math.log(f / 20) / Math.log(1000) * W; g.fillRect(Math.round(x), 0, 1, H - 12); label(g, 'C' + o, x + 2, H - 2, DISPC.ink, 8); }
+    else if (!lin) for (const f of [100, 1000, 10000]) { const x = Math.log(f / 20) / Math.log(1000) * W; g.fillRect(Math.round(x), 0, 1, H - 12); label(g, f >= 1000 ? f / 1000 + 'k' : String(f), x + 2, H - 2, DISPC.ink, 8); }
+    else for (const f of [5000, 10000, 15000, 20000]) { const x = f / (SR / 2) * W; g.fillRect(Math.round(x), 0, 1, H - 12); label(g, f / 1000 + 'k', x + 2, H - 2, DISPC.ink, 8); }
+    if (!sp) return;
+    if (Math.round(k.get(3)) === 1) { g.fillStyle = 'rgba(79,195,240,.85)'; for (let b = 0; b < N; b++) { const x = b / N * W, y = yd(sp[b]); g.fillRect(x, y, Math.max(1, W / N - 0.5), H - 12 - y); } }
+    else lvPath(g, Array.from(sp, (v, b) => [b / (N - 1) * W, yd(v)]), DISPC.bl, H - 12, 1.4);
+    if (k.get(4) > 0.5 && mx) lvPath(g, Array.from(mx, (v, b) => [b / (N - 1) * W, yd(v)]), DISPC.or, null, 1);
+  });
+  k.every(60, () => { const r = k.out(); if (r.length) { sp = r; if (k.get(4) > 0.5) { mx = mx && mx.length === r.length ? mx.map((v, j) => Math.max(v - 0.15, r[j])) : r.slice(); } else mx = null; disp.paint(); } });
+  return k.row(k.col(k.LN('Block', k.S(0, { w: 70 })), k.LN('Channel', k.CH(1, ['L', 'R', 'L+R'])), k.LN('Avg', k.N(2, { w: 50 })), k.LN('Graph', k.CH(3, ['Line', 'Bins'])), k.T(4, 'Max'), k.LN('Scale X', k.CH(5, ['Lin', 'Log', 'ST'])), k.T(6, 'Auto')), k.sep(), disp);
 };
 
 export const KIT = V;
