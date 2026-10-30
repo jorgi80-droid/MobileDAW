@@ -50,7 +50,10 @@ const ev = (fn, ...a) => page.evaluate(fn, ...a);
 const sel = (i, c = 0) => ev(async ([i, c]) => { const P = await import('./js/project.js'); P.selectTrack(i); const t = P.state.tracks[i]; if (t && t.clips[c]) P.selectClip(i, t.clips[c].id); }, [i, c]);
 const tab = (k) => ev((k) => document.querySelector(`#dtabs .b[data-tab="${k}"]`).click(), k);
 const btn = (id) => ev((id) => document.getElementById(id).click(), id);
-if (go('arr')) { await sel(2, 1); await shot('arr'); await btn('btn-shut'); await shot('arr-full'); await btn('btn-shut'); }
+if (go('arr')) {
+  await sel(2, 1); await shot('arr');
+  await ev(async () => { const P = await import('./js/project.js'); P.setLoop({ on: true, start: P.BAR, end: P.BAR * 3 }); P.state.tracks[1].hx = 1.6; P.emit('tracks'); });   // loop brace on + one taller row
+  await shot('arr-loop'); await ev(async () => { const P = await import('./js/project.js'); P.setLoop({ on: false }); delete P.state.tracks[1].hx; P.emit('tracks'); }); await btn('btn-shut'); await shot('arr-full'); await btn('btn-shut'); }
 if (go('clip')) {
   await sel(1); await tab('clip'); await shot('clip'); await btn('btn-max');
   await sel(2); await ev(async () => (await import('./js/editor.js')).setTheory(0, 'Minor')); await shot('clip-midi');

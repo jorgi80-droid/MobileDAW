@@ -541,3 +541,8 @@
 .kb-bar ~ .padgrid .bigpad small { font: var(--fw-sb) var(--fs-1)/1 var(--font); color: var(--lv-dim); letter-spacing: .04em; }
 .kb-bar ~ .padgrid .bigpad.hit { background: var(--tc); color: #111; transition-duration: 0s; }
 .kb-bar ~ .padgrid .bigpad.hit small { color: #111; opacity: .7; }
+
+/* ===== Arrangement overview strip (Live): the whole song above the ruler, frame = visible range ===== */
+#arr-ov { height: 24px; flex: none; position: relative; overflow: hidden; background: var(--panel2); border-bottom: 1px solid var(--line); touch-action: none; }
+#arr-ov canvas { display: block; }
+#view-arr.max #arr-ov { display: none; }
