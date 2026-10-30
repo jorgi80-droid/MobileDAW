@@ -1,7 +1,7 @@
 // Left drawer: add tracks/devices, file library (samples, SoundFonts, recordings, exports), save/load projects.
 // Web version: files live inside the app (IndexedDB) and are imported with the system file picker, so they work offline.
 import { h, ask, toast, menu, modal } from './ui.js';
-import { DEVICES, INSTRUMENTS, INST_LIST, PRESETS } from './defs.js';
+import { DEVICES, INSTRUMENTS, INST_LIST, PRESETS, FX_GROUPS } from './defs.js';
 import { eng, backend, MASTER } from './engine.js';
 import { dropInfo } from './timeline.js';
 import * as P from './project.js';
@@ -186,7 +186,6 @@ async function dropSample(full, i, info) {
   } finally { adding = false; }
 }
 
-const FX_GROUPS = [['dyn', 'Dinamika', [4, 5, 10]], ['eq', 'EQ & Filter', [2, 8, 1]], ['time', 'Delay & Reverb', [6, 7]], ['color', 'Distorsi', [3, 9]], ['util', 'Utilitas', [0, 12, 13, 14, 15]]];
 function tabInstr() {
   const t = P.tr(state.sel.track), out = [head('Track baru', 'track'),
     newTrackRow('Track synth (MIDI)', 'midi'), newTrackRow('Track drum (step sequencer)', 'drum'),
@@ -201,7 +200,7 @@ function tabFx() {
   out.push(h('div', { class: 'hint' }, 'Ketuk = tambah ke track terpilih. Seret ke track atau Master di arrangement. \u25B6 = dengar dulu.'));
   for (const [g, label, ks] of FX_GROUPS) {
     out.push(head(label, g));
-    for (const k of (g === 'util' ? ks.concat(rest) : ks)) if (DEVICES[k]) out.push(withAud(row(DEVICES[k].name, () => tapFx(k), '', '', null, dFx(k)), fxAud([{ type: k }])));
+    for (const k of (g === 'old' ? ks.concat(rest) : ks)) if (DEVICES[k]) out.push(withAud(row(DEVICES[k].name, () => tapFx(k), '', '', null, dFx(k)), fxAud([{ type: k }])));
   }
   return out;
 }

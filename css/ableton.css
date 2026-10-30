@@ -566,3 +566,34 @@
 #app .card > h4, .fw-body .card > h4 { height: var(--ctl-s); }
 #app .card > h4 > span, #app .card > h4 button.dv-name span, .fw-body .card > h4 button.dv-name span { font: var(--fw-b) var(--fs-4)/var(--ctl-s) var(--font); }
 .card :is(.fv-b, .lv-btn, .fv-t, .lv-tab).on { box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .25); }
+
+/* ===== Live 12 device panels built by js/fxkit.js (effects 17+): sections side by side with hairline dividers, knob name above and value
+   below in the same size as Live's, orange toggles, joined option buttons, cyan value boxes, framed dark displays. ===== */
+.card.lkcard { min-width: 0; }
+.lk { display: flex; align-items: flex-start; gap: var(--sp-3); padding: 6px 8px 8px; }
+.lk-row { display: flex; align-items: flex-start; gap: var(--sp-3); }
+.lk-col, .lk-sec { display: flex; flex-direction: column; align-items: center; gap: var(--sp-2); }
+.lk-sec > .lk-row, .lk-col > .lk-row { align-items: center; }
+.lk-st { align-self: flex-start; font: var(--fw-sb) var(--fs-3)/14px var(--font); color: var(--lv-ink); white-space: nowrap; }
+.lk-st.c { align-self: center; }
+.lk-sep { flex: none; width: 1px; align-self: stretch; margin: 2px 2px; background: var(--lv-div); }
+.lk-grow { flex: 1; }
+.lk .knob.lk-k { width: 52px; }
+.lk .knob.lk-k .k-n, .lk .knob.lk-k .k-v { font-size: var(--fs-2); line-height: 12px; height: 12px; letter-spacing: 0; }
+.lk .knob.lk-k .k-n { color: var(--lv-ink); }
+.lk .knob.lk-k svg { width: 34px; height: 34px; }
+.lk .knob.lk-k.big { width: 64px; } .lk .knob.lk-k.big svg { width: 46px; height: 46px; }
+.lk .lk-t { min-width: 40px; padding: 0 7px; }
+.lk .lk-t.link, .lk .lk-t.frz { min-width: 0; padding: 0; }
+.lk .lk-ch { display: flex; gap: 1px; background: var(--lv-edge); border: 1px solid var(--lv-edge); }
+.lk .lk-ch .lv-btn { border: 0; min-width: 34px; padding: 0 6px; }
+.lk .lk-ch.v { flex-direction: column; } .lk .lk-ch.v .lv-btn { min-width: 66px; }
+.lk .lk-ch.g2 { display: grid; grid-template-columns: repeat(2, 1fr); } .lk .lk-ch.g2 .lv-btn { min-width: 24px; }
+.lk .lk-n { justify-content: center; }
+.lk-ln { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-2); color: var(--lv-ink); white-space: nowrap; }
+.lk-tl { display: flex; flex-direction: column; align-items: center; gap: var(--sp-1); }
+.lk-lb { font-size: var(--fs-2); color: var(--lv-ink); }
+.lk .lk-d { display: block; border: 1px solid var(--lv-edge); background: var(--lv-well); touch-action: none; }
+.lk-swap { display: flex; flex-direction: column; align-items: center; }
+.lk-mid { align-self: center; margin-top: 18px; }
+.lk-bar { align-self: stretch; display: flex; align-items: center; gap: var(--sp-3); padding: 3px 4px; margin-top: -4px; background: var(--lv-well); border: 1px solid var(--lv-edge); border-top: 0; }

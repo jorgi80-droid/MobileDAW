@@ -6,13 +6,14 @@ import * as PRS from './presets.js';
 import { LAYOUT, buildSynth, DISP } from './devviz.js';
 import { FXVIEW } from './fxviz.js';
 import { samplerPanel, wavetablePanel } from './liveinst.js';
-import { INSTRUMENTS, INST_LIST, DEVICES, INST, fmtParam, noteName } from './defs.js';
+import { INSTRUMENTS, INST_LIST, DEVICES, INST, fmtParam, noteName, FX_GROUPS } from './defs.js';
 import { eng, MASTER, RET0 } from './engine.js';
 import { offerAutomation } from './automate.js';
 import * as BR from './browser.js';
 import * as P from './project.js';
 import * as FW from './floatwin.js';
 import { buildSuite, minimetersView } from './minimeters.js';
+import { kitView } from './fxkit.js';
 import { prefs } from './prefs.js';
 import * as DP from './drumpad.js';
 const { state } = P;
@@ -271,6 +272,10 @@ function fxCard(i, d, di, n, o = {}) {
   let view = null;
   const knobsDiv = h('div', { class: 'knobs side' });
   const ctx = { i, di, d, def, every: o.every || every, set: (k, v) => P.setDeviceParam(i, di, k, v), refreshKnobs: () => { for (const c of knobsDiv.children) if (c.update) c.update(); } };
+  if (def.kit) {                                                                   // Live 12 panel (js/fxkit.js): the panel lays out every control itself
+    let kv = null; try { kv = kitView(ctx); } catch (e) { console.error('fxkit', e); }
+    if (kv) return h('div', { class: 'card lkcard' + (d.bypass ? ' off' : '') }, titleFold(h('h4', {}, pw, h('span', {}, def.name), o.floating ? null : popBtn(() => openDeviceWindow(d.id)), more, o.floating ? null : foldBtn(d.id, false)), d.id), kv.el);
+  }
   if (VIEWS[d.type]) { try { view = VIEWS[d.type](ctx); } catch (e) { console.error('fxviz', e); view = null; } }
   // knobs sit beside the display and flow in columns (the number of rows follows the panel height), so a half-height panel needs no scrolling
   // a device may list its knobs band by band (sideOrder, -1 = empty cell) so each column reads Freq / Gain / Q like Live's EQ
@@ -329,7 +334,7 @@ export function render() {
   const full = t.devices.length >= 16;
   const add = h('button', { class: 'card addcard dev-drop b', 'aria-label': 'Tambah efek', disabled: full, onclick: (e) => {
     const r = e.currentTarget.getBoundingClientRect();
-    menu(Object.entries(DEVICES).map(([k, d]) => ({ label: d.name, fn: () => P.addDevice(i, +k) })), Math.max(8, r.left - 40), Math.max(8, r.top - 120));
+    menu(FX_GROUPS.flatMap(([, label, ks]) => [{ label: label.toUpperCase(), dim: true }, ...ks.filter((k) => DEVICES[k]).map((k) => ({ label: DEVICES[k].name, fn: () => P.addDevice(i, k) }))]), Math.max(8, r.left - 40), Math.max(8, r.top - 120));
   } }, h('b', { 'aria-hidden': 'true' }, '+'), h('span', {}, full ? 'Rantai penuh (16 efek)' : 'Ketuk untuk menambah efek'), h('small', {}, 'atau seret efek dari Browser ke sini'));
   put(add, 'add');
   root.replaceChildren(scroll);

@@ -382,6 +382,67 @@ export const DEVICES = {
     { n: 'Channels', min: 0, max: 1, def: 0, step: 1, hidden: true } ] },
 };
 
+// ---- Live 12 effects (engine: js/engine/fx3.js). kit: the panel is laid out by js/fxkit.js (no automatic knob column).
+const q = (n, min, max, def, o = {}) => ({ n, min, max, def, ...o });
+const onoff = (n, def = 0) => q(n, 0, 1, def, { step: 1, fmt: 'onoff' });
+const list = (n, items, def = 0) => q(n, 0, items.length - 1, def, { step: 1, fmt: 'list', items });
+const DIV16 = ['1', '2', '3', '4', '5', '6', '8', '16'];
+Object.assign(DEVICES, {
+  17: { name: 'Delay', kit: true, params: [
+    onoff('L Sync', 1), list('L 16th', DIV16, 2), q('L Time', 1, 5000, 250, { curve: 'log', unit: 'ms' }), q('L Offset', -0.333, 0.333, 0, { fmt: 'pct1' }),
+    onoff('R Sync', 1), list('R 16th', DIV16, 3), q('R Time', 1, 5000, 300, { curve: 'log', unit: 'ms' }), q('R Offset', -0.333, 0.333, 0, { fmt: 'pct1' }),
+    onoff('Link', 1), q('Feedback', 0, 0.95, 0.5, { unit: '%' }), onoff('Freeze'), onoff('Filter', 1), q('Filter Freq', 50, 18000, 1000, { curve: 'log', unit: 'Hz' }),
+    q('Filter Width', 0.5, 9, 6.5, { unit: '' }), q('Mod Rate', 0.01, 40, 0.5, { curve: 'log', unit: 'Hz' }), q('Mod Filter', 0, 1, 0, { unit: '%' }), q('Mod Time', 0, 1, 0, { unit: '%' }),
+    list('Mode', ['Repitch', 'Fade', 'Jump'], 1), onoff('Ping Pong'), q('Dry/Wet', 0, 1, 0.5, { unit: '%' })] },
+  18: { name: 'Filter Delay', kit: true, params: [
+    ...['L', 'L+R', 'R'].flatMap((c, k) => [onoff(c + ' On', 1), onoff(c + ' Filter', 1), q(c + ' Freq', 50, 18000, [1010, 156, 1730][k], { curve: 'log', unit: 'Hz' }), q(c + ' Width', 0.5, 9, [2.09, 3.42, 2.36][k], { unit: '' }),
+      onoff(c + ' Sync', 0), list(c + ' 16th', DIV16, 3), q(c + ' Time', 1, 3000, 250, { curve: 'log', unit: 'ms' }), q(c + ' Feedback', 0, 0.95, 0.2, { unit: '%' }), q(c + ' Pan', -1, 1, [-0.5, 0, 0.5][k], { fmt: 'pan' }), q(c + ' Volume', -60, 12, 0, { fmt: 'dbinf' })]),
+    q('Dry', -60, 12, 0, { fmt: 'dbinf' })] },
+  19: { name: 'Beat Repeat', kit: true, params: [
+    list('Interval', ['1/32', '1/16', '1/8', '1/4', '1/2', '1 Bar', '2 Bars', '4 Bars'], 5), q('Offset', 0, 15, 0, { step: 1, fmt: 'num' }),
+    list('Grid', ['1/4', '1/6', '1/8', '1/12', '1/16', '1/24', '1/32', '1/48', '1/64'], 4), q('Variation', 0, 10, 0, { step: 1, fmt: 'num' }), q('Chance', 0, 1, 1, { unit: '%' }),
+    q('Gate', 1, 64, 8, { step: 1, fmt: 'list16' }), q('Pitch', -48, 0, 0, { step: 1, fmt: 'st' }), q('Pitch Decay', 0, 1, 0, { unit: '%' }), onoff('Filter', 1),
+    q('Filter Freq', 50, 18000, 1000, { curve: 'log', unit: 'Hz' }), q('Filter Width', 0.5, 9, 6, { unit: '' }), list('Mix Mode', ['Mix', 'Ins', 'Gate'], 0),
+    q('Volume', -60, 0, 0, { fmt: 'dbinf' }), q('Decay', 0, 1, 0, { unit: '%' }), onoff('No Triplets'), onoff('Repeat')] },
+  20: { name: 'Chorus-Ensemble', kit: true, params: [
+    list('Mode', ['Chorus', 'Ensemble', 'Vibrato'], 0), q('Rate', 0.01, 10, 0.62, { curve: 'log', unit: 'Hz' }), q('Amount', 0, 1, 0.59, { unit: '%' }), q('Feedback', 0, 0.95, 0.3, { unit: '%' }),
+    onoff('Invert'), onoff('HP Filter'), q('HP Freq', 20, 2000, 50, { curve: 'log', unit: 'Hz' }), q('Width', 0, 2, 1, { fmt: 'width' }), q('Time', 1, 40, 20, { unit: 'ms' }),
+    list('Taps', ['1', '2'], 1), q('Warmth', 0, 1, 0, { unit: '%' }), q('Output', -24, 12, 0, { unit: 'dB' }), q('Dry/Wet', 0, 1, 0.5, { unit: '%' })] },
+  21: { name: 'Phaser-Flanger', kit: true, params: [
+    list('Mode', ['Phaser', 'Flanger', 'Doubler'], 0), q('Notches', 1, 24, 4, { step: 1, fmt: 'num' }), q('Center', 20, 8000, 769, { curve: 'log', unit: 'Hz' }), q('Spread', 0, 1, 0.37, { unit: '%' }),
+    q('Blend', 0, 1, 0.62, { unit: '' }), q('Freq', 0.01, 10, 0.5, { curve: 'log', unit: 'Hz' }), onoff('Sync'), q('Amount', 0, 1, 0.69, { unit: '%' }), q('Feedback', 0, 0.95, 0.12, { unit: '%' }),
+    onoff('Invert'), q('Warmth', 0, 1, 0.27, { unit: '%' }), q('Output', -24, 12, 0, { unit: 'dB' }), q('Dry/Wet', 0, 1, 0.5, { unit: '%' }), q('Time', 0.1, 20, 2, { unit: 'ms' }),
+    list('Sync Rate', ['1/16', '1/8', '1/4', '1/2', '1 Bar', '2 Bars', '4 Bars'], 3)] },
+  22: { name: 'Auto Pan', kit: true, params: [
+    q('Amount', 0, 1, 0.5, { unit: '%' }), q('Rate', 0.01, 20, 1, { curve: 'log', unit: 'Hz' }), onoff('Sync'), list('Sync Rate', ['1/16', '1/8', '1/4', '1/2', '1 Bar', '2 Bars', '4 Bars'], 2),
+    q('Phase', 0, 360, 180, { fmt: 'deg' }), q('Shape', 0, 1, 0, { unit: '%' }), q('Offset', 0, 360, 0, { fmt: 'deg' }), list('Waveform', ['Sine', 'Triangle', 'Saw Down', 'Random'], 0), onoff('Invert')] },
+  23: { name: 'Gate', kit: true, params: [
+    q('Threshold', -80, 0, -40, { unit: 'dB' }), q('Return', 0, 24, 3, { unit: 'dB' }), q('Attack', 0.02, 150, 0.1, { curve: 'log', unit: 'ms' }), q('Hold', 0, 1000, 10, { unit: 'ms' }),
+    q('Release', 1, 3000, 100, { curve: 'log', unit: 'ms' }), q('Floor', -80, 0, -80, { fmt: 'dbinf' }), onoff('Flip')] },
+  24: { name: 'Glue Compressor', kit: true, params: [
+    list('Attack', ['0.01', '0.1', '0.3', '1', '3', '10', '30'], 3), list('Release', ['0.1', '0.2', '0.4', '0.6', '0.8', '1.2', 'A'], 2), list('Ratio', ['2', '4', '10'], 0),
+    q('Threshold', -40, 0, -10, { unit: 'dB' }), q('Makeup', 0, 20, 0, { unit: 'dB' }), q('Range', 0, 70, 70, { unit: 'dB' }), onoff('Soft Clip'), q('Dry/Wet', 0, 1, 1, { unit: '%' })] },
+  25: { name: 'Channel EQ', kit: true, params: [
+    onoff('HP 80 Hz'), q('Low', -15, 15, 0, { unit: 'dB' }), q('Mid', -12, 12, 0, { unit: 'dB' }), q('Mid Freq', 120, 7500, 1500, { curve: 'log', unit: 'Hz' }), q('High', -15, 15, 0, { unit: 'dB' }), q('Output', -15, 15, 0, { unit: 'dB' })] },
+  26: { name: 'Erosion', kit: true, params: [list('Mode', ['Noise', 'Wide Noise', 'Sine'], 0), q('Freq', 100, 18000, 670, { curve: 'log', unit: 'Hz' }), q('Width', 0.08, 10, 0.3, { curve: 'log', unit: '' }), q('Amount', 0, 1, 0.6, { unit: '%' })] },
+  27: { name: 'Redux', kit: true, params: [
+    q('Rate', 200, 40000, 40000, { curve: 'log', unit: 'Hz' }), q('Jitter', 0, 1, 0, { unit: '%' }), onoff('Pre Filter', 1), q('Bits', 1, 16, 8, { step: 1, fmt: 'num' }), onoff('Quantize'),
+    q('Shape', 0, 1, 0, { unit: '%' }), onoff('DC Shift'), q('Dry/Wet', 0, 1, 1, { unit: '%' })] },
+  28: { name: 'Vinyl Distortion', kit: true, params: [
+    onoff('Tracing', 1), q('Tracing Drive', 0, 1, 0.14, { unit: '' }), q('Tracing Freq', 20, 20000, 10400, { curve: 'log', unit: 'Hz' }), q('Tracing Width', 0.1, 10, 1.67, { curve: 'log', unit: '' }),
+    onoff('Pinch', 1), q('Pinch Drive', 0, 1, 0.14, { unit: '' }), q('Pinch Freq', 20, 20000, 5080, { curve: 'log', unit: 'Hz' }), q('Pinch Width', 0.1, 10, 3, { curve: 'log', unit: '' }),
+    list('Stereo', ['Stereo', 'Mono'], 0), list('Pinch Type', ['Soft', 'Hard'], 1), q('Crackle Volume', 0, 1, 0, { unit: '' }), q('Density', 0, 1, 0, { unit: '' }), q('Drive', 0, 2, 1, { unit: '' })] },
+  29: { name: 'Drum Buss', kit: true, params: [
+    q('Drive', 0, 1, 0.45, { unit: '%' }), list('Type', ['Soft', 'Medium', 'Hard'], 2), q('Trim', -12, 0, -12, { unit: 'dB' }), onoff('Comp', 1), q('Crunch', 0, 1, 0, { unit: '%' }),
+    q('Damp', 4500, 20000, 20000, { curve: 'log', unit: 'Hz' }), q('Transients', -1, 1, -0.45, { unit: '' }), q('Boom', 0, 1, 0, { unit: '%' }), q('Freq', 30, 90, 49, { unit: 'Hz' }),
+    q('Decay', 0, 1, 1, { unit: '%' }), q('Output', -24, 12, -4, { unit: 'dB' }), q('Dry/Wet', 0, 1, 1, { unit: '%' })] },
+  30: { name: 'Tuner', kit: true, params: [q('Reference', 410, 480, 440, { unit: 'Hz' })] },
+});
+
+// Audio effect categories as in Live 12's browser. Older devices that have no Live 12 counterpart stay loadable under 'Lainnya (lama)'.
+export const FX_GROUPS = [['loop', 'Delay & Loop', [19, 17, 6, 18]], ['drive', 'Drive & Color', [29, 26, 27, 9, 3, 28]], ['dyn', 'Dynamics', [4, 23, 24, 5]],
+  ['eq', 'EQ & Filters', [1, 25, 8, 2]], ['mod', 'Pitch & Modulation', [22, 20, 21]], ['rev', 'Reverb & Resonance', [7]], ['util', 'Utilities', [0, 13, 30, 16]], ['old', 'Lainnya (lama)', [10, 12, 14, 15]]];
+
 // Parameter <-> 0..1 mapping shared by knobs, automation editing and the engine sync.
 export const normOf = (p, v) => { const x = p.curve === 'log' ? Math.log(v / p.min) / Math.log(p.max / p.min) : (v - p.min) / (p.max - p.min); return x < 0 ? 0 : x > 1 ? 1 : x; };
 export function valOf(p, x) {
@@ -553,6 +614,11 @@ export function fmtParam(p, v) {
     case 'umode': return ['None', 'Classic', 'Shimmer', 'Noise', 'Phase Sync', 'Pos Spread', 'Random'][Math.round(v)] || '';
     case 'wfx': return ['None', 'FM', 'Classic', 'Modern'][Math.round(v)] || '';
     case 'wtab': return wtName(v);
+    case 'list16': return Math.round(v) % 16 === 0 ? Math.round(v) / 16 + (Math.round(v) === 16 ? ' Bar' : ' Bars') : Math.round(v) + '/16';
+    case 'list': return (p.items || [])[Math.round(v - p.min)] ?? '';
+    case 'dbinf': return v <= -60 ? '-inf dB' : v.toFixed(1) + ' dB';
+    case 'deg': return Math.round(v) + '\u00B0';
+    case 'pct1': return (v * 100).toFixed(1) + ' %';
     case 'pan': return Math.abs(v) < 0.01 ? 'C' : (v < 0 ? Math.round(-v * 50) + 'L' : Math.round(v * 50) + 'R');
   }
   if (p.unit === '%') return Math.round(v * 100) + ' %';

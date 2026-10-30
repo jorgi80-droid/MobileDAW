@@ -179,7 +179,7 @@ export class Engine {
     const x = L[0] + L[n - 1] + R[n - 1];
     if (!(x > -1e6 && x < 1e6)) { d.bypass = true; L.fill(0, 0, n); R.fill(0, 0, n); this.err({ kind: 'dev', strip, dev: di, msg: 'nilai tidak valid (NaN/tak hingga)' }); }
   }
-  runChain(s, strip, L, R, n) { const dv = s.dev; for (let i = 0; i < dv.length; i++) if (!dv[i].bypass) this.runDev(strip, i, dv[i], L, R, n); }
+  runChain(s, strip, L, R, n) { const dv = s.dev; for (let i = 0; i < dv.length; i++) if (!dv[i].bypass) { if (dv[i].tr) dv[i].tr(this.playing, this.f2t(this.pos) / PPQ); this.runDev(strip, i, dv[i], L, R, n); } }   // tr: bar-synced effects (Beat Repeat, Auto Pan) read the song position
   spt() { return this.sr * 60 / (this.bpm * PPQ); }
   balance(L, R, a, b, pan) { if (!pan) return; const gl = pan > 0 ? 1 - pan : 1, gr = pan < 0 ? 1 + pan : 1; for (let k = a; k < b; k++) { L[k] *= gl; R[k] *= gr; } }
   panic() { for (let t = 0; t < MAX_TRACKS; t++) this.s[t].nPan = 0; for (let t = 0; t < MAX_TRACKS; t++) if (this.s[t].inst) this.s[t].inst.allOff(); }
