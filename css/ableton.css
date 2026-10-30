@@ -329,3 +329,14 @@
 .bar .b:active, .selbar .b:active { background: var(--lv-sel); color: #fff; scale: 1; }
 .selbar .cnt { padding: 0 10px; color: var(--lv-dim); font-size: 11px; }
 [data-theme="light"] .menu .mi:active, [data-theme="light"] .menu .mi:hover, [data-theme="light"] .bar .b:active { color: #fff; }
+
+/* ===== Clip View for audio clips (Live 12): Audio / Pitch / Warp / Region boxes in the properties panel, Live's sample info strip ===== */
+.cp-full > * { flex: 1 1 auto; max-width: none; }
+.cp .lslider { width: 100% !important; height: 24px; }
+.ae-info { height: 22px; padding: 0 8px; gap: 0; background: var(--lv-well); border-bottom: 1px solid var(--lv-edge); color: var(--lv-dim); font-size: 9.5px; letter-spacing: .04em; text-transform: uppercase; }
+.ae-info b { color: var(--lv-ink); font-size: 11px; letter-spacing: 0; text-transform: none; margin-right: 12px; }
+.ae-info span { margin-right: 12px; } .ae-info span i { color: var(--lv-ink); font-size: 10.5px; letter-spacing: 0; text-transform: none; }
+.ae-info span.hot i { color: var(--lv-orink); }
+.cp-grid.g2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.cp-grid .cp-sw { border: 0; height: 26px; padding: 0 4px; gap: 5px; font-size: 10.5px; }
+.cp-grid.g2 > :last-child:nth-child(odd) { grid-column: span 2; }

@@ -927,7 +927,7 @@ function buildProps() {
     kids.push(sec('Envelope', row('Target', val(P.autoLabel(t))),
       h('div', { class: 'cp-line' }, btn('Ratakan', () => { checkpoint(); const v0 = cl.pts.length ? cl.pts[0].v : 0.5; cl.pts = [{ t: 0, v: v0 }, { t: cl.len, v: v0 }]; asel = null; changed(); }))));
   }
-  if (kind === 'audio') kids.push(sec('Sample', row('File', val(((cl.dsample || cl.sample) || {}).name || '-'))));
+  if (kind === 'audio') kids.push(...AE.panel({ sec, row, val, ch, sw, btn }), sec('Sample', row('File', val(((cl.dsample || cl.sample) || {}).name || '-'))));   // Audio / Pitch / Warp / Region boxes
   props.replaceChildren(h('div', { class: 'cp-in' }, ...kids));
 }
 function trimToLen(cl) {                                     // after a length change: notes / points past the new end go (the change is one undo step)
@@ -1029,6 +1029,7 @@ export function initEditor(container) {
   root.append(props, h('div', { class: 'ed-main' }, tools, body));
   ctx = canvas.getContext('2d', { alpha: false }); octx = ov.getContext('2d');
   window.addEventListener('themechange', invalidate); window.addEventListener('applayout', fit);
+  AE.onPanel(() => buildProps());                     // the audio editor rebuilt its controls: the panel shows the clip's new audio settings
   const R = rollHandlers(), S = stepHandlers(), A = autoHandlers();
   const route = (name) => (...a) => { if (!cur()) return undefined; return (isAuto() ? A : stepsMode() ? S : R)[name]?.(...a); };   // a looped clip is edited as its loop source (no unrolling)
   attachGestures(ov, Object.fromEntries(['hit', 'tap', 'dtap', 'long', 'dragStart', 'drag', 'dragEnd', 'pan', 'panEnd', 'pinch', 'wheel'].map((k) => [k, route(k)])));

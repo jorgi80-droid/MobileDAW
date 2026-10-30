@@ -43,10 +43,10 @@ function draw() {
   const r = cur(); if (!r || !W) return;
   const c = r.clip, e0 = eff(c), D = e0.duration, pk = e0.peaks || [];
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.fillStyle = C('#1b1b1c'); ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = C('#202022'); ctx.fillRect(0, 0, W, H);
   const top = RULER, hh = H - RULER, mid = top + hh / 2;
   // ruler: adaptive seconds
-  ctx.fillStyle = C('#2a2a2d'); ctx.fillRect(0, 0, W, RULER);
+  ctx.fillStyle = C('#2c2c2f'); ctx.fillRect(0, 0, W, RULER); ctx.fillStyle = C('#141415'); ctx.fillRect(0, RULER - 1, W, 1);
   const steps = [0.01, 0.02, 0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 30, 60], stp = steps.find((s) => s * v.pps >= 60) || 60;
   ctx.fillStyle = C('#9a9aa2'); ctx.font = '10px system-ui'; ctx.textBaseline = 'middle';
   for (let t = Math.ceil(v.x0 / stp) * stp; xs(t) < W; t += stp) { const x = Math.round(xs(t)) + 0.5; ctx.fillRect(x, RULER - 5, 1, 5); ctx.fillText(stp < 1 ? t.toFixed(2) + 's' : t.toFixed(stp < 1 ? 2 : 0) + 's', x + 3, RULER / 2); ctx.fillStyle = C('#2c2c30'); ctx.fillRect(x, RULER, 1, hh); ctx.fillStyle = C('#9a9aa2'); }
@@ -71,11 +71,14 @@ function draw() {
   ctx.fillStyle = 'rgba(255,255,255,.12)'; ctx.strokeStyle = 'rgba(255,255,255,.7)'; ctx.lineWidth = 1;
   if (fi > 0) { const fx = xs(o + fi); ctx.beginPath(); ctx.moveTo(x0, top + hh); ctx.lineTo(fx, top); ctx.lineTo(x0, top); ctx.closePath(); ctx.fill(); ctx.beginPath(); ctx.moveTo(x0, top + hh); ctx.lineTo(fx, top); ctx.stroke(); }
   if (fo > 0) { const fx = xs(e - fo); ctx.beginPath(); ctx.moveTo(x1, top + hh); ctx.lineTo(fx, top); ctx.lineTo(x1, top); ctx.closePath(); ctx.fill(); ctx.beginPath(); ctx.moveTo(x1, top + hh); ctx.lineTo(fx, top); ctx.stroke(); }
-  // handles
+  // region brace in the ruler (looped: the repeating piece), Start / End markers as Live's flags, fade handles as small dots
+  ctx.fillStyle = state.tracks[r.track].color; ctx.fillRect(Math.max(0, x0), RULER - 4, Math.max(0, Math.min(W, x1) - Math.max(0, x0)), 3);
   ctx.fillStyle = C('#ffa722');
   ctx.fillRect(x0 - 1, top, 2, hh); ctx.fillRect(x1 - 1, top, 2, hh);
-  ctx.fillRect(x0 - 1, top, GRIP * 0.6, 14); ctx.fillRect(x1 - GRIP * 0.6 + 1, top, GRIP * 0.6, 14);
-  ctx.fillStyle = C('#fff'); ctx.beginPath(); ctx.arc(xs(o + fi), top + 4, 5, 0, 6.2832); ctx.fill(); ctx.beginPath(); ctx.arc(xs(e - fo), top + 4, 5, 0, 6.2832); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(x0 - 1, top); ctx.lineTo(x0 + 13, top); ctx.lineTo(x0 + 13, top + 11); ctx.lineTo(x0 - 1, top + 15); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(x1 + 1, top); ctx.lineTo(x1 - 13, top); ctx.lineTo(x1 - 13, top + 11); ctx.lineTo(x1 + 1, top + 15); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = C('#1a1100'); ctx.font = '700 9px system-ui'; ctx.textBaseline = 'middle'; ctx.textAlign = 'center'; ctx.fillText('S', x0 + 6, top + 6.5); ctx.fillText('E', x1 - 6, top + 6.5); ctx.textAlign = 'left';
+  for (const fx of [xs(o + fi), xs(e - fo)]) { ctx.beginPath(); ctx.arc(fx, top + 22, 4.5, 0, 6.2832); ctx.fillStyle = C('#ffffff'); ctx.fill(); ctx.strokeStyle = 'rgba(0,0,0,.5)'; ctx.lineWidth = 1; ctx.stroke(); }
   setInfo(c, e0, D, o, e, fi, fo);
 }
 const stOf = (p) => Math.round(p || 0), ctOf = (p) => Math.round(((p || 0) - Math.round(p || 0)) * 100), pitchOf = (st, ct) => Math.round((st + ct / 100) * 100) / 100;
@@ -138,44 +141,54 @@ function peakOf(c) {
   return m;
 }
 
+// Live 12 Clip View for audio: the clip's audio settings live in the properties panel on the left (Audio, Pitch, Warp and Region boxes, built
+// by panel() with the panel's own controls); the toolbar above the waveform keeps only the view / edit commands.
+let panelHook = null;
+export const onPanel = (fn) => { panelHook = fn; };
 function build() {
   const r = cur(); if (!r) return;
   const c = r.clip, w = c.warp || { ratio: 1, rev: false, beats: 0, pitch: 0 };
   const B = (label, fn, on, cls = '') => h('button', { class: 'b' + (on ? ' on' : '') + (cls ? ' ' + cls : ''), onclick: fn }, label);
-  const at = (e) => { const q = e.currentTarget.getBoundingClientRect(); return [q.left, q.bottom + 2]; };
-  const dbOf = (g) => (g > 0.004 ? clamp(20 * Math.log10(g), -48, 18) : -48);          // slider works in dB: -inf .. +18 (= the x8 normalise ceiling), 0 dB = unity
-  const lvl = slider({ label: 'Level', min: -48, max: 18, home: 0, step: 0.1, speed: 0.5, value: dbOf(c.gain), width: 150, fmt: (db) => (db <= -48 ? '-\u221E' : (db > 0 ? '+' : '') + db.toFixed(1)) + ' dB', onStart: () => checkpoint(), onInput: (db) => { c.gain = db <= -48 ? 0 : Math.pow(10, db / 20); touch(r); } });
   const G = (...kids) => h('div', { class: 'ed-g' }, kids.filter(Boolean));
-  const sep = () => h('i', { class: 'ed-sep' });
   tools.replaceChildren(...[
-    G(B(c.srcBpm ? `BPM ${+c.srcBpm.toFixed(2)}` : 'BPM', () => bpmPanel(r), !!c.srcBpm),
-      B(c.warpAuto ? 'Sync \u2713' : 'Sync', () => quickSync(r), !!c.warpAuto),
-      P.gridLocked(c) ? B('Swing ' + Math.round(P.swingOf(c) * 100) + '%' + (c.swing != null && c.swing >= 0 ? '' : ' (global)'), (e) => {
-        const own = c.swing != null && c.swing >= 0, setSw = (v) => { checkpoint(); if (v == null) delete c.swing; else c.swing = v; P.scheduleBake(60); P.emit('clips'); build(); };
-        menu([{ label: 'Ikuti swing global (' + Math.round(state.groove.amt * 100) + '%)', check: !own, fn: () => setSw(null) },
-          ...[0, 25, 50, 60, 75, 100].map((p) => ({ label: p + '%', check: own && Math.round(c.swing * 100) === p, fn: () => setSw(p / 100) }))], ...at(e));
-      }, P.swingOf(c) > 0, 'dd') : null,
-      B(w.beats ? `Warp ${w.beats} beat` : 'Warp tempo', (e) => menu([1, 2, 4, 8, 16].map((b) => ({ label: `Regangkan ke ${b} beat`, check: w.beats === b, fn: () => run(r, { beats: b }, `Di-warp ke ${b} beat pada ${state.bpm} BPM.`) })), ...at(e)), !!w.beats, 'dd'),
-      w.beats && !c.warpAuto ? B('Sesuaikan tempo', () => { checkpoint(); P.retempoClip(r.track, c.id).then((o) => { toast(o.error || 'Warp disesuaikan dengan tempo sekarang.'); fitView(c); dirty = true; build(); }); }) : null),
-    sep(),
-    lvl,
-    G(
-      B(`Transpose ${stOf(w.pitch) > 0 ? '+' : ''}${stOf(w.pitch)} st`, (e) => menu(Array.from({ length: 25 }, (_, k) => k - 12).map((st) => ({ label: (st > 0 ? '+' : '') + st + ' semitone', check: stOf(w.pitch) === st, fn: () => run(r, { pitch: pitchOf(st, ctOf(w.pitch)) }, `Transpose ${st > 0 ? '+' : ''}${st} semitone.`) })), ...at(e)), !!stOf(w.pitch), 'dd'),
-      B(`Detune ${ctOf(w.pitch) > 0 ? '+' : ''}${ctOf(w.pitch)} ct`, (e) => menu([-50, -25, -10, -5, 0, 5, 10, 25, 50].map((ct) => ({ label: (ct > 0 ? '+' : '') + ct + ' cent', check: ctOf(w.pitch) === ct, fn: () => run(r, { pitch: pitchOf(stOf(w.pitch), ct) }, `Detune ${ct > 0 ? '+' : ''}${ct} cent.`) })), ...at(e)), !!ctOf(w.pitch), 'dd')),
-    G(
-      B(P.loopOf(c) ? `Loop ${Math.round(c.len / c.ll * 100) / 100}x` : 'Loop', (e) => menu([{ label: 'Loop mati', check: !P.loopOf(c), fn: () => { checkpoint(); P.setAudioLoop(r.track, c.id, 1); toast('Loop dimatikan.'); fitView(c); dirty = true; build(); } },
-        ...[2, 4, 8, 16].map((n) => ({ label: `Ulangi ${n}x`, check: P.loopOf(c) && Math.round(c.len / c.ll) === n, fn: () => { checkpoint(); P.setAudioLoop(r.track, c.id, n); toast(`Klip diulang ${n}x.`); fitView(c); dirty = true; build(); } }))], ...at(e)), !!P.loopOf(c), 'dd'),
-      B('Start/End', (e) => menu([
-        { label: 'Ketik Start (dtk)\u2026', fn: () => ask('Start dalam sample (detik)', +region(c)[0].toFixed(3), (v) => { if (Number.isFinite(v) && v >= 0 && v < region(c)[1] - 0.02) { checkpoint(); setStart(r, v); touch(r); build(); } else toast('Start harus sebelum End dan di dalam sample.'); }, 'number') },
-        { label: 'Ketik End (dtk)\u2026', fn: () => ask('End dalam sample (detik)', +region(c)[1].toFixed(3), (v) => { if (Number.isFinite(v) && v > region(c)[0] + 0.02 && v <= eff(c).duration) { checkpoint(); setEnd(r, v); touch(r); build(); } else toast('End harus setelah Start dan di dalam sample.'); }, 'number') },
-      ], ...at(e)), false, 'dd')),
-    sep(),
-    G(B('Reverse', () => run(r, { rev: !w.rev }, w.rev ? 'Kembali normal.' : 'Klip dibalik.'), w.rev),
-      B('Normalisasi', () => { const m = peakOf(c); if (m < 0.001) return toast('Audio terlalu pelan atau kosong.'); checkpoint(); c.gain = Math.min(8, 0.98 / m); touch(r); build(); toast(`Level dinaikkan ke ${gainDb(c.gain)}.`); }),
-      B('Fade', (e) => menu([['Tanpa fade', 0], ['10 ms', 0.01], ['50 ms', 0.05], ['200 ms', 0.2], ['1 detik', 1]].map(([l, s]) => ({ label: l, fn: () => { checkpoint(); const [o, en] = region(c), mx = (en - o) / 2; c.fadeIn = Math.min(s, mx); c.fadeOut = Math.min(s, mx); touch(r); } })), ...at(e)), !!(c.fadeIn || c.fadeOut), 'dd')),
     G(B('Split', () => splitAt(r, cursor)), B('Fit', () => { fitView(c); dirty = true; })),
     (w.rev || w.ratio !== 1 || w.pitch || c.warpAuto) ? G(B('Asli', () => run(r, { reset: true }, 'Klip dikembalikan ke audio asli.'), false, 'reset')) : null,
   ].filter(Boolean));
+  if (panelHook) panelHook();
+}
+// ui = the panel's control factories: { sec(title, ...rows), row(label, ctl), val(text), ch(text, fn(x, y)), sw(text, on, fn), btn(text, fn) }
+export function panel(ui) {
+  const r = cur(); if (!r || !root) return [];
+  const c = r.clip, w = c.warp || { ratio: 1, rev: false, beats: 0, pitch: 0 };
+  const dbOf = (g) => (g > 0.004 ? clamp(20 * Math.log10(g), -48, 18) : -48);          // slider works in dB: -inf .. +18 (= the x8 normalise ceiling), 0 dB = unity
+  const lvl = slider({ label: 'Gain', min: -48, max: 18, home: 0, step: 0.1, speed: 0.5, value: dbOf(c.gain), width: 172, fmt: (db) => (db <= -48 ? '-∞' : (db > 0 ? '+' : '') + db.toFixed(1)) + ' dB', onStart: () => checkpoint(), onInput: (db) => { c.gain = db <= -48 ? 0 : Math.pow(10, db / 20); touch(r); } });
+  const st = stOf(w.pitch), ct = ctOf(w.pitch), sgn = (n) => (n > 0 ? '+' : '') + n;
+  const own = c.swing != null && c.swing >= 0, setSw = (v) => { checkpoint(); if (v == null) delete c.swing; else c.swing = v; P.scheduleBake(60); P.emit('clips'); build(); };
+  const regionMenu = (x, y) => menu([
+    { label: 'Ketik Start (dtk)…', fn: () => ask('Start dalam sample (detik)', +region(c)[0].toFixed(3), (v) => { if (Number.isFinite(v) && v >= 0 && v < region(c)[1] - 0.02) { checkpoint(); setStart(r, v); touch(r); build(); } else toast('Start harus sebelum End dan di dalam sample.'); }, 'number') },
+    { label: 'Ketik End (dtk)…', fn: () => ask('End dalam sample (detik)', +region(c)[1].toFixed(3), (v) => { if (Number.isFinite(v) && v > region(c)[0] + 0.02 && v <= eff(c).duration) { checkpoint(); setEnd(r, v); touch(r); build(); } else toast('End harus setelah Start dan di dalam sample.'); }, 'number') },
+  ], x, y);
+  const [o, e] = region(c);
+  return [
+    ui.sec('Audio', h('div', { class: 'cp-line cp-full' }, lvl),
+      h('div', { class: 'cp-grid g2' },
+        ui.btn('Normalisasi', () => { const m = peakOf(c); if (m < 0.001) return toast('Audio terlalu pelan atau kosong.'); checkpoint(); c.gain = Math.min(8, 0.98 / m); touch(r); build(); toast(`Level dinaikkan ke ${gainDb(c.gain)}.`); }),
+        ui.sw('Reverse', !!w.rev, () => run(r, { rev: !w.rev }, w.rev ? 'Kembali normal.' : 'Klip dibalik.')),
+        ui.btn('Fade…', (ev) => { const q = ev.currentTarget.getBoundingClientRect(); menu([['Tanpa fade', 0], ['10 ms', 0.01], ['50 ms', 0.05], ['200 ms', 0.2], ['1 detik', 1]].map(([l, sc]) => ({ label: l, fn: () => { checkpoint(); const [o2, en] = region(c), mx = (en - o2) / 2; c.fadeIn = Math.min(sc, mx); c.fadeOut = Math.min(sc, mx); touch(r); } })), q.left, q.bottom + 2); }))),
+    ui.sec('Pitch',
+      ui.row('Transpose', ui.ch(sgn(st) + ' st', (x, y) => menu(Array.from({ length: 25 }, (_, k) => k - 12).map((v) => ({ label: sgn(v) + ' semitone', check: st === v, fn: () => run(r, { pitch: pitchOf(v, ct) }, `Transpose ${sgn(v)} semitone.`) })), x, y))),
+      ui.row('Detune', ui.ch(sgn(ct) + ' ct', (x, y) => menu([-50, -25, -10, -5, 0, 5, 10, 25, 50].map((v) => ({ label: sgn(v) + ' cent', check: ct === v, fn: () => run(r, { pitch: pitchOf(st, v) }, `Detune ${sgn(v)} cent.`) })), x, y)))),
+    ui.sec('Warp',
+      h('div', { class: 'cp-line' }, ui.sw('Sync', !!c.warpAuto, () => quickSync(r)), ui.btn(c.srcBpm ? (+c.srcBpm.toFixed(2)) + ' BPM' : 'BPM…', () => bpmPanel(r))),
+      ui.row('Regangkan', ui.ch(w.beats ? w.beats + ' beat' : 'Mati', (x, y) => menu([1, 2, 4, 8, 16].map((b) => ({ label: `Regangkan ke ${b} beat`, check: w.beats === b, fn: () => run(r, { beats: b }, `Di-warp ke ${b} beat pada ${state.bpm} BPM.`) })), x, y))),
+      w.beats && !c.warpAuto ? h('div', { class: 'cp-line' }, ui.btn('Sesuaikan tempo', () => { checkpoint(); P.retempoClip(r.track, c.id).then((q) => { toast(q.error || 'Warp disesuaikan dengan tempo sekarang.'); fitView(c); dirty = true; build(); }); })) : null,
+      P.gridLocked(c) ? ui.row('Groove', ui.ch(Math.round(P.swingOf(c) * 100) + '%' + (own ? '' : ' global'), (x, y) => menu([{ label: 'Ikuti swing global (' + Math.round(state.groove.amt * 100) + '%)', check: !own, fn: () => setSw(null) },
+        ...[0, 25, 50, 60, 75, 100].map((q) => ({ label: q + '%', check: own && Math.round(c.swing * 100) === q, fn: () => setSw(q / 100) }))], x, y))) : null),
+    ui.sec('Region',
+      ui.row('Start', ui.ch(o.toFixed(2) + ' s', regionMenu)), ui.row('End', ui.ch(e.toFixed(2) + ' s', regionMenu)),
+      ui.row('Loop', ui.ch(P.loopOf(c) ? Math.round(c.len / c.ll * 100) / 100 + 'x' : 'Mati', (x, y) => menu([{ label: 'Loop mati', check: !P.loopOf(c), fn: () => { checkpoint(); P.setAudioLoop(r.track, c.id, 1); toast('Loop dimatikan.'); fitView(c); dirty = true; build(); } },
+        ...[2, 4, 8, 16].map((n) => ({ label: `Ulangi ${n}x`, check: P.loopOf(c) && Math.round(c.len / c.ll) === n, fn: () => { checkpoint(); P.setAudioLoop(r.track, c.id, n); toast(`Klip diulang ${n}x.`); fitView(c); dirty = true; build(); } }))], x, y)))),
+  ];
 }
 // ------------------------------------------------------------------ sample tempo: detect, edit, sync to the project
 const live = (id) => { const q = cur(); return q && q.clip.id === id ? q : null; };
@@ -253,8 +266,8 @@ function hit(x, y) {
   const r = cur(); if (!r) return null;
   const c = r.clip, [o, e] = region(c), x0 = xs(o), x1 = xs(e), top = RULER;
   const fi = xs(o + (c.fadeIn || 0)), fo = xs(e - (c.fadeOut || 0));
-  if (Math.abs(x - fi) < 16 && y < top + 22) return { k: 'fi' };
-  if (Math.abs(x - fo) < 16 && y < top + 22) return { k: 'fo' };
+  if (Math.abs(x - fi) < 16 && y > top + 10 && y < top + 34) return { k: 'fi' };   // fade dots sit just under the Start / End flags
+  if (Math.abs(x - fo) < 16 && y > top + 10 && y < top + 34) return { k: 'fo' };
   if (Math.abs(x - x0) < GRIP) return { k: 'hs' };
   if (Math.abs(x - x1) < GRIP) return { k: 'he' };
   return { k: 'wave' };
