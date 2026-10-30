@@ -9,6 +9,7 @@ import * as FS from '../storage.js';
 import { log } from '../log.js';
 import { prefs } from '../prefs.js';
 import { isNativeApp, saveAndShare, subFor, pickerAccept, accepts } from '../native.js';
+import { createNativeSink } from './nativesink.js';
 
 export const FOLDERS = ['/Samples', '/SoundFonts', '/Recordings', '/Projects', '/Exports', '/Presets/Mixer', '/Presets/Instruments'];
 const NO_MIRROR = /\/_autosave\.mdaw$/;   // rewritten every few seconds: stays in the app's own storage only
@@ -176,7 +177,90 @@ export function createWebBackend() {
   const st = { ctx: null, node: null, ready: false, queue: [], poll: { pos: 0, playing: false, cpu: 0, m: new Array(NSTRIPS * 2).fill(0) }, dev: {}, wanted: new Map(), watchKey: '', bank: new Array(256).fill(null), sfs: [], sfPaths: new Map(), exporting: false, cancel: false, rec: null, midi: null, midiNames: [], latencyMs: 0, starting: null };
   const me = {};
 
-  function post(c, ...a) { if (st.ready) st.node.port.postMessage({ c, a }); else st.queue.push({ c, a }); }
+  function post(c, ...a) {
+    note(c, a);
+    if (nat.mirror) { if (!(TRANSPORT.has(c) && !nat.on)) nat.sink.send(c, a); }        // native engine: every command; play / preview only while it is the one sounding
+    if (nat.only || (nat.on && TRANSPORT.has(c))) return;                               // the worklet stays stopped (and silent) while the native engine plays
+    if (st.ready) st.node.port.postMessage({ c, a }); else st.queue.push({ c, a });
+    if (c === 'stop' && nat.pending) setTimeout(evaluate, 0);
+  }
+
+  // ---- Android: the C++ engine (Pengaturan -> Audio -> Engine audio). The worklet keeps receiving every command, so its state is always
+  // complete and going back to Web is instant. While the native engine is selected it receives the same command stream (nativesink.js).
+  // It only plays when every instrument and effect of the project is ported; otherwise the Web engine plays (automatic fallback). A switch
+  // happens only while the transport is stopped.
+  const TRANSPORT = new Set(['play', 'playCountIn', 'preview', 'bend']);
+  const nat = { sink: isNativeApp() ? createNativeSink() : null, want: false, ready: false, mirror: false, on: false, only: false, pending: false, inst: new Array(NSTRIPS).fill(0), dev: Array.from({ length: NSTRIPS }, () => []), replay: null };
+  function note(c, a) {                                    // instrument / effect types per strip, to know whether the native engine can play the project
+    const t = a[0] | 0; if (t < 0 || t >= NSTRIPS) return;
+    if (c === 'trackInst') nat.inst[t] = a[1] | 0;
+    else if (c === 'resetTrack') { nat.inst[t] = 0; nat.dev[t] = []; }
+    else if (c === 'insertDevice') { const d = nat.dev[t]; if (d.length < 16) d.splice(Math.max(0, Math.min(d.length, a[1] | 0)), 0, a[2] | 0); }
+    else if (c === 'removeDevice') { const d = nat.dev[t], i = a[1] | 0; if (i >= 0 && i < d.length) d.splice(i, 1); }
+    else return;
+    if (nat.want) evaluateSoon();
+  }
+  // first thing the native engine cannot play: { strip, inst } or { strip, dev } (types from defs.js), or null
+  function blocker() {
+    if (!nat.ready) return { notReady: true };
+    for (let t = 0; t < NSTRIPS; t++) {
+      if (nat.inst[t] && !nat.sink.inst.has(nat.inst[t])) return { strip: t, inst: nat.inst[t] };
+      for (const d of nat.dev[t]) if (!nat.sink.dev.has(d)) return { strip: t, dev: d };
+    }
+    return null;
+  }
+  function evaluate() {
+    if (!nat.sink) return;
+    const want = nat.want && nat.ready && !blocker();
+    if (want === nat.on) { nat.pending = false; return; }
+    if (st.poll.playing) { nat.pending = true; return; }   // never switch in the middle of playback: at the next stop
+    nat.pending = false;
+    const pos = Math.max(0, st.poll.pos || 0);
+    if (want) {
+      nat.on = true;
+      if (st.node) { try { st.node.disconnect(); } catch (_) { /* not connected */ } }
+      nat.sink.send('seek', [pos]); nat.sink.setActive(true);
+      log('info', 'mesin audio: Native (C++/Oboe)');
+    } else {
+      nat.on = false;
+      nat.sink.send('stop', []); nat.sink.setActive(false);
+      if (st.ready) st.node.port.postMessage({ c: 'seek', a: [pos] });
+      if (st.node && st.ctx) st.node.connect(st.ctx.destination);
+      log('info', 'mesin audio: Web (AudioWorklet)' + (nat.want ? ' - native belum bisa memutar proyek ini' : ''));
+    }
+    try { window.dispatchEvent(new CustomEvent('enginechange', { detail: me.engineInfo() })); } catch (_) { /* no window */ }
+  }
+  let evalQ = false;
+  const evaluateSoon = () => { if (!evalQ) { evalQ = true; setTimeout(() => { evalQ = false; evaluate(); }, 50); } };
+  async function startNative() {
+    await me.start();
+    const r = await nat.sink.start(st.ctx.sampleRate);
+    if (r.sr !== st.ctx.sampleRate) log('warn', `native ${r.sr} Hz, web ${st.ctx.sampleRate} Hz`);
+    // bring the native engine up to date: the whole project (project.js syncAll) and every sample already loaded
+    nat.only = true; nat.mirror = true;
+    try { if (nat.replay) nat.replay(); } finally { nat.only = false; }
+    st.bank.forEach((b, id) => { if (b) nat.sink.sample(id, b.l, b.r); });
+    nat.ready = true;
+    log('info', `engine native siap: ${r.sr} Hz, instrumen ${[...nat.sink.inst].join(',') || '-'}, efek ${[...nat.sink.dev].join(',') || '-'}`);
+  }
+  // pref = 'web' | 'native'. Can be changed at any time (no restart, the project stays as it is).
+  me.setEngine = async (pref) => {
+    nat.want = pref === 'native' && !!nat.sink;
+    if (nat.want && !nat.mirror) { try { await startNative(); } catch (e) { log('error', 'engine native gagal mulai', e); nat.want = false; } }
+    evaluate();
+    return me.engineInfo();
+  };
+  me.engineInfo = () => ({ available: !!nat.sink, want: nat.want ? 'native' : 'web', active: nat.on ? 'native' : 'web', pending: nat.pending, blocker: nat.want ? blocker() : null });
+  me.setReplay = (fn) => { nat.replay = fn; };
+  me.nativeStats = (reset) => (nat.sink && nat.ready ? nat.sink.stats(reset) : Promise.resolve(null));
+  if (nat.sink) {
+    nat.sink.onPoll = (d) => {
+      if (!nat.on) return;
+      d.rx = performance.now(); d.tl = null; d.dev = {}; st.poll = d; st.dev = {};
+      if (nat.pending && !d.playing) evaluate();
+    };
+    nat.sink.onErrors = (msg) => { const m = String(msg).split('\n').filter((x) => x && !/^unsupported/.test(x)); if (m.length) log('warn', 'engine native: ' + m.join('; ')); };
+  }
 
   async function boot() {
     const AC = globalThis.AudioContext || globalThis.webkitAudioContext;
@@ -194,7 +278,7 @@ export function createWebBackend() {
       const d = ev.data;
       if (d.ready) { st.ready = true; for (const q of st.queue) st.node.port.postMessage(q); st.queue = []; }
       else if (d.err) { if (globalThis.onEngineError) globalThis.onEngineError(d.err); }
-      else if (d.m) { d.rx = performance.now(); st.poll = d; st.dev = d.dev || {}; }   // rx = arrival time: the playhead clock needs it (a poll may be read several times)
+      else if (d.m && !nat.on) { d.rx = performance.now(); st.poll = d; st.dev = d.dev || {}; if (nat.pending && !d.playing) evaluate(); }   // rx = arrival time: the playhead clock needs it (a poll may be read several times)
     };
     const resume = () => { if (st.ctx.state !== 'running') st.ctx.resume().catch(() => {}); };
     // The browser may suspend / interrupt the audio context (phone call, tab switch, screen lock): bring it back when the app is visible again
@@ -253,12 +337,13 @@ export function createWebBackend() {
       const d = await decode(path), { l, r, sr } = d;
       st.bank[id] = { l, r };
       st.node.port.postMessage({ c: 'sample', id, l, r });   // structured clone = a copy: the main thread keeps its own for WAV export
+      if (nat.mirror) nat.sink.sample(id, l, r);
       d.pyr = d.pyr || buildPyramid(l, r);                   // built once per file, shared with the preview and later re-adds
       return { id, duration: l.length / sr, peaks: peaksFromPyr(d.pyr, 2048), pyr: d.pyr };
     } catch (e) { return { error: e.message || String(e) }; }
   };
   // direct buffer registration (reversed / stretched / recorded audio)
-  me.putSampleBuffers = async (id, l, r) => { await me.start(); st.bank[id] = { l, r }; st.node.port.postMessage({ c: 'sample', id, l, r }); const pyr = buildPyramid(l, r); return { id, duration: l.length / st.ctx.sampleRate, peaks: peaksFromPyr(pyr, 2048), pyr }; };
+  me.putSampleBuffers = async (id, l, r) => { await me.start(); st.bank[id] = { l, r }; st.node.port.postMessage({ c: 'sample', id, l, r }); if (nat.mirror) nat.sink.sample(id, l, r); const pyr = buildPyramid(l, r); return { id, duration: l.length / st.ctx.sampleRate, peaks: peaksFromPyr(pyr, 2048), pyr }; };
   me.sampleBuffers = (id) => st.bank[id];
   // ---- sample preview for the file browser (plays straight to the output, independent of the project transport)
   const pv = { src: null, tok: 0, t0: 0, dur: 0 };

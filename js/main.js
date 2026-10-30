@@ -457,6 +457,10 @@ function boot() {
     eng.setLatencyMs(prefs.latencyMs); eng.metroVol(prefs.metroVol ?? 1);
     restore().then((ok) => { if (!ok) P.newProject(true); }).catch(() => P.newProject(true)).then(() => { showTab('dev'); startAutosave(); });
     if (prefs.midiOn && !isNativeApp()) enableMidi(true);   // no Web MIDI in the Android WebView
+    if (isNativeApp() && eng.setEngine) {                 // Android: C++ engine when chosen in Pengaturan -> Audio (falls back to Web by itself)
+      addEventListener('enginechange', (e) => engineToast(e.detail));
+      if (prefs.engine === 'native') eng.setEngine('native');
+    }
     initAutoFullscreen();
     initUiPrefs();
     askFolder();
@@ -483,6 +487,12 @@ function askFolder() {
     { label: 'Nanti', fn: () => { prefs.folderAsked = true; savePrefs(); } },
     { label: 'Pilih folder', go: true, fn: () => { prefs.folderAsked = true; savePrefs(); FS.chooseFolder().then(async (r) => { if (r.error) toast(r.error, 5000); else if (r.ok) { const s = await eng.syncFolder(); toast('Folder ' + r.name + ' siap' + (s && s.added ? `, ${s.added} file ditemukan.` : '.'), 3500); } }); } },
   ]);
+}
+let lastEngine = 'web';
+function engineToast(i) {
+  if (i.active === lastEngine) return;
+  lastEngine = i.active;
+  toast(i.active === 'native' ? 'Engine audio: Native (C++)' : i.want === 'native' ? 'Engine audio: Web (proyek ini memakai instrumen/efek yang belum ada di engine native)' : 'Engine audio: Web', 3500);
 }
 function showFatal(e) {
   const d = document.createElement('div');

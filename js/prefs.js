@@ -1,7 +1,7 @@
 // User preferences, kept in localStorage (survive reloads, work offline).
 const KEY = 'mobiledaw.prefs.v1';
 const VERSION = 2;
-const DEFAULTS = { v: VERSION, snap: 0, follow: true, latencyMs: 0, midiOn: false, midiDevice: 'any', fullscreen: true, theme: 'dark', uiScale: 0.8, latencyHint: 'interactive', sampleRate: 0, exportBits: 16, exportFmt: 'wav', exportKbps: 192, exportTail: 3, exportNorm: false, exportRange: 'all', exportStems: false, exportRet: true, exportMaster: false, logLevel: 1, showCpu: true, showFps: true, fpsMode: 'auto', reduceMotion: false, animScale: 1, keepAwake: false, folderAsked: false, edgeGuard: 1, metroVol: 1 };
+const DEFAULTS = { v: VERSION, snap: 0, follow: true, latencyMs: 0, midiOn: false, midiDevice: 'any', fullscreen: true, theme: 'dark', uiScale: 0.8, latencyHint: 'interactive', sampleRate: 0, exportBits: 16, exportFmt: 'wav', exportKbps: 192, exportTail: 3, exportNorm: false, exportRange: 'all', exportStems: false, exportRet: true, exportMaster: false, logLevel: 1, showCpu: true, showFps: true, fpsMode: 'auto', reduceMotion: false, animScale: 1, keepAwake: false, folderAsked: false, edgeGuard: 1, metroVol: 1, engine: 'web' };   // engine: 'web' (AudioWorklet) | 'native' (C++ engine, Android app only)
 let data = { ...DEFAULTS };
 try {
   const saved = JSON.parse(localStorage.getItem(KEY) || '{}');

@@ -11,6 +11,7 @@ import { EDGE_LEVELS } from './edgeguard.js';
 import * as P from './project.js';
 import { isStandalone, canInstall, promptInstall } from './pwa.js';
 import { isNativeApp } from './native.js';
+import { INSTRUMENTS, DEVICES } from './defs.js';
 import * as FS from './storage.js';
 import { log, logs, logText, clearLog, setLogLevel } from './log.js';
 import { aboutTabs } from './about.js';
@@ -98,6 +99,35 @@ function folderSection() {
   return section('Folder MobileDAW', stat, box);
 }
 
+// Android app: which audio engine plays (Web = AudioWorklet, Native = C++ with Oboe). Changing it needs no restart and keeps the project.
+function engineSection() {
+  if (!isNativeApp() || !eng.engineInfo || !eng.engineInfo().available) return null;
+  const stat = h('div', { class: 'sv' }), meas = h('div', { class: 'sv' });
+  const stripName = (t) => (t < 64 ? (P.state.tracks[t] ? P.state.tracks[t].name : 'Track ' + (t + 1)) : t === 64 ? 'Master' : 'Return ' + String.fromCharCode(65 + t - 65));
+  const paint = () => {
+    const i = eng.engineInfo(), b = i.blocker;
+    stat.textContent = i.active === 'native' ? 'Aktif: Native (C++ dengan Oboe).'
+      : i.want === 'native' ? (b && b.notReady ? 'Native sedang disiapkan\u2026' : b ? `Aktif: Web. Engine native belum bisa memutar ${b.inst ? 'instrumen ' + ((INSTRUMENTS[b.inst] || {}).name || b.inst) : 'efek ' + ((DEVICES[b.dev] || {}).name || b.dev)} di ${stripName(b.strip)}; proyek otomatis memakai engine Web.` : i.pending ? 'Beralih ke Native setelah transport berhenti.' : 'Aktif: Web.')
+      : 'Aktif: Web (AudioWorklet).';
+  };
+  const measure = async (reset) => {
+    const w = Math.round(P.state.cpu * 100);
+    const s = await eng.nativeStats(reset);
+    if (reset) { meas.textContent = 'Statistik direset. Putar lagu lalu tekan Ukur.'; return; }
+    meas.textContent = (s && s.blocks ? `Native: ${s.blocks} blok, rata-rata ${s.mean.toFixed(1)}%, p50 ${s.p50}%, p99 ${s.p99}%, maks ${s.max.toFixed(1)}% dari waktu blok, underrun ${s.xruns}, blok dibisukan ${s.bad}, buffer ${s.buffer} frame (burst ${s.burst}) @ ${s.sampleRate} Hz${s.latencyMs >= 0 ? ', latensi ' + s.latencyMs.toFixed(1) + ' ms' : ''}. ` : 'Native: belum ada data (pilih Native lalu putar lagu). ')
+      + `Beban CPU saat ini: ${w}%.`;
+    log('info', 'ukur CPU: ' + meas.textContent);
+  };
+  paint();
+  const onChange = () => { if (!stat.isConnected) { removeEventListener('enginechange', onChange); return; } paint(); };   // gone with the settings panel
+  addEventListener('enginechange', onChange);
+  return section('Engine audio',
+    choice('Mesin yang memutar audio', 'engine', [['web', 'Web'], ['native', 'Native (C++)']], async () => { stat.textContent = 'Beralih\u2026'; await eng.setEngine(prefs.engine); paint(); }),
+    stat,
+    h('div', { class: 'sv' }, 'Native = engine C++ dengan Oboe (latensi rendah). Selama sebuah instrumen/efek di proyek belum tersedia di engine native, proyek diputar oleh engine Web. Berganti engine tidak perlu memulai ulang dan proyek tetap utuh.'),
+    btn('Ukur beban CPU', () => measure(false)), btn('Reset statistik', () => measure(true)), meas);
+}
+
 function logSection() {
   const view = h('div', { class: 'logbox' });
   const paint = () => {
@@ -162,6 +192,7 @@ export function openSettings() {
     Audio: [
       section('Audio', line('Mesin', backend === 'web' ? 'Web Audio (AudioWorklet)' : backend === 'native' ? 'Native (aplikasi Android)' : 'Tidak tersedia'), line('Sample rate', info.sampleRate ? info.sampleRate + ' Hz' : '\u2014'),
         line('Latensi output', info.baseLatency || info.outputLatency ? `${info.baseLatency} + ${info.outputLatency} ms` : '\u2014'), line('Status', info.state), line('Beban CPU', Math.round(P.state.cpu * 100) + ' %')),
+      engineSection(),
       section('Mesin audio',
         choice('Mode latensi', 'latencyHint', [['interactive', 'Rendah'], ['balanced', 'Seimbang'], ['playback', 'Stabil']]),
         choice('Sample rate', 'sampleRate', [[0, 'Otomatis'], [44100, '44.1 kHz'], [48000, '48 kHz']]),

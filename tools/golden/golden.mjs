@@ -8,16 +8,15 @@ import { SCENARIOS } from './scenarios.mjs';
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const { Engine } = await import(path.join(root, 'js/engine/core.js'));
+const { encode } = await import(path.join(root, 'js/engine/cmdtext.js'));
 const SR = 48000, LIMIT_DB = -90, MAX_DB = -70;
 const args = process.argv.slice(2), flags = new Set(args.filter((a) => a.startsWith('--'))), names = args.filter((a) => !a.startsWith('--'));
 if (flags.has('--list')) { for (const s of SCENARIOS) console.log(s.name.padEnd(22), s.info || ''); process.exit(0); }
 
 // ---- recorder: forwards to the JS engine and writes the command stream
-const num = (v) => (v === true ? '1' : v === false ? '0' : v == null ? 'u' : Number.isNaN(v) ? 'nan' : v === Infinity ? 'inf' : v === -Infinity ? '-inf' : Object.is(v, -0) ? '-0' : String(+v));
 function recorder(sr) {
   const e = new Engine(sr), lines = ['sr ' + sr], blobs = []; let blobLen = 0;
   const f32 = (a) => { const off = blobLen; blobs.push(Float32Array.from(a)); blobLen += a.length; return '@' + off + ':' + a.length; };
-  const arg = (v) => (v instanceof Float32Array ? f32(v) : Array.isArray(v) || ArrayBuffer.isView(v) ? '[' + v.length + (v.length ? ' ' : '') + Array.from(v, num).join(' ') + ']' : num(v));
   const out = [];
   const rec = new Proxy(e, {
     get(t, k) {
@@ -26,7 +25,7 @@ function recorder(sr) {
       if (k === 'engine') return t;
       const v = t[k];
       if (typeof v !== 'function') return v;
-      return (...a) => { lines.push(k + (a.length ? ' ' + a.map(arg).join(' ') : '')); return v.apply(t, a); };
+      return (...a) => { lines.push(encode(k, a, f32)); return v.apply(t, a); };
     },
   });
   const finish = () => {

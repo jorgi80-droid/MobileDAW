@@ -87,5 +87,6 @@ const webApi = web && {
   exportJob: (job) => web.exportJob(job, (off) => { target = off; try { hooks.replay && hooks.replay(); } finally { target = webApi; } }),
 };
 if (webApi) target = webApi;
+if (web && web.setReplay) web.setReplay(() => { if (hooks.replay) hooks.replay(); });   // Android: brings the native engine up to date when it is switched on
 export const eng = new Proxy({}, { get: (_, k) => { const v = target[k]; return v !== undefined ? v : () => null; } });
 export const backendError = () => webBroken;
