@@ -1,6 +1,7 @@
 # Serah-terima pekerjaan (untuk sesi berikutnya)
 
-Branch kerja: `ccr-34212a29-z1qc7f` (repo `jorgi80-droid/MobileDAW`). Semua pekerjaan sudah di-commit dan CI hijau.
+Branch kerja: `ccr-9362ed99-sntgvi` (repo `jorgi80-droid/MobileDAW`), lanjutan langsung dari `ccr-34212a29-z1qc7f` (fast-forward,
+tidak ada riwayat yang ditulis ulang). Semua pekerjaan sudah di-commit.
 Baca juga `README-ANDROID.md` (build, install, status fase 2).
 
 ## Aturan kerja dari pemilik proyek
@@ -18,10 +19,29 @@ Baca juga `README-ANDROID.md` (build, install, status fase 2).
 | Instrumen C++: Mini Synth, SuperSaw | selesai, lulus golden (semua preset) |
 | Bridge Android: Oboe + JNI + antrian lock-free, LatencyTuner, pilihan engine Web/Native, fallback otomatis, statistik CPU | selesai, build OK |
 | UI: toolbar ringkas simetris, meter FPS|CPU, Pengaturan gaya Preferences Live, jendela Tempo, slider, blur hanya di belakang jendela | selesai |
-| **UI gaya Ableton Live 12 untuk Arrangement, Clip View/piano roll, Mixer, Device/Rack, menu konteks, browser** | **belum** |
+| UI gaya Ableton Live 12: Arrangement, Clip View (panel properti + piano roll + lane velocity), Mixer, Device chain | selesai (perbandingan di `docs/redesign/*.jpg`) |
+| **UI gaya Ableton Live 12: Rack (Instrument/Drum/Effect Rack + macro), menu konteks, browser, editor audio (`audioedit.js`)** | **belum** |
 | **Port C++: GMS, Moisture, Osphere, DirectWave/Keystone/Sampler, Drum Sampler, SoundFont, Wavetable** | **belum** |
 | **Port C++: semua efek (Utility, EQ Three, Parametric EQ, Compressor, Limiter, Saturator, Auto Filter, Echo, Reverb, Roar, Autoduck, Stereolizer, Spacer, Level/Analyzer/MiniMeters)** | **belum** |
 | Ekspor WAV lewat engine native; angka CPU/underrun Web vs Native dari HP | belum |
+
+## Redesign UI Live 12 (sesi ini) - di mana dan bagaimana
+- Arrangement (`js/timeline.js`, satu canvas + overlay): konstanta tata letak di atas file (`RULER` = strip locator `MROW` + beat ruler,
+  `BOT` = time ruler bawah, `TH` = title bar header, `METW` = meter header; `HEAD` dipilih `fit()` dari lebar layar). Header track: `hdr(i)`
+  (title bar warna track, tombol activator/S/arm/In/A, slider vol/pan bila baris >= 70 px); Master/FX: `xhdr(i)`. Animasi: `fh` (tinggi baris
+  saat lipat/buka, `animRow()` dipanggil SEBELUM `t.fold` berubah), `gl` (klip meluncur ke posisi snap, `glideClip()` sebelum `c.start/len`
+  berubah); keduanya dilangkahkan di `stepMotion()`. Beat ruler: seret vertikal = zoom (gaya Live), horizontal = time selection.
+- Clip View (`js/editor.js`): panel properti kiri dibangun `buildProps()` (kotak Clip/Notes/Scale/Drum/Envelope/Sample, `numBox()` = number
+  box Live: seret = ubah nilai dengan satu langkah undo, ketuk = daftar). Toolbar hanya perintah tampilan. Lane bawah: `drawVel()` +
+  `laneChooser()`, garis pemisah bisa diseret (`cfg.velH`). Fit meluncur + fling: `emo`, `stepEd()`.
+- Mixer (`js/mixer.js`): strip `.mxs` dengan bagian bertinggi tetap (`.mx-io`, `.mx-sends`, `.mx-pan`, `.mx-btns`) supaya baris sejajar;
+  fader drag relatif, tutup fader meluncur (`st.fpos`).
+- Device (`js/devices.js`): menu `⋯` per device, ketuk-ganda title bar = lipat, nama instrumen = pemilih instrumen; `render()` menjaga posisi
+  scroll dan memakai FLIP (`flip()`) untuk geser/lipat/hapus/tambah.
+- CSS semua bagian ini ada di akhir `css/ableton.css` (berurutan: Arrangement, Clip View, Mixer, Device View).
+- Screenshot untuk membandingkan: `node tools/ui-shots.mjs <folder> [arr] [clip] [dev] [mix]` (server statis + Chromium Playwright bawaan,
+  proyek uji tetap; `THEME=light`, `VW`/`VH` untuk ukuran). Jalankan sekali di commit lama dan sekali di working tree, lalu bandingkan.
+- Catatan: UI berskala 0,8 (`prefs.uiScale`), jadi koordinat layar = koordinat CSS x 0,8 saat mengetes klik dengan Playwright.
 
 ## Peta kode
 - UI web: `index.html`, `css/app.css`, `css/live.css`, `css/float.css`, **`css/ableton.css` (dimuat terakhir: tempat semua gaya Ableton baru)**, `js/*.js`.
