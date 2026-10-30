@@ -478,7 +478,7 @@ Object.assign(DEVICES, {
     38: { name: 'Multiband Dynamics', kit: true, params: [q('Low Split', 20, 1000, 120, { curve: 'log', unit: 'Hz' }), q('High Split', 500, 16000, 2500, { curve: 'log', unit: 'Hz' }),
       ...['Low', 'Mid', 'High'].flatMap((b) => [onoff(b + ' On', 1), dB(b + ' Input', -24, 24, 6), dB(b + ' Output', -24, 24, 0), dB(b + ' Above', -60, 0, -12), q(b + ' Ratio A', 0.5, 20, 4, { curve: 'log', unit: ':1' }),
         dB(b + ' Below', -80, 0, -40), q(b + ' Ratio B', 0.5, 4, 1, { unit: ':1' }), q(b + ' Attack', 0.1, 300, 10, { curve: 'log', unit: 'ms' }), q(b + ' Release', 1, 3000, 100, { curve: 'log', unit: 'ms' })]),
-      pct('Amount', 1), q('Time', 0.1, 10, 1, { curve: 'log', unit: 'x' }), dB('Output', -24, 24, 0), onoff('Soft Knee'), onoff('RMS')] },
+      pct('Amount', 1), q('Time', 0.1, 10, 1, { curve: 'log', unit: 'x' }), dB('Output', -24, 12, 0), onoff('Soft Knee'), onoff('RMS')] },
     39: { name: 'Resonators', kit: true, params: [onoff('Filter', 1), q('Frequency', 50, 20000, 50, { curve: 'log', unit: 'Hz' }), list('Filter Type', ['LP', 'BP', 'HP', 'Notch'], 2), list('Mode', ['A', 'B'], 0), pct('Decay', 0.77), onoff('Const'), pct('Color', 0.857),
       onoff('I On', 1), q('Note', 24, 96, 43, { step: 1, fmt: 'note' }), q('I Fine', -50, 50, 0, { unit: 'ct' }), dB('I Gain', -48, 0, 0),
       ...['II', 'III', 'IV', 'V'].flatMap((r, k) => [onoff(r + ' On', 1), q(r + ' Pitch', -24, 24, [7, 7, 3, 12][k], { step: 1, fmt: 'st' }), q(r + ' Fine', -50, 50, 0, { unit: 'ct' }), dB(r + ' Gain', -48, 0, 0)]),
