@@ -75,7 +75,7 @@ export function initUiPrefs() {
 
 const toggle = (label, key, after) => { const b = btn(label + ': ' + (prefs[key] ? 'ya' : 'tidak'), () => { prefs[key] = !prefs[key]; savePrefs(); b.textContent = label + ': ' + (prefs[key] ? 'ya' : 'tidak'); b.classList.toggle('on', !!prefs[key]); if (after) after(); }, !!prefs[key]); return b; };
 const choice = (title, key, opts, after) => {      // opts: [[value, label]]
-  const row = h('div', {});
+  const row = h('div', { class: 'segc' });
   for (const [v, l] of opts) row.append(h('button', { class: 'b' + (prefs[key] === v ? ' on' : ''), style: 'height:30px', onclick: (e) => { prefs[key] = v; savePrefs(); for (const x of row.children) x.classList.toggle('on', x === e.currentTarget); if (after) after(); } }, l));
   return h('div', {}, h('div', { class: 'sv' }, title), row);
 };
@@ -236,8 +236,8 @@ export function openSettings() {
   const tabBar = h('div', { class: 'btabs', style: 'margin:-2px -2px 10px;flex-wrap:wrap' }), pane = h('div', { class: 'settings' });
   const show = (name) => { for (const b of tabBar.children) b.classList.toggle('on', b.dataset.t === name); pane.replaceChildren(...tabs[name].filter(Boolean)); lastTab = name; };
   for (const name of Object.keys(tabs)) tabBar.append(h('button', { class: 'b', 'data-t': name, onclick: () => show(name) }, name));
-  const wrap = h('div', {}, tabBar, pane);
+  const wrap = h('div', { class: 'prefs' }, tabBar, pane);   // Live-style preferences: tab list on the left, page on the right
   show(lastTab in tabs ? lastTab : 'Audio');
   modal('Pengaturan', wrap, [{ label: 'Tutup', go: true }]);
-  [...document.querySelectorAll('#layer .modal:not(.closing)')].pop()?.classList.add('big');
+  [...document.querySelectorAll('#layer .modal:not(.closing)')].pop()?.classList.add('big', 'prefsw');
 }

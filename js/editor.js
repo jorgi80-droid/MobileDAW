@@ -93,7 +93,7 @@ const gridBottom = () => H - (cfg.vel ? VEL : 0);
 function clampV(c) {
   v.ppt = clamp(v.ppt, 0.02, 1.5); v.keyH = clamp(v.keyH, 8, 44);
   const rows = (gridBottom() - RULER) / v.keyH;
-  v.top = clamp(v.top, rows - 1 + 0, 128); v.x0 = clamp(v.x0, -200, Math.max(0, (c ? c.len : BAR) - 200));
+  v.top = clamp(v.top, rows - 1 + 0, 128); v.x0 = clamp(v.x0, 0, Math.max(0, (c ? c.len : BAR) - 200));   // never scroll before the clip start (no empty strip left of bar 1)
 }
 
 // ------------------------------------------------------------------ drawing

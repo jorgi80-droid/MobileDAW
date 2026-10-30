@@ -15,6 +15,7 @@
 <link rel="stylesheet" href="css/app.css">
 <link rel="stylesheet" href="css/live.css">
 <link rel="stylesheet" href="css/float.css">
+<link rel="stylesheet" href="css/ableton.css">
 </head>
 <body>
 <script>
@@ -40,25 +41,28 @@
   <header id="top">
    <div id="top-l">
     <button id="btn-browser" class="b ic" aria-label="Browser"></button>
-    <div class="grp">
+    <div class="readout" id="rd-bpm" aria-label="Tempo">120.00</div>
+    <button id="btn-tap" class="chip opt1" aria-label="Tap tempo">Tap</button>
+    <button id="rd-sig" class="chip" aria-label="Birama">4 / 4</button>
+    <button id="btn-follow" class="chip opt2" aria-label="Ikuti playhead">Follow</button>
+    <div class="chip static opt2" id="rd-sr" title="Sample rate">48.0 kHz</div>
+    <div class="fpsbox opt1" title="FPS"><b>FPS</b> <span id="fps-t">--</span></div>
+   </div>
+   <div id="top-c">
+    <div class="readout" id="rd-pos" aria-label="Posisi">1.1.1</div>
+    <div class="grp tport">
+      <button id="btn-rew" class="b ic" aria-label="Ke awal"></button>
       <button id="btn-play" class="b ic" aria-label="Play"></button>
       <button id="btn-stop" class="b ic" aria-label="Stop"></button>
-      <button id="btn-rew" class="b ic" aria-label="Ke awal"></button>
       <button id="btn-rec" class="b ic rec" aria-label="Rekam"></button>
       <button id="btn-metro" class="b ic" aria-label="Metronom"></button>
     </div>
-    <div class="readout" id="rd-pos" aria-label="Posisi">1.1.1</div>
     <div class="readout sm opt2" id="rd-time" aria-label="Waktu">0:00.0</div>
-    <div class="readout" id="rd-bpm" aria-label="Tempo">120.00</div>
-    <button id="btn-tap" class="chip opt1" aria-label="Tap tempo">Tap</button>
-    <button id="rd-sig" class="chip opt1" aria-label="Birama">4 / 4</button>
-    <button id="btn-follow" class="chip opt2" aria-label="Ikuti playhead">Follow</button>
-    <div class="chip static opt2" id="rd-sr" title="Sample rate">48.0 kHz</div>
-    <button id="midi-ind" class="chip opt2" aria-label="MIDI"><i></i>MIDI</button>
-    <div class="cpubox" title="CPU"><div id="cpu"><i></i></div><span id="cpu-t">0%</span></div>
-    <div class="fpsbox" title="FPS"><b>FPS</b> <span id="fps-t">--</span></div>
    </div>
    <div id="top-r">
+    <div class="cpubox" title="CPU"><div id="cpu"><i></i><span id="cpu-t">0%</span></div></div>
+    <button id="midi-ind" class="chip opt2" aria-label="MIDI"><i></i>MIDI</button>
+    <span class="tsep"></span>
     <button id="btn-undo" class="b ic" aria-label="Urungkan"></button>
     <button id="btn-redo" class="b ic" aria-label="Ulangi"></button>
     <div class="seg">
