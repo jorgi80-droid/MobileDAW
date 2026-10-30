@@ -10,6 +10,7 @@ import { applyViewportMeta, relayoutSoon } from './layout.js';
 import { EDGE_LEVELS } from './edgeguard.js';
 import * as P from './project.js';
 import { isStandalone, canInstall, promptInstall } from './pwa.js';
+import { isNativeApp } from './native.js';
 import * as FS from './storage.js';
 import { log, logs, logText, clearLog, setLogLevel } from './log.js';
 import { aboutTabs } from './about.js';
@@ -28,7 +29,7 @@ let userExited = false, lastTab = 'Audio', fsFail = 0;
 // whole layout jumps). Real Fullscreen-API mode shows the system bars as a transparent overlay on top of the app and never resizes it (the same
 // way a native DAW behaves), so the app asks for it on the first touch even when it is installed. iOS home-screen apps have no such API.
 export function initAutoFullscreen() {
-  if (navigator.standalone === true || !document.documentElement.requestFullscreen) return;
+  if (navigator.standalone === true || isNativeApp() || !document.documentElement.requestFullscreen) return;   // the Android app is immersive full screen by itself
   document.addEventListener('fullscreenchange', () => { if (document.fullscreenElement) userExited = false; });
   addEventListener('pointerdown', () => { if (prefs.fullscreen && !userExited && fsFail < 3 && !document.fullscreenElement) requestFs(); }, true);
 }
@@ -83,6 +84,7 @@ function folderSection() {
   const paint = () => {
     const i = FS.info();
     stat.textContent = i.mode === 'device' ? (i.perm === 'granted' ? `Terhubung: ${i.name}/ (Samples, SoundFonts, Recordings, Exports, Projects, Presets)` : `Folder ${i.name}/ butuh izin lagi (browser meminta ulang tiap sesi).`)
+      : isNativeApp() ? 'Aplikasi Android: sample, proyek, dan preset disimpan di dalam aplikasi. Hasil ekspor (WAV/MP3/ZIP/.mdaw/.mid) juga disalin ke Documents/MobileDAW dan bisa dibagikan. Impor file lewat Browser \u2192 Impor.'
       : i.mode === 'opfs' ? 'Browser ini tidak punya pemilih folder: MobileDAW/ disimpan di dalam aplikasi.' : 'Belum ada folder MobileDAW. Pilih lokasi sekali; aplikasi membuat folder MobileDAW beserta sub-foldernya.';
     const items = [];
     if (FS.canPick()) items.push(btn(i.mode === 'device' ? 'Ganti folder\u2026' : 'Pilih folder & beri izin', async () => { const r = await FS.chooseFolder(); if (r.error) toast(r.error, 5000); else if (r.ok) { await eng.syncFolder(); toast('Folder ' + r.name + ' siap.', 3000); } paint(); }));
@@ -168,7 +170,7 @@ export function openSettings() {
         h('div', { class: 'scalebox' }, h('div', { class: 'srow' }, stepMetro(-5, '\u2212', 'Pelankan'), mSlider, stepMetro(5, '+', 'Keraskan'), mVal), h('div', { class: 'marks' }, h('span', {}, 'Pelan'), h('span', {}, 'Keras')))),
       section('Rekaman', h('div', { class: 'sline' }, h('span', {}, 'Kompensasi latensi (ms)'), lat), h('div', { class: 'sv' }, 'Dipotong dari awal setiap rekaman audio agar sejajar dengan ketukan. Naikkan jika rekaman terdengar terlambat.')),
       section('Ekspor', choice('Kedalaman bit awal', 'exportBits', [[16, '16-bit'], [24, '24-bit'], [32, '32-bit float']])),
-      section('MIDI', midiLine, midiBox, h('div', { class: 'sv', style: 'margin-top:6px' }, 'Tekan lama pada knob/fader lalu pilih \"Hubungkan ke MIDI CC\". Pad drum: nada 48\u201353. Transport: MMC dan pesan Start/Stop MIDI.')),
+      isNativeApp() ? null : section('MIDI', midiLine, midiBox, h('div', { class: 'sv', style: 'margin-top:6px' }, 'Tekan lama pada knob/fader lalu pilih \"Hubungkan ke MIDI CC\". Pad drum: nada 48\u201353. Transport: MMC dan pesan Start/Stop MIDI.')),
     ],
     Tampilan: [
       section('Tampilan', h('div', { class: 'sv' }, 'Tema'), themeRow,
@@ -190,7 +192,7 @@ export function openSettings() {
     Penyimpanan: [
       folderSection(),
       section('Ruang', storage, btn('Minta penyimpanan permanen', () => { eng.requestStorage(); toast('Permintaan dikirim. Browser memutuskan apakah file dijaga permanen.', 3500); })),
-      section('Offline', line('Service worker', sw ? 'aktif, siap offline' : 'belum aktif (muat ulang sekali)'), btn('Perbarui aplikasi', resetApp)),
+      isNativeApp() ? section('Offline', line('Aplikasi', 'Android (APK), semua file ada di dalam aplikasi')) : section('Offline', line('Service worker', sw ? 'aktif, siap offline' : 'belum aktif (muat ulang sekali)'), btn('Perbarui aplikasi', resetApp)),
     ],
     Log: [logSection()],
     About: aboutTabs(),
@@ -200,7 +202,7 @@ export function openSettings() {
     ],
   };
   const tabBar = h('div', { class: 'btabs', style: 'margin:-2px -2px 10px;flex-wrap:wrap' }), pane = h('div', { class: 'settings' });
-  const show = (name) => { for (const b of tabBar.children) b.classList.toggle('on', b.dataset.t === name); pane.replaceChildren(...tabs[name]); lastTab = name; };
+  const show = (name) => { for (const b of tabBar.children) b.classList.toggle('on', b.dataset.t === name); pane.replaceChildren(...tabs[name].filter(Boolean)); lastTab = name; };
   for (const name of Object.keys(tabs)) tabBar.append(h('button', { class: 'b', 'data-t': name, onclick: () => show(name) }, name));
   const wrap = h('div', {}, tabBar, pane);
   show(lastTab in tabs ? lastTab : 'Audio');

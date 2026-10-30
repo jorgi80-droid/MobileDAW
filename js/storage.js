@@ -3,10 +3,11 @@
 // and the app creates MobileDAW/ and its sub-folders inside it. The handle is remembered in IndexedDB. Browsers without the folder picker
 // fall back to the app's private file system (OPFS): same folder tree, kept inside the app.
 import { log } from './log.js';
+import { isNativeApp } from './native.js';
 
 export const TREE = ['Samples', 'SoundFonts', 'Recordings', 'Exports', 'Projects', 'Presets/Mixer', 'Presets/Instruments'];
 const ROOT = 'MobileDAW';
-export const canPick = () => typeof globalThis.showDirectoryPicker === 'function';
+export const canPick = () => typeof globalThis.showDirectoryPicker === 'function' && !isNativeApp();
 export const canOpfs = () => !!(navigator.storage && navigator.storage.getDirectory);
 
 const st = { mode: 'none', root: null, perm: 'none', name: '', scanErr: 0, scanCount: 0 };   // mode: device | opfs | none ; perm: granted | prompt | none

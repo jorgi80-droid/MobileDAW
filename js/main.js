@@ -12,6 +12,7 @@ import { openSettings, toggleFullscreen, initAutoFullscreen, initUiPrefs } from 
 import { initLog, log } from './log.js';
 import * as FS from './storage.js';
 import { initPwa, isStandalone } from './pwa.js';
+import { isNativeApp, initNative, setAwake } from './native.js';
 import * as P from './project.js';
 import { checkpoint, clearHistory, canUndo, canRedo, undoOp, redoOp } from './history.js';
 import * as TL from './timeline.js';
@@ -195,7 +196,7 @@ function exportWav() {
     const sp = span(), n = itemsOf().length;
     if (!sp) { info.textContent = 'Area loop belum aktif: nyalakan Loop dan atur rentangnya di ruler.'; return; }
     const sec = P.tickToSec(sp[1]) - P.tickToSec(sp[0]) + o.tail, mb = (sec * (o.fmt === 'mp3' ? o.kbps * 125 : 48000 * 2 * (o.bits / 8)) * n) / 1048576;
-    info.textContent = `${((P.barAt(sp[1]) - P.barAt(sp[0]) + (sp[1] - P.barStart(P.barAt(sp[1]))) / P.barLenAt(sp[1]) - (sp[0] - P.barStart(P.barAt(sp[0]))) / P.barLenAt(sp[0]))).toFixed(1).replace('.', ',')} bar + ekor ${o.tail} dtk, ${n} file (\u00b1${mb < 10 ? mb.toFixed(1).replace('.', ',') : Math.round(mb)} MB). ${o.fmt === 'wav' && o.bits === 16 ? '16-bit memakai dither. ' : ''}${o.stems ? 'Stem dikemas dalam satu ZIP; tiap stem tanpa rantai master. ' : ''}${hasNative || FS.isDevice() ? 'Disimpan di folder MobileDAW/Exports.' : 'Diunduh ke perangkat dan tersimpan di File \u2192 Exports.'}`;
+    info.textContent = `${((P.barAt(sp[1]) - P.barAt(sp[0]) + (sp[1] - P.barStart(P.barAt(sp[1]))) / P.barLenAt(sp[1]) - (sp[0] - P.barStart(P.barAt(sp[0]))) / P.barLenAt(sp[0]))).toFixed(1).replace('.', ',')} bar + ekor ${o.tail} dtk, ${n} file (\u00b1${mb < 10 ? mb.toFixed(1).replace('.', ',') : Math.round(mb)} MB). ${o.fmt === 'wav' && o.bits === 16 ? '16-bit memakai dither. ' : ''}${o.stems ? 'Stem dikemas dalam satu ZIP; tiap stem tanpa rantai master. ' : ''}${hasNative || FS.isDevice() ? 'Disimpan di folder MobileDAW/Exports.' : isNativeApp() ? 'Disimpan di Documents/MobileDAW/Exports lalu bisa dibagikan.' : 'Diunduh ke perangkat dan tersimpan di File \u2192 Exports.'}`;
   }
   from.oninput = to.oninput = refresh;
   const body = h('div', {}, name, fmtRow, kbpsRow, modeRow, stemOpts, rangeRow, tailRow, normRow, info);
@@ -243,6 +244,7 @@ function readouts() {
   { const ci = state.countIn ? String(state.countIn) : ''; if ($('#btn-metro').dataset.ci !== ci) { if (ci) $('#btn-metro').dataset.ci = ci; else delete $('#btn-metro').dataset.ci; } $('#btn-metro').classList.toggle('pun', !!(state.punch.on || state.recLoop)); }
   $('#btn-undo').disabled = !canUndo(); $('#btn-redo').disabled = !canRedo();
   topbarUpdate();
+  setAwake(state.playing || !!prefs.keepAwake);       // Android app: screen stays on during playback (no-op in the browser)
   const cpu = $('#cpu i'); cpu.style.width = clamp(state.cpu * 100, 0, 100) + '%'; cpu.style.background = state.cpu > 0.8 ? C('#e5484d') : state.cpu > 0.55 ? C('#e8d040') : C('#7ac555');
 }
 
@@ -416,6 +418,7 @@ function keys() {
 // ------------------------------------------------------------------ boot
 function boot() {
   initLog(prefs.logLevel);
+  initNative(toast);                                   // Android app (Capacitor): back button, html.native-app; nothing in the browser
   applyTheme(prefs.theme);
   initEdgeGuard();
   initLayout();
@@ -453,11 +456,11 @@ function boot() {
   Promise.resolve(eng.init ? eng.init() : null).catch(() => {}).then(() => {
     eng.setLatencyMs(prefs.latencyMs); eng.metroVol(prefs.metroVol ?? 1);
     restore().then((ok) => { if (!ok) P.newProject(true); }).catch(() => P.newProject(true)).then(() => { showTab('dev'); startAutosave(); });
-    if (prefs.midiOn) enableMidi(true);
+    if (prefs.midiOn && !isNativeApp()) enableMidi(true);   // no Web MIDI in the Android WebView
     initAutoFullscreen();
     initUiPrefs();
     askFolder();
-    initPwa(backend === 'native');
+    initPwa(backend === 'native' || isNativeApp());
     registerServiceWorker();
   });
   requestAnimationFrame(loop);
@@ -489,7 +492,7 @@ function showFatal(e) {
   document.body.append(d);
 }
 function registerServiceWorker() {
-  if (backend === 'native' || !('serviceWorker' in navigator) || location.protocol === 'file:') return;
+  if (backend === 'native' || isNativeApp() || !('serviceWorker' in navigator) || location.protocol === 'file:') return;   // the APK carries every file itself
   navigator.serviceWorker.register('sw.js').catch(() => { /* offline caching unavailable (private mode or insecure origin) */ });
 }
 boot();

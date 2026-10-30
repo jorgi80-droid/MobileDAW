@@ -20,7 +20,7 @@
 <script>
 // If a file of the app does not load (wrong upload, blocked script), say so instead of showing a half-built page.
 (function () {
-  var app = matchMedia('(display-mode: fullscreen)').matches || matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  var app = !!(window.Capacitor && Capacitor.isNativePlatform && Capacitor.isNativePlatform()) || matchMedia('(display-mode: fullscreen)').matches || matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
   function show(msg) {
     if (window.__dawBooted) { console.error(msg); return; }   // after start-up the app reports problems itself
     var d = document.getElementById('diag');

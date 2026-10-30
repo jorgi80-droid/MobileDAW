@@ -2,6 +2,7 @@
 // a native app: no install hints, no web wording, Android back button closes panels first and needs a second press to exit.
 // Opened in an ordinary browser tab it offers to install, or - if it is already installed - explains how to open the app.
 import { h, toast } from './ui.js';
+import { isNativeApp } from './native.js';
 
 const FLAG = 'mobiledaw.installed';            // set once the app has run (or was installed) on this device; storage is shared with the installed app
 const SNOOZE = 'mobiledaw.installHintUntil';
@@ -9,7 +10,7 @@ const store = {
   get: (k) => { try { return localStorage.getItem(k); } catch (_) { return null; } },
   set: (k, v) => { try { localStorage.setItem(k, v); } catch (_) { /* storage blocked */ } },
 };
-export const isStandalone = () => ['fullscreen', 'standalone'].some((m) => matchMedia(`(display-mode: ${m})`).matches) || navigator.standalone === true || (document.referrer || '').startsWith('android-app://');
+export const isStandalone = () => isNativeApp() || ['fullscreen', 'standalone'].some((m) => matchMedia(`(display-mode: ${m})`).matches) || navigator.standalone === true || (document.referrer || '').startsWith('android-app://');
 
 let deferred = null, card = null;
 export const canInstall = () => !!deferred;
