@@ -106,10 +106,11 @@ Baca juga `README-ANDROID.md` (build, install, status fase 2).
 - Toolbar hanya: Browser, Tempo, Undo/Redo | Play/Pause, Rekam, Metronom | FPS+CPU, Arrange/Mixer, menu.
 - Klip yang dipilih tidak boleh ikut buram saat ada popup aksi klip.
 
-## Panjang pattern & loop (FL Studio Mobile)
-- Pattern MIDI / drum selalu 1, 2, 4, 8, 16 ... bar: not yang masuk ke bar 9 membuat pattern 16 bar (`wholeBars()` di `js/editor.js`).
-- Memanjangkan klip di arrangement memakai `P.patternLen(c)` sebagai panjang loop: pola 9 bar -> loop tiap 16 bar (bar 10-16 sunyi), pola 8 bar
-  -> tiap 8. Klip lama yang lebih panjang dari pembulatan (mis. 6 bar dengan not di 3 bar pertama) tetap loop tiap panjangnya sendiri.
+## Panjang pattern & loop (sama di semua DAW)
+- Pattern MIDI / drum = bilangan bar penuh: not yang masuk ke bar 9 membuat pattern 9 bar (`wholeBars()` di `js/editor.js`).
+- Klip yang ditarik lebih panjang dari pattern mengulang pattern itu (`P.patternLen(c)`): pola 9 bar berulang di bar 10, 19, 28 ...;
+  pola 8 bar di bar 9, 17 ... Klip yang dipotong lebih pendek menyimpan panjang pattern (`c.ll`), jadi saat ditarik lagi yang diulang
+  tetap seluruh pattern. Edit di editor berlaku ke semua pengulangan.
 
 ## Menunggu keputusan pemilik
 - **Instrument / Effect Rack dengan macro**: usulan desain ada di laporan sesi ini (rantai paralel = node "rack" berisi beberapa chain,

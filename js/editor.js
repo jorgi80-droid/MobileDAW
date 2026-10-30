@@ -432,9 +432,9 @@ function guessMenu(notes, x, y) {
 // reaches the clip's own length).
 const MAX_BARS = 256;
 const contentEnd = (c) => P.loopOf(c) || c.len;
-// FL Studio Mobile: a pattern is 1, 2, 4, 8, 16 ... bars long. Content reaching into bar 9 makes the pattern 16 bars, so a clip dragged
-// longer than its content loops every 16 bars (an 8-bar pattern loops every 8).
-const wholeBars = (c, end) => { const b0 = P.barAt(c.start), nb = Math.max(1, P.barAt(c.start + Math.max(1, end) - 1) - b0 + 1); let k = 1; while (k < nb) k *= 2; return Math.max(P.beatLenAt(c.start), P.barStart(b0 + k) - c.start); };
+// Every DAW (Live, FL Studio, Logic, Cubase, Bitwig): a pattern is a whole number of bars - content reaching into bar 9 makes it 9 bars, and a
+// clip dragged longer than its pattern repeats it every 9 bars (bar 10, 19, ...).
+const wholeBars = (c, end) => { const b0 = P.barAt(c.start), nb = Math.max(1, P.barAt(c.start + Math.max(1, end) - 1) - b0 + 1); return Math.max(P.beatLenAt(c.start), P.barStart(b0 + nb) - c.start); };
 const maxEnd = () => MAX_BARS * BAR;
 function growTo(c, end) {
   const ll = P.loopOf(c), L = ll || c.len;
