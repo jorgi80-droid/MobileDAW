@@ -23,7 +23,7 @@ const SCALES = { Chromatic: null, Major: [0, 2, 4, 5, 7, 9, 11], Minor: [0, 2, 3
 const NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 const BLACK = new Set([1, 3, 6, 8, 10]);
 
-const cfg = { snap: 6, snapOn: true, key: 0, scale: 'Chromatic', lastScale: 'Major', lock: false, vel: true, velH: 0, lane: 'vel', cc: { k: 'bend', n: 0 }, ccErase: false, mode: 'auto', lastLen: STEP, follow: true };   // velH: lane height dragged by the user (0 = automatic)
+const cfg = { snap: 6, snapOn: true, fold: false, key: 0, scale: 'Chromatic', lastScale: 'Major', lock: false, vel: true, velH: 0, lane: 'vel', cc: { k: 'bend', n: 0 }, ccErase: false, mode: 'auto', lastLen: STEP, follow: true };   // velH: lane height dragged by the user (0 = automatic)
 const v = { x0: 0, ppt: 0.12, top: 84, keyH: 16 };
 const sv = { x0: 0, stepW: 30, y0: 0, rowH: 38 };
 let side = null, padSel = -1, padTrack = -1;   // drum pad panel (right of the step grid) and the pad it shows
@@ -77,14 +77,28 @@ function dims() {
 // ------------------------------------------------------------------ geometry
 const px = (t) => KEYS + (t - v.x0) * v.ppt;
 const tk = (x) => v.x0 + (x - KEYS) / v.ppt;
-const py = (p) => RULER + (v.top - p) * v.keyH;
-const pAt = (y) => Math.floor(v.top - (y - RULER) / v.keyH);
+// Fold (Live): only the rows that hold notes are shown (every in-scale row when a scale is on, every pad row for a drum clip). Rows are then
+// counted by index instead of pitch: rI(p) = row of a pitch, rP(i) = pitch of a row (-1 = an empty row past the last one).
+let foldRows = null;
+function computeFold(c) {
+  const set = new Set(c.notes.map((n) => n.p));
+  if (isDrum()) for (const d of padList()) set.add(d.pitch);
+  else if (SCALES[cfg.scale]) for (let p = 0; p < 128; p++) if (inScale(p)) set.add(p);
+  if (!set.size) set.add(60);
+  return [...set].sort((a, b) => a - b);
+}
+const NROWS = () => (foldRows ? foldRows.length : 128);
+function rI(p) { if (!foldRows) return p; let a = 0, b = foldRows.length; while (a < b) { const m = (a + b) >> 1; if (foldRows[m] < p) a = m + 1; else b = m; } return a; }
+const rP = (i) => (!foldRows ? i : i >= 0 && i < foldRows.length ? foldRows[i] : -1);
+const rowAtY = (y) => Math.floor(v.top - (y - RULER) / v.keyH);
+const py = (p) => RULER + (v.top - rI(p)) * v.keyH;
+const pAt = (y) => rP(rowAtY(y));
 const gridBottom = () => H - (cfg.vel ? VEL : 0);
 function clampV(c) {
   v.ppt = clamp(v.ppt, 0.02, 1.5); v.keyH = clamp(v.keyH, 8, 44);
   const rows = (gridBottom() - RULER) / v.keyH;
   const room = Math.max(1, W - KEYS) / v.ppt;                                       // never scroll before the clip start; to the right the editor stays open 8 bars past the clip end
-  v.top = clamp(v.top, rows - 1 + 0, 128); v.x0 = clamp(v.x0, 0, Math.max(0, (c ? (c.pts ? c.len : c.len + 8 * BAR) : BAR) - room * (c && c.pts ? 0.5 : 0.85)));
+  v.top = clamp(v.top, Math.min(rows - 1, NROWS()), NROWS()); v.x0 = clamp(v.x0, 0, Math.max(0, (c ? (c.pts ? c.len : c.len + 8 * BAR) : BAR) - room * (c && c.pts ? 0.5 : 0.85)));
 }
 
 // ------------------------------------------------------------------ drawing
@@ -110,10 +124,11 @@ function drawRoll(t, c) {
   CS = c.start; const gb = gridBottom();
   ctx.fillStyle = C('#1b1b1c'); ctx.fillRect(0, 0, W, H);
   ctx.save(); ctx.beginPath(); ctx.rect(KEYS, RULER, W - KEYS, gb - RULER); ctx.clip();
-  const p0 = Math.max(0, pAt(gb)), p1 = Math.min(127, pAt(RULER));
+  if (!drag) foldRows = cfg.fold ? computeFold(c) : null;                       // a drag keeps the rows it started with
+  const i0 = Math.max(0, rowAtY(gb)), i1 = Math.min(NROWS() - 1, rowAtY(RULER));
   const sc = SCALES[cfg.scale];
-  for (let p = p0; p <= p1; p++) {
-    const y = py(p), blk = BLACK.has(p % 12), ins = !sc || inScale(p);
+  for (let i = i0; i <= i1; i++) {
+    const p = rP(i), y = py(p), blk = BLACK.has(p % 12), ins = !sc || inScale(p);
     ctx.fillStyle = sc ? (ins ? (blk ? C('#2c2c30') : C('#323236')) : C('#1f1f21')) : (blk ? C('#232325') : C('#2b2b2e'));
     ctx.fillRect(KEYS, y - v.keyH, W - KEYS, v.keyH);
     if (sc && ((p - cfg.key) % 12 + 12) % 12 === 0) { ctx.fillStyle = 'rgba(255,167,34,.10)'; ctx.fillRect(KEYS, y - v.keyH, W - KEYS, v.keyH); }   // root rows
@@ -158,8 +173,14 @@ function drawRoll(t, c) {
   ctx.save(); ctx.beginPath(); ctx.rect(0, RULER, KEYS, gb - RULER); ctx.clip();
   ctx.fillStyle = C('#101011'); ctx.fillRect(0, RULER, KEYS, gb - RULER);
   const bw = Math.round(KEYS * 0.58);   // black key length
-  for (let p = p0; p <= p1; p++) {
-    const y = py(p) - v.keyH, pc = p % 12, blk = BLACK.has(pc), lit = previewHeld && previewHeld.p === p;
+  for (let i = i0; i <= i1; i++) {
+    const p = rP(i), y = py(p) - v.keyH, pc = p % 12, blk = BLACK.has(pc), lit = previewHeld && previewHeld.p === p;
+    if (foldRows) {                                                              // folded: every row named, a strip in the key's colour (Live's folded key column)
+      ctx.fillStyle = lit ? C('#ffa722') : blk ? T('--key-b') : T('--key-w'); ctx.fillRect(0, y, 7, v.keyH);
+      ctx.fillStyle = C('#2c2c2f'); ctx.fillRect(7, y, KEYS - 8, v.keyH); ctx.fillStyle = C('#1f1f21'); ctx.fillRect(0, y + v.keyH - 1, KEYS, 1);
+      ctx.fillStyle = lit ? C('#ffad32') : C('#d0d0d4'); ctx.font = FONT(600, 9); ctx.textBaseline = 'middle'; ctx.textAlign = 'left'; ctx.fillText(keyLabel(p), 10, y + v.keyH / 2, KEYS - 12);
+      continue;
+    }
     ctx.fillStyle = lit && !blk ? C('#ffa722') : T('--key-w'); ctx.fillRect(0, y, KEYS - 1, v.keyH);   // white key (it also runs behind a black key); key colours are theme tokens
     if (blk) {
       ctx.fillStyle = C('#9c9ca3'); ctx.fillRect(bw, Math.round(y + v.keyH / 2), KEYS - bw, 1);   // boundary of the two white keys this black key sits between
@@ -480,6 +501,7 @@ function hitRoll(x, y) {
     if (x < KEYS) return { type: 'lanehead' };
     return { type: 'lane', x };
   }
+  if (foldRows && pAt(y) < 0) return { type: 'none' };
   if (x < KEYS) { const p = clamp(pAt(y), 0, 127); notePreview(p); return { type: 'keys', p }; }
   const p = pAt(y), t = tk(x);
   for (let i = c.notes.length - 1; i >= 0; i--) {
@@ -554,9 +576,9 @@ function rollHandlers() {
         const lead = drag.base.find((b) => b.n === drag.lead) || drag.base[0];
         let dt = snapT(lead.t + dx / v.ppt) - lead.t;
         let dp = -Math.round(dy / v.keyH);
-        const minT = Math.min(...drag.base.map((b) => b.t)), maxT = Math.max(...drag.base.map((b) => b.t)), minP = Math.min(...drag.base.map((b) => b.p)), maxP = Math.max(...drag.base.map((b) => b.p));
-        dt = clamp(dt, -minT, maxEnd() - BAR - maxT); dp = clamp(dp, -minP, 127 - maxP);
-        for (const b of drag.base) { b.n.t = b.t + dt; b.n.p = cfg.lock ? clamp(toScale(b.p + dp), 0, 127) : b.p + dp; }
+        const minT = Math.min(...drag.base.map((b) => b.t)), maxT = Math.max(...drag.base.map((b) => b.t)), minP = Math.min(...drag.base.map((b) => rI(b.p))), maxP = Math.max(...drag.base.map((b) => rI(b.p)));
+        dt = clamp(dt, -minT, maxEnd() - BAR - maxT); dp = clamp(dp, -minP, NROWS() - 1 - maxP);   // rows: pitches, or folded rows
+        for (const b of drag.base) { const np = foldRows ? rP(rI(b.p) + dp) : b.p + dp; b.n.t = b.t + dt; b.n.p = cfg.lock && !foldRows ? clamp(toScale(np), 0, 127) : np; }
         if (growTo(c, notesEnd(drag.base.map((b) => b.n)))) drag.grew = true;
         if (drag.lead.p !== drag.lastP) { drag.lastP = drag.lead.p; notePreview(drag.lead.p, drag.lead.v); }
         P.touchClips(cur().track); P.emit('notes');
@@ -763,8 +785,10 @@ function fitView(c, glide) {
   dims(); const gb = gridBottom(); let lo = 127, hi = 0;
   for (const n of c.notes) { if (n.p < lo) lo = n.p; if (n.p > hi) hi = n.p; }
   if (hi < lo) { lo = hi = isDrum() ? 38 : 60; }
-  const span = hi - lo + 1, keyH = clamp((gb - RULER) / Math.max(span + 3, 12), 10, 24), rows = (gb - RULER) / keyH;
-  const T = { keyH, top: (lo + hi) / 2 + rows / 2 + 0.5, ppt: clamp((W - KEYS - 6) / Math.max(c.len + BAR, 1), 0.02, 0.5), x0: 0 };   // the clip plus one open bar after it
+  foldRows = cfg.fold ? computeFold(c) : null;
+  if (foldRows) { lo = 0; hi = foldRows.length - 1; }                             // folded: rows are indices, all of them on screen when they fit
+  const span = hi - lo + 1, keyH = foldRows ? clamp((gb - RULER) / Math.max(span, 4), 12, 30) : clamp((gb - RULER) / Math.max(span + 3, 12), 10, 24), rows = (gb - RULER) / keyH;
+  const T = { keyH, top: foldRows ? Math.min(span, (lo + hi) / 2 + rows / 2 + 0.5) : (lo + hi) / 2 + rows / 2 + 0.5, ppt: clamp((W - KEYS - 6) / Math.max(c.len + BAR, 1), 0.02, 0.5), x0: 0 };   // the clip plus one open bar after it
   const old = { ...v }; Object.assign(v, T); clampV(c); Object.assign(T, { keyH: v.keyH, top: v.top, ppt: v.ppt, x0: v.x0 });
   if (glide && !prefs.reduceMotion && W > 0) { Object.assign(v, old); emo.t = T; emo.vx = emo.vy = 0; invalidate(); }
 }
@@ -950,7 +974,7 @@ function toolbar() {
   if (stepsMode()) return;
   if (t.kind === 'drum') tools.append(SEP());
   tools.append(
-    snapButton(), SEP(),
+    snapButton(), B('Fold', () => { cfg.fold = !cfg.fold; const ppt = v.ppt, x0 = v.x0; emo.t = null; fitView(c.clip, false); v.ppt = ppt; v.x0 = x0; clampV(c.clip); toolbar(); invalidate(); }, cfg.fold), SEP(),   // rows change at once, the time axis stays
     B('Fit', () => fitView(c.clip, true)),
     B('Ikuti', () => { cfg.follow = !cfg.follow; toolbar(); }, cfg.follow),
     B('Pilih semua', () => { sel = new Set(c.clip.notes); invalidate(); if (sel.size) noteBar(null, 80, RULER + 60); }), SEP(),
