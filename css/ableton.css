@@ -546,3 +546,10 @@
 #arr-ov { height: 24px; flex: none; position: relative; overflow: hidden; background: var(--panel2); border-bottom: 1px solid var(--line); touch-action: none; }
 #arr-ov canvas { display: block; }
 #view-arr.max #arr-ov { display: none; }
+
+/* ===== Clip View: Transform (MIDI Tools) + Envelopes boxes ===== */
+.cp-b.go { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.cp-b.go:active { filter: brightness(1.08); background: var(--accent); }
+.cp-envrow { margin-top: 4px; }
+.cp-envrow .cp-b.sm { height: 20px; padding: 0 8px; font-size: var(--fs-2); }
+.cp-env { display: block; width: 100%; height: 30px; margin-top: 2px; border: 1px solid var(--lv-edge); background: var(--lv-well); }

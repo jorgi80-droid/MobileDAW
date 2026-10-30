@@ -10,6 +10,7 @@ import { eng } from './engine.js';
 import { fmtParam, valOf } from './defs.js';
 import * as DP from './drumpad.js';
 import * as P from './project.js';
+import * as TL from './timeline.js';
 import { prefs } from './prefs.js';
 const { state } = P;
 import { BAR, BEAT } from './project.js';   // live bindings (they follow the time signature)
@@ -456,6 +457,43 @@ function ops() {
     scale: () => { checkpoint(); for (const n of sel) n.p = toScale(n.p); changed(); },
   };
 }
+
+// ---- MIDI Tools: Transform (Live 12). Every tool works on the picked notes, or on all notes of the clip when none are picked; one undo step each.
+const TOOLS = ['Quantize', 'Humanize', 'Strum', 'Arpeggiate', 'Legato'];
+const ARP = ['Up', 'Down', 'Up-Down', 'Converge'];
+const tp = { amt: 100, hum: 30, strum: 40, rate: 240, style: 0 };   // Quantize amount %, Humanize amount %, Strum ticks per note (+ = low to high), Arp step / style
+const chords = (list) => { const g = []; for (const n of [...list].sort((a, b) => a.t - b.t || a.p - b.p)) { const last = g[g.length - 1]; if (last && Math.abs(n.t - last[0].t) <= 12) last.push(n); else g.push([n]); } return g; };
+function transform(tool) {
+  const c = cur(); if (!c || !c.clip.notes) return;
+  const cl = c.clip, list = sel.size ? selNotes() : [...cl.notes]; if (!list.length) return toast('Klip ini belum berisi not.');
+  checkpoint();
+  if (tool === 'Quantize') { const k = tp.amt / 100; for (const n of list) n.t = Math.max(0, Math.round(n.t + (quantT(n.t) - n.t) * k)); }
+  else if (tool === 'Humanize') {
+    const a = tp.hum / 100;
+    for (const n of list) { const e = n.t + n.d; n.t = Math.max(0, Math.round(n.t + (Math.random() - 0.5) * 60 * a)); n.d = Math.max(30, Math.round(e + (Math.random() - 0.5) * 60 * a) - n.t); n.v = clamp((n.v ?? 0.8) + (Math.random() - 0.5) * 0.3 * a, 0.05, 1); }
+  } else if (tool === 'Strum') {
+    for (const ch of chords(list)) { const o = tp.strum >= 0 ? ch : [...ch].reverse(), st = Math.abs(tp.strum); o.forEach((n, k) => { const e = n.t + n.d, sh = Math.min(k * st, n.d - 30); n.t += Math.max(0, sh); n.d = e - n.t; }); }
+  } else if (tool === 'Arpeggiate') {
+    const out = [], drop = new Set();
+    for (const ch of chords(list)) {
+      if (ch.length < 2) continue;
+      const ps = [...ch].sort((a, b) => a.p - b.p), t0 = ch[0].t, end = Math.max(...ch.map((n) => n.t + n.d)), seq = [];
+      if (tp.style === 0) seq.push(...ps); else if (tp.style === 1) seq.push(...[...ps].reverse());
+      else if (tp.style === 2) seq.push(...ps, ...[...ps].reverse().slice(1, -1));
+      else { let a = 0, b = ps.length - 1; while (a <= b) { seq.push(ps[a++]); if (a <= b) seq.push(ps[b--]); } }
+      for (let t = t0, k = 0; t < end; t += tp.rate, k++) { const src = seq[k % seq.length]; out.push({ ...src, t, d: Math.max(30, Math.min(tp.rate - 10, end - t)) }); }
+      for (const n of ch) drop.add(n);
+    }
+    if (!out.length) { toast('Arpeggiate butuh akor (minimal 2 not yang mulai bersamaan).'); return; }
+    cl.notes = cl.notes.filter((n) => !drop.has(n)).concat(out); sel = new Set(out);
+  } else if (tool === 'Legato') {
+    const all = [...cl.notes].sort((a, b) => a.t - b.t), starts = [...new Set(all.map((n) => n.t))];
+    for (const n of list) { const nx = starts.find((t) => t > n.t + 1); n.d = nx ? nx - n.t : Math.max(n.d, contentEnd(cl) - n.t); }
+  }
+  grew(cl, notesEnd(new Set(cl.notes))); changed(); buildProps();
+  toast(tool + ': ' + list.length + ' not' + (sel.size ? ' terpilih' : ''), 1200);
+}
+
 function bump(o, x, y) {
   bar([{ label: '\u22121', keep: true, fn: () => o.shift(-1) }, { label: '+1', keep: true, fn: () => o.shift(1) }, { label: 'Selesai', fn: () => {} }], x, y);
 }
@@ -930,6 +968,38 @@ function buildProps() {
         btn('Ulangi…', (e) => { const r = e.currentTarget.getBoundingClientRect(); menu([2, 4, 8].map((n) => ({ label: `Ulangi isi ${n}x`, fn: () => { checkpoint(); const o = P.repeatClipContent(c.track, cl.id, n); if (o.error) toast(o.error); else { needFit = true; refresh(); } } })), r.left, r.bottom + 2); })),
       h('div', { class: 'cp-hint' }, 'Tanpa not terpilih: berlaku untuk semua not')));
   }
+  // ---- MIDI Tools: Transform box
+  if (cl.notes) {
+    const tool = TOOLS.includes(cfg.tool) ? cfg.tool : 'Quantize', pick = (k) => { cfg.tool = k; buildProps(); };
+    const par = tool === 'Quantize' ? row('Jumlah', numBox({ get: () => tp.amt, set: (q) => { tp.amt = q; }, fmt: () => tp.amt + ' %', min: 0, max: 100, step: 5, px: 5 }))
+      : tool === 'Humanize' ? row('Jumlah', numBox({ get: () => tp.hum, set: (q) => { tp.hum = q; }, fmt: () => tp.hum + ' %', min: 0, max: 100, step: 5, px: 5 }))
+      : tool === 'Strum' ? row('Strum', numBox({ get: () => tp.strum, set: (q) => { tp.strum = q; }, fmt: () => (tp.strum > 0 ? '↑ ' : tp.strum < 0 ? '↓ ' : '') + Math.round(Math.abs(tp.strum) / P.PPQ * 1000 * 60 / state.bpm) + ' ms', min: -240, max: 240, step: 10, px: 4 }))
+      : tool === 'Arpeggiate' ? h('div', { class: 'cp-line' }, ch(ARP[tp.style], (x, y) => menu(ARP.map((a, k) => ({ label: a, check: tp.style === k, fn: () => { tp.style = k; buildProps(); } })), x, y)),
+        ch(['1/32', '1/16', '1/8', '1/4'][[120, 240, 480, 960].indexOf(tp.rate)] || '1/16', (x, y) => menu([[120, '1/32'], [240, '1/16'], [480, '1/8'], [960, '1/4']].map(([r, l]) => ({ label: l, check: tp.rate === r, fn: () => { tp.rate = r; buildProps(); } })), x, y)))
+      : h('div', { class: 'cp-hint' }, 'Setiap not disambung sampai not berikutnya.');
+    kids.push(sec('Transform',
+      row('Alat', ch(tool, (x, y) => menu(TOOLS.map((k) => ({ label: k, check: k === tool, fn: () => pick(k) })), x, y))),
+      par,
+      h('div', { class: 'cp-line' }, btn('Terapkan', () => transform(tool), 'go')),
+      h('div', { class: 'cp-hint' }, sel.size ? sel.size + ' not terpilih' : 'Tanpa not terpilih: semua not')));
+  }
+  // ---- Envelopes box: the automation lanes that drive this clip's track, each with its curve over the clip's span
+  if (kind !== 'auto') {
+    const sid = P.stripOf(c.track), lanes = state.tracks.map((a, k) => [a, k]).filter(([a]) => a.kind === 'auto' && a.target && a.target.strip === sid);
+    const spark = (a) => {
+      const cv = h('canvas', { class: 'cp-env', width: 200, height: 36 }), g = cv.getContext('2d'), W2 = 200, H2 = 36, s0 = cl.start, span = Math.max(1, cl.len);
+      g.fillStyle = T('--lv-well'); g.fillRect(0, 0, W2, H2);
+      const valAt = (tt) => { for (const ac of a.clips) { if (tt < ac.start || tt > ac.start + ac.len || !ac.pts || !ac.pts.length) continue; const r = tt - ac.start, ps = ac.pts; if (r <= ps[0].t) return ps[0].v; for (let k = 1; k < ps.length; k++) if (r <= ps[k].t) { const p0 = ps[k - 1], p1 = ps[k]; return p0.v + (p1.v - p0.v) * ((r - p0.t) / Math.max(1, p1.t - p0.t)); } return ps[ps.length - 1].v; } return null; };
+      g.strokeStyle = a.color || T('--accent'); g.lineWidth = 1.5; g.beginPath(); let pen = false;
+      for (let x = 0; x <= W2; x += 2) { const v = valAt(s0 + span * x / W2); if (v == null) { pen = false; continue; } const y = 3 + (1 - v) * (H2 - 6); if (pen) g.lineTo(x, y); else { g.moveTo(x, y); pen = true; } }
+      g.stroke(); return cv;
+    };
+    const open = (k) => { const a = state.tracks[k], ac = a.clips.find((q) => q.start < cl.start + cl.len && q.start + q.len > cl.start) || a.clips[0]; P.selectTrack(k); if (ac) P.selectClip(k, ac.id); };
+    kids.push(sec('Envelopes',
+      ...(lanes.length ? lanes.map(([a, k]) => h('div', { class: 'cp-envrow' }, h('div', { class: 'cp-row' }, h('span', { class: 'cp-l' }, (String(a.name || '').includes('\u2022') ? a.name.split('\u2022').pop().trim() : P.autoLabel(a))), btn('Edit', () => open(k), 'sm')), spark(a)))
+        : [h('div', { class: 'cp-hint' }, 'Belum ada otomasi untuk track ini.')]),
+      h('div', { class: 'cp-line' }, btn('+ Otomasi…', (e) => { const r = e.currentTarget.getBoundingClientRect(); TL.openLaneMenu(c.track, r.left, r.bottom + 2); }))));
+  }
   // ---- Scale box (Live 12 scale mode)
   if (kind === 'midi') {
     const scOn = !!SCALES[cfg.scale];
@@ -996,7 +1066,7 @@ export function refresh() {
   host.replaceChildren(); showCanvas(true);
   if (fitId !== c.clip.id) { fitId = c.clip.id; needFit = true; }
   dims(); toolbar();
-  sel = new Set([...sel].filter((n) => c.clip.notes.includes(n)));
+  sel = new Set([...sel].filter((n) => (c.clip.notes || []).includes(n)));   // an automation / audio clip has no notes: the old pick is dropped
   if (stepsMode()) { /* handlers read the mode on every event */ }
   syncSide();
   fit(); tryFit(); invalidate();

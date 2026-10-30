@@ -756,6 +756,8 @@ function headMenu(i, x, y) {
 }
 // Automation lane chooser (Live: the A button of a track): pick a parameter; its lane (an automation track) is created right below this track,
 // or selected when it already exists. Existing lanes can be folded / opened together.
+// Clip View (Envelopes box): the same lane menu, placed at a screen point
+export function openLaneMenu(i, sx, sy) { const r = canvasOrigin(); laneMenu(i, sx - r.left, sy - r.top); }
 function laneMenu(i, x, y) {
   const t = state.tracks[i], r = canvasOrigin(), sid = P.stripOf(i); if (!t || t.kind === 'auto') return;
   const open = (target, label) => {
