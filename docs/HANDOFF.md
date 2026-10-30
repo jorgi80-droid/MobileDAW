@@ -20,7 +20,9 @@ Baca juga `README-ANDROID.md` (build, install, status fase 2).
 | Bridge Android: Oboe + JNI + antrian lock-free, LatencyTuner, pilihan engine Web/Native, fallback otomatis, statistik CPU | selesai, build OK |
 | UI: toolbar ringkas simetris, meter FPS|CPU, Pengaturan gaya Preferences Live, jendela Tempo, slider, blur hanya di belakang jendela | selesai |
 | UI gaya Ableton Live 12: Arrangement, Clip View (panel properti + piano roll + lane velocity), Mixer, Device chain | selesai (perbandingan di `docs/redesign/*.jpg`) |
-| **UI gaya Ableton Live 12: Rack (Instrument/Drum/Effect Rack + macro), menu konteks, browser, editor audio (`audioedit.js`)** | **belum** |
+| UI Live 12 lanjutan: menu konteks + action bar, Clip View audio (kotak Audio/Pitch/Warp/Region), Fold piano roll, tampilan Drum Rack, Browser (sidebar Library + Places) | selesai (`docs/redesign/6..10-*.jpg`) |
+| Logika bar & loop gaya FL Studio Mobile (editor terbuka ke kanan, isi klip tumbuh per bar, klip loop diedit sebagai sumber loop, "Lepas loop") | selesai (`docs/redesign/5-*.jpg`) |
+| **Instrument / Effect Rack dengan macro (fitur baru: butuh rantai paralel di engine JS + C++ dan golden test)** | **belum** |
 | **Port C++: GMS, Moisture, Osphere, DirectWave/Keystone/Sampler, Drum Sampler, SoundFont, Wavetable** | **belum** |
 | **Port C++: semua efek (Utility, EQ Three, Parametric EQ, Compressor, Limiter, Saturator, Auto Filter, Echo, Reverb, Roar, Autoduck, Stereolizer, Spacer, Level/Analyzer/MiniMeters)** | **belum** |
 | Ekspor WAV lewat engine native; angka CPU/underrun Web vs Native dari HP | belum |
@@ -38,7 +40,13 @@ Baca juga `README-ANDROID.md` (build, install, status fase 2).
   fader drag relatif, tutup fader meluncur (`st.fpos`).
 - Device (`js/devices.js`): menu `⋯` per device, ketuk-ganda title bar = lipat, nama instrumen = pemilih instrumen; `render()` menjaga posisi
   scroll dan memakai FLIP (`flip()`) untuk geser/lipat/hapus/tambah.
-- CSS semua bagian ini ada di akhir `css/ableton.css` (berurutan: Arrangement, Clip View, Mixer, Device View).
+- Logika bar/loop (`js/editor.js`, blok "Pattern length"): `contentEnd(c)` = panjang isi (loop source bila klip di-loop), `growTo(c, end)`
+  memperpanjang isi per bar penuh (klip loop: `c.ll` bertambah; bila mencapai `c.len`, loop hilang dan klip memanjang), `grew()` = sesudah
+  edit diskrit (panel + arrangement ikut). Editor TIDAK lagi memanggil `bakeLoop` saat dibuka; pengulangan digambar sebagai ghost.
+  "Lepas loop" = `P.bakeLoop` (panel Clip + action bar klip). Step grid: `clampSteps()`, `fitSteps()` (isi + 1 bar terbuka).
+- Fold (`cfg.fold`): baris diindeks `rI(p)` / `rP(i)`; `foldRows` dihitung saat menggambar (tidak saat drag).
+- Audio: `AE.panel(ui)` membangun kotak panel kiri; `AE.onPanel()` memberi tahu editor saat kontrol audio dibangun ulang.
+- CSS semua bagian ini ada di akhir `css/ableton.css` (berurutan: Arrangement, Clip View, Mixer, Device View, menu, audio, Drum Rack, Browser).
 - Screenshot untuk membandingkan: `node tools/ui-shots.mjs <folder> [arr] [clip] [dev] [mix]` (server statis + Chromium Playwright bawaan,
   proyek uji tetap; `THEME=light`, `VW`/`VH` untuk ukuran). Jalankan sekali di commit lama dan sekali di working tree, lalu bandingkan.
 - Catatan: UI berskala 0,8 (`prefs.uiScale`), jadi koordinat layar = koordinat CSS x 0,8 saat mengetes klik dengan Playwright.
