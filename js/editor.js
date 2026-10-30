@@ -1,7 +1,7 @@
 // Clip editor: piano roll (MIDI), step sequencer (drum clips) and a small audio-clip panel.
 // Gestures follow FL Studio Mobile: tap grid = add note, tap note = controls, long-press note = delete menu,
 // long-press + drag on empty = rubber-band select, ruler drag = time selection, drag-up lane = velocity.
-import { C } from './theme.js';
+import { C, T } from './theme.js';
 import { attachGestures } from './gesture.js';
 import { bar, menu, ask, toast, h, clamp } from './ui.js';
 import { checkpoint } from './history.js';
@@ -118,7 +118,7 @@ function drawRoll(t, c) {
     if (sc && ((p - cfg.key) % 12 + 12) % 12 === 0) { ctx.fillStyle = 'rgba(255,167,34,.10)'; ctx.fillRect(KEYS, y - v.keyH, W - KEYS, v.keyH); }   // root rows
     ctx.fillStyle = p % 12 === 0 ? C('#3c3c41') : C('#1f1f21'); ctx.fillRect(KEYS, y - 1, W - KEYS, 1);
   }
-  ctx.fillStyle = 'rgba(0,0,0,.13)'; barSpans((a, b, k) => { if (k % 2) ctx.fillRect(a, RULER, b - a, gb - RULER); });   // every other bar darker
+  ctx.fillStyle = document.documentElement.dataset.theme === 'light' ? 'rgba(0,0,0,.05)' : 'rgba(0,0,0,.13)'; barSpans((a, b, k) => { if (k % 2) ctx.fillRect(a, RULER, b - a, gb - RULER); });   // every other bar darker
   const g = [60, 120, 240, 480, 960, 1920, 3840].find((x) => x * v.ppt >= 12) || 3840;
   gridLocal(g, (q, kd) => { if (kd === 2) return; ctx.fillStyle = kd === 1 ? C('#3a3a3f') : C('#303034'); ctx.fillRect(Math.round(px(q)), RULER, 1, gb - RULER); });
   ctx.fillStyle = C('#4c4c52'); barLinesLocal((q) => ctx.fillRect(Math.round(px(q)), RULER, 1, gb - RULER));   // bar lines per bar (7/8, 5/4 ...)
@@ -143,14 +143,14 @@ function drawRoll(t, c) {
   const bw = Math.round(KEYS * 0.58);   // black key length
   for (let p = p0; p <= p1; p++) {
     const y = py(p) - v.keyH, pc = p % 12, blk = BLACK.has(pc), lit = previewHeld && previewHeld.p === p;
-    ctx.fillStyle = lit && !blk ? C('#ffa722') : C('#d8d8dc'); ctx.fillRect(0, y, KEYS - 1, v.keyH);   // white key (it also runs behind a black key)
+    ctx.fillStyle = lit && !blk ? C('#ffa722') : T('--key-w'); ctx.fillRect(0, y, KEYS - 1, v.keyH);   // white key (it also runs behind a black key); key colours are theme tokens
     if (blk) {
       ctx.fillStyle = C('#9c9ca3'); ctx.fillRect(bw, Math.round(y + v.keyH / 2), KEYS - bw, 1);   // boundary of the two white keys this black key sits between
-      ctx.fillStyle = lit ? C('#ffa722') : C('#1c1c1f'); ctx.fillRect(0, y + 1, bw, v.keyH - 2);
+      ctx.fillStyle = lit ? C('#ffa722') : T('--key-b'); ctx.fillRect(0, y + 1, bw, v.keyH - 2);
       if (!lit) { ctx.fillStyle = C('#3a3a40'); ctx.fillRect(bw - 2, y + 1, 2, v.keyH - 2); }
     } else if (pc === 0 || pc === 5) { ctx.fillStyle = C('#9c9ca3'); ctx.fillRect(0, y + v.keyH - 1, KEYS, 1); }   // B|C and E|F: no black key between
-    if (isDrum() && padList().some((d) => d.pitch === p)) { ctx.fillStyle = blk && !lit ? C('#eee') : C('#111'); ctx.font = FONT(600, 9); ctx.textBaseline = 'middle'; ctx.textAlign = 'left'; ctx.fillText(keyLabel(p), 3, y + v.keyH / 2, KEYS - 5); }
-    else if (pc === 0 || (v.keyH >= 24 && !blk)) { ctx.fillStyle = C('#3a3a40'); ctx.font = FONT(600, 9.5); ctx.textBaseline = 'middle'; ctx.textAlign = 'right'; ctx.fillText(pName(p), KEYS - 5, y + v.keyH / 2); ctx.textAlign = 'left'; }
+    if (isDrum() && padList().some((d) => d.pitch === p)) { ctx.fillStyle = blk && !lit ? '#eeeeee' : '#111111'; ctx.font = FONT(600, 9); ctx.textBaseline = 'middle'; ctx.textAlign = 'left'; ctx.fillText(keyLabel(p), 3, y + v.keyH / 2, KEYS - 5); }
+    else if (pc === 0 || (v.keyH >= 24 && !blk)) { ctx.fillStyle = T('--key-ink'); ctx.font = FONT(600, 9.5); ctx.textBaseline = 'middle'; ctx.textAlign = 'right'; ctx.fillText(pName(p), KEYS - 5, y + v.keyH / 2); ctx.textAlign = 'left'; }
   }
   ctx.fillStyle = C('#141415'); ctx.fillRect(KEYS - 1, RULER, 1, gb - RULER);
   ctx.restore();
@@ -169,7 +169,7 @@ function drawEdRuler(t, c) {
   if (tsel) { ctx.fillStyle = 'rgba(120,182,230,.45)'; ctx.fillRect(px(tsel.a), 0, Math.max(2, px(tsel.b) - px(tsel.a)), RULER - 1); ctx.fillStyle = C('#fff'); ctx.font = FONT(700, 12); ctx.fillText('+', Math.min(W - 12, px(tsel.a) + 4), RULER / 2); }
   ctx.restore();
   ctx.fillStyle = C('#2c2c2f'); ctx.fillRect(0, 0, KEYS - 1, RULER - 1); ctx.fillStyle = C('#141415'); ctx.fillRect(KEYS - 1, 0, 1, RULER);
-  if (!isDrum() && SCALES[cfg.scale]) { ctx.fillStyle = C('#ffad32'); ctx.font = FONT(700, 9); ctx.textBaseline = 'middle'; ctx.fillText(NAMES[cfg.key] + ' ' + cfg.scale.slice(0, 3), 4, RULER / 2, KEYS - 7); }   // Live 12: the active scale in the editor corner
+  if (!isDrum() && SCALES[cfg.scale]) { ctx.fillStyle = T('--lv-orink'); ctx.font = FONT(700, 9); ctx.textBaseline = 'middle'; ctx.fillText(NAMES[cfg.key] + ' ' + cfg.scale.slice(0, 3), 4, RULER / 2, KEYS - 7); }   // Live 12: the active scale in the editor corner
 }
 
 // bottom lane: Velocity / Pan / controller lanes, chosen with the lane header (Live: the chooser at the left of each MIDI editor lane)
@@ -227,7 +227,7 @@ function drawVel(t, c, gb) {
   ctx.fillStyle = C('#d0d0d4'); ctx.font = FONT(700, 10); ctx.textBaseline = 'middle'; ctx.fillText(nm, 5, gb + 13, KEYS - 16);
   ctx.fillStyle = C('#8b8b92'); ctx.beginPath(); ctx.moveTo(KEYS - 12, gb + 11); ctx.lineTo(KEYS - 5, gb + 11); ctx.lineTo(KEYS - 8.5, gb + 15); ctx.closePath(); ctx.fill();
   const lead = sel.size ? [...sel][0] : null;
-  if (lead && cfg.lane !== 'cc' && VEL >= 44) { ctx.fillStyle = C('#ffad32'); ctx.font = FONT(700, 11); ctx.fillText(cfg.lane === 'pan' ? (Math.abs(pan0(lead)) < 0.02 ? 'C' : Math.round(Math.abs(pan0(lead)) * 50) + (pan0(lead) < 0 ? 'L' : 'R')) : String(Math.round(lead.v * 127)), 5, gb + 30, KEYS - 8); }
+  if (lead && cfg.lane !== 'cc' && VEL >= 44) { ctx.fillStyle = T('--lv-orink'); ctx.font = FONT(700, 11); ctx.fillText(cfg.lane === 'pan' ? (Math.abs(pan0(lead)) < 0.02 ? 'C' : Math.round(Math.abs(pan0(lead)) * 50) + (pan0(lead) < 0 ? 'L' : 'R')) : String(Math.round(lead.v * 127)), 5, gb + 30, KEYS - 8); }
   if (cfg.lane === 'cc') { drawCC(t, c, gb); return; }
   ctx.save(); ctx.beginPath(); ctx.rect(KEYS, gb + 2, W - KEYS, VEL - 2); ctx.clip();
   const isPan = cfg.lane === 'pan', top = laneTop(), hh = laneH(), cy = top + hh / 2, bottom = top + hh;
