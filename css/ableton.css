@@ -474,3 +474,32 @@
 /* the install offer sits under the control bar, so a toast at the bottom never hides behind it */
 .pwa-card { top: calc(var(--top-h) + var(--sat) + 10px); bottom: auto; }
 .modal.big:has(> .xdlg) { height: auto; }
+
+/* ===== Device internals (Live 12): one type scale and one control size for every instrument and effect (devviz, liveinst, fxviz,
+   devices.js cards). Section headers = small caps; knob name above / value below in the same 9 px; every in-device button, tab and
+   number box 20 px tall with an invisible 4 px touch margin above and below (the panel stays dense, the finger target is 28 px);
+   displays keep their frame + well. ===== */
+.card .sp-h > b, .card .lv-st, .card .sp-h .st, .card .fv-h { font: var(--fw-b) var(--fs-cap)/12px var(--font); letter-spacing: .1em; text-transform: uppercase; color: var(--lv-dim); }
+.card .sp-h .st { height: var(--ctl-xs); padding: 0 6px; letter-spacing: .04em; text-transform: none; font-size: var(--fs-2); }
+.card .sp-h .st.on { color: var(--lv-ink); }
+.card .knob .k-n, .card .sp-k .knob .k-n, .card .knobs.side .knob .k-n { font: var(--fw-r) var(--fs-1)/11px var(--font); height: 11px; color: var(--lv-dim); }
+.card .knob .k-v, .card .sp-k .knob .k-v, .card .knobs.side .knob .k-v { font: var(--fw-sb) var(--fs-1)/11px var(--font); height: 11px; color: var(--lv-ink); font-variant-numeric: tabular-nums; }
+.card .knob .k-v:empty { visibility: hidden; }
+.card .lv-lb, .card .sp-ro, .card .fv-ro, .card .wtx .mc { font-size: var(--fs-1); line-height: 11px; color: var(--lv-dim); }
+.card .lv-btn, .card .fv-b, .card .fv-t, .card .lv-tab, .card .lv-fld, .card .sp-h .st { position: relative; height: var(--ctl-xs); font: var(--fw-sb) var(--fs-2)/18px var(--font); font-variant-numeric: tabular-nums; }
+.card :is(.lv-btn, .fv-b, .fv-t, .lv-tab, .lv-fld, .st)::after { content: ""; position: absolute; left: 0; right: 0; top: -5px; bottom: -5px; }
+.card .lv-fld.or { color: var(--lv-orink, var(--lv-or)); }
+/* plain buttons inside a card (Pilih file, + Zona, side buttons): Live controls, not app buttons */
+.card .knobs > .b, .card .inst-side > .b, .card > .b { height: var(--ctl-s); padding: 0 10px; border: 1px solid var(--lv-edge); border-radius: 0; background: var(--lv-ctl); color: var(--lv-ink); font: var(--fw-sb) var(--fs-2)/1 var(--font); box-shadow: none; }
+.card .knobs > .b:active, .card .inst-side > .b:active, .card > .b:active { background: var(--lv-ctl2); }
+/* displays: one frame for every family */
+.card .viz, .card .lv-disp, .card .fxv canvas { border: 1px solid var(--lv-edge); border-radius: 0; }
+.card .sp-k .knob .k-n, .card .knobs.side .knob .k-n, .card .knob .k-n.long { letter-spacing: -.03em; }
+/* boxes that cut long text keep the ellipsis but no longer cut their own touch margin */
+#app .card :is(.lv-btn, .fv-b, .fv-t, .lv-tab, .lv-fld, .st), .fw-body .card :is(.lv-btn, .fv-b, .fv-t, .lv-tab, .lv-fld, .st) { overflow: clip; overflow-clip-margin: 6px; }
+/* press feedback inside devices = a brighter face (Live), not a shrink: shrinking would also pull the touch margin away under the finger */
+.card :is(.lv-btn, .fv-b, .fv-t, .lv-tab, .st):active { scale: none; background-color: var(--lv-ctl2); }
+.card :is(.lv-btn, .fv-b, .fv-t, .lv-tab, .st).on:active { filter: brightness(1.08); }
+/* short panels (phones in landscape): a card never cuts its content - it grows to its content and the chain scrolls vertically */
+#dbody .dev-scroll > .card { min-height: max-content; }
+@media (max-height: 430px) { #dbody .dev-scroll { padding: 3px; } }
