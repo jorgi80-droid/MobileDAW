@@ -400,3 +400,77 @@
 #browser .bside .places .pl::before { content: ""; position: absolute; left: 10px; top: 50%; width: 10px; height: 7px; margin-top: -3px; border-radius: 1px 2px 1px 1px; background: var(--lv-dim); }
 #browser .bside .places .pl.on { background: var(--lv-sel); color: #fff; }
 #browser .bside .places .pl.on::before { background: #fff; }
+
+/* ===== Control bar + global windows (Live 12): every window speaks the clip panel's language - one title strip (small caps on panel2),
+   flat square Live buttons, joined option buttons, LED switches for on/off, dark number boxes with amber values, a footer strip with
+   the primary action in orange. Sizes and motion come from the design tokens (app.css :root). ===== */
+/* control bar: one control height for every group, transport included, so all edges line up */
+#top { --cb-h: var(--ctl-m); gap: var(--sp-5); }
+#top .tport .b { width: 50px; height: var(--cb-h); }
+#top .b svg { width: 16px; height: 16px; }
+#top-l, #top-r { gap: var(--sp-3); }
+#top-l #rd-bpm { height: var(--cb-h); min-width: 76px; color: var(--lv-orink, var(--accent)); font: var(--fw-sb) var(--fs-7)/1 var(--font); letter-spacing: .02em; box-shadow: inset 0 1px 3px rgba(0, 0, 0, .3); }
+#top-l #rd-bpm:active { background: var(--lv-sel); color: #fff; }
+.perf { box-shadow: inset 0 1px 3px rgba(0, 0, 0, .3); }
+.perf .fpsbox b, #cpu #cpu-t::before { font-size: var(--fs-1); font-weight: var(--fw-b); letter-spacing: var(--ls-cap); color: var(--dim); opacity: 1; }
+.perf .fpsbox span, #cpu #cpu-t { font-size: var(--fs-4); font-weight: var(--fw-b); color: var(--text); }
+#top .seg { border: 1px solid var(--line); border-radius: var(--r-1); overflow: hidden; gap: 1px; background: var(--line); }
+#top .seg .b { border: 0; border-radius: 0; height: calc(var(--cb-h) - 2px); font-weight: var(--fw-sb); }
+#top .seg .b:not(.on) { color: var(--dim); }
+[data-w="s"] #top .tport .b, [data-w="xs"] #top .tport .b { width: 42px; }
+[data-w="s"] #top, [data-w="xs"] #top { gap: var(--sp-3); }
+[data-theme="light"] #top-l #rd-bpm, [data-theme="light"] .tempo .tp-big { color: var(--lv-orink); }
+
+/* window frame: square-ish (Live), thin edge, one shadow */
+.modal, .pwa-card { border-radius: var(--r-2); border: 1px solid var(--line); background: var(--panel); box-shadow: 0 18px 50px rgba(0, 0, 0, .5), inset 0 0 0 1px rgba(255, 255, 255, .04); }
+.modal > h3, .tempo .tp-head, .pwa-card > b { height: var(--ctl-l); display: flex; align-items: center; background: var(--panel2); border-bottom: 1px solid var(--line);
+  font: var(--fw-b) var(--fs-3)/1 var(--font); letter-spacing: .1em; text-transform: uppercase; color: var(--dim); }
+.tempo .tp-title { font: var(--fw-b) var(--fs-3)/1 var(--font); letter-spacing: .1em; text-transform: uppercase; color: var(--dim); }
+.modal .acts, .pwa-card .acts { display: flex; justify-content: flex-end; gap: var(--sp-3); background: var(--panel2); border-top: 1px solid var(--line); }
+/* buttons inside windows: flat Live controls; the primary action orange; .sw = on/off switch with an LED */
+.modal .b, .pwa-card .b { height: var(--ctl); padding: 0 12px; border: 1px solid var(--lv-edge); border-radius: 0; background: var(--lv-ctl); color: var(--lv-ink); font-weight: var(--fw-sb); font-size: var(--fs-3); box-shadow: none; }
+.modal .b:active, .pwa-card .b:active { background: var(--lv-ctl2); }
+.modal .acts .b, .pwa-card .acts .b { min-width: 80px; height: var(--ctl); }
+.modal .acts .b.go, .pwa-card .acts .b.go, .modal .tp-done { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.modal .b.sw, .modal .b.sw.on { gap: var(--sp-3); background: var(--lv-ctl); color: var(--lv-ink); border-color: var(--lv-edge); }
+.modal .b.sw::before { content: ""; flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--lv-trk); transition: background-color var(--d3) var(--e-std), box-shadow var(--d3) var(--e-std); }
+.modal .b.sw.on::before { background: var(--accent); box-shadow: 0 0 6px var(--accent); }
+/* joined option buttons (one control, 1 px seams) */
+.modal .segc { display: inline-flex; flex-wrap: wrap; gap: 1px; margin: 0; background: var(--lv-edge); border: 1px solid var(--lv-edge); border-radius: 0; overflow: hidden; }
+.modal .segc .b { border: 0; border-radius: 0; }
+.modal .segc .b.on { background: var(--accent); color: var(--accent-ink); }
+/* text fields and number boxes: dark well, amber value for numbers, a 1 px orange edge while focused */
+.modal input[type=text], .modal input[type=number] { height: var(--ctl-l); padding: 0 10px; border: 1px solid var(--lv-edge); border-radius: 0; background: var(--lv-well); color: var(--lv-ink); font-size: var(--fs-5); outline: none; box-shadow: inset 0 1px 3px rgba(0, 0, 0, .3); transition: border-color var(--d2) var(--e-std); }
+.modal input[type=number], .modal input.nbx { color: var(--lv-orink, var(--accent)); font-weight: var(--fw-sb); text-align: center; }
+.modal input:focus { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.modal input::selection { background: var(--lv-sel); color: #fff; }
+/* export dialog: label column + control, the same row height everywhere */
+.xdlg > input[type=text] { width: 100%; margin-bottom: var(--sp-2); }
+.xd-row { display: flex; align-items: center; gap: var(--sp-4); min-height: var(--ctl-l); margin-top: var(--sp-2); }
+.xd-l { flex: none; width: 84px; font: var(--fw-b) var(--fs-cap)/1 var(--font); letter-spacing: var(--ls-cap); text-transform: uppercase; color: var(--lv-dim); }
+.xd-ind { padding-left: calc(84px + var(--sp-4)); gap: var(--sp-2); }
+.xd-man { display: inline-flex; align-items: center; gap: var(--sp-3); margin-left: var(--sp-4); color: var(--lv-dim); font-size: var(--fs-3); }
+.xd-man .nbx { width: 64px; height: var(--ctl); padding: 0 4px; }
+.xd-info { padding: var(--sp-4) 0 0; font-size: var(--fs-3); color: var(--lv-dim); }
+/* toast: a slim status strip, like Live's status bar message */
+.toast { display: flex; align-items: center; gap: var(--sp-4); max-width: min(560px, 86%); padding: 0 14px 0 12px; min-height: var(--ctl-l); border: 1px solid var(--line); border-radius: var(--r-2);
+  background: var(--menu); color: var(--text); font-size: var(--fs-4); box-shadow: 0 8px 24px rgba(0, 0, 0, .4); }
+.toast::before { content: ""; flex: none; width: 3px; align-self: stretch; margin: 7px 0; border-radius: 1px; background: var(--accent); }
+/* install card (web only): the same window with title strip and footer */
+.pwa-card { gap: 0; padding: 0; overflow: hidden; }
+.pwa-card > b { padding: 0 14px; }
+.pwa-card > .sv { padding: 12px 14px; font-size: var(--fs-4); color: var(--text); opacity: .85; }
+.pwa-card .acts { padding: 8px 14px; }
+/* floating windows: Live device-window title bar, square corners */
+.fw { border-radius: var(--r-2); border: 1px solid var(--line); background: var(--panel2); }
+.fw-bar { background: var(--lv-title); border-bottom: 1px solid var(--lv-edge); }
+.fw.focus .fw-bar { background: var(--lv-title); }
+.fw-title { color: var(--lv-dim); font: var(--fw-b) var(--fs-3)/1 var(--font); letter-spacing: .02em; }
+.fw.focus .fw-title { color: var(--lv-ink); }
+.fw-b { width: 28px; height: 24px; border-radius: var(--r-1); color: var(--lv-dim); }
+.fw.focus .fw-b { color: var(--lv-ink); }
+.fw-b:active { background: var(--lv-ctl2); }
+.fw.frameless .fw-bar, .fw.frameless.focus .fw-bar { border-bottom: 0; }
+/* the install offer sits under the control bar, so a toast at the bottom never hides behind it */
+.pwa-card { top: calc(var(--top-h) + var(--sat) + 10px); bottom: auto; }
+.modal.big:has(> .xdlg) { height: auto; }
