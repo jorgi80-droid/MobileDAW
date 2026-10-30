@@ -111,7 +111,7 @@ export class DynTube extends Fx {
 // 29 amount 30 time 31 output dB 32 soft knee 33 RMS
 export class MultibandDyn extends Fx {
   constructor(sr) {
-    super(sr); this.p = [120, 2500]; for (let b = 0; b < 3; b++) this.p.push(1, 6, 0, -12, 4, -40, 1, 10, 100); this.p.push(1, 1, 0, 0, 0);
+    super(sr); this.p = [120, 2500]; for (let b = 0; b < 3; b++) this.p.push(1, 6, 0, -12, 4, -40, 1, 10, 100); this.p.push(1, 1, 0, 0, 0, 0, 0, 0);
     this.x = pair(() => [[new Biquad(), new Biquad()], [new Biquad(), new Biquad()], [new Biquad(), new Biquad()], [new Biquad(), new Biquad()]]); this.env = [0, 0, 0]; this.gr = [0, 0, 0]; this.lv = [0, 0, 0]; this.upd();
   }
   setParam(i, v) { this.p[i] = v; if (i < 2) this.upd(); }
@@ -119,7 +119,8 @@ export class MultibandDyn extends Fx {
   process(L, R, n) {
     const p = this.p, amt = p[29], tm = p[30], out = dbToLin(p[31]), soft = p[32] > 0.5, rms = p[33] > 0.5, B = [];
     for (let b = 0; b < 3; b++) { const o = 2 + b * 9; B.push({ on: p[o] > 0.5, inG: dbToLin(p[o + 1]), outG: dbToLin(p[o + 2]), ta: p[o + 3], ra: 1 + (p[o + 4] - 1) * amt, tb: p[o + 5], rb: 1 + (p[o + 6] - 1) * amt, at: 1 - coef(p[o + 7] * tm, this.sr), rl: 1 - coef(p[o + 8] * tm, this.sr) }); }
-    const pk = [0, 0, 0];
+    const pk = [0, 0, 0], solo = p[34] > 0.5 || p[35] > 0.5 || p[36] > 0.5;                // 34-36: band solo (Live's S buttons)
+    for (let b = 0; b < 3; b++) if (solo && !(p[34 + b] > 0.5)) B[b].outG = 0;
     for (let i = 0; i < n; i++) {
       const bl = [], br = [];
       for (let c = 0; c < 2; c++) { const x = c ? R[i] : L[i], f = this.x[c], lo = f[0][1].process(f[0][0].process(x)), rest = f[1][1].process(f[1][0].process(x)), mid = f[2][1].process(f[2][0].process(rest)), hi = f[3][1].process(f[3][0].process(rest)); (c ? br : bl).push(lo, mid, hi); }
@@ -183,10 +184,12 @@ const CORPUS = [[1, 2.756, 5.404, 8.933, 13.34, 18.64, 24.81, 31.87, 39.8, 48.6,
   [1, 2.5, 4, 5, 6.5, 8, 9, 10, 12.5, 13, 16, 17],                                                         // plate
   [1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23],                                                             // pipe (closed)
   [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]];                                                                // tube (open)
+const CORPUS_SYNC = [1 / 16, 1 / 8, 1 / 4, 3 / 8, 1 / 2, 1, 2, 4];   // note values (1/2 = half note) -> bars
+function lfoWave(sh, x, rn) { x -= Math.floor(x); switch (Math.round(sh)) { case 1: return x < 0.5 ? 1 : -1; case 2: return 1 - 4 * Math.abs(x - 0.5); case 3: return 2 * x - 1; case 4: return 1 - 2 * x; case 5: return rn; default: return Math.sin(TWO_PI * x); } }
 export class Corpus extends Fx {
   constructor(sr) {
     super(sr); this.p = [3, 1, 0.5, 0.84, 0, 0, 0.5, 0.5, 1, 0.47, 0.82, 65.41, 0, 0, 0, 0.5, 0.5, 0, 1000, 4, 0, -0.5, 1];
-    this.m = []; this.ph = 0; this.in = pair(() => new Biquad()); this.cnt = 0; this.upd();
+    this.p.push(0, 0, 4, 0, 0); this.m = []; this.ph = 0; this.sh = [0, 0]; this.rnd = { seed: 7 }; this.in = pair(() => new Biquad()); this.cnt = 0; this.upd();
   }
   setParam(i, v) { this.p[i] = v; this.upd(); }
   upd() {
@@ -203,10 +206,14 @@ export class Corpus extends Fx {
     for (const c of [0, 1]) this.in[c].bandpass(this.sr, p[18], 1 / Math.max(0.1, p[19]));
     this.dirty = true;
   }
-  coefs(lfo) { for (const md of this.m) for (const c of [0, 1]) { const f = (c ? md.fs : md.f) * (1 + lfo), w = TWO_PI * f / this.sr; md['c' + c] = 2 * md.rr * Math.cos(w); } this.dirty = false; }
+  coefs(lfo) { for (const md of this.m) for (const c of [0, 1]) { const f = (c ? md.fs : md.f) * (1 + lfo[c]), w = TWO_PI * f / this.sr; md['c' + c] = 2 * md.rr * Math.cos(w); } this.dirty = false; }
   process(L, R, n) {
     const p = this.p, lfoOn = p[14] > 0.5, wid = p[8], g = dbToLin(p[21]) * 0.5, mix = p[22], bleed = p[20], fon = p[17] > 0.5;
-    if (lfoOn) { this.ph += TWO_PI * p[16] * n / this.sr; if (this.ph > TWO_PI) this.ph -= TWO_PI; this.coefs(Math.sin(this.ph) * p[15] * 0.05); } else if (this.dirty) this.coefs(0);
+    if (lfoOn) {                                    // 23 shape 24 sync 25 sync rate 26 phase (R against L) 27 offset
+      const hz = p[24] > 0.5 ? this.bpm / 60 / (CORPUS_SYNC[clamp(Math.round(p[25]), 0, 7)] * 4) : p[16];
+      this.ph += hz * n / this.sr; if (this.ph >= 1) { this.ph -= Math.floor(this.ph); this.sh = [rnd01(this.rnd) * 2 - 1, rnd01(this.rnd) * 2 - 1]; }
+      const a = p[15] * 0.12, o = p[27] / 360; this.coefs([lfoWave(p[23], this.ph + o, this.sh[0]) * a, lfoWave(p[23], this.ph + o + p[26] / 360, this.sh[1]) * a]);
+    } else if (this.dirty) this.coefs([0, 0]);
     for (let i = 0; i < n; i++) {
       let x = (L[i] + R[i]) * 0.5; if (fon) x = this.in[0].process(x);
       let ol = 0, or = 0;
@@ -225,7 +232,7 @@ export class Corpus extends Fx {
 // 13 attack ms 14 release ms 15 output (mono / stereo / L-R) 16 formant 17 dry/wet
 const VOC_BANDS = [4, 8, 12, 16, 20, 24, 32, 40];
 export class Vocoder extends Fx {
-  constructor(sr) { super(sr); this.p = [0, 0, -60, 0.5, 0, 4, 80, 12000, 1, -60, 0, 0, 1, 1, 150, 1, 0, 1]; this.rnd = { seed: 3 }; this.ph = 0; this.zc = 0; this.last = 0; this.period = 200; this.cntZ = 0; this.lv = new Float32Array(40); this.zr = 0; this.uv = 0; this.upd(); }
+  constructor(sr) { super(sr); this.p = [0, 0, -60, 0.5, 0, 4, 80, 12000, 1, -60, 0, 0, 1, 1, 150, 1, 0, 1, 1, 0]; this.hold = 0; this.nz = 0; this.rnd = { seed: 3 }; this.ph = 0; this.zc = 0; this.last = 0; this.period = 200; this.cntZ = 0; this.lv = new Float32Array(40); this.zr = 0; this.uv = 0; this.upd(); }
   setParam(i, v) { this.p[i] = v; if (i >= 5 && i <= 8 || i === 11 || i === 16) this.upd(); }
   upd() {
     const p = this.p, nb = VOC_BANDS[clamp(Math.round(p[5]), 0, 7)], lo = clamp(p[6], 20, 2000), hi = Math.max(lo * 2, clamp(p[7], 500, 18000)), q = (p[11] > 0.5 ? 9 : 4) / Math.max(0.1, p[8]) * nb / 20;
@@ -239,7 +246,10 @@ export class Vocoder extends Fx {
       const mod = (L[i] + R[i]) * 0.5;
       if ((mod >= 0) !== (this.last >= 0) && mod >= 0) { if (this.cntZ > 20) this.period += (this.cntZ - this.period) * 0.2; this.cntZ = 0; } this.cntZ++; this.last = mod;
       let carrier;
-      if (car === 0) carrier = rnd01(this.rnd) * 2 - 1;
+      if (car === 0) {                              // 18 noise rate (sample-and-hold), 19 crackle (sparse impulses)
+        if (--this.hold <= 0) { this.hold = 1 + Math.round(Math.pow(1 - p[18], 2) * 63); this.nz = rnd01(this.rnd) * 2 - 1; if (p[19] > 0 && rnd01(this.rnd) < p[19] * 0.97) this.nz = 0; else if (p[19] > 0) this.nz /= Math.sqrt(1 - p[19] * 0.97); }
+        carrier = this.nz;
+      }
       else if (car === 1) carrier = mod;
       else { this.ph += 1 / Math.max(8, this.period); if (this.ph >= 1) this.ph -= 1; carrier = 2 * this.ph - 1; }
       const noise = rnd01(this.rnd) * 2 - 1;

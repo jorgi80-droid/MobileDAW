@@ -18,12 +18,14 @@ const PRE = {
   25: { 3: { 2: 9 } }, 27: { 3: { 4: 1 }, 5: { 4: 1 }, 6: { 4: 1, 3: 3 } },
   0: { 8: { 7: 1, 6: 2 } }, 1: { 5: { 4: 1 }, 6: { 4: 1 }, 8: { 7: 1 }, 9: { 7: 1 }, 12: { 7: 1 } }, 2: { 4: { 0: 9 }, 5: { 2: 9 }, 9: { 0: 9 } },
   5: { 1: { 2: 12 } }, 6: { 6: { 7: 0, 8: 0 }, 9: { 8: 1 }, 10: { 8: 1, 7: 0 }, 15: { 16: 1 } },
-  41: { 3: { 2: -6 }, 4: { 2: -6, 3: 0.9 } },
+  41: { 2: { 3: 1 }, 3: { 2: -6 }, 4: { 2: -6, 3: 1 } },
+  40: { 6: { 7: 0.3 }, 15: { 14: 1 }, 16: { 14: 1 }, 18: { 17: 1 }, 19: { 17: 1 }, 23: { 14: 1 }, 24: { 14: 1 }, 25: { 14: 1, 24: 1 }, 26: { 14: 1 }, 27: { 14: 1, 23: 1 } },
+  38: { 34: {}, 35: {}, 36: {} },
   8: { 0: { 1: 9 }, 2: { 3: 9 }, 4: { 3: 9 }, 5: { 6: 9 }, 7: { 6: 9 }, 8: { 9: 9 } },
   31: Object.fromEntries([...Array.from({ length: 8 }, (_, b) => [[b * 5 + 1, { [b * 5]: 1, [b * 5 + 3]: 9 }], [b * 5 + 2, { [b * 5]: 1, [b * 5 + 3]: 9 }], [b * 5 + 3, { [b * 5]: 1 }], [b * 5 + 4, { [b * 5]: 1, [b * 5 + 3]: 9 }]]).flat(), [40, { 8: 9 }]]),
 };
 // known gaps (work in progress, listed in docs/HANDOFF.md): reported as TODO, not as a failure
-const TODO = { 40: [6, 15, 16, 18, 19], 41: [2, 4] };
+const TODO = {};
 let bad = 0, seed = 1;
 const rnd = () => ((seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 4294967296);
 function render(type, set, opts = {}) {
@@ -62,6 +64,16 @@ for (const t of types) {
     if (!changed && !skip) { if ((TODO[t] || []).includes(k)) console.log(`TODO ${t} ${def.name}: ${p.n} has no audible effect yet`); else issues.push(`${p.n} has no audible effect`); }
   });
   if (issues.length) { bad++; console.log(`FAIL ${t} ${def.name}: ${issues.join('; ')}`); } else console.log(`ok   ${t} ${def.name}`);
+}
+// Looper (45): record 1 s of a tone, play it back with the input muted (Monitor Never), overdub adds to it, Clear empties it
+if (!want.length || want.includes(45)) {
+  const d = makeDevice(45, SR), L = new Float32Array(N), R = new Float32Array(N), o = new Float32Array(8); d.setTempo(120); DEVICES[45].params.forEach((p, k) => d.setParam(k, p.def)); d.setParam(5, 1);
+  const run = (blocks, amp) => { let e = 0; for (let b = 0; b < blocks; b++) { for (let i = 0; i < N; i++) { L[i] = R[i] = amp * Math.sin((b * N + i) * 0.05); } d.process(L, R, N); for (let i = 0; i < N; i++) e += L[i] * L[i]; } return e; };
+  const sec = Math.round(SR / N);
+  d.setParam(0, 1); run(sec, 0.5); d.setParam(0, 2); d.readOut(o); const len = o[1];
+  const play = run(sec, 0), ovr = (d.setParam(0, 3), run(sec, 0.5), d.setParam(0, 2), run(sec, 0)); d.setParam(6, 1); const clr = run(sec, 0);
+  const fail = [len < 0.9 && 'length ' + len.toFixed(2), play < 1 && 'no playback', ovr <= play * 1.5 && 'overdub not added', clr > 1e-6 && 'clear left audio'].filter(Boolean);
+  if (fail.length) { bad++; console.log('FAIL 45 Looper transport: ' + fail.join('; ')); } else console.log('ok   45 Looper transport (record / play / overdub / clear)');
 }
 console.log(bad ? `\n${bad} device(s) FAILED` : '\nALL EFFECTS OK');
 process.exit(bad ? 1 : 0);

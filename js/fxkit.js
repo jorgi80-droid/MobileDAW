@@ -3,8 +3,8 @@
 // cyan value boxes, dark displays with a cyan curve and hollow orange rings that can be dragged).
 import { h, knob } from './ui.js';
 import { C } from './theme.js';
-import { fmtParam } from './defs.js';
-import { lvNum, lvTog, lvChoice, lvSel, lvDisp, lvDrag, lvRing, lvPath, lvTabs, DISPC } from './liveui.js';
+import { fmtParam, normOf, valOf } from './defs.js';
+import { lvNum, lvTog, lvBtn, lvChoice, lvSel, lvDisp, lvDrag, lvRing, lvPath, lvTabs, DISPC } from './liveui.js';
 import { eq8Stages } from './engine/fx3.js';
 import { offerAutomation } from './automate.js';
 import { Biquad } from './engine/dsp.js';
@@ -27,11 +27,16 @@ function kit(ctx) {
   const auto = (k) => (rect) => offerAutomation(rect, { kind: 4, strip: P.stripOf(i), devId: d.id, param: k, def: def.params[k] }, `${def.name} ${def.params[k].n}`);
   const reg = (el, k) => { el._k = k; ctls.push(el); return el; };
   const lbl = (k, o) => (o && o.n != null ? o.n : def.params[k].n.replace(/^(L\+R|L|R) /, ''));
-  const K = (k, o = {}) => { const el = knob({ ...def.params[k], n: lbl(k, o) }, () => get(k), (v) => set(k, v), fmtParam, C('#7ac5ff'), auto(k)); el.classList.add('lk-k'); if (o.big) el.classList.add('big'); return reg(el, k); };
-  const T = (k, text, o = {}) => reg(lvTog(text, () => get(k) > 0.5, (b) => set(k, b ? 1 : 0), { cls: 'lk-t ' + (o.cls || ''), w: o.w }), k);
+  const K = (k, o = {}) => { const el = knob({ ...def.params[k], n: lbl(k, o) }, () => get(k), (v) => set(k, v), fmtParam, C('#7ac5ff'), auto(k)); el.classList.add('lk-k'); if (o.big) el.classList.add('big'); if (o.col) el.style.setProperty('--lv-arc', o.col); return reg(el, k); };
+  const T = (k, text, o = {}) => reg(lvTog(text, () => (get(k) > 0.5) !== !!o.inv, (b) => set(k, b !== !!o.inv ? 1 : 0), { cls: 'lk-t ' + (o.cls || ''), w: o.w }), k);
+  // one button that steps through a list and shows the current entry (Live: Resonators Mode A / B)
+  const CY = (k, labels, o = {}) => { const p = def.params[k], b = lvBtn('', () => { const j = Math.round(get(k) - p.min) + 1; set(k, (j >= labels.length ? 0 : j) + p.min); b.update(); }, { cls: 'lk-t on ' + (o.cls || ''), w: o.w });
+    b.update = () => { b.textContent = labels[Math.round(get(k) - p.min)] || ''; }; b.update(); return reg(b, k); };
   const CH = (k, labels, o = {}) => { const p = def.params[k]; return reg(lvChoice(labels.map((l) => ({ label: l })), () => Math.round(get(k) - p.min), (j) => set(k, j + p.min), { cls: 'lk-ch ' + (o.v ? 'v ' : '') + (o.cls || '') }), k); };
   const S = (k, o = {}) => { const p = def.params[k], items = p.items || Array.from({ length: Math.round(p.max - p.min) + 1 }, (_, j) => fmtParam(p, p.min + j)); return reg(lvSel(() => items.map((l, j) => ({ label: l, value: j + p.min })), () => Math.round(get(k)), (v) => set(k, v), { w: o.w || 76, cls: 'lk-s', show: o.short ? (v) => o.short[Math.round(v - p.min)] : null }), k); };
-  const N = (k, o = {}) => reg(lvNum(def.params[k], () => get(k), (v) => set(k, v), fmtParam, { fill: o.fill !== false, w: o.w || 64, onLong: auto(k), label: def.params[k].n, cls: 'lk-n' }), k);
+  const N = (k, o = {}) => reg(lvNum(def.params[k], () => get(k), (v) => set(k, v), fmtParam, { fill: o.fill !== false, w: o.w || 64, onLong: auto(k), label: def.params[k].n, cls: 'lk-n ' + (o.cls || '') }), k);
+  const NT = (k, o = {}) => N(k, { ...o, fill: false, cls: 'lk-nt ' + (o.cls || '') });     // value as coloured text inside a dark display (Live: Decay 1.81 s)
+  const dk = (...kids) => h('div', { class: 'lk-dk' }, ...kids.filter(Boolean));                // dark display area holding controls
   const LN = (text, el) => h('div', { class: 'lk-ln' }, h('span', {}, text), el);           // label left, control right (Live rows like "Freq [5.08 kHz]")
   const TL = (text, ...kids) => h('div', { class: 'lk-tl' }, h('span', { class: 'lk-lb' }, text), ...kids);   // title above a control
   const D = (w, hh, draw, drag) => { const c = lvDisp(w, hh, (g) => draw(g, w, hh)); c.classList.add('lk-d'); draws.push(() => c.paint()); if (drag) lvDrag(c, drag); return c; };
@@ -43,7 +48,7 @@ function kit(ctx) {
   const out = () => { const o = eng.devOut(i, di); return Array.isArray(o) ? o : o ? Array.from(o) : []; };
   // a box whose content follows a parameter (Live: Sync on shows the 16th grid, off shows the time knob)
   const swap = (k, on, off) => { const box = h('div', { class: 'lk-swap' }); const fill = () => box.replaceChildren(get(k) > 0.5 ? on() : off()); fill(); draws.push(() => { const want = get(k) > 0.5; if (box._on !== want) { box._on = want; fill(); } }); box._on = get(k) > 0.5; return box; };
-  return { d, get, set, K, T, CH, S, N, LN, TL, D, sec, row, col, sep, every, out, swap, redraw };
+  return { d, def, get, set, K, T, CY, CH, S, N, NT, dk, LN, TL, D, sec, row, col, sep, every, out, swap, redraw, reg, auto };
 }
 // filter (band) display with a draggable ring: x = freq, y = width (or Q); used by the delays, Beat Repeat, Erosion, Vinyl
 function bandDisp(k, w, hh, kf, kw, o = {}) {
@@ -336,6 +341,223 @@ V[32] = (k) => {
   });
   k.every(60, () => { const r = k.out(); if (r.length) { sp = r; if (k.get(4) > 0.5) { mx = mx && mx.length === r.length ? mx.map((v, j) => Math.max(v - 0.15, r[j])) : r.slice(); } else mx = null; disp.paint(); } });
   return k.row(k.col(k.LN('Block', k.S(0, { w: 70 })), k.LN('Channel', k.CH(1, ['L', 'R', 'L+R'])), k.LN('Avg', k.N(2, { w: 50 })), k.LN('Graph', k.CH(3, ['Line', 'Bins'])), k.T(4, 'Max'), k.LN('Scale X', k.CH(5, ['Lin', 'Log', 'ST'])), k.T(6, 'Auto')), k.sep(), disp);
+};
+
+// ================================================================================================ Live 12 set, part 2 (engine: js/engine/fx4.js)
+const rrect = (g, x, y, w, hh, r) => { g.beginPath(); if (g.roundRect) g.roundRect(x, y, w, hh, r); else g.rect(x, y, w, hh); };
+const ico = (d) => { const s = h('span', { class: 'lk-ico' }); s.innerHTML = `<svg viewBox="0 0 24 12" width="24" height="12"><path d="${d}" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>`; return s; };
+const ICO = { lp: 'M2 3H13Q18 3 22 11', bp: 'M2 11Q7 2 12 2Q17 2 22 11', hp: 'M2 11Q6 3 11 3H22', no: 'M2 3H8Q12 3 12 11Q12 3 16 3H22' };
+const ORK = '#f08a24', AMPN = ['Clean', 'Boost', 'Blues', 'Rock', 'Lead', 'Heavy', 'Bass'];
+// Amp: amp-head picture with the model name in script, model buttons, Gain / Bass / Middle / Treble / Presence (orange dials) | Output Mono, Volume, Dry/Wet
+V[33] = (k) => {
+  const pic = k.D(262, 86, (g, w, hh) => {
+    g.fillStyle = '#1b1c21'; rrect(g, 0, 0, w, hh, 7); g.fill();
+    g.strokeStyle = '#9a9ca3'; g.fillStyle = '#9a9ca3'; g.lineWidth = 1.3; rrect(g, 10, 8, w - 20, hh - 15, 3); g.stroke();
+    g.beginPath(); g.moveTo(10, 25); g.lineTo(w - 10, 25); for (const x of [66, 152]) { g.moveTo(x, 8); g.lineTo(x, 25); } g.stroke();
+    g.beginPath(); g.arc(18, 16.5, 2.2, 0, 7); g.stroke();
+    for (const x of [29, 41, 53, 77, 90, 103, 116, 129, 163, 176, 189, 202]) { g.beginPath(); g.arc(x, 16.5, 4, 0, 7); g.fill(); }
+    g.beginPath(); g.arc(w - 24, 16.5, 4.5, 0, 7); g.lineWidth = 2; g.stroke();
+    g.fillStyle = '#6b6d74'; for (let y = 29; y < hh - 9; y += 3) g.fillRect(13, y, w - 26, 1); for (let x = 13; x < w - 13; x += 4) g.fillRect(x, 28, 1, hh - 37);
+    g.save(); g.translate(22, 55); g.rotate(-0.16); g.font = 'italic 700 27px "Brush Script MT","Segoe Script","Snell Roundhand",cursive'; g.textBaseline = 'middle'; g.lineJoin = 'round';
+    const t = AMPN[Math.round(k.get(0))]; g.lineWidth = 6; g.strokeStyle = '#1b1c21'; g.strokeText(t, 0, 0); g.lineWidth = 1.4; g.strokeStyle = '#c9cbd1'; g.strokeText(t, 0, 0); g.restore();
+  });
+  const O = (j) => k.K(j, { col: ORK });
+  return k.row(k.col(pic, k.CH(0, AMPN, { cls: 'spc' }), k.row(O(1), O(2), O(3), O(4), O(5))), k.sep(),
+    k.col(k.TL('Output', k.T(7, 'Mono', { inv: true })), h('span', { class: 'lk-grow' }), O(6), O(8)));
+};
+// Cabinet: cabinet picture (speakers of the chosen model, the microphone ring at its position: tap / drag to move it) | microphone, position | Output Mono, Dry/Wet
+V[34] = (k) => {
+  const W = 200, H = 96, MX = [0.5, 0.78, 1.1];
+  const pic = k.D(W, H, (g) => {
+    const ty = Math.round(k.get(0)), cw = ty === 0 ? 70 : ty === 1 ? 116 : 104, ch = ty < 2 ? 70 : 84, x0 = 14, y0 = (H - ch) / 2;
+    g.fillStyle = '#1b1c21'; g.strokeStyle = '#9a9ca3'; g.lineWidth = 1.3; rrect(g, x0, y0, cw, ch, 4); g.fill(); g.stroke();
+    const n = [1, 2, 4, 4][ty], cols = n === 1 ? 1 : 2, rows = n === 4 ? 2 : 1, r = ty === 3 ? 17 : ty === 0 ? 27 : ty === 1 ? 25 : 19, sp = [];
+    for (let j = 0; j < n; j++) { const cx = x0 + cw * ((j % cols) + 0.5) / cols, cy = y0 + ch * (Math.floor(j / cols) + 0.5) / rows; sp.push([cx, cy]); g.beginPath(); g.arc(cx, cy, r, 0, 7); g.stroke(); g.beginPath(); g.arc(cx, cy, r * 0.32, 0, 7); g.stroke(); }
+    const pos = Math.round(k.get(2)), [sx, sy] = sp[0], mx = pos === 0 ? sx : pos === 1 ? sx + r * 0.75 : x0 + cw + 36, my = sy;
+    g.strokeStyle = DISPC.ink; g.lineWidth = 1; g.beginPath(); g.moveTo(mx + 6, my); g.lineTo(W - 8, my); g.stroke();
+    lvRing(g, mx, my, 6); label(g, ['Near On-Axis', 'Near Off-Axis', 'Far'][pos], W - 6, H - 6, DISPC.or, 9, 'right');
+    label(g, k.get(1) > 0.5 ? 'Dynamic' : 'Condenser', W - 6, 13, DISPC.ink, 9, 'right'); void MX;
+  }, { onDown: (x) => { const ty = Math.round(k.get(0)), cw = ty === 0 ? 70 : ty === 1 ? 116 : 104, sx = 14 + cw / (ty === 0 ? 2 : 4); const p = x > 14 + cw + 8 ? 2 : Math.abs(x - sx) < 10 ? 0 : 1; if (p !== Math.round(k.get(2))) k.set(2, p); return {}; }, onMove: () => {} });
+  return k.row(k.col(pic, k.CH(0, ['1x12', '2x12', '4x12', '4x10 Bass'], { cls: 'spc' })), k.sep(),
+    k.col(k.TL('Microphone', k.CH(1, ['Condenser', 'Dynamic'], { v: true })), k.TL('Position', k.CH(2, ['Near On-Axis', 'Near Off-Axis', 'Far'], { v: true }))), k.sep(),
+    k.col(k.TL('Output', k.T(3, 'Mono', { inv: true })), h('span', { class: 'lk-grow' }), k.K(4)));
+};
+// Overdrive: band-pass display (drag: x = Freq, y = Width), Freq / Width boxes | Drive, Tone | Dynamics, Dry/Wet
+V[35] = (k) => k.row(k.col(bandDisp(k, 190, 72, 0, 1, { wmin: 0.5, wmax: 9 }), k.row(k.LN('Freq', k.N(0, { w: 70 })), k.LN('Width', k.N(1, { w: 50 })))), k.sep(),
+  k.col(k.K(2, { big: true }), k.K(3)), k.sep(), k.col(k.K(4), k.K(5)));
+// Pedal: OD / Distort / Fuzz, Gain, Output | Bass / Mid / Treble with the Mid frequency switch | Sub, Dry/Wet
+V[36] = (k) => k.row(k.col(k.CH(0, ['OD', 'Distort', 'Fuzz'], { v: true }), k.K(2)), k.col(k.K(1, { big: true })), k.sep(),
+  k.col(k.row(k.K(3), k.K(4), k.K(5)), k.TL('Mid Freq', k.CH(6, ['Low', 'Mid', 'High']))), k.sep(), k.col(k.T(7, 'Sub'), h('span', { class: 'lk-grow' }), k.K(8)));
+// Dynamic Tube: tube curve (drag: x = Bias, y = Drive), tube A / B / C | Drive, Bias | Envelope, Attack, Release | Tone, Output, Dry/Wet
+V[37] = (k) => {
+  const disp = k.D(150, 86, (g, w, hh) => {
+    const dv = Math.pow(10, k.get(0) / 20) * 2, bias = (k.get(1) - 0.5) * [0.4, 0.8, 1.4][Math.round(k.get(3))];
+    g.fillStyle = DISPC.grid; g.fillRect(0, hh / 2, w, 1); g.fillRect(w / 2, 0, 1, hh);
+    const fn = (x) => { const y = x * dv + bias; return Math.tanh(y) - Math.tanh(bias); }, pts = [];
+    for (let x = 0; x <= w; x += 2) pts.push([x, hh / 2 - Math.max(-1.2, Math.min(1.2, fn((x / w) * 2 - 1))) / 1.2 * (hh / 2 - 6)]);
+    lvPath(g, pts, DISPC.bl, null, 1.8); lvRing(g, w / 2 + (k.get(1) - 0.5) * (w - 20), hh / 2 - (k.get(0) + 12) / 36 * (hh / 2 - 8), 4.5);
+  }, { onDown: () => ({ b: k.get(1), d: k.get(0) }), onMove: (x, y, dx, dy, s) => { k.set(1, Math.max(0, Math.min(1, s.b + dx / 130))); k.set(0, Math.max(-12, Math.min(24, s.d - dy * 0.4))); } });
+  return k.row(k.col(disp, k.TL('Tube', k.CH(3, ['A', 'B', 'C']))), k.sep(), k.col(k.K(0, { big: true }), k.K(1)), k.sep(),
+    k.col(k.K(2), k.row(k.K(5), k.K(6))), k.sep(), k.col(k.K(4), k.row(k.K(7), k.K(8))));
+};
+// Multiband Dynamics: Split Freq (band on, solo, crossover boxes) | Input | level display with the Below / Above ranges (drag the edges) | Att/Rel, Below or
+// Above readouts (T / B / A) | band Output | global Output, Time, Amount; Soft Knee, RMS
+V[38] = (k) => {
+  const BO = (b) => 2 + b * 9, ROWS = [2, 1, 0], W = 266, RH = 50, H = RH * 3 + 18, lv = [-90, -90, -90], gr = [0, 0, 0];
+  let view = 0; const xd = (db) => 8 + (Math.max(-80, Math.min(0, db)) + 80) / 80 * (W - 16), dx2db = (dx) => dx / (W - 16) * 80;
+  const disp = k.D(W, H, (g) => {
+    for (let d = -80; d <= 0; d += 10) { g.fillStyle = DISPC.grid; g.fillRect(Math.round(xd(d)), 0, 1, H - 16); label(g, String(-d), xd(d), H - 4, DISPC.ink, 9, 'center'); }
+    ROWS.forEach((b, r) => {
+      const o = BO(b), y0 = r * RH + 4, on = k.get(o) > 0.5, xa = xd(k.get(o + 3)), xb = xd(k.get(o + 5));
+      g.fillStyle = 'rgba(115,70,60,.45)'; g.fillRect(xa, y0, W - 8 - xa, RH - 8); g.fillStyle = 'rgba(60,90,120,.35)'; g.fillRect(8, y0, xb - 8, RH - 8);
+      g.fillStyle = DISPC.grid2; g.fillRect(xa, y0, 1, RH - 8); g.fillRect(xb, y0, 1, RH - 8);
+      const x1 = xd(lv[b]); g.fillStyle = on ? DISPC.bl : DISPC.grid2; g.fillRect(8, y0 + 14, Math.max(0, x1 - 8), 9);
+      if (on && Math.abs(gr[b]) > 0.05) { g.fillStyle = DISPC.or; g.fillRect(Math.round(xd(lv[b] + gr[b])), y0 + 11, 2, 15); }
+      label(g, on ? (gr[b] > 0 ? '+' : '') + gr[b].toFixed(1) : '', 12, y0 + 37, DISPC.bl, 10);
+    });
+  }, { onDown: (x, y) => { const b = ROWS[Math.max(0, Math.min(2, Math.floor(y / RH)))], o = BO(b), ka = Math.abs(x - xd(k.get(o + 3))) < Math.abs(x - xd(k.get(o + 5))) ? o + 3 : o + 5; return { k: ka, v: k.get(ka) }; },
+    onMove: (x, y, dx, dy, s) => { const p = k.def.params[s.k]; k.set(s.k, Math.max(p.min, Math.min(p.max, s.v + dx2db(dx)))); } });
+  k.every(50, () => { const r = k.out(); if (r.length >= 6) { for (let b = 0; b < 3; b++) { lv[b] = r[b * 2]; gr[b] = r[b * 2 + 1]; } disp.paint(); } });
+  const cell = (...kids) => h('div', { class: 'lk-mbr' }, ...kids.filter(Boolean));
+  const split = k.col(h('div', { class: 'lk-st c' }, 'Split Freq'), ...ROWS.map((b) => cell(k.col(k.row(h('span', { class: 'lk-lb' }, ['Low', 'Mid', 'High'][b]), k.T(BO(b), '⏻', { w: 22 }), k.T(34 + b, 'S', { w: 22 })),
+    b === 2 ? k.N(1, { w: 66 }) : b === 0 ? k.N(0, { w: 66 }) : null))), k.T(32, 'Soft Knee'));
+  const input = k.col(h('div', { class: 'lk-st c' }, 'Input'), ...ROWS.map((b) => cell(k.K(BO(b) + 1, { n: '' }))), k.T(33, 'RMS'));
+  const rdBox = k.col(), TBA = [[7, 8, 'Att/Rel'], [5, 6, 'Below'], [3, 4, 'Above']];
+  const fillRd = () => rdBox.replaceChildren(h('div', { class: 'lk-st c' }, TBA[view][2]), ...ROWS.map((b) => cell(k.col(k.NT(BO(b) + TBA[view][0], { w: 62 }), k.NT(BO(b) + TBA[view][1], { w: 62 })))));
+  fillRd();
+  const vb = lvChoice(['T', 'B', 'A'].map((l) => ({ label: l, title: TBA[['T', 'B', 'A'].indexOf(l)][2] })), () => view, (j) => { view = j; fillRd(); }, { cls: 'lk-ch lk-tba' });
+  const outs = k.col(h('div', { class: 'lk-st c' }, 'Output'), ...ROWS.map((b) => cell(k.K(BO(b) + 2, { n: '' }))));
+  return k.row(split, input, k.col(h('div', { class: 'lk-st c' }, ' '), disp), k.col(rdBox, vb), outs, k.sep(), k.col(k.K(31), k.K(30), k.K(29)));
+};
+// Resonators: Filter (on, frequency, type) | Mode, Decay, Const, Color | I (note) and II-V (pitch): on, pitch, fine, gain | Width, Gain, Dry/Wet
+V[39] = (k) => {
+  const res = (n, o, first) => k.col(h('div', { class: 'lk-st' }, n), k.T(o, 'On'), k.K(o + 1, { n: first ? 'Note' : 'Pitch' }), k.N(o + 2, { w: 44, fill: false }), k.K(o + 3, { n: 'Gain' }));
+  const ft = k.reg(lvChoice([ICO.lp, ICO.bp, ICO.hp, ICO.no].map((d, j) => ({ label: ico(d), title: ['LP', 'BP', 'HP', 'Notch'][j] })), () => Math.round(k.get(2)), (j) => k.set(2, j), { cls: 'lk-ch v lk-icoch' }), 2);
+  return k.row(k.col(h('div', { class: 'lk-st c' }, 'Filter'), k.T(0, 'On'), k.K(1), ft), k.sep(),
+    k.col(h('div', { class: 'lk-st' }, 'Mode'), k.CY(3, ['A', 'B'], { w: 30 }), k.K(4), k.T(5, 'Const'), k.K(6)),
+    res('I', 7, true), res('II', 11), res('III', 15), res('IV', 19), res('V', 23), k.col(k.K(27), k.K(28), k.K(29)));
+};
+// Corpus: dark section (resonator type + quality, picture with the Hit ring, Decay / Material, Width / Pos. L / Pos. R), Bright / Inharm / Ratio / Hit |
+// Tune with note readout, Fine, Spread | LFO (amount, shape, rate Hz or synced, phase, offset) | Filter (freq, bandwidth) | Bleed, Gain, Dry/Wet
+const NN12 = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+V[40] = (k) => {
+  const W = 196, H = 92;
+  const pic = k.D(W, H, (g) => {
+    const t = Math.round(k.get(0)), hx = 0.15 + k.get(7) * 0.7; g.strokeStyle = '#a9abb2'; g.lineWidth = 1.3; g.lineJoin = 'round';
+    const iso = (pts) => { g.beginPath(); pts.forEach(([x, y], j) => (j ? g.lineTo(x, y) : g.moveTo(x, y))); g.closePath(); g.stroke(); };
+    const cx = W / 2, cy = H / 2 + 8; let ring = [cx, cy - 26];
+    if (t === 2) { g.beginPath(); g.moveTo(30, cy + 10); g.lineTo(W - 30, cy - 10); g.stroke(); ring = [30 + (W - 60) * hx, cy + 10 - 20 * hx]; }
+    else if (t === 5 || t === 6) { g.beginPath(); g.ellipse(cx - 40, cy, 8, 16, 0, 0, 7); g.stroke(); g.beginPath(); g.moveTo(cx - 40, cy - 16); g.lineTo(cx + 40, cy - 16); g.moveTo(cx - 40, cy + 16); g.lineTo(cx + 40, cy + 16); g.stroke(); g.beginPath(); g.ellipse(cx + 40, cy, 8, 16, 0, -Math.PI / 2, Math.PI / 2); g.stroke(); if (t === 5) { g.beginPath(); g.ellipse(cx + 40, cy, 8, 16, 0, Math.PI / 2, Math.PI * 1.5); g.stroke(); } ring = [cx - 40 + 80 * hx, cy - 26]; }
+    else { const L = t === 3 ? 28 : t === 4 ? 40 : 46, D = t === 3 ? 22 : t === 4 ? 26 : 9, T = t === 3 ? 12 : t === 4 ? 3 : 7;
+      iso([[cx - L, cy], [cx, cy - D], [cx + L, cy], [cx, cy + D]]); iso([[cx - L, cy], [cx - L, cy + T], [cx, cy + D + T], [cx, cy + D]]); iso([[cx, cy + D], [cx, cy + D + T], [cx + L, cy + T], [cx + L, cy]]);
+      if (t === 1) for (const f of [-0.5, 0, 0.5]) { g.beginPath(); g.moveTo(cx + f * L, cy + D * (1 - Math.abs(f)) + T); g.lineTo(cx + f * L, cy + D * (1 - Math.abs(f)) + T + 14); g.stroke(); }
+      if (t === 3) for (let j = 1; j < 4; j++) { g.beginPath(); for (let x = 0; x <= 1.001; x += 0.1) { const px = cx - L + j * L / 4 + x * L, py = cy - D + j * D / 4 + x * D + Math.sin(x * 9) * 1.5; x ? g.lineTo(px, py) : g.moveTo(px, py); } g.stroke(); }
+      ring = [cx - L * 0.6 + L * 1.2 * hx, cy - D * 0.4 - 18]; }
+    lvRing(g, ring[0], ring[1], 6);
+  }, { onDown: () => ({ v: k.get(7) }), onMove: (x, y, dx, dy, s) => k.set(7, Math.max(0, Math.min(1, s.v + dx / 140))) });
+  const note = h('div', { class: 'lk-note' }); const nfill = () => { const m = 69 + 12 * Math.log2(k.get(11) * Math.pow(2, k.get(12) / 1200) / 440), n = Math.round(m); note.textContent = `${NN12[((n % 12) + 12) % 12]}${Math.floor(n / 12) - 1}   ${Math.round((m - n) * 100)} ct`; };
+  note.update = nfill; note._k = -1; nfill(); k.reg(note, -1);
+  const dark = k.dk(k.row(k.S(0, { w: 104 }), k.S(1, { w: 64 })), k.row(k.col(pic, k.row(k.LN('Decay', k.NT(2, { w: 54 })), k.LN('Material', k.NT(3, { w: 46 })))),
+    k.col(k.TL('Width', k.NT(8, { w: 52 })), k.TL('Pos. L', k.NT(9, { w: 52 })), k.TL('Pos. R', k.NT(10, { w: 52 })))));
+  return k.row(k.col(dark, k.row(k.K(4), k.K(5), k.K(6), k.K(7))), k.sep(),
+    k.col(k.K(11), note, k.K(12), k.TL('Spread', k.N(13, { w: 74 }))), k.sep(),
+    k.col(k.T(14, 'LFO'), k.row(k.K(15, { n: 'Amount' }), k.TL('Shape', k.S(23, { w: 66 }))), k.row(k.swap(24, () => k.K(25, { n: 'Rate' }), () => k.K(16, { n: 'Rate' })), k.CH(24, ['Hz', '♪'], { v: true, cls: 'sm' })),
+      k.row(k.K(26, { n: 'Phase' }), k.K(27, { n: 'Offset' }))), k.sep(),
+    k.col(k.T(17, 'Filter'), h('span', { class: 'lk-grow' }), k.K(18), k.K(19)), k.sep(), k.col(k.K(20), k.K(21), k.K(22)));
+};
+// Vocoder: Carrier + Enhance, carrier XY pad (Noise: x = rate, y = crackle), Unvoiced / Sens. / Fast | band display (live band levels, dashed Level line;
+// drag = Level) with Bands / Range / BW + Precise / Gate / Level | Depth, Attack, Release | Mono / Stereo / L/R, Formant, Dry/Wet
+V[41] = (k) => {
+  let lv = [];
+  const xy = k.D(116, 76, (g, w, hh) => {
+    if (Math.round(k.get(0)) !== 0) { label(g, ['', 'Modulator', 'Pitch Tracking'][Math.round(k.get(0))], w / 2, hh / 2 + 3, DISPC.ink, 9, 'center'); return; }
+    g.fillStyle = DISPC.grid; g.fillRect(0, hh - 12, w, 12); label(g, 'Rate', 3, hh - 3, DISPC.ink, 8); label(g, 'Crackle', w - 3, hh - 3, DISPC.ink, 8, 'right');
+    lvRing(g, 6 + k.get(18) * (w - 12), 6 + (1 - k.get(19)) * (hh - 24), 5.5);
+  }, { onDown: () => (Math.round(k.get(0)) === 0 ? { r: k.get(18), c: k.get(19) } : false), onMove: (x, y, dx, dy, s) => { k.set(18, Math.max(0, Math.min(1, s.r + dx / 104))); k.set(19, Math.max(0, Math.min(1, s.c - dy / 52))); } });
+  const W = 250, H = 110;
+  const bands = k.D(W, H, (g) => {
+    const n = lv.length || [4, 8, 12, 16, 20, 24, 32, 40][Math.round(k.get(5))], bw = (W - 20) / n, ly = 8 + (-k.get(10) / 36 + 12 / 36) * (H - 20) * 0.5;
+    g.strokeStyle = DISPC.bl; g.lineWidth = 1.5; g.beginPath(); g.moveTo(4, 12); g.lineTo(4, 4); g.lineTo(12, 4); g.moveTo(W - 12, 4); g.lineTo(W - 4, 4); g.lineTo(W - 4, 12); g.moveTo(4, H - 12); g.lineTo(4, H - 4); g.lineTo(12, H - 4); g.moveTo(W - 12, H - 4); g.lineTo(W - 4, H - 4); g.lineTo(W - 4, H - 12); g.stroke();
+    g.fillStyle = DISPC.bl; for (let b = 0; b < n; b++) { const v = lv[b] == null ? -90 : lv[b], y = 14 + (1 - Math.max(0, Math.min(1, (v + 60) / 60))) * (H - 22); g.fillRect(10 + b * bw + 1, y, Math.max(1, bw - 3), H - 8 - y); }
+    g.strokeStyle = DISPC.or; g.setLineDash([6, 4]); g.beginPath(); g.moveTo(10, ly); g.lineTo(W - 10, ly); g.stroke(); g.setLineDash([]);
+  }, { onDown: () => ({ v: k.get(10) }), onMove: (x, y, dx, dy, s) => k.set(10, Math.max(-24, Math.min(12, s.v - dy * 0.3))) });
+  k.every(60, () => { const r = k.out(); if (r.length) { lv = r; bands.paint(); } });
+  return k.row(
+    k.col(k.row(h('span', { class: 'lk-st' }, 'Carrier'), k.T(1, 'Enhance')), k.S(0, { w: 116 }), xy, k.row(k.K(2), k.col(k.TL('Sens.', k.N(3, { w: 54 })), k.T(4, 'Fast')))), k.sep(),
+    k.dk(bands, k.row(k.TL('Bands', k.S(5, { w: 44, cls: 'dk' })), k.TL('Range', k.NT(7, { w: 62 }), k.NT(6, { w: 62 })), k.TL('BW', k.NT(8, { w: 48 }), k.T(11, 'Precise')), k.TL('Gate', k.NT(9, { w: 54, cls: 'or' })), k.TL('Level', k.NT(10, { w: 50, cls: 'or' })))),
+    k.col(k.K(12), k.K(13), k.K(14)), k.col(k.CH(15, ['Mono', 'Stereo', 'L/R'], { v: true }), k.K(16), k.K(17)));
+};
+// Shifter: Pitch / Freq / Ring, shift display (input line, shifted lines), Pitch or Freq, Fine, Window | Spread, Feedback | Tone, Dry/Wet
+V[42] = (k) => {
+  const disp = k.D(206, 62, (g, w, hh) => {
+    grid(g, w, hh); const m = Math.round(k.get(0)), f0 = 440, x0 = lx(f0, w);
+    const fs = m === 0 ? [f0 * Math.pow(2, (k.get(1) + k.get(2) / 100) / 12)] : m === 1 ? [f0 + k.get(3)] : [Math.abs(f0 - k.get(3)), f0 + k.get(3)];
+    g.fillStyle = DISPC.grid2; g.fillRect(Math.round(x0), 8, 2, hh - 16);
+    for (const f of fs) { const x = lx(Math.max(20, Math.min(20000, f)), w); g.fillStyle = DISPC.bl; g.fillRect(Math.round(x), 8, 2, hh - 16); g.strokeStyle = DISPC.or; g.lineWidth = 1; g.beginPath(); g.moveTo(x0, hh / 2); g.lineTo(x, hh / 2); g.stroke(); lvRing(g, x, hh / 2, 3.5); }
+    const tx = lx(k.get(7), w); g.fillStyle = 'rgba(0,0,0,.35)'; g.fillRect(tx, 0, w - tx, hh);
+  });
+  return k.row(k.col(k.CH(0, ['Pitch', 'Freq', 'Ring']), disp, k.row(k.swap(0, () => k.K(3, { big: true }), () => k.K(1, { big: true })), k.K(2), k.K(4))), k.sep(),
+    k.col(k.K(5), k.K(6)), k.sep(), k.col(k.K(7), k.K(8)));
+};
+// Grain Delay: parameter boxes with Y-axis buttons, 16th grid + Sync + Delay time | XY display (ring = the X and Y parameters) with the X-axis buttons
+const GD = new Map();
+V[43] = (k) => {
+  const st = GD.get(k.d.id) || { x: 5, y: 8 }; GD.set(k.d.id, st);
+  const xk = () => (st.x === 2 && k.get(0) > 0.5 ? 1 : st.x), W = 330, H = 140;
+  const xy = k.D(W, H, (g) => {
+    g.fillStyle = DISPC.grid; for (let j = 1; j < 10; j++) { g.fillRect(Math.round(j * W / 10), 0, 1, H); g.fillRect(0, Math.round(j * H / 10), W, 1); }
+    const px = k.def.params[xk()], py = k.def.params[st.y]; lvRing(g, 8 + normOf(px, k.get(xk())) * (W - 16), H - 8 - normOf(py, k.get(st.y)) * (H - 16), 6);
+  }, { onDown: () => ({}), onMove: (x, y) => { const a = xk(); k.set(a, valOf(k.def.params[a], (x - 8) / (W - 16))); k.set(st.y, valOf(k.def.params[st.y], (H - 8 - y) / (H - 16))); } });
+  const axisBtns = (items, key) => { const bs = items.map(([j, t]) => h('button', { class: 'lv-btn lk-ax', onclick: () => { st[key] = j; paint(); xy.paint(); } }, t)); const paint = () => bs.forEach((b, n) => b.classList.toggle('on', items[n][0] === st[key])); paint(); return bs; };
+  const ys = axisBtns([[3, 'Spray'], [4, 'Frequency'], [5, 'Pitch'], [6, 'Rand Pitch'], [7, 'Feedback'], [8, 'DryWet']], 'y');
+  const left = k.col(...[3, 4, 5, 6, 7, 8].map((j, n) => k.row(k.N(j, { w: 58, fill: false }), ys[n])),
+    k.CH(1, ['1', '2', '3', '4', '5', '6', '8', '16'], { cls: 'g4' }), k.row(k.T(0, 'Sync', { w: 44 }), k.N(2, { w: 62 })));
+  return k.row(left, k.sep(), k.col(xy, h('div', { class: 'lk-axr' }, ...axisBtns([[2, 'Delay Time'], [3, 'Spray'], [4, 'Frequency'], [5, 'Pitch'], [6, 'Rand Pitch'], [7, 'Feedback']], 'x'))));
+};
+// Hybrid Reverb: Send, Predelay, Feedback | Reverb tab (IR picture with IR Decay / Size, Routing, Algorithm, Freeze, Mod, Diffusion; Convolution IR, Blend,
+// Decay / Size / Damping) or EQ tab (Low Cut / High Cut curve with draggable rings; the tab's box = EQ on) | Stereo, Vintage, Bass Mono, Dry/Wet
+V[44] = (k) => {
+  const page = h('div', { class: 'lk-page' }), W = 440;
+  const ir = k.D(W, 74, (g, w, hh) => {
+    const dec = 0.06 + k.get(6) * 0.9, sz = k.get(7), blend = k.get(4), mid = hh / 2; let s = 11;
+    const rnd = () => ((s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 4294967296);
+    g.fillStyle = DISPC.or; g.globalAlpha = Math.round(k.get(3)) === 2 ? 0.25 : 0.4 + (1 - blend) * 0.6;
+    for (let x = 0; x < w; x++) { const t = x / w, env = Math.min(1, t / (0.004 + sz * 0.04)) * Math.exp(-t / dec), a = env * (0.35 + rnd() * 0.65) * (mid - 4); g.fillRect(x, mid - a, 1, a * 2); }
+    g.globalAlpha = 1; if (k.get(14) > 0.5) label(g, 'FREEZE', 6, 13, DISPC.bl);
+    label(g, Math.round(blend * 100) + ' / ' + Math.round(100 - blend * 100), w - 6, 13, DISPC.ink, 9, 'right');
+  });
+  const eq = k.D(W, 112, (g, w, hh) => {
+    grid(g, w, hh); const yd = (db) => hh / 2 - db / 12 * (hh / 2 - 10); g.fillStyle = DISPC.grid; for (const v of [-6, 0, 6]) { g.fillRect(0, Math.round(yd(v)), w, 1); label(g, String(v), 3, yd(v) - 2, DISPC.ink, 8); }
+    const hp = new Biquad(), lp = new Biquad(); hp.highpass(SR, k.get(16), 0.707); lp.lowpass(SR, k.get(17), 0.707); const pts = [];
+    for (let x = 0; x <= w; x += 2) { const f = xl(x, w); pts.push([x, yd(20 * Math.log10(mag(hp, f) * mag(lp, f) + 1e-9))]); }
+    lvPath(g, pts, k.get(15) > 0.5 ? DISPC.bl : DISPC.grid2, null, 1.8); lvRing(g, lx(k.get(16), w), yd(0), 5); lvRing(g, lx(k.get(17), w), yd(0), 5);
+  }, { onDown: (x) => ({ hp: Math.abs(x - lx(k.get(16), W)) < Math.abs(x - lx(k.get(17), W)) }), onMove: (x, y, dx, dy, s) => { if (s.hp) k.set(16, Math.max(20, Math.min(2000, xl(x, W)))); else k.set(17, Math.max(1000, Math.min(20000, xl(x, W)))); } });
+  const rout = h('div', { class: 'lk-tl' }, h('span', { class: 'lk-lb' }, 'Routing'), k.S(3, { w: 82, cls: 'dk or' }));
+  const tabs = [
+    () => k.col(k.dk(ir, k.row(k.TL('Decay', k.NT(6, { w: 48 })), k.TL('Size', k.NT(7, { w: 44 })), rout, k.TL('Algorithm', k.S(8, { w: 82, cls: 'dk' })), k.TL('Freeze', k.T(14, '❄', { w: 26 })), k.TL('Mod', k.NT(13, { w: 44 })), k.TL('Diffusion', k.NT(12, { w: 50 })))),
+      k.row(k.col(h('div', { class: 'lk-st' }, 'Convolution IR'), k.S(5, { w: 120 })), k.sep(), k.K(4), k.sep(), k.K(9), k.K(10), k.K(11))),
+    () => k.dk(eq, k.row(k.LN('Low Cut', k.NT(16, { w: 60, cls: 'or' })), k.LN('High Cut', k.NT(17, { w: 66, cls: 'or' })))),
+  ];
+  const t = lvTabs([{ label: 'Reverb' }, { label: 'EQ', check: () => k.get(15) > 0.5, onCheck: () => k.set(15, k.get(15) > 0.5 ? 0 : 1) }], 0, (j) => page.replaceChildren(tabs[j]()), { cls: 'lk-tabs c' });
+  page.replaceChildren(tabs[0]());
+  return k.row(k.col(k.K(0), k.K(1), k.TL('Feedback', k.N(2, { w: 56 }))), k.col(t, page), k.col(k.K(18), k.TL('Vintage', k.S(19, { w: 64 })), k.TL('Bass', k.T(20, 'Mono')), k.K(21)));
+};
+// Looper: state display (length, position), transport button (Record -> Overdub -> Play -> Overdub ...), Stop, Clear | Record length, Monitor |
+// Speed, Reverse | Feedback, Volume
+V[45] = (k) => {
+  let o = [0, 0, 0, 0]; const ST = ['Stopped', 'Recording', 'Playing', 'Overdub'];
+  const disp = k.D(176, 66, (g, w, hh) => {
+    const s = Math.round(o[0]), col = s === 1 ? '#ff5a4f' : s === 3 ? DISPC.or : s === 2 ? '#5fd08a' : DISPC.ink;
+    label(g, ST[s], 8, 18, col, 13); label(g, (s === 1 ? o[3] : o[1]).toFixed(1) + ' s', w - 8, 18, DISPC.bl, 13, 'right');
+    g.fillStyle = DISPC.grid; g.fillRect(8, hh - 22, w - 16, 10); if (o[1] > 0) { g.fillStyle = col; g.fillRect(8, hh - 22, (w - 16) * o[2], 10); }
+    label(g, k.get(3) > 0.5 ? 'Reverse' : '', 8, hh - 2, DISPC.ink, 9); label(g, fmtParam(k.def.params[2], k.get(2)), w - 8, hh - 2, DISPC.ink, 9, 'right');
+  });
+  const big = lvBtn('', () => { const s = Math.round(o[0]), next = s === 0 ? (o[1] > 0 ? 2 : 1) : s === 1 ? 3 : s === 3 ? 2 : 3; k.set(0, next); o[0] = next; paint(); }, { cls: 'lk-loop' });
+  const paint = () => { const s = Math.round(o[0]); big.textContent = s === 0 ? (o[1] > 0 ? '▶' : '●') : s === 1 ? '+' : s === 3 ? '▶' : '+'; big.classList.toggle('rec', s === 1 || s === 3); disp.paint(); };
+  k.every(80, () => { const r = k.out(); if (r.length >= 4) { o = r; paint(); } });
+  paint();
+  return k.row(k.col(disp, k.row(big, lvBtn('■', () => { k.set(0, 0); o[0] = 0; paint(); }, { cls: 'lk-t', w: 40 }), lvBtn('Clear', () => { k.set(6, k.get(6) + 1); paint(); }, { cls: 'lk-t' }))), k.sep(),
+    k.col(k.TL('Record', k.S(1, { w: 76 })), k.TL('Monitor', k.S(5, { w: 96 }))), k.sep(), k.col(k.K(2), k.T(3, 'Reverse')), k.col(k.K(4), k.K(7)));
 };
 
 export const KIT = V;

@@ -1,7 +1,7 @@
 # Serah-terima pekerjaan (untuk sesi berikutnya)
 
-Branch kerja: `ccr-591624f7-8xa2wb` (repo `jorgi80-droid/MobileDAW`), lanjutan langsung (fast-forward) dari `ccr-9362ed99-sntgvi`,
-yang sendiri lanjutan dari `ccr-34212a29-z1qc7f`. Tidak ada riwayat yang ditulis ulang. Semua pekerjaan sudah di-commit.
+Branch kerja: `ccr-d4b2cd74-5td2k9` (repo `jorgi80-droid/MobileDAW`), lanjutan langsung (fast-forward) dari `ccr-591624f7-8xa2wb` <- `ccr-9362ed99-sntgvi`
+<- `ccr-34212a29-z1qc7f`. Tidak ada riwayat yang ditulis ulang. Semua pekerjaan sudah di-commit.
 Baca juga `README-ANDROID.md` (build, install, status fase 2).
 
 ## Aturan kerja dari pemilik proyek
@@ -116,17 +116,21 @@ Baca juga `README-ANDROID.md` (build, install, status fase 2).
 ## Perangkat Live 12 (efek + instrumen) - status pekerjaan
 Permintaan pemilik: SEMUA efek dan instrumen diganti dengan set stok Ableton Live 12, tampilan harus sama dengan gambar referensi
 (tata letak, UI, bahasa visual), semua kontrol berfungsi, tidak ada tombol dummy. Gambar referensi ada di zip yang diunggah pemilik
-(efek: 33 gambar, instrumen: 21 gambar); kalau tidak ada lagi di sesi baru, minta pemilik mengunggah ulang.
+(sekarang disimpan di `docs/refs/`).
 - Selesai: kit panel `js/fxkit.js` (`kit()`: K knob, T toggle, CH pilihan, S dropdown, N kotak nilai cyan, D display + drag, sec/row/col/sep, swap;
   `V[type]` = panel per efek; `def.kit: true` di defs.js), engine `js/engine/fx3.js` (17-32) dan `js/engine/fx4.js` (33-45), `FX_GROUPS` (kategori
   browser Live 12), `tools/fx-test.mjs` (setiap parameter harus terdengar; `PRE` = prasyarat, `NO_AUDIO`, `TODO`).
   Panel Live 12 jadi: 0 Utility, 1 Auto Filter, 2 EQ Three, 3 Saturator, 4 Compressor, 5 Limiter, 6 Echo, 7 Reverb, 17 Delay, 18 Filter Delay,
   19 Beat Repeat, 20 Chorus-Ensemble, 21 Phaser-Flanger, 22 Auto Pan, 23 Gate, 24 Glue Compressor, 25 Channel EQ, 26 Erosion, 27 Redux,
   28 Vinyl Distortion, 29 Drum Buss, 30 Tuner, 31 EQ Eight, 32 Spectrum (perbandingan: `docs/redesign/20-*.jpg`, `21-*.jpg`).
-- Engine jadi, PANEL BELUM (kartu masih memakai kolom knob otomatis): 33 Amp, 34 Cabinet, 35 Overdrive, 36 Pedal, 37 Dynamic Tube,
-  38 Multiband Dynamics, 39 Resonators, 40 Corpus, 41 Vocoder, 42 Shifter, 43 Grain Delay, 44 Hybrid Reverb, 45 Looper.
-- TODO DSP (fx-test `TODO`): Corpus Ratio / LFO Amount / LFO Rate / Filter Freq / Bdwidth belum terdengar; Vocoder Unvoiced / Fast belum terdengar.
-  Looper perlu tes sendiri (rekam -> putar -> overdub).
+- Panel Live 12 jadi juga untuk 33-45: Amp, Cabinet, Overdrive, Pedal, Dynamic Tube, Multiband Dynamics, Resonators, Corpus, Vocoder, Shifter,
+  Grain Delay, Hybrid Reverb, Looper (perbandingan dengan gambar referensi: `docs/redesign/22-fx-live12-1..3.jpg`). Cabinet, Overdrive, Pedal,
+  Dynamic Tube, Shifter, Looper tidak ada di gambar referensi: tata letak mengikuti device Live 12 aslinya.
+  Parameter baru (ditambahkan di akhir): Multiband 34-36 Solo per band; Corpus 23-27 LFO Shape / Sync / Sync Rate / Phase / Offset; Vocoder 18-19
+  Noise Rate / Crackle (pad XY carrier). Grain Delay: tombol sumbu X/Y adalah status UI per device (`GD` di fxkit.js), bukan parameter.
+- fx-test: tidak ada TODO lagi (Corpus Ratio butuh Hit != 50 %, Vocoder Unvoiced / Fast butuh Sens. 100 % sebagai prasyarat); Looper punya tes
+  transport sendiri (rekam -> putar -> overdub -> clear). `FX=33,34 node tools/ui-shots.mjs <folder> devs` = screenshot efek tertentu saja.
+- Gambar referensi dari pemilik (zip `Ui_Refrences.zip`, 61 gambar: arrangement / clip / efek / instrumen) disimpan di `docs/refs/`.
 - Belum ada: Spectral Time, Spectral Resonator, modulator LFO / Shaper / Envelope Follower (tombol Map ke parameter device lain: engine
   `runChain` + id target di project), Audio Effect Rack (rantai paralel + macro), External Audio Effect (tidak mungkin di HP: jangan dibuat).
 - Instrumen (belum mulai): Analog, Operator, Wavetable (redesign), Drift, Meld, Simpler, Sampler (redesign), Drum Rack (redesign), Impulse,

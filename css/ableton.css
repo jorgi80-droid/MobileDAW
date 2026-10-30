@@ -602,3 +602,34 @@
 .lk-eq8 { display: grid; grid-template-columns: repeat(8, 1fr); gap: 2px; width: 100%; }
 .lk-cell { display: flex; flex-direction: column; gap: 2px; align-items: center; }
 .lk-cell .lk-s { min-width: 0 !important; width: 100% !important; padding: 0 2px; }
+
+/* ---- Live 12 effect panels, part 2 (js/fxkit.js V[33..45]) ---- */
+.lk .lk-ch.spc { gap: 4px; background: none; border: 0; }
+.lk .lk-ch.spc .lv-btn { border: 1px solid var(--lv-edge); min-width: 0; flex: 1; }
+.lk .lk-ch.spc { align-self: stretch; }
+.lk .lk-ch.g4 { display: grid; grid-template-columns: repeat(4, 1fr); } .lk .lk-ch.g4 .lv-btn { min-width: 22px; padding: 0; }
+.lk .lk-ch.sm .lv-btn { min-width: 30px; padding: 0 4px; }
+.lk-dk { display: flex; flex-direction: column; align-items: center; gap: var(--sp-2); padding: 4px 6px 6px; background: #262628; border: 1px solid var(--lv-edge); color: #9a9aa2; }
+.lk-dk > .lk-row { align-items: flex-start; }
+.lk-dk .lk-lb, .lk-dk .lk-ln, .lk-dk .lk-st { color: #9a9aa2; }
+.lk-dk .lk-d { border: 0; }
+.lk .lv-fld.lk-nt { background: transparent; border-color: transparent; color: #4fc3f0; font-weight: var(--fw-sb); }
+.lk .lv-fld.lk-nt.or, .lk-dk .lv-fld.lk-nt.or { color: #ffad32; }
+.lk-dk .lv-fld.sel { background: transparent; border-color: transparent; color: #4fc3f0; font-weight: var(--fw-sb); }
+.lk-dk .lv-fld.sel.or, .lk-dk > .lk-row:first-child .lv-fld.sel { color: #ffad32; }
+.lk .lv-fld.lk-nt.lk-n { justify-content: center; }
+.lk-mbr { height: 50px; display: flex; align-items: center; justify-content: center; }
+.lk-mbr .lk-col { gap: 2px; }
+.lk-mbr .knob.lk-k .k-n { display: none; }
+.lk .lk-tba { align-self: center; margin-top: 2px; } .lk .lk-tba .lv-btn { min-width: 22px; padding: 0; }
+.lk-ico { display: inline-flex; line-height: 0; }
+.lk .lk-icoch .lv-btn { min-width: 34px; padding: 1px 4px; }
+.lk-note { min-width: 74px; padding: 2px 6px; text-align: center; background: var(--lv-ctl2); color: var(--lv-ink); font: var(--fw-sb) var(--fs-2)/14px var(--font); white-space: pre; border-radius: 3px; }
+.lk .lv-btn.lk-ax { min-width: 0; padding: 0 5px; font-size: var(--fs-1); height: 20px; }
+.lk-axr { display: flex; gap: 2px; align-self: stretch; } .lk-axr .lv-btn.lk-ax { flex: 1; }
+.lk .lk-row > .lv-btn.lk-ax { min-width: 66px; }
+.lk .lv-btn.lk-loop { min-width: 64px; height: 36px; font-size: 18px; }
+.lk .lv-btn.lk-loop.rec { background: #e5484d; color: #fff; }
+.lk .lk-tabs.c { align-self: center; }
+.lk .lk-ch.spc .lv-btn, .lk .lv-btn.lk-ax { white-space: nowrap; }
+.lk .lk-ch.spc .lv-btn { padding: 0 4px; }

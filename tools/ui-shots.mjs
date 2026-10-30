@@ -1,6 +1,6 @@
 // UI screenshots of the main views with a fixed test project (drums, bass, lead, pad, audio loop, automation lane, effects), for
 // before / after comparisons of UI work. Serves the repo itself, drives the app with the preinstalled Playwright Chromium.
-// Usage: node tools/ui-shots.mjs <out-dir> [arr] [clip] [dev] [mix] [win] [keys] [devs]      env: THEME=light|dark|..., VW / VH = viewport (default 1180 x 560)
+// Usage: node tools/ui-shots.mjs <out-dir> [arr] [clip] [dev] [mix] [win] [keys] [devs]      env: THEME=light|dark|..., VW / VH = viewport (default 1180 x 560), FX=33,34 = only these effects in devs
 // Compare two runs (e.g. one on the previous commit, one on the working tree) side by side.
 import http from 'node:http'; import fs from 'node:fs'; import path from 'node:path'; import { fileURLToPath } from 'node:url'; import { createRequire } from 'node:module';
 const { chromium } = createRequire(import.meta.url)('playwright');
@@ -94,6 +94,7 @@ if (go('keys')) {
 }
 if (go('devs')) {                                        // every instrument and every effect, normal and maximised panel
   const list = await ev(async () => { const D = await import('./js/defs.js'); return { inst: [...D.INST_LIST], fx: Object.keys(D.DEVICES).map(Number) }; });
+  const only = process.env.FX ? process.env.FX.split(',').map(Number) : null; if (only) { list.inst = []; list.fx = list.fx.filter((t) => only.includes(t)); }
   await sel(2); await tab('dev');
   for (const k of list.inst) {
     await ev(async (k) => { const P = await import('./js/project.js'); P.setInstrument(2, k); P.state.tracks[2].devices = []; P.syncAll(); P.emit('all'); }, k);
