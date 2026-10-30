@@ -71,6 +71,11 @@ function begin(c) {
   return g;
 }
 const CY = '#5fd0e0', OR = '#ffa722';
+// Live 12 handle: a hollow orange ring on the curve (numbered for EQ bands), the curve itself cyan
+export function ring(g, x, y, r = 5, label = null) {
+  g.beginPath(); g.arc(x, y, r, 0, TWO_PI); g.fillStyle = DISP.bg; g.fill(); g.strokeStyle = OR; g.lineWidth = 1.6; g.stroke();
+  if (label != null) { g.fillStyle = OR; g.font = '600 8px system-ui,sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(String(label), x, y + 0.5); g.textAlign = 'left'; }
+}
 function line(g, pts, color, fillTo = null, lw = 1.6) {
   g.beginPath(); pts.forEach(([x, y], n) => (n ? g.lineTo(x, y) : g.moveTo(x, y)));
   g.strokeStyle = color; g.lineWidth = lw; g.lineJoin = 'round'; g.stroke();
@@ -138,10 +143,10 @@ export function drawFilter(c, spec, sweep = null) {
     const m = magDb({ ...spec, f }, freqs);
     line(g, Array.from(m, (db, i) => [(i / (freqs.length - 1)) * (w - 2) + 1, y(db)]), color, fill ? h : null, lw);
   };
-  if (sweep) for (const f of sweep) curve(f, OR + '66', false, 1);          // where the envelope / LFO moves the cutoff to
-  curve(spec.f, OR, true, 1.8);
+  if (sweep) for (const f of sweep) curve(f, CY + '66', false, 1);          // where the envelope / LFO moves the cutoff to
+  curve(spec.f, CY, true, 1.8);
   const m0 = magDb(spec, [spec.f])[0];
-  g.fillStyle = OR; g.beginPath(); g.arc(fx(spec.f, w), y(m0), 3.4, 0, TWO_PI); g.fill();
+  ring(g, fx(spec.f, w), y(m0), 3.8);
 }
 
 // ---- modulation sources ---------------------------------------------------------------------------
@@ -150,7 +155,7 @@ export function drawAmpEnv(c, a, d, s, r) {
   const wa = Math.sqrt(a), wd = Math.sqrt(d), wr = Math.sqrt(r), wh = Math.max(0.25, (wa + wd + wr) * 0.35), k = (w - 2 * pad) / (wa + wd + wh + wr);
   const X = [pad, pad + wa * k, pad + (wa + wd) * k, pad + (wa + wd + wh) * k, pad + (wa + wd + wh + wr) * k], sy = pad + (1 - s) * (h - 2 * pad), Y = [h - pad, pad, sy, sy, h - pad];
   line(g, X.map((x, n) => [x, Y[n]]), CY, h - pad);
-  g.fillStyle = OR; for (const n of [1, 2, 3]) { g.beginPath(); g.arc(X[n], Y[n], 2.8, 0, TWO_PI); g.fill(); }
+  for (const n of [1, 2, 3]) ring(g, X[n], Y[n], 3);
 }
 // Filter envelope as the engine runs it: starts at 1 and decays exponentially (time constant 0.3 x Decay); the cutoff moves Amt x 4 octaves
 export function drawFilterEnv(c, amt, decay) {
@@ -158,7 +163,7 @@ export function drawFilterEnv(c, amt, decay) {
   const T = Math.max(0.01, decay * 0.3), span = decay * 1.5, pts = [];
   for (let x = 0; x <= w - 4; x += 2) pts.push([x + 2, mid - amt * Math.exp(-(x / (w - 4)) * span / T) * (mid - 6)]);
   line(g, pts, CY, mid);
-  g.fillStyle = OR; g.beginPath(); g.arc(2, pts[0][1], 2.8, 0, TWO_PI); g.fill();
+  ring(g, 4, pts[0][1], 3);
 }
 export function drawLfo(c, depth, mode) {
   const g = begin(c), w = c._w, h = c._h, pad = 6; grid(g, w, h);

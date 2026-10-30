@@ -1,7 +1,7 @@
 // Ableton-style Sampler and Wavetable device panels (tabs, dark displays, value boxes), built on liveui.js.
 // Every control is a real engine parameter (js/engine/live.js); nothing here is decorative.
 import { h, knob, fromNorm, toNorm, clamp, menu } from './ui.js';
-import { lvLab, lvNum, lvTog, lvBtn, lvChoice, lvSel, lvTabs, lvDisp, lvDrag, lvPath, lvEnvPts, DISPC } from './liveui.js';
+import { lvLab, lvNum, lvTog, lvBtn, lvChoice, lvSel, lvTabs, lvDisp, lvDrag, lvPath, lvEnvPts, lvRing, DISPC } from './liveui.js';
 import { INSTRUMENTS, fmtParam, noteName } from './defs.js';
 import { WT_CATS, WT_LIST, WT_COUNT, WT_N_FRAMES, wtTable, wtName, wtCatOf } from './engine/live.js';
 import { drawFilter, vizCanvas } from './devviz.js';
@@ -216,7 +216,7 @@ export function samplerPanel(i, t) {
     const cv = lvDisp(130, 62, (g, w, hh) => {
       const [a, d, s, r] = ks.map((k) => B.get(k));
       lvPath(g, lvEnvPts(w, hh, a * B.get(32), d * B.get(32), s, r * B.get(32)), DISPC.bl, hh - 4);
-      g.fillStyle = DISPC.or; for (const pt of lvEnvPts(w, hh, a, d, s, r).slice(1, 4)) { g.beginPath(); g.arc(pt[0], pt[1], 2.5, 0, 6.3); g.fill(); }
+      for (const pt of lvEnvPts(w, hh, a, d, s, r).slice(1, 4)) lvRing(g, pt[0], pt[1]);
     });
     draws.push(() => cv.paint());
     return sec(title(name), row(cv), krow(...['A', 'D', 'S', 'R'].map((n, q) => B.knob(ks[q], n))));
@@ -341,7 +341,7 @@ export function wavetablePanel(i, t) {
   function buildMod() {
     const s = SRC[mem.mod], W = 150, H = 54;
     let cv;
-    if (s.env) cv = lvDisp(W, H, (g, w, hh) => { const [a, d, su, r] = [0, 1, 2, 3].map((q) => B.get(s.k + q)); lvPath(g, lvEnvPts(w, hh, a, d, su, r), DISPC.bl, hh - 4); g.fillStyle = DISPC.or; for (const pt of lvEnvPts(w, hh, a, d, su, r).slice(1, 4)) { g.beginPath(); g.arc(pt[0], pt[1], 2.5, 0, 6.3); g.fill(); } });
+    if (s.env) cv = lvDisp(W, H, (g, w, hh) => { const [a, d, su, r] = [0, 1, 2, 3].map((q) => B.get(s.k + q)); lvPath(g, lvEnvPts(w, hh, a, d, su, r), DISPC.bl, hh - 4); for (const pt of lvEnvPts(w, hh, a, d, su, r).slice(1, 4)) lvRing(g, pt[0], pt[1]); });
     else cv = lvDisp(W, H, (g, w, hh) => {
       g.fillStyle = DISPC.grid; g.fillRect(0, Math.round(hh / 2), w, 1);
       const sh = Math.round(B.get(s.k)), att = B.get(s.k + 2), pts = [];

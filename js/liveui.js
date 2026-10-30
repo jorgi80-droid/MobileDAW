@@ -131,6 +131,7 @@ export function lvDrag(c, o) {
 }
 
 // ---- drawing helpers shared by the displays ------------------------------------------------------
+export function lvRing(g, x, y, r = 3.2) { g.beginPath(); g.arc(x, y, r, 0, 6.2832); g.fillStyle = DISPC.bg; g.fill(); g.strokeStyle = DISPC.or; g.lineWidth = 1.5; g.stroke(); }   // Live 12 handle
 export function lvPath(g, pts, color, fillTo = null, lw = 1.5) {
   g.beginPath(); pts.forEach(([x, y], n) => (n ? g.lineTo(x, y) : g.moveTo(x, y)));
   g.strokeStyle = color; g.lineWidth = lw; g.lineJoin = 'round'; g.stroke();

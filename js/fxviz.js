@@ -4,7 +4,7 @@
 import { C } from './theme.js';
 import { h, menu } from './ui.js';
 import { eng } from './engine.js';
-import { vizCanvas, DISP } from './devviz.js';
+import { vizCanvas, DISP, ring } from './devviz.js';
 import { Biquad, clamp, TWO_PI } from './engine/dsp.js';
 import { noteName, DEVICES } from './defs.js';
 import * as P from './project.js';
@@ -268,8 +268,8 @@ function eqView(ctx, spec) {
     for (const f of [100, 1000, 10000]) { vl(g, fx(f), 0, H); txt(g, f >= 1000 ? f / 1000 + 'k' : f + '', fx(f) + 2, H - 3); }
     for (const v of [-RNG / 2, 0, RNG / 2]) hl(g, gy(v), 0, W, v === 0 ? '#3a3a3e' : '#2a2a2d'); txt(g, '+' + RNG, 3, 10); txt(g, '-' + RNG, 3, H - 3);
     const pts = []; for (let k = 0; k < NF; k++) { const f = F0 * Math.pow(F1 / F0, k / (NF - 1)), w = TWO_PI * f / SR; pts.push([fx(f), gy(bs.reduce((s, b) => s + bqDb(b, w), 0))]); }
-    path(g, pts, OR, H / 2, 1.8);
-    for (const n of spec.nodes) { const f = d.params[n.f], gdb = n.g === null ? 0 : d.params[n.g]; g.fillStyle = n.col; g.beginPath(); g.arc(fx(f), gy(gdb), 5, 0, TWO_PI); g.fill(); g.strokeStyle = '#000'; g.lineWidth = 1; g.stroke(); }
+    path(g, pts, CY, H / 2, 1.8);
+    spec.nodes.forEach((n, k) => { const f = d.params[n.f], gdb = n.g === null ? 0 : d.params[n.g]; ring(g, fx(f), gy(gdb), 6, k + 1); });   // Live 12 EQ: numbered orange rings
   };
   let drag = null;
   cv.addEventListener('pointerdown', (e) => {
@@ -312,9 +312,9 @@ export function compressorView(ctx) {
     const g = begin(cv);
     for (const v of [-48, -36, -24, -12, 0]) { vl(g, cx(v), 8, 100); hl(g, cy(v), 22, 114); txt(g, v + '', cx(v), H - 3, 'center'); }
     path(g, [[cx(-60), cy(-60)], [cx(0), cy(0)]], '#555', null, 1);
-    const pts = []; for (let x = -60; x <= 0; x += 1.5) pts.push([cx(x), cy(out(x))]); path(g, pts, OR, null, 2);
-    g.fillStyle = OR; g.beginPath(); g.arc(cx(d.params[0]), cy(out(d.params[0])), 3.4, 0, TWO_PI); g.fill();
-    if (o) { const li = clamp(o[1], -60, 0); g.fillStyle = CY; g.beginPath(); g.arc(cx(li), cy(out(li)), 3.4, 0, TWO_PI); g.fill(); }
+    const pts = []; for (let x = -60; x <= 0; x += 1.5) pts.push([cx(x), cy(out(x))]); path(g, pts, CY, null, 2);
+    ring(g, cx(d.params[0]), cy(out(d.params[0])), 4.5);
+    if (o) { const li = clamp(o[1], -60, 0); g.fillStyle = '#ffffff'; g.beginPath(); g.arc(cx(li), cy(out(li)), 2.4, 0, TWO_PI); g.fill(); }
     // meters: input, output, gain reduction
     const mx = 128; txt(g, 'IN', mx, 16, 'left'); txt(g, 'OUT', mx, 44, 'left'); txt(g, 'GR', mx, 72, 'left');
     hbar(g, mx, 20, 78, 8, o ? o[1] : -100, -60, 0, levelCol(o ? o[1] : -100)); hbar(g, mx, 48, 78, 8, o ? o[2] : -100, -60, 0, levelCol(o ? o[2] : -100));
@@ -357,7 +357,7 @@ export function curveView(ctx, kind) {
     const out = Math.pow(10, p[kind === 'sat' ? 2 : 4] / 20), norm = kind === 'sat' ? 1 / Math.tanh(Math.max(drive, 1)) : 1, X = (x) => W / 2 + x * (W / 2 - 6), Y = (y) => H / 2 - clamp(y, -1.2, 1.2) * (H / 2 - 6);
     hl(g, H / 2, 0, W, '#3a3a3e'); vl(g, W / 2, 0, H, '#3a3a3e'); path(g, [[X(-1), Y(-1)], [X(1), Y(1)]], '#555', null, 1);
     const pts = []; for (let k = -1; k <= 1.0001; k += 0.01) { const w = shape(type, k * drive) * norm; pts.push([X(k), Y((k * (1 - mix) + w * mix) * out)]); }
-    path(g, pts, OR, null, 2); txt(g, kind === 'sat' ? 'tanh' : ['soft', 'hard', 'fold'][type], W - 4, 11, 'right', '#8b8b92');
+    path(g, pts, CY, null, 2); txt(g, kind === 'sat' ? 'tanh' : ['soft', 'hard', 'fold'][type], W - 4, 11, 'right', '#8b8b92');
   };
   draw(); return { el: h('div', { class: 'fv' }, cv), draw, width: 166 };
 }
@@ -465,7 +465,7 @@ export function roarView(ctx) {
     const X = (x) => W / 2 + x * (W / 2 - 6), Y = (y) => H / 2 - clamp(y, -1.2, 1.2) * (H / 2 - 6), nrm = t === 0 ? 1 / Math.tanh(Math.max(dr, 1)) : 1;
     hl(g, H / 2, 0, W, '#3a3a3e'); vl(g, W / 2, 0, H, '#3a3a3e'); path(g, [[X(-1), Y(-1)], [X(1), Y(1)]], '#555', null, 1);
     const pts = []; for (let k = -1; k <= 1.0001; k += 0.01) { const w = (roarShape(t, k * dr + bias) - roarShape(t, bias)) * nrm * a + k * (1 - a); pts.push([X(k), Y((k * (1 - mix) + w * mix) * out * 1.6)]); }
-    path(g, pts, OR, null, 2);
+    path(g, pts, CY, null, 2);
     if (p[7] > 0.01) txt(g, `Feedback ${Math.round(p[7] * 100)}%  ${p[8] < 10 ? p[8].toFixed(1) : Math.round(p[8])} ms`, 4, H - 4, 'left', CY, 9);
   };
   const bs = grp(['Soft', 'Hard', 'Fold', 'Sine', 'Bit', 'Noise'], Math.round(d.params[0]), (k) => { P.setDeviceParam(i, di, 0, k); draw(); });

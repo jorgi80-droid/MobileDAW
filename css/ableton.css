@@ -559,3 +559,10 @@
 .mx-sends.mx-in { flex-direction: column; justify-content: center; align-items: center; gap: var(--sp-1); padding: 4px 6px; }
 .mx-in .mx-inn { font: var(--fw-b) var(--fs-4)/1 var(--font); color: var(--text); }
 .mx-in .mx-inl { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-1); color: var(--dim); }
+
+/* ===== Device skin from the Live 12 reference set: section names in normal case (Filter, Modulation, Tracing Model), a slightly
+   larger device title, option buttons as framed cells with an orange "on" face. Displays: cyan curves + hollow orange rings (canvas code). ===== */
+.card .sp-h > b, .card .lv-st, .card .fv-h { font: var(--fw-sb) var(--fs-3)/14px var(--font); letter-spacing: .01em; text-transform: none; color: var(--lv-dim); }
+#app .card > h4, .fw-body .card > h4 { height: var(--ctl-s); }
+#app .card > h4 > span, #app .card > h4 button.dv-name span, .fw-body .card > h4 button.dv-name span { font: var(--fw-b) var(--fs-4)/var(--ctl-s) var(--font); }
+.card :is(.fv-b, .lv-btn, .fv-t, .lv-tab).on { box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .25); }
