@@ -102,3 +102,43 @@
 .tempo .tp-meta .tp-fol.on { background: var(--raise); color: var(--accent); }
 .tempo .tp-meta .tp-fol::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--raise2); margin-right: 2px; }
 .tempo .tp-meta .tp-fol.on::before { background: var(--accent); box-shadow: 0 0 6px var(--accent); }
+
+/* ===== v2: one performance meter (FPS | CPU in one box), balanced control bar ===== */
+.perf { display: flex; align-items: stretch; height: var(--cb-h); border: 1px solid var(--line); border-radius: 2px; overflow: hidden; background: var(--well, var(--bg)); }
+.perf .fpsbox { height: auto; border: 0; border-radius: 0; background: transparent; min-width: 58px; padding: 0 9px; border-right: 1px solid var(--line); }
+.perf .fpsbox span { font-size: 12px; font-weight: 700; min-width: 2ch; text-align: right; }
+.perf .cpubox, .perf #cpu { height: 100%; }
+.perf #cpu { border: 0; border-radius: 0; width: 96px; background: transparent; }
+[data-w="s"] .perf #cpu, [data-w="xs"] .perf #cpu { width: 66px; }
+[data-w="xs"] .perf .fpsbox { min-width: 0; padding: 0 6px; }
+#top-l .grp.hist { margin-left: 2px; }
+
+/* ===== v2: sliders (Pengaturan, Tempo swing) - Live style: thin track, orange fill, slim handle; -, value, + as one number box ===== */
+.sl, .tp-sw { -webkit-appearance: none; appearance: none; height: 28px; margin: 0; background: transparent; accent-color: auto; touch-action: pan-x; outline: none; --p: 50%; cursor: pointer; }
+.sl::-webkit-slider-runnable-track, .tp-sw::-webkit-slider-runnable-track { height: 6px; border: 0; border-radius: 3px;
+  background: linear-gradient(to right, var(--accent) 0 var(--p), var(--well, var(--bg)) var(--p) 100%); box-shadow: inset 0 0 0 1px var(--line); }
+.sl::-webkit-slider-thumb, .tp-sw::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 12px; height: 22px; margin-top: -8px; border-radius: 3px;
+  border: 1px solid var(--line); background: var(--key-w, #d9d9dd); box-shadow: 0 1px 4px rgba(0, 0, 0, .45); transition: transform var(--d2, .1s) var(--e-std, ease); }
+.sl:active::-webkit-slider-thumb, .tp-sw:active::-webkit-slider-thumb { transform: scaleY(1.12); background: #fff; }
+.sl::-moz-range-track, .tp-sw::-moz-range-track { height: 6px; border: 0; border-radius: 3px; background: var(--well, var(--bg)); box-shadow: inset 0 0 0 1px var(--line); }
+.sl::-moz-range-progress, .tp-sw::-moz-range-progress { height: 6px; border-radius: 3px; background: var(--accent); }
+.sl::-moz-range-thumb, .tp-sw::-moz-range-thumb { width: 10px; height: 20px; border-radius: 3px; border: 1px solid var(--line); background: var(--key-w, #d9d9dd); }
+.sl:focus-visible::-webkit-slider-thumb { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.scalebox { padding: 0; background: transparent; border: 0; border-radius: 0; gap: 2px; }
+.scalebox .srow { gap: 0; align-items: center; }
+.scalebox .srow .sl { order: 0; flex: 1; margin-right: 14px; }
+.scalebox .srow .step { order: 1; }
+.scalebox .srow .sval { order: 2; }
+.scalebox .srow .step:last-of-type { order: 3; }
+.scalebox .step, .prefs .scalebox .step { width: 30px !important; min-width: 30px; height: 28px !important; margin: 0 !important; padding: 0; border-radius: 0; font-size: 15px; font-weight: 600; border: 1px solid var(--line); background: var(--raise); box-shadow: none; }
+.scalebox .srow .step:first-of-type { border-radius: 2px 0 0 2px; border-right: 0; }
+.scalebox .srow .step:last-of-type { border-radius: 0 2px 2px 0; border-left: 0; }
+.scalebox .sval { order: 2; min-width: 56px; height: 28px; border-radius: 0; border: 1px solid var(--line); background: var(--well, var(--bg)); color: var(--accent); font-weight: 700; font-size: 12.5px; }
+.scalebox .marks { padding: 0 130px 0 0; font-size: 10px; letter-spacing: .04em; text-transform: uppercase; opacity: .8; }
+
+/* tempo window: swing row uses the same slider; value label fixed width so nothing jumps */
+.tempo .tp-row { display: flex; align-items: center; gap: 10px; }
+.tempo .tp-sw { flex: 1 1 auto; min-width: 0; }
+.tempo .tp-swl { flex: 0 0 74px; font-size: 11px; font-weight: 600; color: var(--text); }
+.tempo .tp-swg, .tempo .tp-lane { height: 30px; }

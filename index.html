@@ -42,7 +42,10 @@
    <div id="top-l">
     <button id="btn-browser" class="b ic" aria-label="Browser"></button>
     <button class="readout" id="rd-bpm" aria-label="Tempo">120.00</button>
-    <div class="fpsbox" title="FPS"><b>FPS</b><span id="fps-t">--</span></div>
+    <div class="grp hist">
+      <button id="btn-undo" class="b ic" aria-label="Urungkan"></button>
+      <button id="btn-redo" class="b ic" aria-label="Ulangi"></button>
+    </div>
    </div>
    <div id="top-c">
     <div class="grp tport">
@@ -52,10 +55,9 @@
     </div>
    </div>
    <div id="top-r">
-    <div class="cpubox" title="CPU"><div id="cpu"><i></i><span id="cpu-t">0%</span></div></div>
-    <div class="grp hist">
-      <button id="btn-undo" class="b ic" aria-label="Urungkan"></button>
-      <button id="btn-redo" class="b ic" aria-label="Ulangi"></button>
+    <div class="perf" aria-label="Performa">
+      <div class="fpsbox" title="Frame per detik"><b>FPS</b><span id="fps-t">--</span></div>
+      <div class="cpubox" title="Beban CPU audio"><div id="cpu"><i></i><span id="cpu-t">0%</span></div></div>
     </div>
     <div class="seg">
       <button data-view="arr" class="b on">Arrange</button>

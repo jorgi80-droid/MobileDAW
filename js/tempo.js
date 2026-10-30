@@ -68,9 +68,9 @@ export function openTempo() {
     if (t) { toast('Lane Tempo siap. Ketuk klipnya lalu edit titik di tab Clip.', 3200); done(); } else toast('Jumlah track sudah maksimum.');
   }, 'tp-lane');
   const swLbl = h('span', { class: 'tp-swl' }), swGrid = btn('1/16', () => { const g = state.groove.grid === 240 ? 480 : state.groove.grid === 480 ? 120 : 240; P.setGroove({ grid: g }); paintSw(); }, 'tp-swg');
-  const sw = h('input', { type: 'range', min: '0', max: '100', step: '1', class: 'tp-sw', 'aria-label': 'Swing global' });
+  const sw = h('input', { type: 'range', min: '0', max: '100', step: '1', class: 'tp-sw sl', 'aria-label': 'Swing global' });
   sw.addEventListener('input', () => { P.setGroove({ amt: +sw.value / 100 }); paintSw(); });
-  const paintSw = () => { sw.value = String(Math.round(state.groove.amt * 100)); swLbl.textContent = 'Swing ' + sw.value + '%'; swGrid.textContent = state.groove.grid === 480 ? '1/8' : state.groove.grid === 120 ? '1/32' : '1/16'; };
+  const paintSw = () => { sw.value = String(Math.round(state.groove.amt * 100)); sw.style.setProperty('--p', sw.value + '%'); swLbl.textContent = 'Swing ' + sw.value + '%'; swGrid.textContent = state.groove.grid === 480 ? '1/8' : state.groove.grid === 120 ? '1/32' : '1/16'; };
   const row = h('div', { class: 'tp-row' }, laneBtn, swLbl, sw, swGrid);
   // time signature + follow playhead live here (the control bar only keeps the essentials)
   const sigBtn = btn('', (e) => { const r = e.currentTarget.getBoundingClientRect(); openSigMenu(r.left, r.bottom + 4); }, 'tp-sig');
