@@ -1,8 +1,10 @@
 // Golden test scenarios. Each one drives an engine `e` (the JS engine behind a recorder) exactly like the app does: engine commands,
 // and e.render(frames) to produce audio. Everything is deterministic (synthetic samples from a fixed LCG seed).
-import fs from 'node:fs'; import path from 'node:path';
+import fs from 'node:fs'; import path from 'node:path'; import { fileURLToPath } from 'node:url';
+const D = await import(path.join(path.dirname(fileURLToPath(import.meta.url)), '../../js/defs.js'));
 
 const PPQ = 960, BAR = PPQ * 4;
+const SYNTHS = [1, 2, 5, 7, 8, 11];   // instruments with golden scenarios (presets + playing)
 function lcg(seed) { let s = seed >>> 0; return () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 4294967296 * 2 - 1; }; }
 function tone(sec, hz, sr = 48000, amp = 0.5) { const n = Math.round(sec * sr), a = new Float32Array(n); for (let i = 0; i < n; i++) a[i] = Math.sin(2 * Math.PI * hz * i / sr) * amp * Math.min(1, (n - i) / 2000); return a; }
 function noise(sec, seed, sr = 48000, amp = 0.3) { const r = lcg(seed), n = Math.round(sec * sr), a = new Float32Array(n); for (let i = 0; i < n; i++) a[i] = r() * amp; return a; }
@@ -63,6 +65,7 @@ export const SCENARIOS = [
       e.play(); play(e, 6);
       e.seek(BAR); play(e, 2); e.trackCC(0, [], 0); e.automation([], 0); play(e, 2);
     } },
+  ...instScenarios(),
   { name: 'demo-ghibli', info: 'demo song Ghibli Sky (SoundFont + Osphere)', run: (e, o) => demo(e, o, 'ghibli-sky.mdaw', 30) },
   { name: 'demo-meadow', info: 'demo song Meadow Wind (SoundFont + Osphere)', run: (e, o) => demo(e, o, 'meadow-wind.mdaw', 30) },
 ];
@@ -93,4 +96,34 @@ async function demo(e, { root }, file, sec) {
     e.trackNotes(i, f, n); i++;
   }
   e.play(); play(e, sec);
+}
+
+// Instruments: (1) every factory preset in turn (fresh track per preset, chord + melody with different velocities),
+// (2) one patch played with parameter automation, the pitch parameter (90), CC pitch bend, live preview notes and preset changes mid-note.
+function instScenarios() {
+  const out = [];
+  for (const t of SYNTHS) {
+    const def = D.INSTRUMENTS[t]; if (!def) continue;
+    const key = def.name.toLowerCase().replace(/[^a-z0-9]+/g, '');
+    const presets = D.PRESETS[t] || [];
+    const apply = (e, p) => def.params.forEach((q, k) => e.instParam(0, k, p[k] ?? q.def));
+    const notes = () => { const f = []; for (const n of [48, 52, 55, 60]) f.push(0, PPQ * 1.5, n, 0.8, 0); [72, 74, 76, 79].forEach((n, i) => f.push(PPQ * (0.25 + i * 0.4), PPQ * 0.3, n, 0.35 + i * 0.2, (i - 1.5) / 2)); return f; };
+    if (presets.length) out.push({ name: 'presets-' + key, info: `${def.name}: all ${presets.length} factory presets`, run(e) {
+      e.tempo(120);
+      for (const pr of presets) { e.resetTrack(0); e.trackInst(0, t); apply(e, pr.p); const f = notes(); e.trackNotes(0, f, f.length / 5); e.seek(0); e.play(); play(e, 1.5); e.stop(); }
+    } });
+    out.push({ name: 'play-' + key, info: `${def.name}: automation, pitch, bend, preview, preset change mid-note`, run(e) {
+      e.tempo(100); e.trackInst(0, t); apply(e, (presets[3] || {}).p || {});
+      const f = []; for (let k = 0; k < 24; k++) f.push(k * PPQ / 2, PPQ * (k % 3 ? 0.4 : 1.2), 45 + ((k * 7) % 24), 0.3 + (k % 5) * 0.15, k % 2 ? 0.3 : -0.3);
+      e.trackNotes(0, f, f.length / 5);
+      const p1 = def.params.findIndex((q) => q.max > q.min && !q.step), q1 = def.params[p1 < 0 ? 0 : p1];
+      e.automation([5, 0, 0, p1 < 0 ? 0 : p1, 3, 0, q1.min, BAR, q1.max, BAR * 3, (q1.min + q1.max) / 2, 5, 0, 0, 90, 2, BAR * 2, 0, BAR * 2 + 1, 5]);
+      e.trackCC(0, [0, 0, 0, BAR, 0, 1, BAR * 1.5, 0, -0.5], 3);
+      e.play(); play(e, 3);
+      e.preview(0, 64, 0.9, true); play(e, 0.3); e.bend(0, 1.5); play(e, 0.3); e.preview(0, 64, 0, false);
+      if (presets[10]) apply(e, presets[10].p);
+      play(e, 2); e.stop(); play(e, 1);
+    } });
+  }
+  return out;
 }
