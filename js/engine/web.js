@@ -8,6 +8,7 @@ import { buildPyramid } from '../waveform.js';
 import * as FS from '../storage.js';
 import { log } from '../log.js';
 import { prefs } from '../prefs.js';
+import { isNativeApp, saveAndShare, subFor } from '../native.js';
 
 export const FOLDERS = ['/Samples', '/SoundFonts', '/Recordings', '/Projects', '/Exports', '/Presets/Mixer', '/Presets/Instruments'];
 const NO_MIRROR = /\/_autosave\.mdaw$/;   // rewritten every few seconds: stays in the app's own storage only
@@ -184,6 +185,8 @@ export function createWebBackend() {
     try { st.ctx = new AC(prefs.sampleRate ? { latencyHint: hint, sampleRate: prefs.sampleRate } : { latencyHint: hint }); }
     catch (e) { log('warn', 'AudioContext dengan pengaturan sendiri gagal, memakai bawaan', e); st.ctx = new AC({ latencyHint: 'interactive' }); }
     log('info', `audio: ${st.ctx.sampleRate} Hz, latensi ${hint}`);
+    const latLog = () => log('info', `latensi audio: base ${((st.ctx.baseLatency || 0) * 1000).toFixed(1)} ms, output ${((st.ctx.outputLatency || 0) * 1000).toFixed(1)} ms, status ${st.ctx.state}`);
+    latLog(); st.ctx.addEventListener('statechange', () => { if (st.ctx.state === 'running') latLog(); });
     await st.ctx.audioWorklet.addModule(new URL('./worklet.js', import.meta.url));
     st.node = new AudioWorkletNode(st.ctx, 'daw', { numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [2] });
     st.node.connect(st.ctx.destination);
@@ -408,7 +411,10 @@ export function createWebBackend() {
   me.fileSize = (p) => (lib.meta.get(p) || {}).size || 0;
   me.saveBytes = async (path, bytes) => { await lib.put(path, bytes); return true; };
   me.readBytes = (p) => lib.rawGet(p);
+  // Android app: <a download> does nothing in the WebView, so the file goes to Documents/MobileDAW/<Exports|Projects> and the share sheet opens
+  const nativeSave = (sub, name, data) => saveAndShare(sub, name, data).then((r) => import('../ui.js').then(({ toast }) => toast(r.ok ? (r.where ? 'Disimpan di ' + r.where : 'Siap dibagikan: ' + name) : 'Gagal menyimpan: ' + r.error, 4500))).catch((e) => log('error', 'simpan file', e));
   me.downloadBlob = (blob, name) => {
+    if (isNativeApp()) { nativeSave(subFor(name), name, blob); return; }
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.append(a); a.click();
     setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
   };
@@ -440,6 +446,7 @@ export function createWebBackend() {
   me.download = (path) => {
     lib.rawGet(path).then((d) => {
       if (!d) return;
+      if (isNativeApp()) { const dir = path.split('/').filter(Boolean).slice(0, -1).join('/'); nativeSave(dir || 'Exports', path.split('/').pop(), d); return; }
       const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([d])); a.download = path.split('/').pop(); document.body.append(a); a.click();
       setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
     });

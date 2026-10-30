@@ -10,6 +10,9 @@ import * as FS from './storage.js';
 import * as PR from './presets.js';
 import { prefs, savePrefs } from './prefs.js';
 import { DEMOS, openDemo } from './demos.js';
+import { isNativeApp } from './native.js';
+
+const DL = isNativeApp() ? 'Simpan ke Documents & bagikan' : 'Unduh ke perangkat';   // Android app: Documents/MobileDAW + share sheet
 const { state } = P;
 
 const AUDIO = /\.(wav|mp3|ogg|oga|flac|m4a|aac|opus|webm)$/i, SF2 = /\.sf2$/i;
@@ -270,7 +273,7 @@ async function useSoundFont(file) {
 
 function fileMenu(file, rect) {
   menu([
-    { label: 'Unduh ke perangkat', fn: () => eng.download(file) },
+    { label: DL, fn: () => eng.download(file) },
     { label: 'Hapus dari aplikasi', fn: async () => { await eng.deleteFile(file); toast('File dihapus.'); render(); } },
   ], rect.left + 20, rect.top + 20);
 }
@@ -455,7 +458,7 @@ function fileMenu2(full, rect) {
       if (r && r.ok) { movedOk(full, to); toast('Nama diganti.'); } else toast((r && r.error) || 'Gagal.', 3500);
       render();
     }) },
-    { label: 'Unduh ke perangkat', fn: () => eng.download(full) },
+    { label: DL, fn: () => eng.download(full) },
     { label: 'Hapus dari aplikasi', fn: async () => { await eng.deleteFile(full); toast('File dihapus.'); render(); } },
   ], rect.left + 20, rect.top + 20);
 }
@@ -545,7 +548,7 @@ function tabProjects(list) {
   });
   list.append(...[
     row('Simpan proyek\u2026', save),
-    WEB ? row('Unduh proyek ke perangkat', () => { const n = (state.projectName || 'Untitled').replace(/[^\w\- ]+/g, '') || 'Untitled'; eng.writeText(dir + '/' + n + '.mdaw', P.serialize()); setTimeout(() => eng.download(dir + '/' + n + '.mdaw'), 80); }) : null,
+    WEB ? row(isNativeApp() ? 'Simpan proyek ke Documents & bagikan' : 'Unduh proyek ke perangkat', () => { const n = (state.projectName || 'Untitled').replace(/[^\w\- ]+/g, '') || 'Untitled'; eng.writeText(dir + '/' + n + '.mdaw', P.serialize()); setTimeout(() => eng.download(dir + '/' + n + '.mdaw'), 80); }) : null,
     WEB ? row('Buka proyek (.mdaw / .zip) dari perangkat\u2026', async () => { const f = await eng.importFiles('.mdaw,.zip'); if (f.length) { toast('Proyek diimpor.'); render(); } }) : null,
     row('Proyek baru (demo)', () => { P.newProject(true); closeBrowser(); }),
     row('Proyek baru (kosong)', () => { P.newProject(false); closeBrowser(); }),
