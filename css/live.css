@@ -1,0 +1,391 @@
+/* ===== Ableton Live look: dials, value boxes, toggles, tabs, device cards, dark displays ===== */
+.knob { width: 48px; touch-action: none; }
+.knob svg { width: 34px; height: 34px; }
+.knob .k-n { order: 0; margin: 0 0 1px; font-size: 9px; line-height: 10px; color: var(--lv-dim); max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.knob .k-v { font-size: 9px; line-height: 10px; height: 10px; color: var(--lv-ink); }
+.knob.sm { width: 40px; } .knob.sm svg { width: 31px; height: 31px; }
+.knobs { gap: 2px 0; padding: 4px; }
+.knobs.side { grid-auto-columns: 48px; padding: 4px; }
+.b, .chip, .fv-b { border-radius: 1px; box-shadow: inset 0 1px 0 rgba(255,255,255,.07); }
+
+/* device cards */
+.card { background: var(--lv-body); border: 1px solid var(--lv-edge); border-radius: 0; box-shadow: none; }
+.card h4 { height: 18px; background: var(--lv-title); color: var(--lv-ink); border-bottom: 1px solid var(--lv-edge); font-size: 11px; font-weight: 700; }
+.card h4 button.pw::before, .card.fold .pw::before, .pdot { border-radius: 50%; width: 10px; height: 10px; margin: -5px 0 0 -5px; background: var(--lv-trk); border: 1px solid var(--lv-edge); opacity: 1; }
+.card h4 button.pw.on::before { background: var(--lv-or); }
+.pdot { margin: auto 4px auto 0; background: var(--lv-or); position: static; display: block; }
+.card.fold { background: var(--lv-body); }
+
+/* panels of the new instruments */
+.lv-dev { display: flex; flex-direction: column; color: var(--lv-ink); font-size: 10px; }
+.lv-dev.wt { flex-direction: row; align-items: stretch; }
+.lv-pane { display: flex; align-items: stretch; background: var(--lv-body); }
+.lv-sec { display: flex; flex-direction: column; gap: 3px; padding: 4px 5px; border-right: 1px solid var(--lv-div); min-width: 0; }
+.lv-sec:last-child { border-right: 0; }
+.lv-row { display: flex; gap: 3px; align-items: flex-end; flex-wrap: nowrap; }
+.lv-krow { display: flex; gap: 0; align-items: flex-start; }
+.lv-col { display: flex; flex-direction: column; gap: 3px; padding-right: 4px; border-right: 1px solid var(--lv-div); }
+.lv-col:last-child { border-right: 0; }
+.lv-st { font-size: 9px; font-weight: 700; color: var(--lv-dim); text-transform: uppercase; letter-spacing: .05em; }
+.lv-fl { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.lv-lb { font-size: 9px; line-height: 10px; color: var(--lv-dim); white-space: nowrap; }
+.lv-fld { height: 17px; min-width: 40px; padding: 0 4px; display: flex; align-items: center; justify-content: center; gap: 4px; position: relative; overflow: hidden; background: var(--lv-ctl2); color: var(--lv-ink); border: 1px solid var(--lv-edge); border-radius: 0; font: 500 10px system-ui, sans-serif; user-select: none; touch-action: none; white-space: nowrap; }
+.lv-fld .v { position: relative; z-index: 1; }
+.lv-fld.fill { background: linear-gradient(90deg, var(--lv-sel) calc(var(--f, 0) * 100%), var(--lv-ctl2) 0); }
+.lv-fld.sel { justify-content: space-between; touch-action: manipulation; }
+.lv-fld.sel .tri { width: 0; height: 0; border-left: 3px solid transparent; border-right: 3px solid transparent; border-top: 4px solid currentColor; opacity: .8; }
+.lv-fld.or { background: var(--lv-well); color: var(--lv-orink, var(--lv-or)); font-weight: 600; border-color: var(--lv-edge); }
+.lv-btn { height: 17px; min-width: 28px; padding: 0 6px; border: 1px solid var(--lv-edge); border-radius: 0; background: var(--lv-ctl); color: var(--lv-ink); font: 600 10px system-ui, sans-serif; display: inline-flex; align-items: center; justify-content: center; }
+.lv-btn:active { background: var(--lv-ctl2); }
+.lv-btn.on { background: var(--lv-or); color: var(--accent-ink); }
+.lv-btn.wide { max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; justify-content: flex-start; }
+.lv-btn.mini { min-width: 18px; padding: 0; }
+.lv-grp { display: flex; } .lv-grp .lv-btn { min-width: 26px; } .lv-grp .lv-btn + .lv-btn { margin-left: -1px; }
+.lv-tabs { display: flex; gap: 2px; padding: 3px 4px 0; background: var(--lv-title); border-bottom: 1px solid var(--lv-edge); }
+.lv-tab { height: 18px; padding: 0 8px; display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--lv-edge); border-bottom: 0; border-radius: 3px 3px 0 0; background: var(--lv-ctl); color: var(--lv-ink); font: 600 10px system-ui, sans-serif; margin-bottom: -1px; }
+.lv-tab.on { background: var(--lv-body); }
+.lv-tab .led { width: 5px; height: 5px; border-radius: 50%; background: var(--lv-trk); border: 1px solid var(--lv-edge); }
+.lv-tab.lit .led { background: var(--lv-or); }
+.lv-tab .chk { width: 9px; height: 9px; background: var(--lv-ctl2); border: 1px solid var(--lv-edge); }
+.lv-tab.lit .chk { background: var(--lv-or); }
+.lv-tabs.sm .lv-tab { padding: 0 6px; }
+.lv-disp { display: block; border: 1px solid var(--lv-edge); touch-action: none; max-width: none; }
+.lv-info { font-size: 10px; color: var(--lv-dim); max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lvk { width: 40px; }
+.wtl { width: 74px; align-items: center; }
+.wtl .lv-btn.wide { justify-content: center; }
+.wto { display: flex; flex-direction: column; margin: -4px -5px; }
+.wtm { display: flex; flex-direction: column; gap: 3px; padding: 4px 5px; }
+.wtmod { width: 196px; }
+.wtmod .lv-tabs { margin: -4px -5px 0; }
+.wtx { display: grid; grid-template-columns: 58px repeat(6, 34px); gap: 1px; }
+.wtx .mc { height: 14px; font-size: 8.5px; line-height: 14px; color: var(--lv-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wtx .mc.hd { text-align: center; }
+.wtx .lv-fld.mx { height: 14px; min-width: 0; padding: 0; width: 34px; font-size: 8.5px; background: var(--lv-well); border-color: var(--lv-edge); color: var(--text); }
+.wtx .lv-fld.mx.pos { background: linear-gradient(90deg, var(--lv-or) calc(var(--f, 0) * 100%), var(--lv-well) 0); color: var(--text); }
+.wtx .lv-fld.mx.neg { background: linear-gradient(90deg, var(--lv-arc) calc(var(--f, 0) * 100%), var(--lv-well) 0); }
+
+/* menus (drop-down lists): themed list (same tokens as every panel), selected row filled with the accent */
+.menu { background: var(--menu); border: 1px solid var(--line); border-radius: 0; box-shadow: 0 4px 12px var(--shadow); padding: 1px; }
+.menu .mi { color: var(--text); font-size: 11px; font-weight: 600; padding: 5px 12px; border-radius: 0; }
+.menu .mi.ck { background: var(--accent); color: var(--accent-ink); }
+.menu .mi:active { background: var(--raise2); }
+.menu .mi.dim { color: var(--dim); font-size: 9px; }
+
+/* mixer strips */
+.strip .nm { border-radius: 0; font-size: 10.5px; height: 18px; line-height: 18px; color: var(--on-col); }
+.strip { border-right: 1px solid var(--lv-edge); }
+.strip .vbox { border-radius: 0; background: var(--lv-well); color: var(--text); border-color: var(--lv-edge); }
+.strip .ms .b { border-radius: 0; box-shadow: none; }
+.strip .ms .b.m { background: var(--mute); color: var(--on-col); }
+.strip .ms .b.m.on { background: var(--lv-ctl); color: var(--lv-ink); opacity: 1; }
+.strip .ms .b.s.on { background: var(--solo); }
+
+.lv-tab { white-space: nowrap; }
+.wtl { gap: 2px; }
+.wtl .lv-grp .lv-btn { min-width: 20px; padding: 0 3px; }
+.lv-krow .knob svg { width: 34px; height: 34px; }
+.lv-krow .knob { width: 44px; }
+.wtx .mc, .wtx .lv-fld.mx { height: 12px; line-height: 12px; }
+
+/* ===== compact Live-style synth panels (DirectWave, SuperSaw, GMS, MiniSynth, Moisture, Osphere, Keystone) =====
+   one flat device body: thin dividers instead of boxed panels, narrower columns, tab buttons like Live's, smaller displays */
+.card.syn { background: var(--lv-body); }
+.sps { grid-auto-columns: 148px; gap: 0; padding: 0; }
+.sp { width: 148px; gap: 1px; padding: 2px 4px 3px; background: var(--lv-body); border: 0; box-shadow: inset -1px 0 0 var(--lv-div); border-radius: 0; }   /* divider drawn inset: a real border took 1px of the 140px that exactly fit 4 knobs */
+.sp:last-child { box-shadow: none; }
+.sp-h { min-height: 16px; gap: 1px; }
+.sp-h b { font-size: 9px; color: var(--lv-dim); letter-spacing: .05em; }
+.sp-h .st { height: 16px; padding: 0 6px; border: 1px solid var(--lv-edge); border-bottom: 0; border-radius: 3px 3px 0 0; background: var(--lv-ctl); color: var(--lv-ink); font-size: 9.5px; margin-bottom: -1px; }
+.sp-h .st.on { background: var(--lv-body); color: var(--lv-ink); }
+.sp .viz { width: 140px !important; height: 44px !important; border: 1px solid var(--lv-edge); background: var(--lv-well); }
+.sp-ro { height: 11px; font-size: 9px; line-height: 11px; color: var(--lv-dim); }
+.sp-k { gap: 0; }
+.sp-k .knob { width: 35px; }
+.sp-k .knob svg { width: 34px; height: 34px; }
+.sp-k .knob .k-n, .sp-k .knob .k-v { font-size: 8.5px; line-height: 9px; height: 9px; }
+.card.syn .inst-row { gap: 0; }
+.card.syn .inst-side { width: 170px; padding: 4px; gap: 3px; border-right: 1px solid var(--lv-div); }
+
+/* ===== effect devices: Live look (flat body, dark display, small knobs, tight chips and tabs) ===== */
+.fxv { background: var(--lv-body); }
+.fxv .viz, .fxv canvas { border: 1px solid var(--lv-edge); background: var(--lv-well); }
+.knobs.side { grid-auto-columns: 44px; gap: 0 1px; padding: 4px 4px 2px 2px; }
+.knobs.side .knob { width: 44px; }
+.knobs.side .knob svg { width: 34px; height: 34px; }
+.knobs.side .knob .k-n, .knobs.side .knob .k-v { font-size: 8.5px; line-height: 9px; height: 9px; }
+.fv-b, .fv-t, .ln-pass { border-radius: 0; border: 1px solid var(--lv-edge); background: var(--lv-ctl); color: var(--lv-ink); font-size: 9.5px; }
+.fv-b.on, .fv-t.on { background: var(--lv-or); color: var(--accent-ink); }
+.fv-ro { color: var(--lv-dim); font-size: 9px; }
+.card h4 span { font-size: 10.5px; }
+.card h4 button { width: 20px; }
+
+/* ===== arrangement / clip view (Live manual: coloured clip header with the name, flat edges, selected clip outlined) ===== */
+.ed-tools .ed-g .b, .ed-tools .b, .ed-tools .chip { border-radius: 0; background: var(--lv-ctl); color: var(--lv-ink); border: 1px solid var(--lv-edge); }
+.ed-tools .ed-g .b.on, .ed-tools .b.on { background: var(--lv-or); color: var(--accent-ink); }
+#dtabs .b { border-radius: 0; }
+#dtabs .b.on { background: var(--lv-body); color: var(--lv-ink); }
+
+/* ===== pitch bend wheel (Keys panel) ===== */
+.piano.pw { left: 56px; }
+.pbw { position: absolute; left: 4px; top: 36px; bottom: 0; width: 48px; display: flex; flex-direction: column; align-items: center; touch-action: none; z-index: 3; user-select: none; }
+.pbw-slot { position: relative; flex: 1; width: 34px; margin: 2px 0; background: var(--lv-trk, #151515); border: 1px solid var(--lv-edge, #000); border-radius: 3px; }
+.pbw-mid { position: absolute; left: 0; right: 0; top: 50%; height: 1px; background: var(--lv-dim, #777); opacity: .7; }
+.pbw-thumb { position: absolute; left: 2px; right: 2px; height: 26px; margin-top: -13px; border-radius: 3px; background: repeating-linear-gradient(0deg, var(--lv-ctl, #444) 0 3px, var(--lv-edge, #222) 3px 4px); border: 1px solid var(--lv-edge, #000); }
+.pbw-thumb.on { outline: 1px solid var(--lv-arc, #ffa722); }
+.pbw-l { font-size: 10px; color: var(--lv-dim, #999); height: 14px; line-height: 14px; }
+
+/* DirectWave / Keystone sample box: long names and the hint must stay inside the box */
+.zone { overflow: hidden; min-width: 0; }
+.zone .zn, .zone .zr { max-width: 100%; }
+.zone .zr { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Clip View title bar: activator + clip name on the clip colour (text colour chosen for contrast in editor.js) */
+.clip-title { display: flex; align-items: center; gap: 4px; height: 20px; flex: none; padding: 0 4px; overflow: hidden; font-size: 11px; font-weight: 600; }
+.clip-title[hidden] { display: none; }
+.clip-title.off { opacity: .55; }
+.clip-title .ct-act { flex: none; position: relative; width: 22px; height: 20px; min-width: 0; padding: 0; border: 0; background: none; }
+.clip-title .ct-act::before { content: ""; position: absolute; left: 5px; top: 5px; width: 8px; height: 8px; border: 1.5px solid currentColor; border-radius: 2px; }
+.clip-title .ct-act.on::before { background: currentColor; }
+.clip-title .ct-name { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* count-in badge and punch / loop-record marker on the metronome button */
+#btn-metro { position: relative; }
+#btn-metro[data-ci]::after { content: attr(data-ci); position: absolute; right: 1px; top: 0; font: 700 9px/11px system-ui, sans-serif; color: var(--accent); }
+#btn-metro.on[data-ci]::after { color: var(--accent-ink); }
+#btn-metro.pun::before { content: ''; position: absolute; left: 3px; top: 3px; width: 5px; height: 5px; border-radius: 50%; background: var(--rec); }
+
+/* per-track voices / CPU read-out in the mixer */
+.strip .ld { width: 100%; height: 12px; line-height: 12px; font-size: 8.5px; text-align: center; color: var(--dim); background: var(--mx-well, #101011); border-bottom: 1px solid var(--line); white-space: nowrap; overflow: hidden; font-variant-numeric: tabular-nums; }
+.strip .ld.warn { color: var(--warn); }
+.strip .ld.hot { color: var(--bad-ink); }
+
+
+/* ===== v54 - UI polish pass (alignment, truncation, dialogs) ===== */
+/* knob grids: air between the value of one knob and the label of the knob below; empty cells keep columns aligned */
+.knobs.side { gap: 8px 2px; }
+.k-sp { width: 100%; min-height: 1px; pointer-events: none; }
+.knob .k-n { text-align: center; }
+.knob .k-n.long { font-size: 8px; letter-spacing: -.02em; }
+.knob .k-v { text-align: center; white-space: nowrap; }
+/* wavetable modulation tabs: five tabs share the box, never spill into the Matrix column */
+.wtmod { width: 206px; overflow: hidden; }
+.wtmod .lv-tabs { margin: -4px -5px 0; padding: 3px 3px 0; gap: 1px; }
+.wtmod .lv-tabs .lv-tab { flex: 1 1 0; min-width: 0; padding: 0 2px; justify-content: center; white-space: nowrap; }
+.wtx { margin-top: 1px; }
+.lv-sec > .lv-st, .lv-sec > .title { margin-bottom: 1px; }
+/* device cards: header stays visible when a tall device scrolls inside the fixed-height panel */
+.dev-scroll { padding-bottom: 10px; }
+.dev-scroll > .card > h4 { position: sticky; top: 0; z-index: 3; }
+/* browser folder tabs: fade at the right edge says "more tabs, scroll" instead of cutting a word in half */
+#browser .places { -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent); padding-right: 14px; }
+#browser .places .pl { flex: 0 0 auto; white-space: nowrap; }
+/* settings dialog: centred, title + tabs + footer stay fixed, only the pane scrolls (nothing hides under the system bars) */
+.modal.big { display: flex; flex-direction: column; top: 50%; transform: translate(-50%, -50%); max-height: calc(100% - 24px); overflow: hidden; }
+.modal.big > h3 { flex: none; }
+.modal.big > .acts { flex: none; }
+.modal.big > div:not(.acts) { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; scrollbar-width: thin; }
+.modal.big .btabs { position: sticky; top: 0; z-index: 2; margin: 0 0 10px !important; background: var(--menu); }
+
+/* ===== v54 - mixer strip buttons: Activator / Solo / Arm in one symmetrical row ===== */
+.strip .ms { gap: 3px; }
+.strip .ms .b { width: 28px; min-width: 28px; height: 26px; }
+.strip .ms .b.a { position: relative; background: var(--lv-ctl); border-color: var(--lv-edge); }
+.strip .ms .b.a::before { content: ""; position: absolute; left: 50%; top: 50%; width: 10px; height: 10px; margin: -5px 0 0 -5px; border-radius: 50%; background: var(--rec); opacity: .6; transition: background-color .12s, opacity .12s; }
+.strip .ms .b.a.on { background: var(--rec); border-color: var(--lv-edge); }
+.strip .ms .b.a.on::before { background: #fff; opacity: 1; }
+
+/* ===== v58 - motion system. One scale (--anim, Pengaturan > Skala animasi, default 1x) multiplies every duration. Durations and curves follow the
+   Material 3 token set (short 50-200 ms, medium 250-400 ms): press feedback stays instant, small popups ~200 ms, panels/dialogs 250-350 ms. Entering
+   things DECELERATE (fast start, soft landing), leaving things ACCELERATE (quick exit), moving-in-place things use the standard curve.
+   Only opacity / transform / scale / translate are animated: they run on the compositor, so the audio+canvas main thread never blocks them. ===== */
+:root {
+  --anim: 1;
+  --e-std: cubic-bezier(.2, 0, 0, 1); --e-in: cubic-bezier(.05, .7, .1, 1); --e-out: cubic-bezier(.3, 0, .8, .15);
+  --ease: var(--e-std);
+  --d1: calc(50ms * var(--anim)); --d2: calc(100ms * var(--anim)); --d3: calc(150ms * var(--anim)); --d4: calc(200ms * var(--anim));
+  --d5: calc(250ms * var(--anim)); --d6: calc(300ms * var(--anim)); --d7: calc(350ms * var(--anim)); --d8: calc(400ms * var(--anim));
+  --t-fast: var(--d2); --t-med: var(--d4);
+}
+.b, .chip, .lv-btn, .lv-tab, .lv-fld, .fv-b, .fv-t, .pl, .vbox, .menu .mi, .strip, .readout, .fw-b {
+  transition: background-color var(--d2) var(--e-std), color var(--d2) var(--e-std), border-color var(--d2) var(--e-std), opacity var(--d2) var(--e-std), scale var(--d1) var(--e-std);
+}
+.b:active, .chip:active, .lv-btn:active, .lv-tab:active, .fv-b:active, .pl:active, .vbox:active { scale: .955; }
+.card h4 button.pw::before, .lv-tab .led, .lv-tab .chk, .pdot { transition: background-color var(--d3) var(--e-std), opacity var(--d3) var(--e-std); }
+.strip .ms .b.a::before { transition: background-color var(--d3) var(--e-std), opacity var(--d3) var(--e-std); }
+@keyframes mdFade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes mdFadeOut { from { opacity: 1; } to { opacity: 0; } }
+@keyframes mdPop { from { opacity: 0; scale: .94; translate: 0 12px; } to { opacity: 1; scale: 1; translate: 0 0; } }
+@keyframes mdPopOut { from { opacity: 1; scale: 1; translate: 0 0; } to { opacity: 0; scale: .96; translate: 0 6px; } }
+@keyframes mdDrop { from { opacity: 0; scale: .92; translate: 0 -8px; } to { opacity: 1; scale: 1; translate: 0 0; } }
+@keyframes mdDropOut { from { opacity: 1; scale: 1; } to { opacity: 0; scale: .95; } }
+@keyframes mdSlide { from { opacity: 0; translate: -36px 0; } to { opacity: 1; translate: 0 0; } }
+@keyframes mdSlideOut { from { opacity: 1; translate: 0 0; } to { opacity: 0; translate: -24px 0; } }
+@keyframes selIn { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+.scrim { animation: mdFade var(--d4) var(--e-std) both; }
+.modal { animation: mdPop var(--d6) var(--e-in) both; }
+.menu, .bar { animation: mdDrop var(--d4) var(--e-in) both; transform-origin: 0 0; }
+.toast, .pwa-card { animation: mdPop var(--d5) var(--e-in) both; }
+#browser:not([hidden]) { animation: mdSlide var(--d6) var(--e-in) both; }
+#view-mix:not([hidden]), #view-arr:not([hidden]) { animation: mdFade var(--d5) var(--e-std) both; }
+.strip.sel::before { transform-origin: 0 50%; animation: selIn var(--d5) var(--e-in) both; }
+.fw { animation: mdPop var(--d6) var(--e-in) both; }
+/* leaving: quicker than entering, never blocks a tap (pointer-events off), removed from the DOM by ui.js when finished */
+.scrim.closing { animation: mdFadeOut var(--d3) var(--e-out) both; pointer-events: none; }
+.modal.closing { animation: mdPopOut var(--d3) var(--e-out) both; pointer-events: none; }
+.menu.closing, .bar.closing { animation: mdDropOut var(--d2) var(--e-out) both; pointer-events: none; }
+.knob.on-drag svg, .knob:active svg { filter: brightness(1.12); }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition: none !important; animation: none !important; scroll-behavior: auto !important; }
+}
+
+/* ===== v59 - About tab (Pengaturan > About): hero, people, GitHub-style Languages bar ===== */
+.ab-hero { display: flex; gap: 12px; align-items: center; padding: 10px 12px; border: 1px solid var(--line); background: var(--panel2); border-radius: 4px; }
+.ab-ic { width: 56px; height: 56px; border-radius: 12px; flex: none; background: var(--bg); }
+.ab-title { font-size: 18px; font-weight: 700; color: var(--text); letter-spacing: .2px; margin-bottom: 2px; }
+.ab-people { display: flex; flex-wrap: wrap; gap: 10px; }
+.ab-person { flex: 1 1 150px; display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--line); background: var(--panel2); border-radius: 4px; min-width: 0; }
+.ab-av { width: 44px; height: 44px; border-radius: 50%; flex: none; overflow: hidden; display: grid; place-items: center; border: 1px solid var(--line); }
+.ab-av.empty { background: var(--raise); }
+.ab-av.empty svg { width: 100%; height: 100%; fill: var(--dim); opacity: .75; }
+.ab-av.mark { background: var(--accent); color: var(--accent-ink); font: 700 20px/1 var(--font); }
+.ab-pn { display: flex; flex-direction: column; min-width: 0; }
+.ab-pn b { color: var(--text); font-size: 14px; letter-spacing: .3px; overflow: hidden; text-overflow: ellipsis; }
+.ab-pn span { color: var(--dim); font-size: 11px; }
+.ab-bar { display: flex; gap: 2px; height: 10px; border-radius: 5px; overflow: hidden; background: var(--bg); margin: 2px 0 8px; }
+.ab-bar i { display: block; min-width: 3px; }
+.ab-leg { display: flex; flex-wrap: wrap; gap: 6px 16px; color: var(--dim); font-size: 12px; }
+.ab-lg { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.ab-lg i { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+.ab-lg b { color: var(--text); font-weight: 700; }
+.ab-stats { margin-top: 6px; border-top: 1px solid var(--sep); }
+.ab-row { display: flex; justify-content: space-between; gap: 10px; padding: 5px 0; border-bottom: 1px solid var(--sep); font-size: 11px; color: var(--dim); }
+.ab-row span:first-child { color: var(--text); }
+
+/* ===== v63 - mixer: Return / Master strips share the row grid of the track strips (fader, meter, pan and buttons level across the whole mixer) =====
+   the spacers are invisible, inert boxes with the exact heights of the real rows (measured: read-out 12, output 20, sends 52, pan 52, buttons 26) */
+.strip .sends.ph, .strip .ph2, .strip .ms.ph, .strip .ld.ph, .strip .outb.ph { display: block; flex: none; visibility: hidden; pointer-events: none; }
+.strip .ld.ph { height: 12px; } .strip .outb.ph { height: 20px; } .strip .sends.ph, .strip .ph2 { height: 52px; } .strip .ms.ph { height: 26px; }
+/* settings tabs: equal padding on every tab, spare width shared evenly (no more TAMPILAN/PENYIMPANAN touching) */
+.modal.big .btabs .b { flex: 1 0 auto; padding: 0 12px; white-space: nowrap; }
+/* browser tabs: five tabs + PIN + close fit the drawer without cutting a word */
+#browser .btabs .bt .b { padding: 0 7px; font-size: 11.5px; }
+#browser .btabs .bx { width: 36px; }
+/* device read-outs (waveform / filter / envelope caption): a little air above the knob labels, slightly tighter type so "A 5ms D 150ms S 70% R 250ms" is never cut */
+.sp-ro { font-size: 8.5px; letter-spacing: -.01em; margin-bottom: 2px; }
+/* value sliders (clip Level, Gain, ...): Live fills them with its blue-teal selection colour and keeps ONE text colour on both halves,
+   so a value that straddles the fill edge stays readable (before: dark ink on orange next to light text on grey cut the first digit) */
+.lslider { border-radius: 0; background: var(--lv-well, var(--bg)); border-color: var(--lv-edge, var(--line)); }
+.lslider .ls-top { background: var(--lv-sel, var(--accent)); color: var(--lv-ink, var(--text)); }
+.lslider .ls-top .ls-l { color: var(--lv-ink, var(--text)); opacity: .8; }
+.lslider .ls-tick { background: var(--lv-ink, var(--line)); opacity: .45; }
+/* light theme: orange TEXT on a light surface needs the dark amber (--lv-orink = #7a4500 there; the bright orange stays for fills and borders) */
+[data-theme="light"] .row.on, [data-theme="light"] .row.act, [data-theme="light"] .card h4 button.on, [data-theme="light"] .set h4, [data-theme="light"] .ae-info span.hot i,
+[data-theme="light"] .tp-big, [data-theme="light"] .pp-name, [data-theme="light"] #browser .btabs .bx.pinon, [data-theme="light"] #browser .sbar .cnt, [data-theme="light"] .scalebox .sval { color: var(--lv-orink); }
+
+/* ===== v63 - touch + scroll feel: no tap delay on controls (the page itself cannot be zoomed), inner scrollers never chain into the page / browser overscroll ===== */
+:where(button, [role="button"], .b, .chip, .pl, .lv-btn, .lv-tab, .fv-b, .vbox, .menu .mi) { touch-action: manipulation; }
+#view-mix, .blist, .dev-scroll, .modal, .menu, #dbody { overscroll-behavior: contain; }
+/* settings dialog: one fixed size for every tab (like Live's Preferences window) - the tab bar no longer jumps up and down when switching tabs; long panes scroll inside */
+.modal.big { height: min(calc(100% - 24px), 400px); }
+
+/* ===== v63b - device chain: every device card spans the full height of the Device panel (Live's chain has equal-height devices); the "+ Efek" card keeps its size ===== */
+.dev-scroll { align-items: stretch; }
+.dev-scroll > .addcard { align-self: flex-start; }
+
+/* ===== v63b - range sliders (UI scale, ...): same flat Live look and the same blue-teal fill as the value sliders ===== */
+.sl::-webkit-slider-runnable-track { border-radius: 0; border-color: var(--lv-edge, var(--line)); background: linear-gradient(to right, var(--lv-sel, var(--accent)) var(--p), var(--lv-well, var(--bg)) var(--p)); }
+.sl::-moz-range-track { border-radius: 0; border-color: var(--lv-edge, var(--line)); background: var(--lv-well, var(--bg)); }
+.sl::-moz-range-progress { border-radius: 0; background: var(--lv-sel, var(--accent)); }
+
+/* ===== v65 - geometry fit: every device must fit the Device panel (checked per card by an automatic audit on a 1055x475 layout, the size of the phone screenshots) ===== */
+.knobs.side.r3 { gap: 2px 2px; padding-top: 3px; padding-bottom: 2px; }
+.knobs.side.r3 .knob svg { width: 30px; height: 30px; }
+.wtl .knob svg { width: 30px; height: 30px; }
+.wtl { gap: 1px; }
+.lv-dev.wt .wtl { padding-top: 3px; padding-bottom: 2px; gap: 0; }
+.wtl .knob svg { width: 28px; height: 28px; }
+.wtl .lvk .k-n, .wtl .lvk .k-v { line-height: 9px; height: 9px; }
+.wtl .lv-fl { gap: 0; }
+.wtl .lv-lb { line-height: 9px; }
+
+/* v65 - instrument cards: the body fills the card, so the dividers between OSC / FILTER / MOD / VOLUME run the full height of the device (before: they stopped halfway) */
+.card.syn > .sps, .card.syn > .inst-row { flex: 1 1 auto; min-height: 0; }
+.card.syn > .sps > .sp { align-self: stretch; }
+/* two-column button grids (Auto Filter types / shapes): an odd last button spans both columns, the grid stays symmetric */
+.fv-side .fv-chips > .fv-b:last-child:nth-child(odd), .fv-chips > .fv-b:last-child:nth-child(odd) { grid-column: 1 / -1; }
+.card.syn .inst-row { align-items: stretch; }
+.card.syn .inst-row > .sps, .card.syn .inst-row > .inst-side { align-self: stretch; }
+
+/* ===== v66 - browser docks beside the views like Live's Browser (it pushes Arrange / Mixer instead of covering them); phones in portrait keep the overlay ===== */
+@media (min-width: 760px) {
+  #browser { position: relative; top: auto; bottom: auto; left: auto; flex: none; width: min(400px, 42%); box-shadow: none; border-right: 1px solid var(--lv-edge, var(--line)); z-index: 2; }
+}
+
+/* v67 - Clip View toolbar: groups are separated by a hairline, like Live's grouped header controls */
+.ed-tools .ed-sep { flex: none; width: 1px; height: 18px; margin: 0 5px; background: var(--lv-edge, var(--line)); opacity: .9; }
+
+/* ===== v69 - device redesign in Live's device language: ONE title bar, ONE activator, ONE icon size and ONE body rhythm for every instrument and effect
+   (MiniMeters keeps its own look). Everything here is visual only; the audit (no clipped text, nothing taller than the Device panel) checks it. ===== */
+.dev-scroll { gap: 3px; }
+.dev-scroll > .card:not(.fold):not(.addcard) { min-width: 200px; }
+.card > h4 { height: 20px; padding: 0 2px 0 3px; gap: 0; background: var(--lv-title); border-bottom: 1px solid var(--lv-edge); }
+.card > h4 > span { flex: 1; min-width: 0; padding: 0 6px 0 3px; font-size: 11px; font-weight: 700; color: var(--lv-ink); letter-spacing: .01em; }
+/* activator: the same 11 px LED on instruments (.pdot) and on effects (.pw) */
+.card > h4 .pdot { flex: none; width: 11px; height: 11px; margin: 0 3px 0 4px; border-radius: 50%; background: var(--lv-or); border: 1px solid var(--lv-edge); }
+.card > h4 button.pw { flex: none; width: 19px; min-width: 19px; height: 18px; }
+.card > h4 button.pw::before { width: 11px; height: 11px; margin: -5.5px 0 0 -5.5px; border: 1px solid var(--lv-edge); background: var(--lv-trk); opacity: 1; }
+.card > h4 button.pw.on::before { background: var(--lv-or); }
+/* icon buttons (float, fold, move, delete, instrument list): one size, one ink colour */
+.card > h4 button:not(.pw):not(.pre) { flex: none; width: 18px; min-width: 18px; height: 18px; padding: 0; color: var(--lv-dim); font-size: 11px; line-height: 18px; border-radius: 0; background: transparent; }
+.card > h4 button:not(.pw):not(.pre):active { background: var(--lv-ctl); color: var(--lv-ink); }
+.card > h4 button:disabled { opacity: .3; }
+.card > h4 button svg { width: 12px !important; height: 12px !important; }
+/* preset chooser (instruments): a flat field like Live's preset name; the ▾ next to it switches the instrument */
+.card > h4 button.pre { flex: none; height: 16px; margin: 0 1px 0 2px; padding: 0 8px !important; border: 1px solid var(--lv-edge); background: var(--lv-well); color: var(--lv-ink); font-size: 10px !important; font-weight: 600; border-radius: 0; }
+/* bodies: the same inner padding and display frame everywhere */
+.fxv { gap: 8px; padding: 6px 6px 4px; }
+.fxv > .knobs.side { padding-top: 0; }
+.fxv .viz, .fxv canvas, .sp .viz, .lv-disp { border: 1px solid var(--lv-edge); }
+/* MiniMeters keeps its original 1:1 layout */
+.fxv:has(.mm) { gap: 0; padding: 0; }
+.card > h4 button.pw::before { box-sizing: border-box; }   /* the pseudo element is outside the global border-box rule: without this the effect LED was 2 px larger than the instrument LED */
+.card:has(.mm) > h4 { height: 18px; }   /* MiniMeters: title bar height as before, its 1:1 layout stays untouched */
+
+/* ===== v70 - visible Live redesign of the controls ===== */
+/* dials: arc + needle only (ui.js); a touch more room between the label, the dial and the value */
+.knob svg { overflow: visible; }
+.knob .k-n { margin-bottom: 2px; }
+.knob .k-v { margin-top: 1px; color: var(--lv-ink); font-variant-numeric: tabular-nums; }
+/* device toggle buttons (filter types, shapes, Sync / Link, Analyzer modes): Live's flat chips - thin edge, no rounding, compact type */
+.fv-b, .fv-t, .lv-btn { height: 19px; border-radius: 0 !important; border: 1px solid var(--lv-edge) !important; background: var(--lv-ctl) !important; color: var(--lv-ink) !important;
+  font: 600 10px/17px system-ui, sans-serif !important; letter-spacing: .02em; box-shadow: none !important; text-transform: none; }
+.fv-b.on, .fv-t.on, .lv-btn.on { background: var(--lv-or) !important; color: #1a1100 !important; border-color: var(--lv-edge) !important; }
+.fv-b.wide { height: 19px; }
+.fv-side .fv-chips, .fv-chips { gap: 2px; }
+/* Clip View toolbar: same flat chips, slightly taller for the thumb */
+.ed-tools { gap: 2px; background: var(--lv-title, var(--panel2)); border-bottom: 1px solid var(--lv-edge, var(--line)); }
+.ed-tools .b, .ed-tools .ed-g .b { height: 24px; padding: 0 10px; border-radius: 0 !important; border: 1px solid var(--lv-edge) !important; background: var(--lv-ctl) !important; color: var(--lv-ink) !important; font-size: 11px; font-weight: 600; box-shadow: none !important; }
+.ed-tools .b.on, .ed-tools .ed-g .b.on { background: var(--lv-or) !important; color: #1a1100 !important; }
+.ed-tools .ct-sig { color: var(--lv-dim); font-size: 10.5px; padding: 0 6px; }
+/* displays: Live's displays are recessed - darker well and a crisp edge */
+.fxv .viz, .fxv canvas, .sp .viz, .lv-disp { background: var(--lv-well) !important; box-shadow: inset 0 1px 0 rgba(0,0,0,.35); }
+/* device body headings (OSC, FILTER, MOD, VOLUME): Live-style small caps in the dim ink */
+.sp-h b, .lv-st { font-size: 9px; font-weight: 700; letter-spacing: .08em; color: var(--lv-dim); }
+.strip .sends.ph, .strip .ph2 { height: 54px; }   /* v70: the dial is 2 px taller (label/value spacing) - spacers follow so returns/master stay level */
+.dev-scroll > .card:not(.fold) { display: flex; flex-direction: column; } .dev-scroll > .card > .fxv { flex: 1 1 auto; min-height: 0; }   /* v70: the effect body fills its card (the light theme showed a lighter band under short bodies) */
+
+/* ===== v71 - instrument panels: every section has the same rhythm (title / display / read-out / knobs). Sections without a display (ARP, EFEK)
+   start their knobs on the SAME row as the others (measured offset 78 px vs 19 px -> +59 px), so all knob rows line up across the device ===== */
+.sp:not(:has(> .viz)) > .sp-k { margin-top: 59px; }
+/* a section with more than 4 knobs widens instead of wrapping (one knob row everywhere; a wrapped row ran 14 px past the Device panel) */
+.sps { grid-auto-columns: minmax(148px, auto); }
+.sp { width: auto; min-width: 148px; }
+.sp > .sp-k { flex-wrap: nowrap; justify-content: center; }
+.sp > .viz { align-self: center; }
+
+/* ===== v72 - value fields and buttons share ONE height (19 px), so every column of the Sampler / Wavetable / device panels starts and ends on the
+   same line (measured before: column tops at 361 / 363 / 365 px because buttons were 19 px and fields 17 px) ===== */
+.lv-fld { height: 19px; }
+.lv-dev.smp .lv-row { align-items: flex-start; }
+.lv-dev.smp .lv-col { gap: 3px; }

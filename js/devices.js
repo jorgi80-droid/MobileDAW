@@ -1,0 +1,309 @@
+// Device chain for the selected strip (track, return or master): instrument card, effect cards, "+" card.
+// Long-press a knob to create automation for it. Levelness / Analyzer / Autoduck have live meter views.
+import { C } from './theme.js';
+import { h, knob, menu, icon, modal, fromNorm, toNorm, ask, toast } from './ui.js';
+import * as PRS from './presets.js';
+import { LAYOUT, buildSynth, DISP } from './devviz.js';
+import { FXVIEW } from './fxviz.js';
+import { samplerPanel, wavetablePanel } from './liveinst.js';
+import { INSTRUMENTS, INST_LIST, DEVICES, INST, fmtParam, noteName } from './defs.js';
+import { eng, MASTER, RET0 } from './engine.js';
+import { offerAutomation } from './automate.js';
+import * as BR from './browser.js';
+import * as P from './project.js';
+import * as FW from './floatwin.js';
+import { buildSuite, minimetersView } from './minimeters.js';
+const { state } = P;
+const VIEWS = { ...FXVIEW, 16: minimetersView };   // MiniMeters has its own view module
+
+let root = null, timers = [];
+const padSel = new Map();
+// Folded cards (Live-style vertical strips): remembered per device id / instrument track, also across reloads
+const FOLD_KEY = 'mobiledaw.fold';
+const folded = new Set((() => { try { return JSON.parse(localStorage.getItem(FOLD_KEY) || '[]'); } catch (_) { return []; } })());
+const isFolded = (k) => folded.has(k);
+function setFolded(k, on) { if (on) folded.add(k); else folded.delete(k); try { localStorage.setItem(FOLD_KEY, JSON.stringify([...folded].slice(-400))); } catch (_) { /* storage unavailable */ } render(); }
+const foldBtn = (k, on) => { const b = h('button', { class: 'fold-b', 'aria-label': on ? 'Buka lipatan' : 'Lipat modul', onclick: () => setFolded(k, !on) }, on ? '\u25B8' : '\u25C2'); return b; };
+function foldedCard(k, name, pw) {
+  const c = h('div', { class: 'card fold', 'aria-label': 'Buka ' + name, onclick: (e) => { if (e.target.closest && e.target.closest('.pw')) return; setFolded(k, false); } }, pw || null, h('span', { class: 'fn' }, name), foldBtn(k, true));
+  return c;
+}                                 // selected drum pad per track
+const stripName = (i) => (i === MASTER ? 'Master' : P.tr(i) ? P.tr(i).name : '');
+const live = () => root && root.isConnected && root.dataset.active === '1' && !document.hidden;
+function every(ms, fn) { const t = setInterval(() => { if (live()) fn(); }, ms); timers.push(t); }
+
+function knobGrid(def, count) {
+  const cols = count > 8 ? Math.ceil(count / 2) : Math.max(1, Math.min(count, 4));
+  return h('div', { class: 'knobs', style: `max-width:${cols * 60}px` });
+}
+
+// ---- sampler zones (DirectWave: one zone, Keystone: up to 16) ----------------------------------
+function zoneEditor(i, k) {
+  const t = state.tracks[i], z = t.inst.zones[k], multi = t.inst.type === INST.KEYSTONE;
+  const num = (v, lo, hi) => h('input', { type: 'number', value: v, min: lo, max: hi, step: 1, inputmode: 'numeric', style: 'width:70px;height:32px;margin-left:8px;background:var(--bg);border:1px solid var(--line);color:var(--text);border-radius:2px;padding:0 6px;user-select:text' });
+  const f = { root: num(z.root, 0, 127), lo: num(z.lo, 0, 127), hi: num(z.hi, 0, 127), vlo: num(z.vlo, 1, 127), vhi: num(z.vhi, 1, 127), tune: num(z.tune, -100, 100) };
+  const loop = h('input', { type: 'checkbox', style: 'width:22px;height:22px;margin-left:8px' }); loop.checked = z.loop;
+  const row = (label, el, hint) => h('label', { style: 'display:flex;align-items:center;padding:4px 0' }, h('span', { style: 'flex:1' }, label), el, h('span', { style: 'width:34px;color:var(--dim);font-size:11px;margin-left:6px' }, hint || ''));
+  const hint = (el) => { const v = Math.round(+el.value); return Number.isFinite(v) ? noteName(Math.max(0, Math.min(127, v))) : ''; };
+  const body = h('div', {},
+    h('div', { style: 'padding-bottom:6px;color:var(--dim);word-break:break-all' }, z.sample ? z.sample.name : 'Belum ada sample'),
+    h('button', { class: 'b', style: 'width:100%;margin-bottom:6px', onclick: () => BR.openBrowser('file', { track: i, zone: k }) }, z.sample ? 'Ganti sample\u2026' : 'Pilih sample\u2026'),
+    row('Nada dasar (root)', f.root, hint(f.root)),
+    multi ? row('Tuts terendah', f.lo, hint(f.lo)) : null, multi ? row('Tuts tertinggi', f.hi, hint(f.hi)) : null,
+    multi ? row('Velocity min', f.vlo) : null, multi ? row('Velocity maks', f.vhi) : null,
+    row('Tune (cent)', f.tune), row('Loop sample', loop));
+  const acts = [{ label: 'Batal' }];
+  if (multi && t.inst.zones.length > 1) acts.push({ label: 'Hapus zona', fn: () => P.removeZone(i, k) });
+  acts.push({ label: 'Simpan', go: true, fn: () => {
+    const n = (el, lo, hi) => Math.max(lo, Math.min(hi, Math.round(+el.value) || 0));
+    P.setZoneField(i, k, 'root', n(f.root, 0, 127));
+    if (multi) { const lo = n(f.lo, 0, 127), hi = n(f.hi, 0, 127); P.setZoneField(i, k, 'lo', Math.min(lo, hi)); P.setZoneField(i, k, 'hi', Math.max(lo, hi)); const a = n(f.vlo, 1, 127), b = n(f.vhi, 1, 127); P.setZoneField(i, k, 'vlo', Math.min(a, b)); P.setZoneField(i, k, 'vhi', Math.max(a, b)); }
+    P.setZoneField(i, k, 'tune', n(f.tune, -100, 100));
+    P.setZoneField(i, k, 'loop', loop.checked);
+  } });
+  modal(multi ? `Zona ${k + 1}` : 'Sample DirectWave', body, acts);
+}
+
+function zonePanel(i, t) {
+  const zs = t.inst.zones || [];
+  const multi = t.inst.type === INST.KEYSTONE;
+  const list = h('div', { class: 'zones' });
+  zs.forEach((z, k) => list.append(h('button', { class: 'zone b', onclick: () => zoneEditor(i, k) },
+    h('b', {}, multi ? `Zona ${k + 1}` : 'Sample'),
+    h('span', { class: 'zn' }, z.sample ? z.sample.name : '(kosong \u2014 ketuk)'),
+    h('span', { class: 'zr' }, multi ? `${noteName(z.lo)}\u2013${noteName(z.hi)} \u2022 root ${noteName(z.root)}${z.vlo > 1 || z.vhi < 127 ? ` \u2022 vel ${z.vlo}\u2013${z.vhi}` : ''}${z.loop ? ' \u2022 loop' : ''}` : `root ${noteName(z.root)}${z.loop ? ' \u2022 loop' : ''}`))));
+  if (multi && zs.length < P.MAX_ZONES) list.append(h('button', { class: 'b', style: 'height:30px', onclick: () => { const k = P.addZone(i); if (k !== null) zoneEditor(i, k); } }, '+ Zona'));
+  return list;
+}
+
+// Pitch knob (-24..+24 semitones): part of the main controls of every instrument (Volume panel / knob grid / drum row)
+function pitchKnob(i, t) {
+  const p = { ...P.PITCH_PARAM, fmt: 'st' };   // display only: "-7 st" instead of a bare "-7"
+  return knob(p, () => t.inst.pitch || 0, (v) => P.setPitch(i, v), fmtParam, C('#ffa722'),
+    (rect) => offerAutomation(rect, { kind: 5, strip: P.stripOf(i), param: 90, def: p }, `${t.name} \u2022 Pitch`));
+}
+
+// ---- floating windows: the same cards, opened as free windows (drag, resize, shrink, minimise). While a window is open the chain shows a placeholder.
+const popBtn = (open) => h('button', { class: 'fw-pop', 'aria-label': 'Buka di jendela mengambang', title: 'Jendela mengambang', onclick: (e) => { e.stopPropagation(); open(); } }, '\u29C9');
+function floatedCard(key, name, open) {
+  return h('div', { class: 'card floated' }, h('h4', {}, h('span', {}, name)),
+    h('div', { class: 'fl-msg' }, 'Terbuka di jendela mengambang.'),
+    h('div', { class: 'fl-btns' }, h('button', { class: 'b', onclick: open }, 'Tampilkan'), h('button', { class: 'b', onclick: () => FW.closeFloat(key) }, 'Kembalikan')));
+}
+function locateDev(devId) {
+  const find = (i) => { const c = P.tr(i); if (!c) return null; const di = c.devices.findIndex((x) => x.id === devId); return di < 0 ? null : { i, di, d: c.devices[di], n: c.devices.length }; };
+  for (let k = 0; k < state.tracks.length; k++) { const r = find(k); if (r) return r; }
+  for (let k = 0; k < state.returns.length; k++) { const r = find(RET0 + k); if (r) return r; }
+  return find(MASTER);
+}
+export function openDeviceWindow(devId) {
+  const L0 = locateDev(devId); if (!L0) return;
+  const mm = L0.d.type === 16, name = DEVICES[L0.d.type].name;
+  FW.openFloat({ id: 'd:' + devId, title: name + ' \u2022 ' + stripName(L0.i), color: '#7ac5ff', fit: !mm, frameless: mm, w: 560, h: 330, minW: mm ? 240 : undefined, minH: mm ? 120 : undefined,
+    build(api) {
+      const L = locateDev(devId); if (!L) return null;
+      api.setTitle(name + ' \u2022 ' + stripName(L.i));
+      if (mm) return buildSuite({ i: L.i, di: L.di, d: L.d, set: (k, v) => P.setDeviceParam(L.i, L.di, k, v) }, api.every);
+      return fxCard(L.i, L.d, L.di, L.n, { every: api.every, floating: true });
+    } });
+}
+export function openInstWindow(trackId) {
+  const idx = () => state.tracks.findIndex((x) => x.id === trackId);
+  const i0 = idx(); if (i0 < 0 || !state.tracks[i0].inst) return;
+  FW.openFloat({ id: 'i:' + trackId, title: INSTRUMENTS[state.tracks[i0].inst.type].name + ' \u2022 ' + state.tracks[i0].name, color: '#ffa722', fit: true,
+    build(api) {
+      const i = idx(); if (i < 0 || !state.tracks[i].inst) return null;
+      const t = state.tracks[i]; api.setTitle(INSTRUMENTS[t.inst.type].name + ' \u2022 ' + t.name);
+      return instCard(i, t, { floating: true });
+    } });
+}
+
+function instCard(i, t, o = {}) {
+  const def = INSTRUMENTS[t.inst.type];
+  const fk = 'i' + t.id;
+  if (!o.floating && FW.isOpen('i:' + t.id)) return floatedCard('i:' + t.id, def.name, () => openInstWindow(t.id));
+  if (!o.floating && isFolded(fk)) return foldedCard(fk, def.name, null);
+  const head = h('h4', {}, h('i', { class: 'pdot' }), h('span', {}, def.name));
+  if (t.kind === 'midi') {
+    const presets = P.presetsFor(t.inst.type);
+    head.append(h('button', { class: 'pre', 'aria-label': 'Preset', style: 'width:auto;padding:0 6px;font-size:11px', onclick: (e) => {
+      const r = e.currentTarget.getBoundingClientRect();
+      const items = [{ label: 'Simpan preset ke folder\u2026', fn: () => ask('Nama preset', '', (n) => { const x = PRS.saveInstrumentPreset(i, n); toast(x.error || 'Preset tersimpan di Presets/Instruments.'); }) }];
+      const mine = PRS.userInstrumentPresets(t.inst.type);
+      if (mine.length) { items.push({ sep: true }, { label: 'PRESET SAYA', dim: true }); for (const m of mine) items.push({ label: m.name, fn: () => { const x = PRS.applyPresetFile(m.path, i); if (x.error) toast(x.error, 4000); } }); }
+      let cat = null;
+      for (const pr of presets) {
+        if (pr.cat && pr.cat !== cat) { cat = pr.cat; items.push({ sep: true }); items.push({ label: cat.toUpperCase(), dim: true }); }
+        items.push({ label: pr.name, fn: () => P.applyPreset(i, pr) });
+      }
+      menu(items, r.left - 60, r.bottom);
+    } }, 'Preset'));
+    head.append(h('button', { class: 'dd', 'aria-label': 'Ganti instrumen', onclick: (e) => {
+      const r = e.currentTarget.getBoundingClientRect();
+      menu(INST_LIST.map((k) => ({ label: INSTRUMENTS[k].name, check: t.inst.type === k, fn: () => P.setInstrument(i, k) })), r.left - 90, r.bottom);
+    } }, '\u25BE'));
+  }
+  if (!o.floating) head.append(popBtn(() => openInstWindow(t.id)));
+  head.append(foldBtn(fk, false));
+  if (def.view === 'lsampler' || def.view === 'lwavetable') {
+    const pn = def.view === 'lsampler' ? samplerPanel(i, t) : wavetablePanel(i, t);
+    return h('div', { class: 'card lvcard' }, head, pn.el);
+  }
+  const body = knobGrid(def, def.params.length + 1);   // +1 = the Pitch knob, which lives in the same grid
+  let envRedraw = null;
+  // Live-style panels (Osc / Filter / Mod Sources / Voice) with displays; instruments without a layout keep the plain knob grid
+  const syn = t.kind === 'midi' && LAYOUT[t.inst.type] ? buildSynth({
+    type: t.inst.type, t, def, h, knob, fmt: fmtParam, fromNorm, toNorm, pitch: () => pitchKnob(i, t),
+    get: (k) => t.inst.params[k] ?? def.params[k].def,
+    set: (k, v) => P.setInstParam(i, k, v),
+    auto: (rect, k) => offerAutomation(rect, { kind: 5, strip: P.stripOf(i), param: k, def: def.params[k] }, `${t.name} \u2022 ${def.params[k].n}`),
+  }) : null;
+  const EM = syn ? null : ({ 1: { a: 2, d: 3, s: 4, r: 5 }, 2: { a: 3, r: 4 } })[t.inst.type];
+  if (EM && t.kind === 'midi') {                     // amp-envelope display (Live shows the same next to its ADSR knobs)
+    const cv = h('canvas', { class: 'envcv', width: 190, height: 56 }), ro = h('div', { class: 'envro' });
+    const val = (k, fb) => (k === undefined ? fb : (t.inst.params[k] ?? def.params[k].def));
+    envRedraw = () => {
+      const a = val(EM.a, 0.01), dd = val(EM.d, 0.001), s = val(EM.s, 1), r = val(EM.r, 0.2);
+      const g = cv.getContext('2d'), w = cv.width, hh = cv.height;
+      g.fillStyle = DISP.bg; g.fillRect(0, 0, w, hh);
+      const wa = Math.sqrt(a), wd = Math.sqrt(dd), wr = Math.sqrt(r), wh = Math.max(0.25, (wa + wd + wr) * 0.35), k = (w - 12) / (wa + wd + wh + wr);
+      const X = [6, 6 + wa * k, 6 + (wa + wd) * k, 6 + (wa + wd + wh) * k, 6 + (wa + wd + wh + wr) * k], sy = 6 + (1 - s) * (hh - 12), Y = [hh - 6, 6, sy, sy, hh - 6];
+      g.beginPath(); X.forEach((x, n) => (n ? g.lineTo(x, Y[n]) : g.moveTo(x, Y[n])));
+      g.strokeStyle = '#5fd0e0'; g.lineWidth = 1.6; g.stroke();
+      g.lineTo(X[0], hh - 6); g.closePath(); g.fillStyle = 'rgba(95,208,224,.16)'; g.fill();
+      g.fillStyle = '#ffa722'; for (const n of [1, 2, 3]) { g.beginPath(); g.arc(X[n], Y[n], 2.8, 0, 6.2832); g.fill(); }
+      const parts = [['A', EM.a, a], ['D', EM.d, dd], ['S', EM.s, s], ['R', EM.r, r]].filter((x) => x[1] !== undefined);
+      ro.textContent = parts.map(([l, kk, v]) => `${l} ${fmtParam(def.params[kk], v)}`).join('   ');
+    };
+    body.prepend(h('div', { class: 'envbox' }, cv, ro)); body.classList.add('wide'); envRedraw();
+  }
+  if (!syn) def.params.forEach((p, k) => body.append(knob(p, () => t.inst.params[k] ?? p.def, (v) => { P.setInstParam(i, k, v); if (envRedraw) envRedraw(); }, fmtParam, C('#ffa722'),
+    (rect) => offerAutomation(rect, { kind: 5, strip: P.stripOf(i), param: k, def: p }, `${t.name} \u2022 ${p.n}`))));
+  if (!syn) body.append(pitchKnob(i, t));
+  if (t.inst.type === INST.DRUM) {
+    // Drum Rack style: tap a pad to play it and select it, the knobs on the right belong to the selected pad
+    const PD = P.padsOf(i);
+    let cur = Math.min(padSel.get(t.id) ?? 0, PD.length - 1);
+    const pads = h('div', { class: 'pads' }), kn = h('div', { class: 'knobs dk' }), title = h('div', { class: 'fv-ro dt' });
+    const PK = [{ n: 'Level', min: -24, max: 6, def: 0, unit: 'dB' }, { n: 'Pitch', min: -12, max: 12, def: 0, unit: 'st' }, { n: 'Decay', min: 0.25, max: 3, def: 1, curve: 'log', unit: 'x' }];
+    const showKnobs = () => {
+      title.textContent = `Pad: ${PD[cur].name} \u2022 ${noteName(PD[cur].pitch)}`;
+      kn.replaceChildren(...PK.map((p, j) => { const idx = cur * 3 + j; return knob(p, () => t.inst.params[idx] ?? p.def, (v) => P.setInstParam(i, idx, v), fmtParam, C('#ffa722'), (rect) => offerAutomation(rect, { kind: 5, strip: P.stripOf(i), param: idx, def: p }, `${t.name} \u2022 ${PD[cur].name} ${p.n}`)); }), pitchKnob(i, t));
+    };
+    const btns = PD.map((d, k) => {
+      const b = h('button', { class: 'pad' + (k === cur ? ' sel' : '') }, h('span', {}, d.name), h('small', {}, noteName(d.pitch)));
+      b.addEventListener('pointerdown', (e) => { b.setPointerCapture(e.pointerId); b.classList.add('hit'); cur = k; padSel.set(t.id, k); btns.forEach((x, m) => x.classList.toggle('sel', m === k)); showKnobs(); P.noteEvent(i, d.pitch, 0.9, true); });
+      const off = () => { b.classList.remove('hit'); P.noteEvent(i, d.pitch, 0, false); };
+      b.addEventListener('pointerup', off); b.addEventListener('pointercancel', off);
+      pads.append(b); return b;
+    });
+    showKnobs();
+    return h('div', { class: 'card', style: 'min-width:420px' }, head, h('div', { class: 'drumrow' }, h('div', { class: 'dp' }, pads), h('div', { class: 'dr' }, title, kn)));
+  }
+  if (def.view === 'soundfont') {
+    const sf = t.inst.sf;
+    const pick = h('button', { class: 'b', style: 'width:100%;margin:6px 0 4px', onclick: () => BR.openBrowser('file', { track: i, sf: true }) }, sf ? sf.path.split('/').pop() : 'Pilih file SoundFont (.sf2)\u2026');
+    const pr = sf ? h('button', { class: 'b', style: 'width:100%;margin-bottom:6px', onclick: (e) => {
+      const r = e.currentTarget.getBoundingClientRect();
+      menu(sf.presets.map((n, k) => ({ label: `${k + 1}. ${n}`, check: k === sf.preset, fn: () => P.setSfPreset(i, k) })), r.left, r.bottom);
+    } }, `Preset: ${sf.presets[sf.preset] || '-'}`) : null;
+    body.classList.add('wide');
+    return h('div', { class: 'card', style: 'min-width:230px' }, head, h('div', { class: 'inst-row' }, h('div', { class: 'inst-side' }, pick, pr), body));
+  }
+  if (def.view === 'sampler' || def.view === 'sampler1') { body.classList.add('wide'); return h('div', { class: 'card' + (syn ? ' syn' : ''), style: syn ? '' : 'min-width:260px' }, head, h('div', { class: 'inst-row' }, h('div', { class: 'inst-side' }, zonePanel(i, t)), syn ? syn.el : body)); }
+  return h('div', { class: 'card' + (syn ? ' syn' : '') }, head, syn ? syn.el : body);
+}
+
+// ---- live views live in fxviz.js (analyzer, loudness, EQ curves, dynamics meters, ...)
+function duckSource(i, di, d) {
+  const name = () => (d.params[0] < 1 ? 'Off' : (state.tracks[d.params[0] - 1] ? state.tracks[d.params[0] - 1].name : 'Track hilang'));
+  const b = h('button', { class: 'b', style: 'width:100%;height:30px;margin:2px 0', onclick: (e) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    const items = [{ label: 'Off', check: d.params[0] < 1, fn: () => { P.setDeviceParam(i, di, 0, 0); b.textContent = 'Sumber: Off'; } }];
+    state.tracks.forEach((t, k) => { if (t.kind !== 'auto' && k !== i) items.push({ label: t.name, check: d.params[0] === k + 1, fn: () => { P.setDeviceParam(i, di, 0, k + 1); b.textContent = 'Sumber: ' + t.name; } }); });
+    menu(items, r.left, r.bottom);
+  } }, 'Sumber: ' + name());
+  return b;
+}
+
+// Effect displays used to stack their buttons under the graph. Here the graph stays on the left and every button row / tab bar moves
+// into a column to its right, so the card is wide instead of tall and fits the fixed Device height without hiding anything.
+function sideLayout(el) {
+  try {
+    if (!(el.classList.contains('fv') || el.classList.contains('loud')) || el.classList.contains('fv-wide')) return;
+    const kids = [...el.children];
+    const isMain = (c) => c.tagName === 'CANVAS' || c.classList.contains('fv-ro') || c.classList.contains('ln-grid');
+    const main = kids.filter(isMain), side = kids.filter((c) => !isMain(c));
+    if (!side.length || !main.length) return;
+    el.replaceChildren(h('div', { class: 'fv-main' }, main), h('div', { class: 'fv-side' }, side));
+    el.classList.add('fv-wide');
+  } catch (e) { console.error('sideLayout', e); }
+}
+
+function fxCard(i, d, di, n, o = {}) {
+  const def = DEVICES[d.type];
+  const mv = (dir) => h('button', { 'aria-label': dir < 0 ? 'Geser ke kiri' : 'Geser ke kanan', onclick: () => P.moveDevice(i, di, di + dir), disabled: di + dir < 0 || di + dir >= n }, '');
+  const l = mv(-1), r = mv(1); l.innerHTML = icon('left'); r.innerHTML = icon('right');
+  for (const b of [l, r]) b.firstChild.style.cssText = 'width:16px;height:16px;fill:currentColor';
+  const pw = h('button', { class: 'pw' + (d.bypass ? '' : ' on'), 'aria-label': 'Bypass', onclick: () => P.toggleBypass(i, di) });
+  const x = h('button', { 'aria-label': 'Hapus device', onclick: () => P.removeDevice(i, di) }); x.innerHTML = icon('close');
+  x.firstChild.style.cssText = 'width:15px;height:15px;fill:currentColor';
+  if (!o.floating && FW.isOpen('d:' + d.id)) return floatedCard('d:' + d.id, def.name, () => openDeviceWindow(d.id));
+  if (!o.floating && isFolded(d.id)) { const c = foldedCard(d.id, def.name, pw); if (d.bypass) c.classList.add('off'); return c; }
+
+  let view = null;
+  const knobsDiv = h('div', { class: 'knobs side' });
+  const ctx = { i, di, d, def, every: o.every || every, set: (k, v) => P.setDeviceParam(i, di, k, v), refreshKnobs: () => { for (const c of knobsDiv.children) if (c.update) c.update(); } };
+  if (VIEWS[d.type]) { try { view = VIEWS[d.type](ctx); } catch (e) { console.error('fxviz', e); view = null; } }
+  // knobs sit beside the display and flow in columns (the number of rows follows the panel height), so a half-height panel needs no scrolling
+  // a device may list its knobs band by band (sideOrder, -1 = empty cell) so each column reads Freq / Gain / Q like Live's EQ
+  if (def.sideRows) knobsDiv.style.setProperty('--kr', String(def.sideRows));
+  if (def.sideRows >= 3) knobsDiv.classList.add('r3');                                // v65: three knob rows must fit the 212 px Device panel: tighter rows
+  (def.sideOrder || def.params.map((_, k) => k)).forEach((k) => {
+    if (k < 0) { knobsDiv.append(h('div', { class: 'k-sp', 'aria-hidden': 'true' })); return; }
+    const p = def.params[k];
+    if (p.hidden) return;
+    if (p.fmt === 'src') { knobsDiv.append(duckSource(i, di, d)); return; }
+    knobsDiv.append(knob(p, () => d.params[k], (v) => {
+      P.setDeviceParam(i, di, k, v);
+      if (view && view.draw) view.draw();
+    }, fmtParam, C('#7ac5ff'), (rect) => offerAutomation(rect, { kind: 4, strip: P.stripOf(i), devId: d.id, param: k, def: p }, `${stripName(i)} \u2022 ${def.name} ${p.n}`)));
+  });
+  if (view && view.el) sideLayout(view.el);
+  const body = view ? h('div', { class: 'fxv' }, view.el, knobsDiv.children.length ? knobsDiv : null) : knobsDiv;
+  return h('div', { class: 'card' + (d.bypass ? ' off' : '') }, h('h4', {}, pw, h('span', {}, def.name), o.floating ? null : popBtn(() => openDeviceWindow(d.id)), foldBtn(d.id, false), l, r, x), body);
+}
+
+export function render() {
+  if (!root) return;
+  for (const t of timers) clearInterval(t);
+  timers = [];
+  const i = state.sel.track, t = P.tr(i);
+  const scroll = h('div', { class: 'dev-scroll' });
+  scroll.style.setProperty('--sc', root.clientWidth >= 1150 ? '3' : '2');   // synth panels per row
+  if (!t) { scroll.append(h('div', { class: 'hint' }, 'Tambahkan track lewat tombol + di arrangement.')); root.replaceChildren(scroll); return; }
+  if (t.kind === 'auto') {
+    scroll.append(h('div', { class: 'hint' }, 'Ini track otomasi untuk ', h('b', {}, P.autoLabel(t)), '. Pilih klipnya lalu buka tab Clip untuk mengedit titik.'));
+    root.replaceChildren(scroll); return;
+  }
+  if (i < MASTER && t.inst) scroll.append(instCard(i, t));
+  else if (i < MASTER) scroll.append(h('div', { class: 'card', style: 'min-width:150px' }, h('h4', {}, h('span', {}, 'Audio')), h('div', { class: 'hint', style: 'padding:8px' }, 'Klip audio lewat chain efek di kanan.')));
+  t.devices.forEach((d, di) => scroll.append(fxCard(i, d, di, t.devices.length)));
+  const add = h('button', { class: 'card addcard b', 'aria-label': 'Tambah efek', onclick: (e) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    menu(Object.entries(DEVICES).map(([k, d]) => ({ label: d.name, fn: () => P.addDevice(i, +k) })), Math.max(8, r.left - 40), Math.max(8, r.top - 120));
+  } }, '+ Efek');
+  scroll.append(add);
+  root.replaceChildren(scroll);
+  const title = document.getElementById('dtitle');
+  if (title) title.textContent = stripName(i);
+}
+
+export function initDevices(container) {
+  root = container;
+  const rows = () => { const hh = root.clientHeight; if (hh > 0) root.style.setProperty('--kr', String(Math.max(1, Math.min(5, Math.floor((hh - 24 - 16) / 68))))); };
+  if (typeof ResizeObserver !== 'undefined') new ResizeObserver(rows).observe(root); rows();
+  P.onChange((w) => { if (['devices', 'tracks', 'all', 'sel'].includes(w) && root.isConnected && root.dataset.active === '1') render(); });
+  P.onChange((w) => { if (['devices', 'tracks', 'all'].includes(w)) FW.refreshAll(); });          // open windows follow undo / redo / structure changes
+  FW.onFloatChange(() => { if (root.isConnected && root.dataset.active === '1') render(); });
+}
