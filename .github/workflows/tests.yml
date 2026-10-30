@@ -16,3 +16,5 @@ jobs:
           node-version: 22
       - name: Syntax, sw.js assets and all tests in tools/
         run: node tools/run-tests.mjs
+      - name: Golden tests (C++ engine vs JS engine, sample by sample)
+        run: node tools/golden/golden.mjs
