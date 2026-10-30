@@ -72,8 +72,10 @@ export function menu(items, x, y) {
   let close;
   for (const it of items) {
     if (it.sep) { node.append(h('div', { class: 'mi sep' })); continue; }
+    const head = it.dim && !it.fn && /[A-Z]/.test(it.label) && it.label === String(it.label).toUpperCase();   // an all-caps dim entry without an action is a section title
+    const sub = !head && /\u2026$/.test(it.label);                                                              // "…" = opens a list or a dialog (Live: a small arrow)
     node.append(h('div', {
-      class: 'mi' + (it.check ? ' ck' : '') + (it.dim ? ' dim' : ''),
+      class: 'mi' + (it.check ? ' ck' : '') + (head ? ' hd' : it.dim ? ' dim' : '') + (sub ? ' sub' : ''),
       onclick: () => { if (!armed(node)) return; close(); if (it.fn) it.fn(); },
     }, it.label));
   }

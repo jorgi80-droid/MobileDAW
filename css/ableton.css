@@ -308,3 +308,24 @@
 .dev-drop small { font-size: 10px; opacity: .75; font-weight: 500; }
 .dev-drop:active { background: rgba(255, 255, 255, .04); border-color: var(--lv-ink); }
 .dev-drop:disabled { opacity: .45; }
+
+/* ===== Context menus and action bars (Live 12): a flat dark panel with a hairline border, rows with the check mark on the LEFT
+   (not an orange block), separators as thin lines, disabled rows greyed, section titles in small caps, a small arrow on entries
+   that open another list or a dialog. The floating clip / note action bar uses the same controls. ===== */
+.menu { min-width: 180px; padding: 3px 0; background: var(--lv-body); border: 1px solid var(--lv-edge); border-radius: 2px; box-shadow: 0 10px 28px rgba(0, 0, 0, .45), 0 0 0 1px rgba(255, 255, 255, .03) inset; }
+.menu .mi { position: relative; height: 32px; padding: 0 26px 0 28px; border: 0; border-radius: 0; background: transparent; color: var(--lv-ink); font: 500 12px/1 var(--font); white-space: nowrap; }
+.menu .mi:active, .menu .mi:hover { background: var(--lv-sel); color: #fff; }
+.menu .mi.ck { background: transparent; color: var(--lv-ink); font-weight: 600; }
+.menu .mi.ck:active, .menu .mi.ck:hover { background: var(--lv-sel); color: #fff; }
+.menu .mi.ck::after { content: none; }
+.menu .mi.ck::before { content: ""; position: absolute; left: 11px; top: 50%; width: 8px; height: 4px; margin-top: -4px; border-left: 2px solid var(--accent); border-bottom: 2px solid var(--accent); transform: rotate(-45deg); }
+.menu .mi.ck:active::before, .menu .mi.ck:hover::before { border-color: #fff; }
+.menu .mi.dim { color: var(--lv-dim); font-size: 12px; opacity: .55; pointer-events: none; }
+.menu .mi.hd { height: 24px; padding-top: 4px; color: var(--lv-dim); font: 700 9.5px/1 var(--font); letter-spacing: .1em; text-transform: uppercase; pointer-events: none; }
+.menu .mi.sep { height: 1px; margin: 3px 0; padding: 0; background: var(--lv-div); pointer-events: none; }
+.menu .mi.sub::after { content: ""; position: absolute; right: 11px; top: 50%; margin-top: -4px; border-top: 4px solid transparent; border-bottom: 4px solid transparent; border-left: 5px solid currentColor; opacity: .55; }
+.bar { gap: 1px; padding: 0; background: var(--lv-edge); border: 1px solid var(--lv-edge); border-radius: 2px; box-shadow: 0 8px 22px rgba(0, 0, 0, .42); }
+.bar .b, .selbar .b { height: 32px; min-width: 46px; padding: 0 11px; border: 0; border-radius: 0; background: var(--lv-ctl); color: var(--lv-ink); font: 600 11.5px/1 var(--font); box-shadow: none; }
+.bar .b:active, .selbar .b:active { background: var(--lv-sel); color: #fff; scale: 1; }
+.selbar .cnt { padding: 0 10px; color: var(--lv-dim); font-size: 11px; }
+[data-theme="light"] .menu .mi:active, [data-theme="light"] .menu .mi:hover, [data-theme="light"] .bar .b:active { color: #fff; }
