@@ -1,0 +1,24 @@
+{
+  "name": "mobiledaw",
+  "version": "1.0.0",
+  "private": true,
+  "description": "MobileDAW: DAW seluler (web/PWA + aplikasi Android lewat Capacitor)",
+  "scripts": {
+    "www": "node tools/copy-www.mjs",
+    "sync": "node tools/copy-www.mjs && cap sync android",
+    "open": "cap open android",
+    "apk": "node tools/copy-www.mjs && cap sync android && cd android && ./gradlew assembleDebug",
+    "test": "node tools/run-tests.mjs"
+  },
+  "dependencies": {
+    "@capacitor/android": "8.6.0",
+    "@capacitor/app": "8.1.2",
+    "@capacitor/core": "8.6.0",
+    "@capacitor/filesystem": "8.1.5",
+    "@capacitor/share": "8.0.3",
+    "@capacitor-community/keep-awake": "8.0.1"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "8.6.0"
+  }
+}
