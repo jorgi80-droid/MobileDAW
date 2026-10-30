@@ -672,6 +672,7 @@ function clipBar(i, c, tick) {
     } },
     { label: c.muted ? 'Unmute' : 'Mute', fn: () => { checkpoint(); P.setClipsMuted([{ i, c }], !c.muted); invalidate(); } },
     { label: 'Trim', fn: () => { checkpoint(); P.splitClip(i, c.id, snapT(tick)); } },
+    ...(c.notes && P.loopOf(c) ? [{ label: 'Lepas loop', fn: () => { checkpoint(); P.bakeLoop(c, i); P.emit('clips'); invalidate(); toast('Pengulangan jadi not biasa.', 1600); } }] : []),   // FL Studio Mobile "Unlink loop"
     ...(t.kind === 'audio' ? [{ label: stretchMode ? 'Stretch \u2713' : 'Stretch', fn: () => { stretchMode = !stretchMode; toast(stretchMode ? 'Mode stretch: tarik ujung kanan klip audio untuk meregangkan (pitch tetap).' : 'Mode stretch mati: tarik ujung kanan untuk memotong.', 3200); invalidate(); } }] : []),
     { label: 'Edit', fn: () => hooks.openEditor && hooks.openEditor() },
   ], x, y);

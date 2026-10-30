@@ -83,7 +83,8 @@ const gridBottom = () => H - (cfg.vel ? VEL : 0);
 function clampV(c) {
   v.ppt = clamp(v.ppt, 0.02, 1.5); v.keyH = clamp(v.keyH, 8, 44);
   const rows = (gridBottom() - RULER) / v.keyH;
-  v.top = clamp(v.top, rows - 1 + 0, 128); v.x0 = clamp(v.x0, 0, Math.max(0, (c ? c.len : BAR) - 200));   // never scroll before the clip start (no empty strip left of bar 1)
+  const room = Math.max(1, W - KEYS) / v.ppt;                                       // never scroll before the clip start; to the right the editor stays open 8 bars past the clip end
+  v.top = clamp(v.top, rows - 1 + 0, 128); v.x0 = clamp(v.x0, 0, Math.max(0, (c ? (c.pts ? c.len : c.len + 8 * BAR) : BAR) - room * (c && c.pts ? 0.5 : 0.85)));
 }
 
 // ------------------------------------------------------------------ drawing
@@ -122,7 +123,23 @@ function drawRoll(t, c) {
   const g = [60, 120, 240, 480, 960, 1920, 3840].find((x) => x * v.ppt >= 12) || 3840;
   gridLocal(g, (q, kd) => { if (kd === 2) return; ctx.fillStyle = kd === 1 ? C('#3a3a3f') : C('#303034'); ctx.fillRect(Math.round(px(q)), RULER, 1, gb - RULER); });
   ctx.fillStyle = C('#4c4c52'); barLinesLocal((q) => ctx.fillRect(Math.round(px(q)), RULER, 1, gb - RULER));   // bar lines per bar (7/8, 5/4 ...)
-  ctx.fillStyle = 'rgba(0,0,0,.42)'; const ce = px(c.len); if (ce < W) ctx.fillRect(Math.max(KEYS, ce), RULER, W - ce, gb - RULER);
+  const ll = P.loopOf(c), ce = px(c.len);
+  if (ll) {                                                                        // looped clip: the repeats after the loop source, drawn as ghosts that follow every edit
+    const le = px(ll); if (le < W) { ctx.fillStyle = 'rgba(0,0,0,.14)'; ctx.fillRect(Math.max(KEYS, le), RULER, Math.min(W, ce) - Math.max(KEYS, le), gb - RULER); }
+    ctx.globalAlpha = 0.4;
+    for (let o = ll; o < c.len && px(o) < W; o += ll) {
+      if (px(o + ll) < KEYS) continue;
+      for (const n of c.notes) {
+        if (n.t >= ll) continue;
+        const x = px(o + n.t), w = Math.max(3, Math.min(n.d, ll - n.t, c.len - o - n.t) * v.ppt), y = py(n.p) - v.keyH;
+        if (x + w < KEYS || x > W || y > gb || y + v.keyH < RULER) continue;
+        ctx.fillStyle = velCol(t.color, n.v, false); ctx.fillRect(x, y + 1, w - 1, v.keyH - 1);
+      }
+    }
+    ctx.globalAlpha = 1; ctx.fillStyle = t.color;
+    for (let o = ll; o < c.len; o += ll) { const x = Math.round(px(o)); if (x > W) break; if (x >= KEYS) ctx.fillRect(x, RULER, 1, gb - RULER); }   // loop restarts
+  }
+  ctx.fillStyle = 'rgba(0,0,0,.26)'; if (ce < W) ctx.fillRect(Math.max(KEYS, ce), RULER, W - ce, gb - RULER);   // past the clip end: still open, a note there makes the clip longer
   if (tsel) { ctx.fillStyle = 'rgba(120,182,230,.18)'; ctx.fillRect(px(tsel.a), RULER, px(tsel.b) - px(tsel.a), gb - RULER); }
   const nInk = ink(t.color) === '#141414' ? 'rgba(14,14,18,.82)' : 'rgba(255,255,255,.9)';
   ctx.font = FONT(600, 9); ctx.textBaseline = 'middle';
@@ -161,8 +178,10 @@ function drawRoll(t, c) {
 function drawEdRuler(t, c) {
   ctx.fillStyle = C('#2c2c2f'); ctx.fillRect(0, 0, W, RULER); ctx.fillStyle = C('#141415'); ctx.fillRect(0, RULER - 1, W, 1);
   ctx.save(); ctx.beginPath(); ctx.rect(KEYS, 0, W - KEYS, RULER); ctx.clip();
-  const a = Math.max(KEYS, px(0)), b = Math.min(W, px(c.len));
-  if (b > a) { ctx.fillStyle = t.color; ctx.fillRect(a, RULER - 6, b - a, 4); ctx.fillStyle = shadeC(t.color, 0.45); ctx.fillRect(a, RULER - 2, b - a, 1); }
+  const L = contentEnd(c), a = Math.max(KEYS, px(0)), b = Math.min(W, px(L)), e = Math.min(W, px(c.len));
+  if (b > a) { ctx.fillStyle = t.color; ctx.fillRect(a, RULER - 6, b - a, 4); ctx.fillStyle = shadeC(t.color, 0.45); ctx.fillRect(a, RULER - 2, b - a, 1); }   // the loop brace: the content (loop source)
+  if (e > b && L < c.len) { ctx.globalAlpha = 0.4; ctx.fillStyle = t.color; ctx.fillRect(Math.max(KEYS, b), RULER - 5, e - Math.max(KEYS, b), 2); ctx.globalAlpha = 1; }   // the clip's repeats
+  if (L < c.len && px(L) >= KEYS && px(L) <= W) { const x = Math.round(px(L)); ctx.fillStyle = t.color; ctx.beginPath(); ctx.moveTo(x - 5, RULER - 7); ctx.lineTo(x + 1, RULER - 7); ctx.lineTo(x + 1, RULER - 1); ctx.closePath(); ctx.fill(); }   // loop end marker
   ctx.fillStyle = C('#4a4a50'); gridLocal(BEAT, (q, kd) => { if (kd !== 2) ctx.fillRect(Math.round(px(q)), RULER - 9, 1, 3); });
   ctx.font = FONT(500, 10); ctx.textBaseline = 'middle';
   barLinesLocal((q, bi) => { const x = Math.round(px(q)); if (x < KEYS - 1) return; ctx.fillStyle = C('#6a6a70'); ctx.fillRect(x, 3, 1, RULER - 4); ctx.fillStyle = C('#b4b4ba'); ctx.fillText(String(bi + 1), x + 4, RULER / 2 - 2); });
@@ -183,7 +202,7 @@ const ccSetPt = (l, t, v) => { const i = l.pts.findIndex((q) => q.t === t); if (
 function ccPaint(c, x, y) {
   const f = clamp(1 - (y - laneTop()) / laneH(), 0, 1), bend = cfg.cc.k === 'bend';
   const val = bend ? (Math.abs(f * 2 - 1) < 0.05 ? 0 : Math.round((f * 2 - 1) * 100) / 100) : Math.round(f * 127);
-  const t = clamp(Math.round(tk(x) / CC_RES) * CC_RES, 0, c.len), l = ccFind(c, !cfg.ccErase);
+  const t = clamp(Math.round(tk(x) / CC_RES) * CC_RES, 0, contentEnd(c)), l = ccFind(c, !cfg.ccErase);
   if (!l) return false;
   if (cfg.ccErase) { l.pts = l.pts.filter((q) => Math.abs(q.t - t) > 90); if (!l.pts.length) { c.cc = c.cc.filter((z) => z !== l); if (!c.cc.length) delete c.cc; } return true; }
   const a = ccLast ? ccLast.t : t, v0 = ccLast ? ccLast.v : val, st = a <= t ? CC_RES : -CC_RES;
@@ -233,7 +252,7 @@ function drawVel(t, c, gb) {
   const isPan = cfg.lane === 'pan', top = laneTop(), hh = laneH(), cy = top + hh / 2, bottom = top + hh;
   for (const q of isPan ? [0.5] : [0, 0.25, 0.5, 0.75]) { ctx.fillStyle = q === 0.5 && isPan ? C('#3a3a3f') : C('#2b2b2e'); ctx.fillRect(KEYS, Math.round(top + q * hh), W - KEYS, 1); }
   ctx.fillStyle = C('#3a3a3f'); ctx.fillRect(KEYS, Math.round(bottom), W - KEYS, 1);
-  ctx.fillStyle = 'rgba(0,0,0,.3)'; const ce = px(c.len); if (ce < W) ctx.fillRect(Math.max(KEYS, ce), gb + 2, W - ce, VEL - 2);
+  ctx.fillStyle = 'rgba(0,0,0,.22)'; const ce = px(contentEnd(c)); if (ce < W) ctx.fillRect(Math.max(KEYS, ce), gb + 2, W - ce, VEL - 2);
   for (const pass of [0, 1]) {                                   // selected notes drawn last, on top
     for (const n of c.notes) {
       const s = sel.has(n); if ((pass === 1) !== s) continue;
@@ -250,28 +269,37 @@ function drawVel(t, c, gb) {
 
 function drawSteps(t, c) {
   ctx.fillStyle = C('#1b1b1c'); ctx.fillRect(0, 0, W, H);
-  const PD = padList(), steps = Math.ceil(c.len / STEP), n = PD.length, SPBT = Math.max(1, Math.round(P.beatLenAt(c.start) / STEP)), SPB = Math.max(1, Math.round(P.barLenAt(c.start) / STEP));   // steps per beat / per bar follow the time signature
+  const PD = padList(), steps = Math.ceil(contentEnd(c) / STEP), n = PD.length, SPBT = Math.max(1, Math.round(P.beatLenAt(c.start) / STEP)), SPB = Math.max(1, Math.round(P.barLenAt(c.start) / STEP));   // steps per beat / per bar follow the time signature
+  const shown = Math.max(steps + SPB, Math.ceil((sv.x0 + W - LANE_HEAD) / sv.stepW) + 1);   // the grid stays open to the right (FL Studio Mobile): a step past the end makes the pattern longer
   const hdr = 18, LH = stepLaneH(), GB = H - LH;
   ctx.save(); ctx.beginPath(); ctx.rect(LANE_HEAD, hdr, W - LANE_HEAD, GB - hdr); ctx.clip();
   const byRow = PD.map((d) => c.notes.filter((x) => x.p === d.pitch));
   for (let r = 0; r < n; r++) {
     const y = hdr + r * sv.rowH - sv.y0;
     if (y > GB || y + sv.rowH < hdr) continue;
-    for (let s = Math.max(0, Math.floor((-LANE_HEAD + sv.x0) / sv.stepW)); s < steps; s++) {
+    for (let s = Math.max(0, Math.floor(sv.x0 / sv.stepW)); s < shown; s++) {
       const x = LANE_HEAD + s * sv.stepW - sv.x0;
       if (x > W) break; if (x + sv.stepW < LANE_HEAD) continue;
-      const hit = byRow[r].find((q) => Math.abs(q.t - s * STEP) < STEP / 2);
-      ctx.fillStyle = hit ? velCol(t.color, hit.v, false) : (Math.floor(s / SPBT) % 2 ? C('#303034') : C('#28282b'));
+      const hit = s < steps ? byRow[r].find((q) => Math.abs(q.t - s * STEP) < STEP / 2) : null, odd = Math.floor(s / SPBT) % 2;
+      ctx.fillStyle = hit ? velCol(t.color, hit.v, false) : s < steps ? (odd ? C('#303034') : C('#28282b')) : (odd ? C('#252528') : C('#212123'));
       ctx.fillRect(x + 1, y + 1, sv.stepW - 2, sv.rowH - 2);
       if (hit) { ctx.strokeStyle = shadeC(t.color, 0.6); ctx.lineWidth = 1; ctx.strokeRect(x + 1.5, y + 1.5, sv.stepW - 3, sv.rowH - 3); }
     }
   }
   ctx.fillStyle = C('#46464d');                       // v71: bar boundaries, so long patterns read in bars like FL Studio's step sequencer
-  for (let s = SPB; s < steps; s += SPB) { const x = Math.round(LANE_HEAD + s * sv.stepW - sv.x0) - 1; if (x > LANE_HEAD && x < W) ctx.fillRect(x, hdr, 2, Math.min(GB, hdr + n * sv.rowH - sv.y0) - hdr); }
+  for (let s = SPB; s < shown; s += SPB) { const x = Math.round(LANE_HEAD + s * sv.stepW - sv.x0) - 1; if (x > LANE_HEAD && x < W) ctx.fillRect(x, hdr, 2, Math.min(GB, hdr + n * sv.rowH - sv.y0) - hdr); }
+  { const xe = Math.round(LANE_HEAD + steps * sv.stepW - sv.x0); if (xe > LANE_HEAD && xe < W) { ctx.fillStyle = t.color; ctx.fillRect(xe - 1, hdr, 2, Math.min(GB, hdr + n * sv.rowH - sv.y0) - hdr); } }   // end of the pattern
   ctx.restore();
   ctx.fillStyle = C('#2c2c2f'); ctx.fillRect(0, 0, W, hdr); ctx.fillStyle = C('#141415'); ctx.fillRect(0, hdr - 1, W, 1);
-  ctx.fillStyle = C('#b4b4ba'); ctx.font = FONT(500, 10); ctx.textBaseline = 'middle';
-  for (let s = 0; s < steps; s += SPBT) { const x = LANE_HEAD + s * sv.stepW - sv.x0; if (x > LANE_HEAD - 10 && x < W) ctx.fillText(s % SPB === 0 ? 'Bar ' + (s / SPB + 1) : String(Math.round(s % SPB / SPBT) + 1), x + 3, hdr / 2); }
+  ctx.save(); ctx.beginPath(); ctx.rect(LANE_HEAD, 0, W - LANE_HEAD, hdr); ctx.clip();
+  { const a = LANE_HEAD - sv.x0, b = Math.min(W, LANE_HEAD + steps * sv.stepW - sv.x0); if (b > LANE_HEAD) { ctx.fillStyle = t.color; ctx.fillRect(Math.max(LANE_HEAD, a), hdr - 4, b - Math.max(LANE_HEAD, a), 3); } }   // pattern length brace
+  ctx.textBaseline = 'middle';
+  for (let s = 0; s < shown; s += SPBT) {                                      // bar numbers at bar starts, beat ticks between (FL Studio Mobile / Live)
+    const x = Math.round(LANE_HEAD + s * sv.stepW - sv.x0); if (x < LANE_HEAD - 30 || x > W) continue;
+    if (s % SPB === 0) { ctx.fillStyle = C('#6a6a70'); ctx.fillRect(x, 2, 1, hdr - 3); ctx.fillStyle = s < steps ? C('#d0d0d4') : C('#7a7a80'); ctx.font = FONT(700, 10); ctx.fillText(String(s / SPB + 1), x + 4, hdr / 2 - 1); }
+    else { ctx.fillStyle = C('#4a4a50'); ctx.fillRect(x, hdr - 8, 1, 4); }
+  }
+  ctx.restore();
   ctx.save(); ctx.beginPath(); ctx.rect(0, hdr, LANE_HEAD, GB - hdr); ctx.clip();
   for (let r = 0; r < n; r++) {
     const y = hdr + r * sv.rowH - sv.y0;
@@ -288,9 +316,9 @@ function drawSteps(t, c) {
     ctx.fillStyle = C('#2d2d30'); ctx.fillRect(0, y0 + 1, LANE_HEAD - 1, LH - 1);
     ctx.fillStyle = C('#8b8b92'); ctx.font = '600 10px system-ui'; ctx.textBaseline = 'top'; ctx.fillText('Velocity', 8, y0 + 6); ctx.fillStyle = C('#d6d6da'); ctx.font = '600 11px system-ui'; ctx.fillText(PD[r] ? PD[r].name : '', 8, y0 + 22, LANE_HEAD - 12);
     ctx.save(); ctx.beginPath(); ctx.rect(LANE_HEAD, y0 + 1, W - LANE_HEAD, LH - 1); ctx.clip();
-    for (let s = 0; s < steps; s++) {
+    for (let s = Math.max(0, Math.floor(sv.x0 / sv.stepW)); s < shown; s++) {
       const x = LANE_HEAD + s * sv.stepW - sv.x0; if (x > W) break; if (x + sv.stepW < LANE_HEAD) continue;
-      const hit = byRow[r] ? byRow[r].find((q) => Math.abs(q.t - s * STEP) < STEP / 2) : null;
+      const hit = byRow[r] && s < steps ? byRow[r].find((q) => Math.abs(q.t - s * STEP) < STEP / 2) : null;
       ctx.fillStyle = Math.floor(s / SPBT) % 2 ? C('#1d1d20') : C('#19191b'); ctx.fillRect(x + 1, y0 + 4, sv.stepW - 2, inner + 2);
       if (hit) { const bh = Math.max(2, hit.v * inner), bw = Math.max(3, Math.min(10, sv.stepW * 0.35)); ctx.fillStyle = t.color; ctx.fillRect(Math.round(x + sv.stepW / 2 - bw / 2), y0 + 5 + inner - bh, bw, bh); ctx.fillRect(Math.round(x + sv.stepW / 2 - bw / 2) - 2, y0 + 5 + inner - bh, bw + 4, 2); }
     }
@@ -300,7 +328,7 @@ function drawSteps(t, c) {
 
 let ov, octx, headPx = -1e9, headDirty = true;
 function headX(c, t, tick) {
-  if (t.kind === 'drum' && stepsMode()) return LANE_HEAD + ((tick - c.clip.start) / STEP) * sv.stepW - sv.x0;
+  if (t.kind === 'drum' && stepsMode()) { let rel = tick - c.clip.start; const ll = P.loopOf(c.clip); if (ll && rel >= 0 && rel <= c.clip.len) rel %= ll; return LANE_HEAD + (rel / STEP) * sv.stepW - sv.x0; }   // a looped pattern: the playhead runs round the source steps
   return px(tick - c.clip.start);
 }
 function drawHeadEd(c, t, tick) {
@@ -353,6 +381,7 @@ function notePreview(p, vel = 0.8) {
   previewOff = setTimeout(() => { eng.preview(c.track, p, 0, false); previewHeld = null; invalidate(); }, 220);
 }
 function changed() { const c = cur(); if (c) P.clipChanged(c.track); invalidate(); }
+function grew(c, end) { if (!growTo(c, end)) return false; setTimeout(() => { P.emit('clips'); buildProps(); }, 0); return true; }   // after the edit's own changed(): arrangement + panel show the new length
 
 // pitch-class histogram -> best matching scales (FL Studio Mobile "Guess Scale?": the best three guesses, with an option to see more)
 function guessScales(notes) {
@@ -375,19 +404,34 @@ function guessMenu(notes, x, y) {
   menu([...all.slice(0, 3).map(pick), { label: 'Lihat lainnya\u2026', fn: () => menu(all.slice(3, 11).map(pick), x, y) }], x, y);
 }
 
-const growTo = (c, end) => { if (end > c.len) c.len = P.state.sigs.length ? Math.max(c.len, P.barCeil(c.start + end) - c.start) : Math.ceil(end / BAR) * BAR; };   // clip grows (whole bars) instead of silently dropping notes pushed past its end
+// Pattern length (FL Studio Mobile): the editors are open to the right. A note placed, moved or stretched past the end makes the clip's content
+// grow in whole bars instead of being squeezed against the end. A looped clip (dragged longer than its content in the arrangement) is edited as
+// its loop source: every repeat follows the edit, and content growing past the loop length makes the loop longer (the clip grows when the loop
+// reaches the clip's own length).
+const MAX_BARS = 256;
+const contentEnd = (c) => P.loopOf(c) || c.len;
+const wholeBars = (c, end) => (P.state.sigs.length ? Math.max(P.beatLenAt(c.start), P.barCeil(c.start + end) - c.start) : Math.ceil(end / BAR) * BAR);
+const maxEnd = () => MAX_BARS * BAR;
+function growTo(c, end) {
+  const ll = P.loopOf(c), L = ll || c.len;
+  if (!(end > L)) return false;
+  const nl = Math.min(maxEnd(), wholeBars(c, end));
+  if (ll) { if (nl >= c.len) { c.len = nl; delete c.ll; delete c.lp; } else c.ll = nl; } else c.len = nl;
+  return true;
+}
+const notesEnd = (list) => { let e = 0; for (const n of list) if (n.t + n.d > e) e = n.t + n.d; return e; };
 
 function ops() {
   const c = cur().clip;
   return {
     copy: () => { clipboard = selNotes().map((n) => ({ ...n })); toast(clipboard.length + ' not disalin. Tekan lama di grid untuk paste.'); },
     del: () => { checkpoint(); c.notes = c.notes.filter((n) => !sel.has(n)); sel.clear(); changed(); },
-    snap: () => { checkpoint(); for (const n of sel) { n.t = clamp(quantT(n.t), 0, c.len - 1); } changed(); },
-    legato: () => { checkpoint(); const all = [...c.notes].sort((a, b) => a.t - b.t); for (const n of sel) { const nx = all.find((o) => o.t > n.t && o.p === n.p); n.d = nx ? nx.t - n.t : Math.max(n.d, c.len - n.t); } changed(); },
-    humanize: () => { checkpoint(); for (const n of sel) { const e = n.t + n.d; n.t = clamp(Math.round(n.t + (Math.random() - 0.5) * 36), 0, c.len - 1); n.d = Math.max(30, Math.round(e + (Math.random() - 0.5) * 36) - n.t); } changed(); },
+    snap: () => { checkpoint(); for (const n of sel) { n.t = Math.max(0, quantT(n.t)); } grew(c, notesEnd(sel)); changed(); },
+    legato: () => { checkpoint(); const all = [...c.notes].sort((a, b) => a.t - b.t); for (const n of sel) { const nx = all.find((o) => o.t > n.t && o.p === n.p); n.d = nx ? nx.t - n.t : Math.max(n.d, contentEnd(c) - n.t); } changed(); },
+    humanize: () => { checkpoint(); for (const n of sel) { const e = n.t + n.d; n.t = Math.max(0, Math.round(n.t + (Math.random() - 0.5) * 36)); n.d = Math.max(30, Math.round(e + (Math.random() - 0.5) * 36) - n.t); } grew(c, notesEnd(sel)); changed(); },
     shift: (d) => { checkpoint(); for (const n of sel) n.p = clamp(n.p + d, 0, 127); changed(); },
     double: (d) => { checkpoint(); const add = selNotes().map((n) => ({ ...n, p: clamp(n.p + d * 12, 0, 127) })); c.notes.push(...add); sel = new Set(add); changed(); },
-    length: (d) => { checkpoint(); for (const n of sel) n.d = Math.min(d, c.len - n.t); cfg.lastLen = d; changed(); },
+    length: (d) => { checkpoint(); for (const n of sel) n.d = d; cfg.lastLen = d; grew(c, notesEnd(sel)); changed(); },
     scale: () => { checkpoint(); for (const n of sel) n.p = toScale(n.p); changed(); },
   };
 }
@@ -415,8 +459,8 @@ function timeMenu(x) {
   const ax = r.left + clamp(x, 6, W - 6), ay = r.top + RULER + 6;
   bar([
     { label: 'Select', fn: () => { sel = new Set(inRange()); tsel = null; invalidate(); if (sel.size) noteBar(null, clamp(x, 60, W - 60), RULER + 60); } },
-    { label: 'Insert space', fn: () => { checkpoint(); for (const n of c.notes) if (n.t >= a) n.t += len; growTo(c, Math.max(0, ...c.notes.map((n) => n.t + n.d))); tsel = null; changed(); P.clipChanged(cur().track); } },
-    { label: 'Duplicate', fn: () => { checkpoint(); const add = inRange().map((n) => ({ ...n })); for (const n of c.notes) if (n.t >= b) n.t += len; for (const n of add) { n.t += len; c.notes.push(n); } growTo(c, Math.max(b + len, ...c.notes.map((n) => n.t + n.d))); tsel = null; changed(); } },
+    { label: 'Insert space', fn: () => { checkpoint(); for (const n of c.notes) if (n.t >= a) n.t += len; grew(c, Math.max(0, ...c.notes.map((n) => n.t + n.d))); tsel = null; changed(); P.clipChanged(cur().track); } },
+    { label: 'Duplicate', fn: () => { checkpoint(); const add = inRange().map((n) => ({ ...n })); for (const n of c.notes) if (n.t >= b) n.t += len; for (const n of add) { n.t += len; c.notes.push(n); } grew(c, Math.max(b + len, ...c.notes.map((n) => n.t + n.d))); tsel = null; changed(); } },
     { label: 'Delete space', fn: () => { checkpoint(); c.notes = c.notes.filter((n) => !(n.t >= a && n.t < b)); for (const n of c.notes) if (n.t >= b) n.t -= len; tsel = null; sel.clear(); changed(); } },
     { label: 'More\u2026', keep: true, fn: () => menu([
       { label: 'Trim selection', fn: () => { checkpoint(); c.notes = c.notes.filter((n) => n.t >= a && n.t < b); for (const n of c.notes) n.t -= a; sel.clear(); tsel = null; changed(); } },
@@ -465,8 +509,8 @@ function rollHandlers() {
       else if (t.type === 'grid') {
         sel.clear();
         let p = clamp(t.p, 0, 127); if (cfg.lock) p = toScale(p);
-        const at = clamp(floorT(t.t), 0, c.len - 1);
-        checkpoint(); const n = { t: at, d: Math.min(cfg.lastLen, c.len - at), p, v: 0.8 }; c.notes.push(n); sel.add(n); notePreview(p); changed();
+        const at = clamp(floorT(t.t), 0, maxEnd() - cfg.lastLen);
+        checkpoint(); const n = { t: at, d: cfg.lastLen, p, v: 0.8 }; c.notes.push(n); sel.add(n); notePreview(p); grew(c, at + n.d); changed();
       } else if (t.type === 'lanehead') { const r = canvas.getBoundingClientRect(); laneChooser(r.left + x, r.top + y); }
       else if (t.type === 'lane') { checkpoint(); if (laneSet(c, x, y)) changed(); ccLast = null; }
       else if (t.type === 'rsel') { if (tsel) timeMenu(x); }
@@ -511,14 +555,16 @@ function rollHandlers() {
         let dt = snapT(lead.t + dx / v.ppt) - lead.t;
         let dp = -Math.round(dy / v.keyH);
         const minT = Math.min(...drag.base.map((b) => b.t)), maxT = Math.max(...drag.base.map((b) => b.t)), minP = Math.min(...drag.base.map((b) => b.p)), maxP = Math.max(...drag.base.map((b) => b.p));
-        dt = clamp(dt, -minT, c.len - 1 - maxT); dp = clamp(dp, -minP, 127 - maxP);
+        dt = clamp(dt, -minT, maxEnd() - BAR - maxT); dp = clamp(dp, -minP, 127 - maxP);
         for (const b of drag.base) { b.n.t = b.t + dt; b.n.p = cfg.lock ? clamp(toScale(b.p + dp), 0, 127) : b.p + dp; }
+        if (growTo(c, notesEnd(drag.base.map((b) => b.n)))) drag.grew = true;
         if (drag.lead.p !== drag.lastP) { drag.lastP = drag.lead.p; notePreview(drag.lead.p, drag.lead.v); }
         P.touchClips(cur().track); P.emit('notes');
       } else if (drag.k === 'resize') {
         const s = snapUnit() || 1, lead = drag.base.find((b) => b.n === drag.lead) || drag.base[0];
         const dd = Math.max(s, snapT(lead.t + lead.d + dx / v.ppt) - lead.t) - lead.d;
-        for (const b of drag.base) { b.n.d = clamp(b.d + dd, Math.min(s, 30), Math.max(1, c.len - b.t)); }
+        for (const b of drag.base) { b.n.d = clamp(b.d + dd, Math.min(s, 30), Math.max(1, maxEnd() - b.t)); }
+        if (growTo(c, notesEnd(drag.base.map((b) => b.n)))) drag.grew = true;
         cfg.lastLen = drag.lead.d; P.touchClips(cur().track); P.emit('notes');
       } else if (drag.k === 'keys') {
         const p = clamp(pAt(y), 0, 127); if (p !== drag.p) { drag.p = p; notePreview(p); }
@@ -535,6 +581,7 @@ function rollHandlers() {
       } else if (drag && drag.k === 'rect' && sel.size) noteBar(null, x, y);
       else if (drag && drag.k === 'tsel') { if (tsel && tsel.b - tsel.a < BEAT / 4) tsel = null; else timeMenu(x); }
       else if (drag && drag.k === 'keys') { eng.preview(cur().track, drag.p, 0, false); }
+      if (drag && drag.grew) { P.emit('clips'); buildProps(); }       // the clip grew while notes were dragged past its end: arrangement + panel follow
       drag = null; ccLast = null; invalidate();
     },
     pan(dx, dy) { emo.t = null; v.x0 -= dx / v.ppt; v.top += dy / v.keyH; clampV(cur() && cur().clip); invalidate(); },
@@ -550,10 +597,10 @@ function rollHandlers() {
 
 function pasteAt(t, p) {
   if (!clipboard || !clipboard.length) return toast('Belum ada not yang disalin.');
-  const c = cur().clip, base = Math.min(...clipboard.map((n) => n.t)), pb = clipboard[0].p, at = clamp(floorT(t), 0, c.len - 1);
+  const c = cur().clip, base = Math.min(...clipboard.map((n) => n.t)), pb = clipboard[0].p, at = clamp(floorT(t), 0, maxEnd() - BAR);
   checkpoint(); sel = new Set();
-  for (const n of clipboard) { const q = { ...n, t: at + n.t - base, p: clamp(n.p + (p - pb), 0, 127) }; if (q.t < c.len) { c.notes.push(q); sel.add(q); } }
-  changed();
+  for (const n of clipboard) { const q = { ...n, t: at + n.t - base, p: clamp(n.p + (p - pb), 0, 127) }; c.notes.push(q); sel.add(q); }
+  grew(c, notesEnd(sel)); changed();
 }
 
 // ------------------------------------------------------------------ gestures: step sequencer
@@ -568,12 +615,12 @@ function hitStep(x, y) {
   if (r < 0 || r >= PD.length) return { type: 'none' };
   if (x < LANE_HEAD) { notePreview(PD[r].pitch, 0.9); return { type: 'lane', r }; }
   const s = Math.floor((x - LANE_HEAD + sv.x0) / sv.stepW);
-  if (s < 0 || s * STEP >= c.len) return { type: 'none' };
-  const n = c.notes.find((q) => q.p === PD[r].pitch && Math.abs(q.t - s * STEP) < STEP / 2);
+  if (s < 0 || s * STEP >= maxEnd()) return { type: 'none' };
+  const n = s * STEP < contentEnd(c) ? c.notes.find((q) => q.p === PD[r].pitch && Math.abs(q.t - s * STEP) < STEP / 2) : null;
   return { type: 'cell', r, s, n };
 }
 function laneMenu(r, x, y) {
-  const c = cur().clip, p = padList()[r].pitch, steps = Math.ceil(c.len / STEP), rect = canvas.getBoundingClientRect();
+  const c = cur().clip, p = padList()[r].pitch, steps = Math.ceil(contentEnd(c) / STEP), rect = canvas.getBoundingClientRect();
   const fill = (every) => { checkpoint(); c.notes = c.notes.filter((n) => n.p !== p); for (let s = 0; s < steps; s += every) c.notes.push({ t: s * STEP, d: 200, p, v: 0.85 }); changed(); };
   menu([
     { label: 'Isi tiap step', fn: () => fill(1) }, { label: 'Isi tiap 2 step', fn: () => fill(2) }, { label: 'Isi tiap 4 step', fn: () => fill(4) },
@@ -588,9 +635,9 @@ function laneVel(x, y) {                           // set the velocity of the st
 }
 function paintStep(r, s, add) {                     // set one cell of the step grid on / off (paint gesture)
   const c = cur().clip, p = padList()[r].pitch;
-  if (s < 0 || s * STEP >= c.len) return;
+  if (s < 0 || s * STEP >= maxEnd()) return;
   const n = c.notes.find((q) => q.p === p && Math.abs(q.t - s * STEP) < STEP / 2);
-  if (add && !n) { c.notes.push({ t: s * STEP, d: 200, p, v: 0.85 }); notePreview(p, 0.6); }
+  if (add && !n) { c.notes.push({ t: s * STEP, d: 200, p, v: 0.85 }); notePreview(p, 0.6); if (growTo(c, s * STEP + 200) && drag) drag.grew = true; }
   else if (!add && n) c.notes = c.notes.filter((q) => q !== n);
   else return;
   P.touchClips(cur().track); P.emit('notes'); invalidate();
@@ -604,7 +651,7 @@ function stepHandlers() {
       if (t.type !== 'cell') return;
       const c = cur().clip; checkpoint();
       if (t.n) c.notes = c.notes.filter((q) => q !== t.n);
-      else { c.notes.push({ t: t.s * STEP, d: 200, p: padList()[t.r].pitch, v: 0.85 }); notePreview(padList()[t.r].pitch, 0.85); }
+      else { c.notes.push({ t: t.s * STEP, d: 200, p: padList()[t.r].pitch, v: 0.85 }); notePreview(padList()[t.r].pitch, 0.85); grew(c, t.s * STEP + 200); }
       changed();
     },
     long(x, y, t) {
@@ -617,10 +664,10 @@ function stepHandlers() {
       if (drag && drag.k === 'vlane') { laneVel(x, y); return; }
       if (drag && drag.k === 'paint') { const s = Math.floor((x - LANE_HEAD + sv.x0) / sv.stepW), d = s > drag.last ? 1 : -1; for (let k = drag.last; k !== s; k += d) paintStep(drag.r, k + d, drag.add); drag.last = s; return; }
       if (drag && drag.k === 'svel') { drag.n.v = clamp(drag.v0 - dy / sv.rowH, 0.05, 1); P.touchClips(cur().track); P.emit('notes'); invalidate(); } },
-    dragEnd() { drag = null; invalidate(); },
+    dragEnd() { if (drag && drag.grew) { P.emit('clips'); buildProps(); } drag = null; invalidate(); },
     panEnd(vx, vy) { fling(vx, vy); },
-    pan(dx, dy) { sv.x0 = Math.max(0, sv.x0 - dx); sv.y0 = clamp(sv.y0 - dy, 0, Math.max(0, padList().length * sv.rowH - (H - 18 - stepLaneH()))); invalidate(); },
-    pinch(cx, cy, sx, sy) { svAuto = false; const s = (cx - LANE_HEAD + sv.x0) / sv.stepW; sv.stepW = clamp(sv.stepW * sx, 14, 80); sv.x0 = Math.max(0, s * sv.stepW - (cx - LANE_HEAD)); sv.rowH = clamp(sv.rowH * sy, 26, 70); invalidate(); },
+    pan(dx, dy) { sv.x0 = sv.x0 - dx; sv.y0 = sv.y0 - dy; clampSteps(); invalidate(); },
+    pinch(cx, cy, sx, sy) { svAuto = false; const s = (cx - LANE_HEAD + sv.x0) / sv.stepW; sv.stepW = clamp(sv.stepW * sx, 14, 80); sv.x0 = s * sv.stepW - (cx - LANE_HEAD); sv.rowH = sv.rowH * sy; clampSteps(); invalidate(); },
   };
 }
 
@@ -717,7 +764,7 @@ function fitView(c, glide) {
   for (const n of c.notes) { if (n.p < lo) lo = n.p; if (n.p > hi) hi = n.p; }
   if (hi < lo) { lo = hi = isDrum() ? 38 : 60; }
   const span = hi - lo + 1, keyH = clamp((gb - RULER) / Math.max(span + 3, 12), 10, 24), rows = (gb - RULER) / keyH;
-  const T = { keyH, top: (lo + hi) / 2 + rows / 2 + 0.5, ppt: clamp((W - KEYS - 6) / Math.max(c.len, 1), 0.02, 0.5), x0: 0 };
+  const T = { keyH, top: (lo + hi) / 2 + rows / 2 + 0.5, ppt: clamp((W - KEYS - 6) / Math.max(c.len + BAR, 1), 0.02, 0.5), x0: 0 };   // the clip plus one open bar after it
   const old = { ...v }; Object.assign(v, T); clampV(c); Object.assign(T, { keyH: v.keyH, top: v.top, ppt: v.ppt, x0: v.x0 });
   if (glide && !prefs.reduceMotion && W > 0) { Object.assign(v, old); emo.t = T; emo.vx = emo.vy = 0; invalidate(); }
 }
@@ -736,8 +783,9 @@ function stepEd(c, dt) {
   }
   if (emo.vx || emo.vy) {
     if (stepsMode()) {
-      const nx = Math.max(0, sv.x0 - emo.vx * dt), ny = clamp(sv.y0 - emo.vy * dt, 0, Math.max(0, padList().length * sv.rowH - (H - 18 - stepLaneH())));
-      if (nx === sv.x0) emo.vx = 0; if (ny === sv.y0) emo.vy = 0; sv.x0 = nx; sv.y0 = ny;
+      const wx = sv.x0 - emo.vx * dt, wy = sv.y0 - emo.vy * dt;
+      sv.x0 = wx; sv.y0 = wy; clampSteps();
+      if (Math.abs(sv.x0 - wx) > 1e-6) emo.vx = 0; if (Math.abs(sv.y0 - wy) > 1e-6) emo.vy = 0;
     } else {
       const wx = v.x0 - emo.vx * dt / v.ppt, wt = v.top + emo.vy * dt / v.keyH;
       v.x0 = wx; v.top = wt; clampV(c.clip);
@@ -803,7 +851,7 @@ function stretchNotes(k) {                                     // Live's x2 / :2
   checkpoint();
   const t0 = Math.min(...ns.map((n) => n.t));
   for (const n of ns) { n.t = Math.round(t0 + (n.t - t0) * k); n.d = Math.max(30, Math.round(n.d * k)); }
-  growTo(c, Math.max(...c.notes.map((n) => n.t + n.d)));
+  grew(c, notesEnd(c.notes));
   changed();
 }
 function buildProps() {
@@ -833,10 +881,13 @@ function buildProps() {
   const editable = !!cl.notes || kind === 'auto';
   const lenBox = editable ? numBox({ get: () => Math.round(cl.len / BEAT), set: (b) => { cl.len = Math.max(BEAT, b * BEAT); P.clipChanged(c.track); }, fmt: () => lenTxt(cl.len, cl.start), min: 1, max: 512, px: 7, begin: () => checkpoint(), end: () => { trimToLen(cl); P.clipChanged(c.track); P.emit('clips'); }, tap: lenMenu }) : val(lenTxt(cl.len, cl.start));
   const own = cl.swing != null && cl.swing >= 0, setSw = (x) => { checkpoint(); if (x == null) delete cl.swing; else cl.swing = x; P.clipChanged(c.track); buildProps(); };
+  const ll = cl.notes ? P.loopOf(cl) : 0;
   kids.push(sec('Clip',
     row('Signature', val(sg.n + ' / ' + sg.d)),
     row('Posisi', val(posTxt(cl.start))),
     row('Panjang', lenBox),
+    ll ? row('Loop', val(lenTxt(ll, cl.start) + ' \u00D7' + (Math.round(cl.len / ll * 10) / 10))) : null,
+    ll ? h('div', { class: 'cp-line' }, btn('Lepas loop', () => { checkpoint(); P.bakeLoop(cl, c.track); P.emit('clips'); refresh(); toast('Pengulangan jadi not biasa (bisa diedit satu per satu).', 2200); })) : null,
     cl.notes ? row('Groove', ch(Math.round(P.swingOf(cl) * 100) + '%' + (own ? '' : ' global'), (x, y) => menu([
       { label: 'Ikuti swing global (' + Math.round(state.groove.amt * 100) + '%)', check: !own, fn: () => setSw(null) },
       ...[0, 25, 50, 60, 75, 100].map((q) => ({ label: q + '%', check: own && Math.round(cl.swing * 100) === q, fn: () => setSw(q / 100) })),
@@ -880,6 +931,7 @@ function buildProps() {
   props.replaceChildren(h('div', { class: 'cp-in' }, ...kids));
 }
 function trimToLen(cl) {                                     // after a length change: notes / points past the new end go (the change is one undo step)
+  if (cl.ll && cl.ll >= cl.len) { delete cl.ll; delete cl.lp; }   // shortened to (or below) its loop: not looped any more
   if (cl.notes) cl.notes = cl.notes.filter((n) => n.t < cl.len);
   if (cl.pts) { cl.pts = cl.pts.filter((q) => q.t <= cl.len); if (!cl.pts.length) cl.pts = [{ t: 0, v: 0.5 }]; }
 }
@@ -913,7 +965,6 @@ export function refresh() {
   updateTitle();
   const c = cur();
   tsel = null; drag = null;
-  if (c && c.clip.ll && c.clip.notes && host && host.isConnected) P.bakeLoop(c.clip, c.track);   // the piano roll edits real notes: a looped clip is unrolled when it is opened
   if (!c) { padSel = -1; syncSide(); showCanvas(false); tools.replaceChildren(); host.replaceChildren(h('div', { class: 'hint' }, 'Belum ada klip yang dipilih. Ketuk klip di arrangement, lalu ketuk dua kali untuk membuka editor.')); return; }
   const t = state.tracks[c.track];
   if (t.kind === 'audio') { padSel = -1; syncSide(); showCanvas(false); tools.replaceChildren(); AE.mount(host); return; }
@@ -930,11 +981,20 @@ export function refresh() {
 const stepLaneH = () => (H >= 150 ? 56 : 0);          // v72: FL Studio Mobile graph lane (velocity of the selected pad) under the grid when the panel is tall enough
 const laneRow = () => Math.max(0, Math.min(padList().length - 1, padSel));
 let svAuto = true;                                  // v71: the step grid follows the panel size until the user pinches it
-function fitSteps(c, reset) {                              // FL Studio Mobile: the steps fill the width, the pad rows fill the height
-  const steps = Math.max(1, Math.ceil(c.len / STEP)), SPB = Math.max(1, Math.round(P.barLenAt(c.start) / STEP)), n = Math.max(1, padList().length), room = W - LANE_HEAD - 2;
-  let vis = steps; if (room / vis < 22) vis = Math.max(SPB, Math.floor(room / 22 / SPB) * SPB);   // too narrow for the whole clip: whole bars that stay tappable
+// the pad rows never get shorter than what fills the panel (no empty band under them), the grid scrolls from step 1 to 4 bars past the pattern end
+function clampSteps() {
+  const c = cur(); if (!c) return;
+  const n = Math.max(1, padList().length), gridH = H - 18 - stepLaneH(), SPB = Math.max(1, Math.round(P.barLenAt(c.clip.start) / STEP)), room = W - LANE_HEAD - 2;
+  sv.rowH = clamp(sv.rowH, Math.max(26, Math.min(70, gridH / n)), 70);
+  sv.x0 = clamp(sv.x0, 0, Math.max(0, (Math.ceil(contentEnd(c.clip) / STEP) + 4 * SPB) * sv.stepW - room));
+  sv.y0 = clamp(sv.y0, 0, Math.max(0, n * sv.rowH - gridH));
+}
+function fitSteps(c, reset) {                              // FL Studio Mobile: the pattern plus one open bar fill the width, the pad rows fill the height
+  const steps = Math.max(1, Math.ceil(contentEnd(c) / STEP)), SPB = Math.max(1, Math.round(P.barLenAt(c.start) / STEP)), n = Math.max(1, padList().length), room = W - LANE_HEAD - 2;
+  let vis = steps + SPB; if (room / vis < 22) vis = Math.max(SPB, Math.floor(room / 22 / SPB) * SPB);   // too narrow: whole bars that stay tappable
   sv.stepW = clamp(room / vis, 14, 80); sv.rowH = clamp((H - 18 - stepLaneH()) / n, 26, 70);
-  if (reset) { sv.x0 = 0; sv.y0 = 0; } else { sv.x0 = clamp(sv.x0, 0, Math.max(0, steps * sv.stepW - room)); sv.y0 = clamp(sv.y0, 0, Math.max(0, n * sv.rowH - (H - 18 - stepLaneH()))); }   // a refresh keeps where the user scrolled
+  if (reset) { sv.x0 = 0; sv.y0 = 0; }
+  clampSteps();                                                // a refresh keeps where the user scrolled
 }
 function tryFit() {
   const c = cur(); if (!(W > 1 && H > 1 && c && c.clip.notes)) return;
@@ -970,7 +1030,7 @@ export function initEditor(container) {
   ctx = canvas.getContext('2d', { alpha: false }); octx = ov.getContext('2d');
   window.addEventListener('themechange', invalidate); window.addEventListener('applayout', fit);
   const R = rollHandlers(), S = stepHandlers(), A = autoHandlers();
-  const route = (name) => (...a) => { const cc = cur(); if (!cc) return undefined; if (cc.clip.ll && cc.clip.notes && P.loopOf(cc.clip) && name !== 'hit' && name !== 'pan' && name !== 'panEnd' && name !== 'pinch' && name !== 'wheel') P.bakeLoop(cc.clip, cc.track); return (isAuto() ? A : stepsMode() ? S : R)[name]?.(...a); };
+  const route = (name) => (...a) => { if (!cur()) return undefined; return (isAuto() ? A : stepsMode() ? S : R)[name]?.(...a); };   // a looped clip is edited as its loop source (no unrolling)
   attachGestures(ov, Object.fromEntries(['hit', 'tap', 'dtap', 'long', 'dragStart', 'drag', 'dragEnd', 'pan', 'panEnd', 'pinch', 'wheel'].map((k) => [k, route(k)])));
   ov.addEventListener('pointerdown', () => { emo.vx = emo.vy = 0; emo.t = null; }, true);   // a touch stops a fling or a Fit glide where it is
   new ResizeObserver(fit).observe(stage);
