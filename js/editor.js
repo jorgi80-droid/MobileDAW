@@ -1066,4 +1066,5 @@ export function initEditor(container) {
 export const KEY_NAMES = NAMES;
 export const SCALE_NAMES = Object.keys(SCALES);
 export const getTheory = () => ({ key: cfg.key, scale: cfg.scale });
+export const scaleSteps = () => SCALES[cfg.scale] || null;   // semitones of the Clip View scale from its key, null = chromatic (Keys tab highlight)
 export function setTheory(key, scale) { if (key !== undefined) cfg.key = key; if (scale !== undefined) { cfg.scale = scale; if (SCALES[scale]) cfg.lastScale = scale; } buildProps(); invalidate(); }

@@ -503,3 +503,41 @@
 /* short panels (phones in landscape): a card never cuts its content - it grows to its content and the chain scrolls vertically */
 #dbody .dev-scroll > .card { min-height: max-content; }
 @media (max-height: 430px) { #dbody .dev-scroll { padding: 3px; } }
+
+/* ===== Keys tab (Live 12 / Push): a slim bar (octave number box with arrows, scale switch from the Clip View), then the keyboard or
+   the pad grid. Keys and pads light at once on touch and fade out on release; colours from the theme, pads in the track colour. ===== */
+.kb-bar { position: absolute; left: 0; right: 0; top: 0; height: var(--ctl-l); display: flex; align-items: center; gap: var(--sp-4); padding: 0 8px; background: var(--lv-title); border-bottom: 1px solid var(--lv-edge); z-index: 3; }
+.kb-t { font: var(--fw-b) var(--fs-cap)/1 var(--font); letter-spacing: .1em; text-transform: uppercase; color: var(--lv-dim); }
+.kb-sub { font-size: var(--fs-2); color: var(--lv-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.kb-oct { display: flex; height: var(--ctl-s); border: 1px solid var(--lv-edge); background: var(--lv-edge); gap: 1px; }
+.kb-oct .kb-a { width: 30px; height: 100%; border: 0; padding: 0; background: var(--lv-ctl); color: var(--lv-ink); font: var(--fw-b) var(--fs-7)/1 var(--font); position: relative; }
+.kb-oct .kb-a::after { content: ""; position: absolute; inset: -4px 0; }
+.kb-oct .kb-a:active { background: var(--lv-ctl2); }
+.kb-oct .kb-a[disabled] { opacity: .4; }
+.kb-oct .kb-v { min-width: 78px; padding: 0 8px; display: flex; align-items: center; justify-content: center; background: var(--lv-well); color: var(--lv-orink, var(--lv-or)); font: var(--fw-sb) var(--fs-3)/1 var(--font); font-variant-numeric: tabular-nums; }
+.kb-sw { height: var(--ctl-s); padding: 0 10px; display: inline-flex; align-items: center; gap: var(--sp-3); border: 1px solid var(--lv-edge); border-radius: 0; background: var(--lv-ctl); color: var(--lv-ink); font: var(--fw-sb) var(--fs-2)/1 var(--font); position: relative; }
+.kb-sw::after { content: ""; position: absolute; inset: -4px 0; }
+.kb-sw::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--lv-trk); transition: background-color var(--d3) var(--e-std), box-shadow var(--d3) var(--e-std); }
+.kb-sw.on::before { background: var(--accent); box-shadow: 0 0 6px var(--accent); }
+.kb-body { position: absolute; left: 0; right: 0; top: var(--ctl-l); bottom: 0; display: flex; gap: var(--sp-2); padding: 4px; background: var(--lv-well); }
+.kb-body .pbw { position: static; width: 44px; flex: none; }
+.kb-body .piano, .kb-body .piano.pw { position: relative; inset: auto; flex: 1; min-width: 0; display: flex; border: 1px solid var(--lv-edge); background: var(--lv-edge); }
+.kb-body .wk { position: relative; flex: 1; min-width: 0; margin-right: 1px; padding: 0 0 6px; border: 0; border-radius: 0 0 var(--r-1) var(--r-1); background: var(--key-w); color: var(--key-ink); display: flex; align-items: flex-end; justify-content: center;
+  font: var(--fw-sb) var(--fs-2)/1 var(--font); transition: background-color var(--d4) var(--e-out), box-shadow var(--d4) var(--e-out); }
+.kb-body .wk:last-of-type { margin-right: 0; }
+.kb-body .wk.c { box-shadow: inset 2px 0 0 rgba(0, 0, 0, .28); }                 /* octave seam */
+.kb-body .wk.out { background: color-mix(in srgb, var(--key-w) 72%, var(--key-b)); }
+.kb-body .wk.root::before, .kb-body .bk.root::before { content: ""; position: absolute; left: 3px; right: 3px; bottom: 3px; height: 3px; border-radius: 1px; background: var(--accent); }
+.kb-body .wk.root span { margin-bottom: 4px; }
+.kb-body .bk { position: absolute; top: 0; height: 60%; border: 0; border-radius: 0 0 var(--r-2) var(--r-2); background: var(--key-b); z-index: 2; box-shadow: 0 2px 3px rgba(0, 0, 0, .35); transition: background-color var(--d4) var(--e-out); }
+.kb-body .bk.in { background: color-mix(in srgb, var(--key-b) 78%, var(--key-w)); }
+.kb-body .wk.hit, .kb-body .bk.hit { background: var(--accent); transition-duration: 0s; }
+.kb-body .wk.hit { color: var(--accent-ink); }
+/* pads: Drum Rack order (first pad bottom-left), track colour edge, filled in that colour while held */
+.kb-bar ~ .padgrid { position: absolute; inset: calc(var(--ctl-l) + 6px) 6px 6px; display: grid; grid-template-columns: repeat(var(--cols, 3), 1fr); grid-template-rows: repeat(var(--rows, 2), 1fr); gap: var(--sp-2); }
+.kb-bar ~ .padgrid .bigpad { position: relative; display: flex; flex-direction: column; align-items: flex-start; justify-content: flex-end; gap: var(--sp-1); min-width: 0; padding: 8px 10px; overflow: hidden;
+  border: 1px solid var(--lv-edge); border-radius: var(--r-2); background: var(--lv-ctl); color: var(--lv-ink); box-shadow: inset 0 3px 0 var(--tc); transition: background-color var(--d5) var(--e-out), color var(--d5) var(--e-out); }
+.kb-bar ~ .padgrid .bigpad .pn { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--fw-b) var(--fs-4)/1.1 var(--font); }
+.kb-bar ~ .padgrid .bigpad small { font: var(--fw-sb) var(--fs-1)/1 var(--font); color: var(--lv-dim); letter-spacing: .04em; }
+.kb-bar ~ .padgrid .bigpad.hit { background: var(--tc); color: #111; transition-duration: 0s; }
+.kb-bar ~ .padgrid .bigpad.hit small { color: #111; opacity: .7; }

@@ -2,6 +2,8 @@
 import { h } from './ui.js';
 import { eng } from './engine.js';
 import * as P from './project.js';
+import * as ED from './editor.js';
+import { prefs, savePrefs } from './prefs.js';
 const { state } = P;
 
 let root = null, octave = 3;
@@ -17,34 +19,56 @@ function press(el, track, pitch, getVel) {
   el.addEventListener('pointerup', off); el.addEventListener('pointercancel', off);
 }
 
+const NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+const nn = (p) => NAMES[p % 12] + (Math.floor(p / 12) - 1);
+
+// Live 12 / Push style: a slim bar on top (octave number box with arrows, scale switch that mirrors the Clip View scale), then the
+// keyboard (octave bands: every C has a darker seam and its name; out-of-scale keys dimmed, the root marked) or the drum pads
+// (pad grid in Drum Rack order: first pad bottom-left, face in the track colour while held, brightness = velocity).
 export function render() {
   if (!root) return;
   const i = state.sel.track, t = state.tracks[i];
   if (!t || t.kind === 'audio' || t.kind === 'auto') { root.replaceChildren(h('div', { class: 'hint' }, 'Pilih track synth atau drum untuk memakai keyboard dan pad.')); return; }
+  const col = t.color || 'var(--accent)';
   if (t.kind === 'drum') {
-    const g = h('div', { class: 'padgrid' });
-    for (const d of P.padsOf(i)) { const b = h('button', { class: 'bigpad' }, d.name); press(b, i, d.pitch, (y) => 0.5 + 0.5 * y); g.append(b); }
-    root.replaceChildren(g); return;
+    const pads = P.padsOf(i), n = pads.length, cols = n <= 6 ? 3 : 4, rows = Math.max(1, Math.ceil(n / cols));
+    const g = h('div', { class: 'padgrid', style: `--cols:${cols};--rows:${rows};--tc:${col}` });
+    pads.forEach((d, k) => {
+      const b = h('button', { class: 'bigpad', style: `grid-column:${(k % cols) + 1};grid-row:${rows - Math.floor(k / cols)}` }, h('span', { class: 'pn' }, d.name), h('small', {}, nn(d.pitch)));
+      press(b, i, d.pitch, (y) => 0.5 + 0.5 * y); g.append(b);
+    });
+    root.replaceChildren(h('div', { class: 'kb-bar' }, h('span', { class: 'kb-t' }, 'Pad'), h('span', { class: 'kb-sub' }, t.name || 'Drum'), h('span', { class: 'grow' }), h('span', { class: 'kb-sub' }, 'Ketuk lebih ke bawah = lebih keras')), g);
+    return;
   }
-  const keys = h('div', { class: 'piano pw' });
-  const base = (octave + 1) * 12;
-  for (let o = 0; o < 2; o++) {
+  const W = root.clientWidth || 800, nOct = W >= 900 ? 3 : 2, whites = nOct * 7, base = (octave + 1) * 12;
+  const th = ED.getTheory(), steps = prefs.keysScale !== false ? ED.scaleSteps() : null;
+  const inSc = (p) => !steps || steps.includes(((p - th.key) % 12 + 12) % 12), isRoot = (p) => steps && ((p - th.key) % 12 + 12) % 12 === 0;
+  const keys = h('div', { class: 'piano pw', style: `--whites:${whites}` });
+  for (let o = 0; o < nOct; o++) {
     WHITE.forEach((semi, k) => {
       const p = base + o * 12 + semi;
-      const w = h('button', { class: 'wk', 'aria-label': 'Nada ' + p }, semi === 0 ? 'C' + (octave + o) : '');
+      const w = h('button', { class: 'wk' + (semi === 0 ? ' c' : '') + (inSc(p) ? '' : ' out') + (isRoot(p) ? ' root' : ''), 'aria-label': 'Nada ' + nn(p) }, semi === 0 ? h('span', {}, 'C' + (octave + o)) : '');
       press(w, i, p, (y) => 0.35 + 0.65 * y);
       keys.append(w);
       if (BLACK_AT[k] !== undefined) {
-        const b = h('button', { class: 'bk', style: `left:calc(${((o * 7 + k + 1) / 14) * 100}% - 2.2%)`, 'aria-label': 'Nada ' + (base + o * 12 + BLACK_AT[k]) });
-        press(b, i, base + o * 12 + BLACK_AT[k], (y) => 0.35 + 0.65 * y);
+        const bp = base + o * 12 + BLACK_AT[k];
+        const b = h('button', { class: 'bk' + (steps && inSc(bp) ? ' in' : '') + (isRoot(bp) ? ' root' : ''), style: `left:calc(${((o * 7 + k + 1) / whites) * 100}% - ${31 / whites}%);width:${62 / whites}%`, 'aria-label': 'Nada ' + nn(bp) });
+        press(b, i, bp, (y) => 0.35 + 0.65 * y);
         keys.append(b);
       }
     });
   }
-  const oct = h('div', { class: 'octs' },
-    h('button', { class: 'b', onclick: () => { octave = Math.max(0, octave - 1); render(); } }, 'Oktaf \u2212'),
-    h('button', { class: 'b', onclick: () => { octave = Math.min(7, octave + 1); render(); } }, 'Oktaf +'));
-  root.replaceChildren(oct, keys, bendWheel(i));
+  const step = (d) => { octave = Math.max(0, Math.min(8 - nOct, octave + d)); render(); };
+  const sc = ED.scaleSteps();
+  const bar = h('div', { class: 'kb-bar' },
+    h('span', { class: 'kb-t' }, 'Keys'),
+    h('div', { class: 'kb-oct' },
+      h('button', { class: 'kb-a', 'aria-label': 'Oktaf turun', disabled: octave <= 0 ? '' : null, onclick: () => step(-1) }, '\u2039'),
+      h('span', { class: 'kb-v' }, nn(base) + ' \u2013 ' + nn(base + nOct * 12 - 1)),
+      h('button', { class: 'kb-a', 'aria-label': 'Oktaf naik', disabled: octave >= 8 - nOct ? '' : null, onclick: () => step(1) }, '\u203a')),
+    sc ? h('button', { class: 'kb-sw' + (prefs.keysScale !== false ? ' on' : ''), onclick: () => { prefs.keysScale = prefs.keysScale === false; savePrefs(); render(); } }, 'Skala ' + NAMES[th.key] + ' ' + th.scale) : h('span', { class: 'kb-sub' }, 'Kromatik (skala diatur di Clip View)'),
+    h('span', { class: 'grow' }), h('span', { class: 'kb-sub' }, 'Ketuk lebih ke bawah = lebih keras'));
+  root.replaceChildren(bar, h('div', { class: 'kb-body' }, bendWheel(i), keys));
 }
 
 // Pitch bend wheel (like the Live keyboard controller): drag up/down = +-2 semitones, springs back to the centre on release

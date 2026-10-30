@@ -85,6 +85,7 @@ if (go('win')) {                                         // global windows: temp
 }
 if (go('keys')) {
   await tab('keys');
+  await ev(async () => (await import('./js/editor.js')).setTheory(9, 'Minor'));      // scale highlight: A minor
   await sel(2); await shot('keys-midi'); await btn('btn-max'); await shot('keys-midi-max'); await btn('btn-max');
   await sel(0); await shot('keys-drum'); await btn('btn-max'); await shot('keys-drum-max'); await btn('btn-max');
 }
