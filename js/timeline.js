@@ -407,11 +407,13 @@ function drawHeads() {
   // corner: compact snap button with a border
   ctx.fillStyle = C('#2a2a2d'); ctx.fillRect(hx, 0, HEAD, RULER); ctx.fillStyle = C('#0e0e0f'); ctx.fillRect(hx, RULER - 1, HEAD, 1); ctx.fillRect(hx, 0, 1, H);
   {
-    const r = snapRect(), off = cfg.snap === SNAPS.length - 1, col = off ? C('#8b8b92') : T('--lv-orink');
-    ctx.fillStyle = pressed === 'corner' ? C('#4a4a50') : C('#333337'); ctx.fillRect(r.x, r.y, r.w, r.h);
-    ctx.strokeStyle = off ? C('#5a5a60') : col; ctx.lineWidth = 1; ctx.strokeRect(r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
-    ctx.fillStyle = col; ctx.font = '600 10px system-ui'; ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
-    ctx.fillText('Snap: ' + SNAPS[cfg.snap][0], r.x + r.w / 2, r.y + r.h / 2 + 0.5, r.w - 8); ctx.textAlign = 'left';
+    // Live-style switch: flat control, LED on the left (accent when snapping), neutral text - same look as every toggle in the app
+    const r = snapRect(), off = cfg.snap === SNAPS.length - 1;
+    ctx.fillStyle = pressed === 'corner' ? C('#4a4a50') : C('#38383c'); ctx.fillRect(r.x, r.y, r.w, r.h);
+    ctx.strokeStyle = C('#0e0e0f'); ctx.lineWidth = 1; ctx.strokeRect(r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
+    const ly = r.y + r.h / 2; ctx.fillStyle = off ? C('#4a4a50') : T('--accent'); ctx.beginPath(); ctx.arc(r.x + 10, ly, 3.5, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = off ? C('#8b8b92') : C('#cfcfd2'); ctx.font = '600 10px system-ui'; ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
+    ctx.fillText('Snap  ' + SNAPS[cfg.snap][0], r.x + r.w / 2 + 6, ly + 0.5, r.w - 22); ctx.textAlign = 'left';
   }
   // bottom-right of the clip area: grid size + zoom, real buttons (tap the grid size for the snap list, the zoom for fit / reset / zoom steps)
   ctx.font = '600 10px system-ui'; ctx.textBaseline = 'middle'; ctx.textAlign = 'center';

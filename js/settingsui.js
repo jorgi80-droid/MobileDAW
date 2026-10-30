@@ -5,7 +5,7 @@ import { eng, backend } from './engine.js';
 import { prefs, savePrefs, resetPrefs } from './prefs.js';
 import { enableMidi, midiNames } from './midi.js';
 import { applyTimelinePrefs } from './timeline.js';
-import { applyTheme, THEME_NAMES } from './theme.js';
+import { applyTheme, THEME_NAMES, themeSwatch } from './theme.js';
 import { applyViewportMeta, relayoutSoon } from './layout.js';
 import { EDGE_LEVELS } from './edgeguard.js';
 import * as P from './project.js';
@@ -186,7 +186,12 @@ export function openSettings() {
   const stepMetro = (d, label, name) => h('button', { class: 'b step', 'aria-label': name, onclick: () => { mSlider.value = clamp(+mSlider.value + d, 0, 150); liveMetro(); savePrefs(); } }, label);
   mSlider.addEventListener('input', liveMetro); mSlider.addEventListener('change', savePrefs);
   paintMetro();
-  const themeRow = h('div', { class: 'segc' }, ...Object.entries(THEME_NAMES).map(([k, n]) => h('button', { class: 'b' + (prefs.theme === k ? ' on' : ''), style: 'height:30px', onclick: (e) => { prefs.theme = k; savePrefs(); applyTheme(k); for (const x of e.currentTarget.parentElement.children) x.classList.toggle('on', x === e.currentTarget); } }, n)));
+  // theme library (inspired by Live's built-in themes): one card per theme with a preview of its colours
+  const themeRow = h('div', { class: 'thm-grid' }, ...Object.entries(THEME_NAMES).map(([k, n]) => {
+    const [bg, pn, ctl, tx] = themeSwatch(k);
+    return h('button', { class: 'thm' + (prefs.theme === k ? ' on' : ''), 'aria-label': n, onclick: (e) => { prefs.theme = k; savePrefs(); applyTheme(k); for (const x of e.currentTarget.parentElement.children) x.classList.toggle('on', x === e.currentTarget); } },
+      h('span', { class: 'thm-pv', style: `background:${bg}` }, h('i', { style: `background:${pn}` }), h('i', { style: `background:${ctl}` }), h('b', { style: `color:${tx}` }, 'Aa')), h('span', { class: 'thm-n' }, n));
+  }));
   const fsBox = [];
   const tabs = {
     Audio: [

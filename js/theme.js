@@ -6,7 +6,31 @@ const THEMES = {
   light: { '--warn': '#8a6500', '--ok-ink': '#1f7a42', '--bad-ink': '#c2262c', '--on-col': '#15151a', '--lv-title': '#b4b4b4', '--lv-body': '#c9c9c9', '--lv-well': '#aeaeae', '--lv-ctl': '#e4e4e4', '--lv-ctl2': '#f1f1f1', '--lv-ink': '#121212', '--lv-dim': '#454545', '--lv-edge': '#8c8c8c', '--lv-trk': '#8f8f8f', '--lv-sel': '#3b93a8', '--lv-div': '#a4a4a4', '--lv-orink': '#7a4500', '--mx-bg': '#bdbdbd', '--mx-strip': '#cfcfcf', '--mx-strip-sel': '#dedede', '--mx-well': '#b0b0b0', '--bg': '#d6d6d6', '--panel': '#c9c9c9', '--panel2': '#c0c0c0', '--raise': '#e4e4e4', '--raise2': '#d2d2d2', '--line': '#8c8c8c', '--sep': '#aaaaaa', '--menu': '#ececec', '--well': '#b4b4b4', '--text': '#111111', '--dim': '#4a4a4a', '--key-w': '#ffffff', '--key-b': '#2a2a2a', '--key-ink': '#555555', '--c0': '#f7f7f7', '--c255': '#000000', '--shadow': '#00000044', '--scrim': '#00000040', '--toast': '#222222ee', '--toast-ink': '#ffffff', '--lv-arc': '#4fc3f0', '--lv-or': '#ffad32', '--accent': '#ffa722', '--accent-ink': '#1a1100', '--play': '#5bd876', '--rec': '#e5484d', '--ok': '#7ac555', '--mute': '#f2c744', '--solo': '#4fa3e0', '--key-bhit': '#c97800' },
   black: { '--warn': '#e8d040', '--ok-ink': '#5fd08a', '--bad-ink': '#ff6a6f', '--on-col': '#15151a', '--lv-title': '#1b1b1d', '--lv-body': '#0c0c0d', '--lv-well': '#000000', '--lv-ctl': '#27272b', '--lv-ctl2': '#35353b', '--lv-ink': '#e6e6e8', '--lv-dim': '#8c8c92', '--lv-edge': '#000000', '--lv-trk': '#3b3b41', '--lv-sel': '#2f7384', '--lv-div': '#050506', '--lv-arc': '#4fc3f0', '--lv-or': '#ffad32', '--lv-orink': '#ffad32', '--mx-bg': '#000000', '--mx-strip': '#0b0b0c', '--mx-strip-sel': '#161618', '--mx-well': '#000000', '--bg': '#000000', '--panel': '#0b0b0c', '--panel2': '#141416', '--raise': '#222225', '--raise2': '#333338', '--line': '#000000', '--sep': '#0a0a0b', '--menu': '#161618', '--well': '#0a0a0b', '--text': '#d2d2d6', '--dim': '#85858c', '--accent': '#ffa722', '--accent-ink': '#1a1100', '--play': '#5bd876', '--rec': '#e5484d', '--ok': '#7ac555', '--key-w': '#c8c8cc', '--key-b': '#111113', '--key-bhit': '#a86608', '--key-ink': '#3a3a3e', '--mute': '#f2c744', '--solo': '#4fa3e0', '--c0': '#000000', '--c255': '#ffffff', '--shadow': '#000000cc', '--scrim': '#00000099', '--toast': '#1c1c1eee', '--toast-ink': '#ffffff' },
 };
-export const THEME_NAMES = { dark: 'Gelap', live: 'Live (abu-abu)', light: 'Terang', black: 'Hitam (OLED)' };
+// Theme library inspired by Live's built-in themes. Each one is derived from a base theme: every neutral grey token is passed through
+// lightness = a + b * lightness (brightness / contrast), hue colours (clips, accent, record, meters) stay as they are - like in Live.
+// `tone` picks the base CSS rules ([data-theme] selectors): 'light' themes reuse every light-theme rule.
+const LIB = {
+  middark:  { name: 'Mid Dark',                 base: 'dark',  a: 22, b: 0.96 },
+  lowc:     { name: 'Dark Neutral Low Contrast', base: 'dark',  a: 26, b: 0.82 },
+  highc:    { name: 'Dark Neutral High Contrast', base: 'dark', a: -8, b: 1.14 },
+  midlight: { name: 'Mid Light',                base: 'light', a: -42, b: 1.0 },
+  lighthc:  { name: 'Light Neutral High Contrast', base: 'light', a: -14, b: 1.1 },
+};
+const grey = (hex) => { const h = hex.slice(1, 7), [r, g, b] = [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16)); return Math.max(r, g, b) - Math.min(r, g, b) < 14 ? (r + g + b) / 3 : -1; };
+for (const [id, t] of Object.entries(LIB)) {
+  const src = THEMES[t.base], out = {};
+  for (const [k, v] of Object.entries(src)) {
+    const L = typeof v === 'string' && /^#[0-9a-f]{6}/i.test(v) && k !== '--c0' && k !== '--c255' ? grey(v) : -1;
+    if (L < 0) { out[k] = v; continue; }
+    const n = Math.max(0, Math.min(255, Math.round(t.a + t.b * L))).toString(16).padStart(2, '0');
+    out[k] = '#' + n + n + n + v.slice(7);
+  }
+  THEMES[id] = out;
+}
+export const THEME_TONE = { light: 'light', midlight: 'light', lighthc: 'light' };
+export const THEME_NAMES = { dark: 'Dark', middark: 'Mid Dark', lowc: 'Dark Neutral Low Contrast', highc: 'Dark Neutral High Contrast', live: 'Live Classic', black: 'Darkest (OLED)', midlight: 'Mid Light', light: 'Light', lighthc: 'Light Neutral High Contrast' };
+// swatches for the theme picker: background, panel, control, text
+export const themeSwatch = (id) => { const t = THEMES[id] || THEMES.dark; return [t['--bg'], t['--panel2'], t['--raise2'], t['--text']]; };
 let current = 'dark';
 const cache = new Map();
 
@@ -47,9 +71,10 @@ export function applyTheme(name) {
   current = name; cache.clear(); buildRamp();
   const root = document.documentElement;
   for (const [k, v] of Object.entries(THEMES[name])) root.style.setProperty(k, v);
-  root.dataset.theme = name;
-  root.style.colorScheme = name === 'light' ? 'light' : 'dark';
-  const cs = document.querySelector('meta[name=color-scheme]'); if (cs) cs.content = name === 'light' ? 'light' : 'dark';
+  const tone = THEME_TONE[name] || name;              // derived themes reuse the CSS rules of their base
+  root.dataset.theme = tone; root.dataset.themeId = name;
+  root.style.colorScheme = tone === 'light' ? 'light' : 'dark';
+  const cs = document.querySelector('meta[name=color-scheme]'); if (cs) cs.content = tone === 'light' ? 'light' : 'dark';
   const m = document.querySelector('meta[name=theme-color]'); if (m) m.content = THEMES[name]['--panel'];
   window.dispatchEvent(new Event('themechange'));
 }
