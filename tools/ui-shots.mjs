@@ -68,7 +68,7 @@ if (go('dev')) {
   await btn('btn-max');
 }
 if (go('mix')) {
-  await ev(() => document.querySelector('.seg .b[data-view="mix"]').click()); await shot('mix');
+  await ev(async () => { (await import('./js/project.js')).setSend(1, 0, 0.4); document.querySelector('.seg .b[data-view="mix"]').click(); }); await shot('mix');
   await ev(async () => (await import('./js/project.js')).play()); await page.waitForTimeout(1800); await shot('mix-play');
   await ev(async () => (await import('./js/project.js')).stop());
   await ev(() => document.querySelector('.seg .b[data-view="arr"]').click());

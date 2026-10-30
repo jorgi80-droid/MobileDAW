@@ -91,6 +91,7 @@ function hdr(i) {
     r.aut = { x: R - 20, y: by, w: 20, h: bh };
     if (t.kind !== 'audio' && R - 52 >= L + 76) r.mon = { x: R - 52, y: by, w: 30, h: bh };
     if (h >= 70) { const sy = by + bh + 5, vw = Math.round((R - L) * 0.56); r.vol = { x: L, y: sy, w: vw, h: 15 }; r.pan = { x: L + vw + 4, y: sy, w: R - L - vw - 4, h: 15 }; }
+    if (h >= 96 && state.returns.length >= 2) { const sy = by + bh + 25, hw = Math.round((R - L - 4) / 2); r.sa = { x: L, y: sy, w: hw, h: 15 }; r.sb = { x: L + hw + 4, y: sy, w: R - L - hw - 4, h: 15 }; }   // tall row: Send A / B like the mixer strip
   }
   return r;
 }
@@ -497,6 +498,7 @@ function drawHeads() {
       if (auto && h >= 46) { ctx.fillStyle = C('#8b8b92'); ctx.font = FONT(500, 10); ctx.textBaseline = 'middle'; ctx.fillText(cut2('Otomasi', HEAD - METW - 50), r.mute.x + r.mute.w + 8, r.mute.y + r.mute.h / 2 + 0.5); }
       if (r.vol) drawSlider(r.vol, Math.sqrt(clamp(t.vol / VMAX, 0, 1)), dbTxt(t.vol) + ' dB', false);
       if (r.pan) drawSlider(r.pan, (clamp(t.pan, -1, 1) + 1) / 2, panTxt(t.pan), true);
+      for (const [k, rc] of [[0, r.sa], [1, r.sb]]) if (rc) { const v = (t.send && t.send[k]) || 0; drawSlider(rc, v, 'AB'[k] + ' ' + Math.round(v * 100) + '%', false); }
     }
     if (!auto) meterWell(); else { ctx.fillStyle = C('#161617'); ctx.fillRect(hx + HEAD - METW, y, METW, h - 1); }
     ctx.fillStyle = C('#141415'); ctx.fillRect(hx, y + h - 1, HEAD, 1);
@@ -652,7 +654,7 @@ function hit(x, y) {
     if (i >= n0) { const xi = xInfo(i); return { type: 'xhead', x: xi, mute: !xi.master && rh(i) >= 44 && inRect(xhdr(i).act, x, y, 3) }; }
     if (!state.tracks[i].fold && rowY(i) + rh(i) - y < 8) return { type: 'rowh', i };          // bottom edge of a header: row height
     const r = hdr(i);
-    for (const [k, key] of [[0, 'mute'], [1, 'solo'], [2, 'fold'], [3, 'vol'], [4, 'pan'], [5, 'arm'], [6, 'mon'], [7, 'aut']]) if (r[key] && inRect(r[key], x, y, key === 'vol' || key === 'pan' ? 1 : 2)) return { type: 'head', i, btn: k };
+    for (const [k, key] of [[0, 'mute'], [1, 'solo'], [2, 'fold'], [3, 'vol'], [4, 'pan'], [5, 'arm'], [6, 'mon'], [7, 'aut'], [8, 'sa'], [9, 'sb']]) if (r[key] && inRect(r[key], x, y, key === 'vol' || key === 'pan' || key === 'sa' || key === 'sb' ? 1 : 2)) return { type: 'head', i, btn: k };
     return { type: 'head', i };
   }
   if (i < 0 || i >= state.tracks.length) return { type: 'empty', i, tick: xt(x) };
@@ -1011,6 +1013,7 @@ function setup() {
       if (t.type === 'rowh') { fh.delete(state.tracks[t.i].id); drag = { k: 'rowh', i: t.i, y0, h0: rh(t.i) }; return true; }
       if (t.type === 'loop' || t.type === 'loopL' || t.type === 'loopR') { drag = { k: t.type, s0: state.loop.start, e0: state.loop.end, t0: t.tick }; return true; }
       if (t.type === 'head' && (t.btn === 3 || t.btn === 4)) { const rc = hdr(t.i)[t.btn === 3 ? 'vol' : 'pan']; if (rc) { drag = { k: t.btn === 3 ? 'hvol' : 'hpan', i: t.i, rc }; return true; } }
+      if (t.type === 'head' && (t.btn === 8 || t.btn === 9)) { const rc = hdr(t.i)[t.btn === 8 ? 'sa' : 'sb']; if (rc) { drag = { k: 'hsend', s: t.btn - 8, i: t.i, rc }; return true; } }
       if (t.type === 'ruler') { drag = { k: 'rpend', a: snapT(t.tick), tick0: t.tick, p0: view.ppt }; return true; }   // direction decides: Live zoom (vertical) or time selection (horizontal)
       if (t.type === 'clip' && msel.has(t.c.id)) {                // group move / group resize of every picked clip
         checkpoint(); P.selectClip(t.i, t.c.id);
@@ -1034,6 +1037,7 @@ function setup() {
     drag(x, y, dx, dy) {
       if (!drag) return;
       const tick = xt(x);
+      if (drag.k === 'hsend') { P.setSend(drag.i, drag.s, Math.round(clamp((x - drag.rc.x) / drag.rc.w, 0, 1) * 100) / 100); P.emit('mix'); invalidate(); return; }
       if (drag.k === 'hvol' || drag.k === 'hpan') {
         const u = clamp((x - drag.rc.x) / drag.rc.w, 0, 1);
         if (drag.k === 'hvol') { const v = u * u * VMAX; P.setVol(drag.i, Math.abs(v - 1) < 0.03 ? 1 : v); }

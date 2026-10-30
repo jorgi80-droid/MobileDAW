@@ -553,3 +553,13 @@
 .cp-envrow { margin-top: 4px; }
 .cp-envrow .cp-b.sm { height: 20px; padding: 0 8px; font-size: var(--fs-2); }
 .cp-env { display: block; width: 100%; height: 30px; margin-top: 2px; border: 1px solid var(--lv-edge); background: var(--lv-well); }
+
+/* ===== Mixer: strip width grip, return input summary ===== */
+.mxs { position: relative; }
+.mx-grip { position: absolute; top: 0; right: -4px; width: 9px; height: var(--ctl-s); z-index: 3; cursor: ew-resize; touch-action: none; }
+.mx-grip::after { content: ""; position: absolute; top: 5px; bottom: 5px; left: 4px; width: 1px; background: currentColor; opacity: 0; transition: opacity var(--d3) var(--e-std); color: var(--ci, #fff); }
+.mx-grip.drag::after { opacity: .9; background: var(--accent); }
+.mxs.master .mx-grip { display: none; }
+.mx-sends.mx-in { flex-direction: column; justify-content: center; align-items: center; gap: var(--sp-1); padding: 4px 6px; }
+.mx-in .mx-inn { font: var(--fw-b) var(--fs-4)/1 var(--font); color: var(--text); }
+.mx-in .mx-inl { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-1); color: var(--dim); }

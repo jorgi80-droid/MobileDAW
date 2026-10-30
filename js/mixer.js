@@ -7,11 +7,12 @@ import { h, knob, clamp, ask, menu } from './ui.js';
 import { fmtParam } from './defs.js';
 import { MASTER, RET0, eng } from './engine.js';
 import { offerAutomation } from './automate.js';
-import { prefs } from './prefs.js';
+import { prefs, savePrefs } from './prefs.js';
 import * as P from './project.js';
 const { state } = P;
 
-const STRIP_W = 104, VMAX = 1.4;
+const STRIP_W = 104, VMAX = 1.4, W_MIN = 92, W_MAX = 168;
+let stripW = clamp(+prefs.mixW || STRIP_W, W_MIN, W_MAX);          // strip width: drag the grip at the right end of any title bar (Live: drag a strip's edge), double-tap = default
 const PAN = { n: 'Pan', min: -1, max: 1, def: 0, fmt: 'pan' };
 const SEND = (k) => ({ n: 'Send ' + 'AB'[k], min: 0, max: 1, def: 0, unit: '%' });
 let root = null, strips = [];
@@ -101,8 +102,29 @@ function strip(i, pos) {
     m = h('button', { class: 'b m' + (t.mute ? ' on' : ''), onclick: () => P.toggleReturnMute(i - RET0), 'aria-label': 'Aktivator / Mute' }, (i - RET0 < 2 ? String.fromCharCode(65 + (i - RET0)) : 'F' + (i - RET0 - 1)));
     btns.append(m);
   }
-  const el = h('div', { class: 'mxs' + (master ? ' master' : ret ? ' ret' : '') + (ret && i === RET0 ? ' ret0' : ''), style: `width:${STRIP_W}px` }, name, io, ld, sends, pan, vals, fader, btns);
-  return { i, pos, el, c, m, s, a, name, t, master, ret, vbox, pbox, st, knobs, ob, ld, fader };
+  let inp = null;
+  if (ret) {                                                         // a return has no sends of its own: show who feeds it (Live shows the incoming sends on the return)
+    const k = i - RET0, nn = h('span', { class: 'mx-inn' }), nl = h('span', { class: 'mx-inl' });
+    inp = () => { const from = state.tracks.filter((q) => q.kind !== 'auto' && ((q.send && q.send[k] > 0) || q.out === k)), a = from.length ? from.length + ' track' : '\u2014', b = from.slice(0, 3).map((q) => q.name).join(', ') + (from.length > 3 ? '\u2026' : ''); if (nn.textContent !== a) nn.textContent = a; if (nl.textContent !== b) nl.textContent = b; };
+    sends.classList.add('mx-in'); sends.append(h('span', { class: 'mx-lbl' }, 'Input'), nn, nl); inp();
+  }
+  const grip = h('div', { class: 'mx-grip', 'aria-label': 'Lebar strip' });
+  gripDrag(grip);
+  const el = h('div', { class: 'mxs' + (master ? ' master' : ret ? ' ret' : '') + (ret && i === RET0 ? ' ret0' : ''), style: `width:${stripW}px` }, name, io, ld, sends, pan, vals, fader, btns, grip);
+  return { i, pos, el, c, m, s, a, name, t, master, ret, vbox, pbox, st, knobs, ob, ld, fader, inp };
+}
+
+function setWidth(w) { stripW = clamp(Math.round(w), W_MIN, W_MAX); for (const s of strips) s.el.style.width = stripW + 'px'; root && root.classList.toggle('mx-wide', stripW >= 132); }
+function gripDrag(g) {
+  let d = null, last = 0;
+  g.addEventListener('pointerdown', (e) => {
+    e.preventDefault(); e.stopPropagation(); g.setPointerCapture(e.pointerId);
+    const now = performance.now(); if (now - last < 300) { setWidth(STRIP_W); prefs.mixW = STRIP_W; savePrefs(); last = 0; return; }
+    last = now; d = { x: e.clientX, w: stripW, k: g.parentElement.getBoundingClientRect().width / stripW || 1 }; g.classList.add('drag');
+  });
+  g.addEventListener('pointermove', (e) => { if (d) setWidth(d.w + (e.clientX - d.x) / d.k); });
+  const up = () => { if (!d) return; d = null; g.classList.remove('drag'); prefs.mixW = stripW; savePrefs(); };
+  g.addEventListener('pointerup', up); g.addEventListener('pointercancel', up);
 }
 
 export function build() {
@@ -112,12 +134,13 @@ export function build() {
   state.returns.forEach((_, k) => order.push(RET0 + k));
   order.push(MASTER);
   strips = order.map((i, pos) => strip(i, pos));
-  root.replaceChildren(...strips.map((s) => s.el));
+  root.replaceChildren(...strips.map((s) => s.el)); root.classList.toggle('mx-wide', stripW >= 132);
   update();
 }
 
 export function update() {
   for (const s of strips) {
+    if (s.inp) s.inp();
     s.vbox.textContent = dbText(s.t.vol);
     for (const k of s.knobs) k.update();
     s.el.classList.toggle('sel', state.sel.track === s.i);
@@ -211,7 +234,7 @@ export function frame() {
   const now = performance.now(), dt = clamp((now - (lastT || now)) / 1000, 0.001, 0.12); lastT = now;
   showLoad(now);
   const dpr = Math.min(window.devicePixelRatio || 1, 3);
-  const a = Math.max(0, Math.floor(root.scrollLeft / STRIP_W) - 1), b = Math.ceil((root.scrollLeft + root.clientWidth) / STRIP_W) + 1;   // #view-mix itself is the scroller
+  const a = Math.max(0, Math.floor(root.scrollLeft / stripW) - 1), b = Math.ceil((root.scrollLeft + root.clientWidth) / stripW) + 1;   // #view-mix itself is the scroller
   for (const s of strips) if (s.master || s.ret || (s.pos >= a && s.pos <= b)) { drawStrip(s, dpr, dt); showPeak(s); }
 }
 
