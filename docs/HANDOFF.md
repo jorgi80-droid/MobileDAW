@@ -110,7 +110,8 @@ Baca juga `README-ANDROID.md` (build, install, status fase 2).
 - Pattern MIDI / drum = bilangan bar penuh: not yang masuk ke bar 9 membuat pattern 9 bar (`wholeBars()` di `js/editor.js`).
 - Klip yang ditarik lebih panjang dari pattern mengulang pattern itu (`P.patternLen(c)`): pola 9 bar berulang di bar 10, 19, 28 ...;
   pola 8 bar di bar 9, 17 ... Klip yang dipotong lebih pendek menyimpan panjang pattern (`c.ll`), jadi saat ditarik lagi yang diulang
-  tetap seluruh pattern. Edit di editor berlaku ke semua pengulangan.
+  tetap seluruh pattern. Memotong klip tidak menghapus not. Editor selalu membuka seluruh pattern (`contentEnd()` = `c.ll` bila ada),
+  jadi edit berlaku ke semua pengulangan; pattern yang tumbuh di klip terpotong hanya menambah `c.ll`, panjang klip tetap (`growTo()`).
 
 ## Menunggu keputusan pemilik
 - **Instrument / Effect Rack dengan macro**: usulan desain ada di laporan sesi ini (rantai paralel = node "rack" berisi beberapa chain,

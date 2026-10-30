@@ -431,16 +431,18 @@ function guessMenu(notes, x, y) {
 // its loop source: every repeat follows the edit, and content growing past the loop length makes the loop longer (the clip grows when the loop
 // reaches the clip's own length).
 const MAX_BARS = 256;
-const contentEnd = (c) => P.loopOf(c) || c.len;
+const contentEnd = (c) => (c.ll > 0 ? c.ll : c.len);   // the pattern: a looped clip repeats it, a trimmed clip shows only its start - the editor always edits all of it
 // Every DAW (Live, FL Studio, Logic, Cubase, Bitwig): a pattern is a whole number of bars - content reaching into bar 9 makes it 9 bars, and a
 // clip dragged longer than its pattern repeats it every 9 bars (bar 10, 19, ...).
 const wholeBars = (c, end) => { const b0 = P.barAt(c.start), nb = Math.max(1, P.barAt(c.start + Math.max(1, end) - 1) - b0 + 1); return Math.max(P.beatLenAt(c.start), P.barStart(b0 + nb) - c.start); };
 const maxEnd = () => MAX_BARS * BAR;
 function growTo(c, end) {
-  const ll = P.loopOf(c), L = ll || c.len;
+  const ll = c.ll > 0 ? c.ll : 0, L = ll || c.len;
   if (!(end > L)) return false;
   const nl = Math.min(maxEnd(), wholeBars(c, end));
-  if (ll) { if (nl >= c.len) { c.len = nl; delete c.ll; delete c.lp; } else c.ll = nl; } else c.len = nl;
+  if (!ll) c.len = nl;                                                            // the clip shows exactly the pattern: both grow together
+  else if (c.len > ll && nl >= c.len) { c.len = nl; delete c.ll; delete c.lp; }   // looped clip whose pattern outgrows it: the clip grows, the loop ends
+  else c.ll = nl;                                                                 // trimmed or looped clip: only the pattern grows, the clip keeps its length
   return true;
 }
 const notesEnd = (list) => { let e = 0; for (const n of list) if (n.t + n.d > e) e = n.t + n.d; return e; };
