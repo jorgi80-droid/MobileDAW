@@ -220,6 +220,7 @@ function drawClip(t, c, y, hh) {
   }
   if (isSel) {
     ctx.strokeStyle = shade(t.color, 0.65); ctx.lineWidth = 1.5; ctx.strokeRect(x + 0.75, y0 + 0.75, w - 1.5, h0 - 1.5);
+    if (tall && w > 44) { const mx = Math.min(x + w, CW) - 12, my = y0 + hd / 2; ctx.fillStyle = shade(t.color, 0.75); for (const d of [-4, 0, 4]) { ctx.beginPath(); ctx.arc(mx + d, my, 1.3, 0, 6.2832); ctx.fill(); } }   // ⋯ : the clip's context menu
     const hl = Math.min(26, h0 - hd - 10), hy = y0 + hd + (h0 - hd - hl) / 2, st = stretchMode && t.kind === 'audio';   // edge grips for touch: pills on both ends
     if (hl > 6 && w > 26) {
       ctx.fillStyle = shade(t.color, 0.7); ctx.fillRect(x + 3, hy, 3, hl);                              // edge grips: slim bars in the clip's ink
@@ -679,6 +680,7 @@ function hit(x, y) {
         const spt = 60 / state.bpm / PPQ, y0 = rowY(i) + 1, top = y0 + (rh(i) >= 40 ? 14 : 0) + 5, fx = tx(c.start) + Math.max(5, Math.min(wpx / 2, (c.fadeIn || 0) / spt * view.ppt)), gx = tx(c.start + c.len) - Math.max(5, Math.min(wpx / 2, (c.fadeOut || 0) / spt * view.ppt));
         if (Math.abs(y - top) < 11) { if (Math.abs(x - fx) < 12) return { type: 'clip', i, c, tick, zone: 'fadeIn' }; if (Math.abs(x - gx) < 12) return { type: 'clip', i, c, tick, zone: 'fadeOut' }; }
       }
+      if (state.sel.clip === c.id && rh(i) >= 40 && wpx > 44) { const mx = Math.min(tx(c.start + c.len), CW) - 12, my = rowY(i) + 8; if (Math.abs(x - mx) < 13 && Math.abs(y - my) < 11) return { type: 'clip', i, c, tick, zone: 'menu' }; }
       const edgeR = tx(c.start + c.len) - x < hz, edgeL = !edgeR && x - tx(c.start) < hz;
       return { type: 'clip', i, c, tick, zone: edgeR ? 'right' : edgeL ? 'left' : 'body' };
     }
@@ -725,28 +727,6 @@ export function clipKey(code, mod) {
   if (mod && code === 'KeyE') { checkpoint(); P.splitClip(i, c.id, snapT(state.pos)); return true; }
   if (!mod && (code === 'Digit0' || code === 'Numpad0')) { checkpoint(); P.setClipsMuted([{ i, c }], !c.muted); invalidate(); return true; }
   return false;
-}
-function clipBar(i, c, tick) {
-  const r = canvasOrigin(), t = state.tracks[i];
-  const x = r.left + clamp(tx(c.start), 0, Math.max(0, CW - 250)), y = r.top + Math.max(RULER, rowY(i)) - 38;
-  bar([
-    { label: 'Copy', fn: () => copyList([{ i, c }]) },
-    { label: 'Cut', fn: () => { copyList([{ i, c }]); checkpoint(); P.removeClip(i, c.id); } },
-    { label: 'Delete', fn: () => { checkpoint(); P.removeClip(i, c.id); } },
-    { label: 'Duplicate', fn: () => { checkpoint(); P.duplicateClip(i, c.id); invalidate(); } },     // v65 (FL Studio Mobile: copy + paste next to the clip in one tap)
-    { label: 'Snap', fn: () => {                                                                       // v65: snap both clip edges to the grid
-      const a = Math.max(0, snapT(c.start)), e = snapT(c.start + c.len);
-      if (a === c.start && e - a === c.len) return toast('Tepi klip sudah pas di grid.');
-      if (e - a < 1) return toast('Klip terlalu pendek untuk di-snap.');
-      checkpoint(); c.len = e - a; c.start = a; P.syncClips(i); P.touchClips(i); invalidate();
-    } },
-    { label: c.muted ? 'Unmute' : 'Mute', fn: () => { checkpoint(); P.setClipsMuted([{ i, c }], !c.muted); invalidate(); } },
-    { label: 'Split', fn: () => { checkpoint(); P.splitClip(i, c.id, snapT(tick)); } },
-    ...(c.notes && P.loopOf(c) ? [{ label: 'Unlink', fn: () => { checkpoint(); P.bakeLoop(c, i); P.emit('clips'); invalidate(); toast('Pengulangan jadi not biasa.', 1600); } }] : []),   // FL Studio Mobile "Unlink loop"
-    ...(t.kind === 'audio' ? [{ label: stretchMode ? 'Stretch \u2713' : 'Stretch', fn: () => { stretchMode = !stretchMode; toast(stretchMode ? 'Mode stretch: tarik ujung kanan klip audio untuk meregangkan (pitch tetap).' : 'Mode stretch mati: tarik ujung kanan untuk memotong.', 3200); invalidate(); } }] : []),
-    { label: 'Edit', fn: () => hooks.openEditor && hooks.openEditor() },
-    { label: '\u22EF', fn: () => clipMenu(i, c, tick) },                                             // the full Live context menu
-  ], x, y);
 }
 
 function selMenu() {
@@ -1032,7 +1012,8 @@ function setup() {
           return invalidate();
         case 'clip':
           if (msel.size) { if (msel.has(t.c.id)) msel.delete(t.c.id); else msel.add(t.c.id); P.selectClip(t.i, t.c.id); updateBar(); return invalidate(); }   // a selection exists: taps add / remove clips
-          P.selectClip(t.i, t.c.id); clipBar(t.i, t.c, t.tick); return invalidate();
+          if (state.sel.clip === t.c.id || t.zone === 'menu') { const r = canvasOrigin(); clipMenu(t.i, t.c, t.tick, r.left + x, r.top + y); return invalidate(); }   // tap the selected clip (or its ⋯) = its one context menu
+          P.selectClip(t.i, t.c.id); return invalidate();                                  // first tap only selects, as in Live
         case 'empty': if (msel.size) { msel.clear(); updateBar(); } sel = null; if (t.i >= 0 && t.i < state.tracks.length) { state.sel.clip = null; P.selectTrack(t.i); } return invalidate();
       }
     },
