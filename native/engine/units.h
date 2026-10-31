@@ -41,6 +41,7 @@ class Device {
   virtual void setTempo(double bpm) {}
   virtual void process(float* L, float* R, int n) = 0;
   virtual int readOut(float* out) { return 0; }                 // analyzer / meter devices
+  virtual int lat() { return 0; }                               // JS d.lat(): frames this device delays the audio (PDC); 0 = none
 };
 
 struct Bank { Sample* s[256] = {}; SoundFont* sf[8] = {}; };

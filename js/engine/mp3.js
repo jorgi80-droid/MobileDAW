@@ -211,14 +211,26 @@ export class Mp3Encoder {
 }
 
 // Resampler jendela-sinc untuk laju yang tidak didukung MP3 (mis. 96 kHz -> 48 kHz); bertahap per potongan.
+// Windowed-sinc sample-rate converter (streaming, chunk by chunk). Default: 16 taps per side, Hann window (MP3 path). hq: 64 taps per side,
+// Kaiser window (beta 9, about -90 dB side lobes) and the pass band at 0.91 of the lower Nyquist (WAV export: no audible aliasing, flat to ~20 kHz at 44.1 kHz).
+const KT_N = 4096; let KT = null;
+function kaiserTable() { if (!KT) { KT = new Float64Array(KT_N + 2); const k0 = besselI0(9); for (let i = 0; i <= KT_N; i++) { const r = i / KT_N; KT[i] = besselI0(9 * Math.sqrt(Math.max(0, 1 - r * r))) / k0; } KT[KT_N + 1] = 0; } return KT; }
+const besselI0 = (x) => { let sum = 1, term = 1; for (let k = 1; k < 40; k++) { term *= (x / (2 * k)) * (x / (2 * k)); sum += term; if (term < 1e-12 * sum) break; } return sum; };
 export class Resampler {
-  constructor(from, to) { this.step = from / to; this.pos = 0; this.hist = new Float32Array(0); this.taps = 16; this.fc = Math.min(1, to / from) * 0.97; }
+  constructor(from, to, hq = false) {
+    this.step = from / to; this.pos = 0; this.hist = new Float32Array(0); this.taps = hq ? 64 : 16; this.fc = Math.min(1, to / from) * (hq ? 0.91 : 0.97);
+    this.kt = hq ? kaiserTable() : null;
+  }
+  win(d, T) {
+    if (!this.kt) return 0.5 + 0.5 * Math.cos(Math.PI * d / T);
+    const r = (d < 0 ? -d : d) / T * KT_N; if (r >= KT_N) return 0; const i = r | 0, f = r - i, t = this.kt; return t[i] + (t[i + 1] - t[i]) * f;
+  }
   process(x) {
     const buf = new Float32Array(this.hist.length + x.length); buf.set(this.hist); buf.set(x, this.hist.length);
     const T = this.taps, out = []; let p = this.pos;
     while (p + T < buf.length) {
       const c = Math.floor(p), f = p - c; let s = 0;
-      for (let k = -T + 1; k <= T; k++) { const i = c + k; if (i < 0) continue; const d = k - f, a = Math.PI * d * this.fc, sinc = Math.abs(a) < 1e-9 ? 1 : Math.sin(a) / a, w = 0.5 + 0.5 * Math.cos(Math.PI * d / T); s += buf[i] * sinc * w * this.fc; }
+      for (let k = -T + 1; k <= T; k++) { const i = c + k; if (i < 0) continue; const d = k - f, a = Math.PI * d * this.fc, sinc = Math.abs(a) < 1e-9 ? 1 : Math.sin(a) / a, w = this.win(d, T); s += buf[i] * sinc * w * this.fc; }
       out.push(s); p += this.step;
     }
     const keep = Math.max(0, Math.floor(p) - T); this.hist = buf.slice(keep); this.pos = p - keep;

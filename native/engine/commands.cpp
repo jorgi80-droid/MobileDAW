@@ -8,13 +8,13 @@
 namespace mdaw {
 
 enum Op {
-  PLAY, STOP, PLAYCOUNTIN, SEEK, TEMPO, TEMPOMAP, SETSIG, SETMETER, LOOP, SETMETRO, SETMETROVOL, MASTERLIMIT, TRACKLOAD,
+  PLAY, STOP, PLAYCOUNTIN, SEEK, TEMPO, TEMPOMAP, SETSIG, SETMETER, LOOP, SETMETRO, SETMETROVOL, MASTERLIMIT, SETPDC, TRACKLOAD,
   TRACKVOL, TRACKPAN, TRACKMUTE, TRACKSOLO, TRACKSEND, TRACKOUT, TRACKINST, INSTPARAM, RESETTRACK,
   INSERTDEVICE, REMOVEDEVICE, DEVPARAM, DEVBYPASS, PREVIEW, BEND, TRACKNOTES, TRACKCLIPS, TRACKCC, AUTOMATION, SAMPLE, PANIC
 };
 static const std::unordered_map<std::string, int> OPS = {
   { "play", PLAY }, { "stop", STOP }, { "playCountIn", PLAYCOUNTIN }, { "seek", SEEK }, { "tempo", TEMPO }, { "tempoMap", TEMPOMAP },
-  { "setSig", SETSIG }, { "setMeter", SETMETER }, { "loop", LOOP }, { "setMetro", SETMETRO }, { "setMetroVol", SETMETROVOL }, { "masterLimit", MASTERLIMIT }, { "trackLoad", TRACKLOAD },
+  { "setSig", SETSIG }, { "setMeter", SETMETER }, { "loop", LOOP }, { "setMetro", SETMETRO }, { "setMetroVol", SETMETROVOL }, { "masterLimit", MASTERLIMIT }, { "setPdc", SETPDC }, { "trackLoad", TRACKLOAD },
   { "trackVol", TRACKVOL }, { "trackPan", TRACKPAN }, { "trackMute", TRACKMUTE }, { "trackSolo", TRACKSOLO }, { "trackSend", TRACKSEND },
   { "trackOut", TRACKOUT }, { "trackInst", TRACKINST }, { "instParam", INSTPARAM }, { "resetTrack", RESETTRACK }, { "insertDevice", INSERTDEVICE },
   { "removeDevice", REMOVEDEVICE }, { "devParam", DEVPARAM }, { "devBypass", DEVBYPASS }, { "preview", PREVIEW }, { "bend", BEND },
@@ -140,7 +140,7 @@ bool prepare(const std::string& name, const std::vector<Arg>& a, const Engine& e
   auto B = [&](size_t i) { return at(a, i).truthy() ? 1.0 : 0.0; };
   switch (c.op) {
     case PLAYCOUNTIN: case SEEK: case TEMPO: case SETMETROVOL: case RESETTRACK: c.a[0] = N(0); break;
-    case SETMETRO: case MASTERLIMIT: case TRACKLOAD: c.a[0] = B(0); break;
+    case SETMETRO: case MASTERLIMIT: case SETPDC: case TRACKLOAD: c.a[0] = B(0); break;
     case LOOP: c.a[0] = B(0); c.a[1] = N(1); c.a[2] = N(2); break;
     case TRACKVOL: case TRACKPAN: case TRACKOUT: case BEND: c.a[0] = N(0); c.a[1] = N(1); break;
     case TRACKMUTE: case TRACKSOLO: c.a[0] = N(0); c.a[1] = B(1); break;
@@ -213,6 +213,7 @@ void apply(Engine& e, Cmd& c) {
     case SETMETRO: e.setMetro(a[0] != 0); break;
     case SETMETROVOL: e.setMetroVol(a[0]); break;
     case MASTERLIMIT: e.masterLimit(a[0] != 0); break;
+    case SETPDC: e.setPdc(a[0] != 0); break;
     case TRACKLOAD: e.trackLoad(a[0] != 0); break;
     case TRACKVOL: e.trackVol(t, a[1]); break;
     case TRACKPAN: e.trackPan(t, a[1]); break;

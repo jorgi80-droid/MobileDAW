@@ -1,6 +1,7 @@
 // The audio engine of the web version. Plain JS with preallocated typed arrays: the same class runs inside the
 // AudioWorklet (realtime), in the main thread (WAV export) and in node (tests). No allocation while rendering.
-import { TWO_PI, clamp, BLOCK, JOBS, pumpJobs, blepInit } from './dsp.js';
+import { TWO_PI, clamp, BLOCK, JOBS, pumpJobs, blepInit, PDC_MAX, chainLat, PdcLine, ClickLine } from './dsp.js';
+export { PDC_MAX, chainLat, PdcLine, ClickLine };
 import { InstrumentRack } from './fx7.js';
 import { makeInstrument } from './instruments.js';
 import { makeDevice } from './fx.js';
@@ -9,12 +10,12 @@ import { MeterMap } from './meter.js';
 
 export const PPQ = 960, MAX_TRACKS = 64, MASTER = 64, RET0 = 65, NFX = 8, NSTRIPS = RET0 + NFX, MAX_DEV = 16;   // strips: 0-63 tracks, 64 master, 65-72 effect tracks (65/66 = Return A/B)
 const TAIL_SECONDS = 2;
-
 function newStrip() {
   return {
     inst: null, ev: null, clips: [], dev: [], vol: 0.85, pan: 0, gl: 0, gr: 0, send: [0, 0], out: -1, mute: false, solo: false, mg: 1, sg0: 0, sg1: 0,   // mg: mute / solo fade, sg0/sg1: smoothed send levels
     silent: 0, wasAudible: true, pitch: 0, bend: 0, ccl: null, ccG: 1, ccP: 0, tpMap: Uint8Array.from({ length: 128 }, (_, i) => i), active: false, pre: [], bufL: new Float32Array(BLOCK), bufR: new Float32Array(BLOCK), peakL: 0, peakR: 0,
     sevT: new Int32Array(512), sevP: new Uint8Array(512), sevV: new Float32Array(512), sevOn: new Uint8Array(512), sevPn: new Float32Array(512), nPan: 0,
+    lat: 0, pd: 0, pdl: new PdcLine(),   // PDC: latency of this strip's chain, compensation delay applied after it, its delay ring
   };
 }
 
@@ -37,6 +38,9 @@ export class Engine {
     // 80 ms release). Below the ceiling it only delays (1.5 ms); above it, it ducks smoothly instead of the hard clip at 0 dBFS.
     this.lim = makeDevice(5, sr, this.sc); this.limOn = true;
     this.mgK = 1 - Math.exp(-1 / (0.0015 * sr));   // mute / solo ramp: 1.5 ms time constant (silent after ~14 ms) instead of an instant cut
+    // PDC (see pdcPlan): every track is delayed to the slowest track chain, every return to the slowest return chain, the direct-to-master
+    // bus by the slowest return chain, the metronome by the whole path. pdcOut = latency of the output against the song position (frames).
+    this.pdcOn = true; this.pdcMt = 0; this.pdcMr = 0; this.pdcClk = 0; this.pdcOut = 0; this.ck = new Float64Array(BLOCK); this.ckl = new ClickLine();
   }
 
   // ---------------------------------------------------------------- commands (called between render calls)
@@ -73,6 +77,26 @@ export class Engine {
   loop(on, s, e) { this.loopOn = !!on; this.loopS = s; this.loopE = e; }
   setMetro(on) { this.metro = !!on; }
   masterLimit(on) { this.limOn = !!on; }   // the output-stage limiter on / off (off = hard clip at 0 dBFS, as before)
+  setPdc(on) { this.pdcOn = !!on; }          // plugin delay compensation on (default) / off
+  // PDC plan, once per block (cheap: a sum per strip). Tracks: delay = slowest track chain - own chain latency (only tracks that can sound).
+  // Returns: slowest return chain - own. The direct bus (tracks straight to the master) waits for the returns. So every path into the master
+  // arrives with pdcMt + pdcMr frames, sends and group routing included; the master chain and the output limiter come on top of that.
+  pdcPlan() {
+    const S = this.s, on = this.pdcOn, cap = PDC_MAX - 1; let mt = 0, mr = 0;
+    for (let t = 0; t < MAX_TRACKS; t++) {
+      const s = S[t]; let l = 0;
+      if (on && (s.inst || s.clips.length)) { l = chainLat(s.dev); if (s.inst && s.inst.lat) l += s.inst.lat(); }
+      s.lat = l; if (l > mt) mt = l;
+    }
+    for (let k = 0; k < NFX; k++) { const s = S[RET0 + k], l = on ? chainLat(s.dev) : 0; s.lat = l; if (l > mr) mr = l; }
+    if (mt > cap) mt = cap; if (mr > cap) mr = cap;
+    for (let t = 0; t < MAX_TRACKS; t++) { const s = S[t]; s.pd = s.lat < mt ? mt - s.lat : 0; }
+    for (let k = 0; k < NFX; k++) { const s = S[RET0 + k]; s.pd = s.lat < mr ? mr - s.lat : 0; }
+    const m = S[MASTER]; m.lat = on ? chainLat(m.dev) : 0; m.pd = mr;
+    this.pdcMt = mt; this.pdcMr = mr; this.pdcClk = on ? Math.min(cap, mt + mr + m.lat) : 0;
+    this.pdcOut = this.pdcClk + (this.limOn ? this.lim.latency : 0);
+  }
+  pdcLatency() { this.pdcPlan(); return this.pdcOut; }   // frames the output trails the song position (export trims this much)
   setMetroVol(v) { this.metroVol = Math.max(0, Math.min(2, +v || 0)); }   // click level (1 = original loudness); also scales the count-in clicks
   trackLoad(on) { this.tl = !!on; this.tlc.fill(0); this.tlp.fill(0); }
   // called by the worklet every ~0.5 s with the window length in ms: Date.now() has 1 ms steps, so the per-track sum is a statistical estimate (unbiased, smoothed over a few seconds)
@@ -229,6 +253,8 @@ export class Engine {
       if (this.playing && this.cin > 0) {          // count-in: only the click is heard, the song position does not move
         n = Math.min(n, Math.max(1, Math.ceil(this.cin)));
         this.cinChunk(n);
+        this.pdcPlan();
+        if (this.pdcClk > 0) { this.ckl.run(this.mixL, n, this.pdcClk); this.mixR.set(this.mixL.subarray(0, n)); } else this.ckl.clear();   // count-in clicks wait for the song path too (L == R)
         if (this.limOn) this.lim.process(this.mixL, this.mixR, n);
         for (let i = 0; i < n; i++) { const l = this.mixL[i], r = this.mixR[i]; oL[done + i] = l; oR[done + i] = r; }
         this.cin -= n; done += n; continue;
@@ -269,6 +295,7 @@ export class Engine {
 
   chunk(n, spt) {
     const pos = this.pos, mL = this.mixL, mR = this.mixR;
+    this.pdcPlan();
     if (this.tmOn && this.playing) { const bn = this.tm.bpmAt(this.f2t(pos)); if (Math.abs(bn - this.curBpm) > 0.02) this.devTempo(bn); }
     if (this.playing && this.lanes.length) this.applyAuto(this.f2t(pos));
     let anySolo = false;
@@ -278,8 +305,9 @@ export class Engine {
     if (this.tl) { for (let t = 0; t < MAX_TRACKS; t++) { const a = Date.now(); this.track(this.s[t], t, pos, n, spt, anySolo); this.tlc[t] += Date.now() - a; } }
     else for (let t = 0; t < MAX_TRACKS; t++) this.track(this.s[t], t, pos, n, spt, anySolo);
     this.catchUp = false;
-    for (let k = 0; k < NFX; k++) this.ret(k, n);
     const m = this.s[MASTER];
+    if (m.pd > 0) m.pdl.run(mL, mR, n, m.pd); else m.pdl.clear();   // PDC: the direct bus waits for the slowest return
+    for (let k = 0; k < NFX; k++) this.ret(k, n);
     this.runChain(m, MASTER, mL, mR, n);
     let pl = 0, pr = 0;
     for (let i = 0; i < n; i++) {
@@ -287,7 +315,7 @@ export class Engine {
       const a = Math.abs(mL[i]), b = Math.abs(mR[i]); if (a > pl) pl = a; if (b > pr) pr = b;
     }
     m.peakL = Math.max(pl, m.peakL * 0.995); m.peakR = Math.max(pr, m.peakR * 0.995);
-    if (this.metro && this.playing) this.click(n, pos, spt);
+    if (this.metro && this.playing) this.click(n, pos, spt); else this.ckl.clear();
   }
 
   track(s, idx, pos, n, spt, anySolo) {
@@ -296,10 +324,10 @@ export class Engine {
     if (!audible && s.mg < 1e-4) {                                // muted / soloed away and the fade-out is over: silent
       s.mg = 0;
       if (s.wasAudible) { if (s.inst) s.inst.allOff(); s.wasAudible = false; s.silent = this.tailFrames + 1; }
-      this.sc[idx] = 0; s.peakL *= 0.99; s.peakR *= 0.99; s.pre.length = 0; this.runMods(s, n); return;
+      this.sc[idx] = 0; s.peakL *= 0.99; s.peakR *= 0.99; s.pre.length = 0; s.pdl.clear(); this.runMods(s, n); return;
     }
     s.wasAudible = true;
-    if (!s.inst && !s.clips.length) { this.sc[idx] = 0; s.peakL *= 0.99; s.peakR *= 0.99; this.runMods(s, n); return; }
+    if (!s.inst && !s.clips.length) { this.sc[idx] = 0; s.peakL *= 0.99; s.peakR *= 0.99; s.pdl.clear(); this.runMods(s, n); return; }
     const L = s.bufL, R = s.bufR;
     L.fill(0, 0, n); R.fill(0, 0, n);
     let active = false;
@@ -360,8 +388,9 @@ export class Engine {
       }
     }
     if (active) s.silent = 0; else s.silent += n;
-    if (!active && s.silent > this.tailFrames) { this.sc[idx] = 0; s.peakL *= 0.99; s.peakR *= 0.99; this.runMods(s, n); return; }
+    if (!active && s.silent > this.tailFrames) { this.sc[idx] = 0; s.peakL *= 0.99; s.peakR *= 0.99; s.pdl.clear(); this.runMods(s, n); return; }
     this.runChain(s, idx, L, R, n);
+    if (s.pd > 0) s.pdl.run(L, R, n, s.pd); else s.pdl.clear();   // PDC: line up with the slowest track (the sidechain level below is the aligned signal)
     const pn = s.ccP ? clamp(s.pan + s.ccP, -1, 1) : s.pan, vg = s.vol * s.ccG, a = (pn + 1) * Math.PI * 0.25, tl = vg * Math.cos(a) * 1.41421356, tr = vg * Math.sin(a) * 1.41421356, s0 = s.send[0], s1 = s.send[1];
     const mt = audible ? 1 : 0, mk = this.mgK;                     // mute / solo: ramp instead of a cut (click-free in and out)
     if (s0 > 0 || s.sg0 > 0) this.retActive[0] = true; if (s1 > 0 || s.sg1 > 0) this.retActive[1] = true;
@@ -388,8 +417,9 @@ export class Engine {
   ret(k, n) {
     const s = this.s[RET0 + k], L = this.retL[k], R = this.retR[k];
     if (this.retActive[k]) s.silent = 0; else s.silent += n;
-    if (s.silent > this.tailFrames) { s.peakL *= 0.995; s.peakR *= 0.995; this.sc[RET0 + k] = 0; this.runMods(s, n); return; }
+    if (s.silent > this.tailFrames) { s.peakL *= 0.995; s.peakR *= 0.995; this.sc[RET0 + k] = 0; s.pdl.clear(); this.runMods(s, n); return; }
     this.runChain(s, RET0 + k, L, R, n);
+    if (s.pd > 0) s.pdl.run(L, R, n, s.pd); else s.pdl.clear();   // PDC: line up with the slowest return
     const target = s.mute ? 0 : s.vol, a = (s.pan + 1) * Math.PI * 0.25, tl = target * Math.cos(a) * 1.41421356, tr = target * Math.sin(a) * 1.41421356;
     let pl = 0, pr = 0;
     for (let i = 0; i < n; i++) {
@@ -410,11 +440,11 @@ export class Engine {
       if (bs >= pos) { this.clickIdx = 0; this.clickOff = bs - pos; this.clickF = mm.isDownbeat(t) ? 1500 : 1000; }
       t = mm.nextBeat(t);
     }
-    const len = Math.floor(0.015 * this.sr);
-    for (let i = this.clickOff; i < n && this.clickIdx < len; i++, this.clickIdx++) {
-      const y = Math.sin(TWO_PI * this.clickF * this.clickIdx / this.sr) * 0.35 * this.metroVol * (1 - this.clickIdx / len);
-      this.mixL[i] += y; this.mixR[i] += y;
-    }
+    const len = Math.floor(0.015 * this.sr), ck = this.ck;
+    ck.fill(0, 0, n);
+    for (let i = this.clickOff; i < n && this.clickIdx < len; i++, this.clickIdx++) ck[i] = Math.sin(TWO_PI * this.clickF * this.clickIdx / this.sr) * 0.35 * this.metroVol * (1 - this.clickIdx / len);
     this.clickOff = 0;
+    if (this.pdcClk > 0) this.ckl.run(ck, n, this.pdcClk); else this.ckl.clear();   // PDC: the click is heard with the music it marks
+    for (let i = 0; i < n; i++) { this.mixL[i] += ck[i]; this.mixR[i] += ck[i]; }
   }
 }

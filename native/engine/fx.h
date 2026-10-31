@@ -67,6 +67,7 @@ class Saturator : public Device {
   double sr, drive = 1, mix = 1, out = 1, tone = 20000; int type = 0, clip = 0; Biquad tb[2];
   Os4 os[2]; double dl[OS4_LATENCY] = {}, dr[OS4_LATENCY] = {}; int dp = 0;
   double shp(double x) const;
+  int lat() override { return OS4_LATENCY; }
   void setParam(int i, double v) override;
   void process(float* L, float* R, int n) override;
 };
@@ -76,6 +77,7 @@ class Compressor : public Device {
   ~Compressor() override { delete[] dl; delete[] dr; }
   double sr, thr = -18, ratio = 4, atk = 10, rel = 120, mk = 1, gr = 0, knee = 6, cmix = 1, pin = 0, pout = 0, rms = 0, slow = 0, aC = 0, rC = 0, linStep = 0;
   int mode = 0, aut = 0, la = 0, lin = 0, arel = 0, D = 0, dp = 0; float* dl = nullptr; float* dr = nullptr;
+  int lat() override { return la; }
   void upd();
   void setParam(int i, double v) override;
   void process(float* L, float* R, int n) override;
@@ -88,6 +90,7 @@ class Limiter : public Device {
   double sr, ceil, rel = 80, in = 1, g = 1, pin = 0, pout = 0, rC = 0, t = 0, ms = 0; int La, W, dp = 0, qh = 0, qn = 0, mp = 0;
   double *dL, *dR, *qv, *qt, *ma;
   void upd() { rC = std::exp(-1 / (jsMax(1, rel) * 0.001 * sr)); }
+  int lat() override { return La; }
   void setParam(int i, double v) override;
   void process(float* L, float* R, int n) override;
   int readOut(float* o) override { o[0] = (float)-linToDb(g); o[1] = (float)linToDb(pin); o[2] = (float)linToDb(pout); pin *= 0.5; pout *= 0.5; return 3; }

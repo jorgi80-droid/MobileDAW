@@ -32,7 +32,7 @@ public class NativeEnginePlugin extends Plugin {
     static native void nStats(double[] out, boolean reset);
 
     private static final int NSTRIPS = 73;
-    private final double[] snap = new double[6 + NSTRIPS * 2];
+    private final double[] snap = new double[7 + NSTRIPS * 2];   // bridge.cpp NSNAP
     private HandlerThread pollThread;
     private Handler poller;
     private volatile boolean polling = false;
@@ -118,7 +118,7 @@ public class NativeEnginePlugin extends Plugin {
                     o.put("xruns", (int) snap[4]); o.put("bad", (int) snap[5]);
                     JSArray m = new JSArray();
                     for (int i = 0; i < NSTRIPS * 2; i++) m.put((int) snap[6 + i]);
-                    o.put("m", m);
+                    o.put("m", m); o.put("lat", (int) snap[6 + NSTRIPS * 2]);   // PDC: frames the output trails the song
                     String err = nErrors();
                     if (!err.isEmpty()) o.put("errors", err);
                     notifyListeners("poll", o);

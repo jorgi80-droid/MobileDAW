@@ -1691,7 +1691,7 @@ export async function stopRecording(opts = {}) {
     const r = await eng.recStop(`/Recordings/Rec-${stamp}.wav`);
     if (r && r.error) out = { error: r.error };
     else {
-      const lat = (eng.latencyMs() || 0) / 1000, made = [];
+      const lat = ((eng.latencyMs() || 0) + (eng.pdcMs ? eng.pdcMs() || 0 : 0)) / 1000, made = [];   // + PDC: the player heard the song that much later
       let elapsed = rec.cinSecs;                                    // seconds of the file that belong to the count-in (not music)
       for (const q of passes) {
         const a2 = rec.punch ? Math.max(q.a, rec.punch.start) : q.a, b2 = rec.punch ? Math.min(q.b, rec.punch.end) : q.b;

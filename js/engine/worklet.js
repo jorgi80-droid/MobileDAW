@@ -4,7 +4,7 @@ import { JOBS } from './dsp.js';
 
 JOBS.sync = false;   // wavetables are built in slices between render quanta instead of in one go (see dsp.js)
 
-const CMDS = new Set(['play', 'playCountIn', 'stop', 'seek', 'tempo', 'tempoMap', 'setSig', 'setMeter', 'loop', 'setMetro', 'setMetroVol', 'masterLimit', 'trackVol', 'trackPan', 'trackMute', 'trackSolo', 'trackSend', 'trackOut', 'trackLoad', 'trackInst', 'instParam', 'resetTrack',
+const CMDS = new Set(['play', 'playCountIn', 'stop', 'seek', 'tempo', 'tempoMap', 'setSig', 'setMeter', 'loop', 'setMetro', 'setMetroVol', 'masterLimit', 'setPdc', 'trackVol', 'trackPan', 'trackMute', 'trackSolo', 'trackSend', 'trackOut', 'trackLoad', 'trackInst', 'instParam', 'resetTrack',
   'insertDevice', 'removeDevice', 'devParam', 'devBypass', 'rackCmd', 'preview', 'bend', 'trackNotes', 'trackClips', 'trackCC', 'automation']);
 
 class DawProcessor extends AudioWorkletProcessor {
@@ -48,7 +48,7 @@ class DawProcessor extends AudioWorkletProcessor {
       let tl = null; if (this.e.tl) { this.e.fillLoad(this.ld); tl = Array.from(this.ld); }   // voices / CPU per track, only while the mixer asks for it
       const dev = {};
       for (const [t, d] of this.watch) { const n = this.e.devOut(t, d, this.tmp); dev[t + ',' + d] = Array.from(this.tmp.subarray(0, n)); }
-      this.port.postMessage({ pos: this.e.tickPos(), playing: this.e.playing, cin: this.e.cin > 0 ? 1 : 0, cpu: Math.round(this.cpu * 1000), m: Array.from(this.m), tl, dev });
+      this.port.postMessage({ pos: this.e.tickPos(), playing: this.e.playing, cin: this.e.cin > 0 ? 1 : 0, cpu: Math.round(this.cpu * 1000), lat: this.e.pdcOut, m: Array.from(this.m), tl, dev });   // lat: PDC delay of the output (frames)
     }
     return true;
   }

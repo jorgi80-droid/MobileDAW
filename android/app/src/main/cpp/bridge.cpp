@@ -44,7 +44,7 @@ void flushDenormals() {
 
 std::mutex hostLock;                   // serialises plugin calls and stream open / close (never taken by the audio thread)
 
-constexpr int NSNAP = 6 + NSTRIPS * 2;   // pos, playing, cin, cpu (per mille), xruns, bad blocks, meters
+constexpr int NSNAP = 7 + NSTRIPS * 2;   // pos, playing, cin, cpu (per mille), xruns, bad blocks, meters, PDC output latency (frames)
 constexpr int HBUCKETS = 400;            // block cost histogram in 0.5 % steps of the block budget (0..200 %)
 
 class Host : public oboe::AudioStreamDataCallback, public oboe::AudioStreamErrorCallback {
@@ -100,6 +100,7 @@ class Host : public oboe::AudioStreamDataCallback, public oboe::AudioStreamError
       o[0] = eng.tickPos(); o[1] = eng.playing ? 1 : 0; o[2] = eng.cin > 0 ? 1 : 0; o[3] = std::round(std::fmin(1.5, cpuNow) * 1000);
       o[4] = s->getXRunCount().value(); o[5] = (double)badBlocks.load();
       int32_t m[NSTRIPS * 2]; eng.fillMeters(m); for (int i = 0; i < NSTRIPS * 2; i++) o[6 + i] = m[i];
+      o[6 + NSTRIPS * 2] = eng.pdcOut;
       snapIdx.store(w, std::memory_order_release);
     }
     return oboe::DataCallbackResult::Continue;
@@ -220,7 +221,7 @@ JNIEXPORT jboolean JNICALL Java_com_mobiledaw_app_NativeEnginePlugin_nActive(JNI
   host->close(); host->running = false; host->drainQueue(); return true;
 }
 
-// snapshot: [pos, playing, cin, cpu, xruns, bad, meters...] -> out (NSNAP doubles). Returns false when not started.
+// snapshot: [pos, playing, cin, cpu, xruns, bad, meters..., pdc latency] -> out (NSNAP doubles). Returns false when not started.
 JNIEXPORT jboolean JNICALL Java_com_mobiledaw_app_NativeEnginePlugin_nPoll(JNIEnv* env, jclass, jdoubleArray out) {
   std::lock_guard<std::mutex> g(hostLock);
   if (!host) return false;

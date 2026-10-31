@@ -1,4 +1,18 @@
 // WAV encoding/decoding helpers (main thread).
+import { Resampler } from './mp3.js';
+
+// After the offline render (chunks L / R at the engine rate sr): mono fold, sample-rate conversion, normalisation. Returns { L, R, frames }
+// (R === L for mono). mono: (L + R) / 2, so a full-scale stereo mix cannot clip. rate != sr: windowed-sinc resampling of the rendered audio
+// (the engine always renders at the device rate: samples, instruments and effects are prepared for it). normalize: sample peak -> -0.1 dBFS.
+// peak = the stereo peak already measured while rendering (re-measured whenever the audio was changed here).
+export function finishRender(L, R, sr, { mono = false, rate = sr, normalize = false, peak = -1 } = {}) {
+  if (mono) { const M = []; for (let k = 0; k < L.length; k++) { const a = L[k], b = R[k], m = new Float32Array(a.length); for (let i = 0; i < a.length; i++) m[i] = (a[i] + b[i]) * 0.5; M.push(m); } L = R = M; }
+  if (rate > 0 && rate !== sr) { const ra = new Resampler(sr, rate, true), rb = mono ? null : new Resampler(sr, rate, true); const l2 = L.map((c) => ra.process(c)); R = mono ? l2 : R.map((c) => rb.process(c)); L = l2; }
+  if (mono || (rate > 0 && rate !== sr) || peak < 0) { peak = 0; for (const set of mono ? [L] : [L, R]) for (const a of set) for (let i = 0; i < a.length; i++) { const v = a[i] < 0 ? -a[i] : a[i]; if (v > peak) peak = v; } }
+  if (normalize && peak > 1e-5) { const g = 0.9886 / peak; for (const a of L) for (let i = 0; i < a.length; i++) a[i] *= g; if (!mono) for (const a of R) for (let i = 0; i < a.length; i++) a[i] *= g; }
+  let frames = 0; for (const c of L) frames += c.length;
+  return { L, R, frames, peak };
+}
 export function encodeWav(chunksL, chunksR, frames, sr, bits, channels = 2) {
   const bytes = bits === 16 ? 2 : bits === 24 ? 3 : 4, data = frames * channels * bytes, buf = new ArrayBuffer(44 + data), dv = new DataView(buf);
   const w = (o, s) => { for (let i = 0; i < s.length; i++) dv.setUint8(o + i, s.charCodeAt(i)); };

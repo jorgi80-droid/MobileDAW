@@ -2,6 +2,7 @@
 #include "engine.h"
 #include "dsp.h"
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 
 namespace mdaw {
@@ -25,6 +26,7 @@ void Strip::init(double v) {
   vol = v; pan = 0; gl = 0; gr = 0; send[0] = send[1] = 0; out = -1; mute = false; solo = false; mg = 1; sg0 = 0; sg1 = 0;
   silent = 0; wasAudible = true; pitch = 0; bend = 0; ccl = nullptr; ccG = 1; ccP = 0;
   for (int i = 0; i < 128; i++) tpMap[i] = (uint8_t)i;
+  lat = 0; pd = 0; pdl.n = 0; pdl.w = 0; pdl.used = false;   // core.js newStrip(): a fresh PdcLine (same storage)
   active = false; npre = 0; std::memset(bufL, 0, sizeof bufL); std::memset(bufR, 0, sizeof bufR); peakL = 0; peakR = 0; nPan = 0;
 }
 
@@ -32,6 +34,9 @@ void Strip::init(double v) {
 Engine::Engine(double rate) : sr(rate) {
   blepInit(sr);
   tm = new TempoMap(); mm = new MeterMap();
+  pdcMem = (float*)std::calloc((size_t)NSTRIPS * 2 * PDC_MAX, sizeof(float)); ckMem = (double*)std::calloc(PDC_MAX, sizeof(double));
+  for (int i = 0; i < NSTRIPS; i++) { s[i].pdl.L = pdcMem + (size_t)i * 2 * PDC_MAX; s[i].pdl.R = s[i].pdl.L + PDC_MAX; }
+  ckl.b = ckMem;
   for (int i = 0; i < NSTRIPS; i++) s[i].init(0.85);
   s[MASTER].vol = 1;
   std::memset(mixL, 0, sizeof mixL); std::memset(mixR, 0, sizeof mixR); std::memset(scrL, 0, sizeof scrL); std::memset(scrR, 0, sizeof scrR);
@@ -48,6 +53,7 @@ Engine::~Engine() {
   for (auto* p : bank.s) delete p;
   delete lanes; delete tm; delete mm;
   retire.drain();
+  std::free(pdcMem); std::free(ckMem);
 }
 void Engine::clearStrip(Strip& st) {
   retire.put(st.inst); retire.put(st.ev); retire.put(st.clips); retire.put(st.ccl);
@@ -92,6 +98,21 @@ void Engine::setSig(double bt, double beats, MeterMap* prepared) {
   retire.put(mm); mm = prepared;
 }
 void Engine::setMeter(MeterMap* prepared) { retire.put(mm); mm = prepared; beatT = mm->bt[0]; barBeats = mm->n[0]; }
+void Engine::pdcPlan() {
+  bool on = pdcOn; int cap = PDC_MAX - 1, mt = 0, mr = 0;
+  for (int t = 0; t < MAX_TRACKS; t++) {
+    Strip& st = s[t]; int l = 0;
+    if (on && (st.inst || (st.clips && !st.clips->c.empty()))) l = chainLat(st);
+    st.lat = l; if (l > mt) mt = l;
+  }
+  for (int k = 0; k < NFX; k++) { Strip& st = s[RET0 + k]; int l = on ? chainLat(st) : 0; st.lat = l; if (l > mr) mr = l; }
+  if (mt > cap) mt = cap; if (mr > cap) mr = cap;
+  for (int t = 0; t < MAX_TRACKS; t++) { Strip& st = s[t]; st.pd = st.lat < mt ? mt - st.lat : 0; }
+  for (int k = 0; k < NFX; k++) { Strip& st = s[RET0 + k]; st.pd = st.lat < mr ? mr - st.lat : 0; }
+  Strip& m = s[MASTER]; m.lat = on ? chainLat(m) : 0; m.pd = mr;
+  pdcMt = mt; pdcMr = mr; pdcClk = on ? (mt + mr + m.lat < cap ? mt + mr + m.lat : cap) : 0;
+  pdcOut = pdcClk + (limOn && lim ? lim->lat() : 0);
+}
 void Engine::setMetroVol(double v) { double x = (v == v && v != 0) ? v : 0; metroVol = jsMax(0, jsMin(2, x)); }
 void Engine::trackOut(int t, double k) { if (ok(t) && t < MASTER) s[t].out = (k >= 0 && k < NFX) ? toInt32(k) : -1; }
 void Engine::trackInst(int t, Instrument* inst) {
@@ -184,6 +205,8 @@ void Engine::render(float* oL, float* oR, int frames) {
     if (playing && cin > 0) {
       n = (int)jsMin(n, jsMax(1, std::ceil(cin)));
       cinChunk(n);
+      pdcPlan();
+      if (pdcClk > 0) { ckl.run(mixL, n, pdcClk); std::memcpy(mixR, mixL, sizeof(float) * n); } else ckl.clear();
       if (limOn && lim) lim->process(mixL, mixR, n);
       for (int i = 0; i < n; i++) { oL[done + i] = mixL[i]; oR[done + i] = mixR[i]; }
       cin -= n; done += n; continue;
@@ -235,6 +258,7 @@ void Engine::applyAuto(double tick) {
 
 void Engine::chunk(int n, double sp) {
   double p0 = pos;
+  pdcPlan();
   if (tmOn && playing) { double bn = tm->bpmAt(f2t(p0)); if (std::fabs(bn - curBpm) > 0.02) devTempo(bn); }
   if (playing && lanes && !lanes->lanes.empty()) applyAuto(f2t(p0));
   bool anySolo = false;
@@ -243,8 +267,9 @@ void Engine::chunk(int n, double sp) {
   for (int k = 0; k < NFX; k++) { for (int i = 0; i < n; i++) { retL[k][i] = 0; retR[k][i] = 0; } retActive[k] = false; }
   for (int t = 0; t < MAX_TRACKS; t++) track(s[t], t, p0, n, sp, anySolo);
   catchUp = false;
-  for (int k = 0; k < NFX; k++) ret(k, n);
   Strip& m = s[MASTER];
+  if (m.pd > 0) m.pdl.run(mixL, mixR, n, m.pd); else m.pdl.clear();
+  for (int k = 0; k < NFX; k++) ret(k, n);
   runChain(m, MASTER, mixL, mixR, n);
   double pl = 0, pr = 0;
   for (int i = 0; i < n; i++) {
@@ -252,7 +277,7 @@ void Engine::chunk(int n, double sp) {
     double a = std::fabs(mixL[i]), b = std::fabs(mixR[i]); if (a > pl) pl = a; if (b > pr) pr = b;
   }
   m.peakL = jsMax(pl, m.peakL * 0.995); m.peakR = jsMax(pr, m.peakR * 0.995);
-  if (metro && playing) click(n, p0, sp);
+  if (metro && playing) click(n, p0, sp); else ckl.clear();
 }
 
 void Engine::track(Strip& st, int idx, double p0, int n, double sp, bool anySolo) {
@@ -262,11 +287,11 @@ void Engine::track(Strip& st, int idx, double p0, int n, double sp, bool anySolo
   if (!audible && st.mg < 1e-4) {
     st.mg = 0;
     if (st.wasAudible) { if (st.inst) st.inst->allOff(); st.wasAudible = false; st.silent = tailFrames + 1; }
-    sc[idx] = 0; st.peakL *= 0.99; st.peakR *= 0.99; st.npre = 0; return;
+    sc[idx] = 0; st.peakL *= 0.99; st.peakR *= 0.99; st.npre = 0; st.pdl.clear(); return;
   }
   st.wasAudible = true;
   bool hasClips = st.clips && !st.clips->c.empty();
-  if (!st.inst && !hasClips) { sc[idx] = 0; st.peakL *= 0.99; st.peakR *= 0.99; return; }
+  if (!st.inst && !hasClips) { sc[idx] = 0; st.peakL *= 0.99; st.peakR *= 0.99; st.pdl.clear(); return; }
   float* L = st.bufL; float* R = st.bufR;
   for (int i = 0; i < n; i++) { L[i] = 0; R[i] = 0; }
   bool active = false;
@@ -330,8 +355,9 @@ void Engine::track(Strip& st, int idx, double p0, int n, double sp, bool anySolo
     }
   }
   if (active) st.silent = 0; else st.silent += n;
-  if (!active && st.silent > tailFrames) { sc[idx] = 0; st.peakL *= 0.99; st.peakR *= 0.99; return; }
+  if (!active && st.silent > tailFrames) { sc[idx] = 0; st.peakL *= 0.99; st.peakR *= 0.99; st.pdl.clear(); return; }
   runChain(st, idx, L, R, n);
+  if (st.pd > 0) st.pdl.run(L, R, n, st.pd); else st.pdl.clear();
   double pn = st.ccP ? clamp(st.pan + st.ccP, -1, 1) : st.pan, vg = st.vol * st.ccG, a = (pn + 1) * PI * 0.25;
   double tl = vg * std::cos(a) * 1.41421356, tr = vg * std::sin(a) * 1.41421356, s0 = st.send[0], s1 = st.send[1];
   double mt = audible ? 1 : 0, mk = mgK;
@@ -360,8 +386,9 @@ void Engine::track(Strip& st, int idx, double p0, int n, double sp, bool anySolo
 void Engine::ret(int k, int n) {
   Strip& st = s[RET0 + k]; float* L = retL[k]; float* R = retR[k];
   if (retActive[k]) st.silent = 0; else st.silent += n;
-  if (st.silent > tailFrames) { st.peakL *= 0.995; st.peakR *= 0.995; sc[RET0 + k] = 0; return; }
+  if (st.silent > tailFrames) { st.peakL *= 0.995; st.peakR *= 0.995; sc[RET0 + k] = 0; st.pdl.clear(); return; }
   runChain(st, RET0 + k, L, R, n);
+  if (st.pd > 0) st.pdl.run(L, R, n, st.pd); else st.pdl.clear();
   double target = st.mute ? 0 : st.vol, a = (st.pan + 1) * PI * 0.25, tl = target * std::cos(a) * 1.41421356, tr = target * std::sin(a) * 1.41421356;
   double pl = 0, pr = 0;
   for (int i = 0; i < n; i++) {
@@ -383,11 +410,11 @@ void Engine::click(int n, double p0, double sp) {
     t = mm->nextBeat(t);
   }
   double len = std::floor(0.015 * sr);
-  for (int i = (int)clickOff; i < n && clickIdx < len; i++, clickIdx++) {
-    double y = std::sin(TWO_PI * clickF * clickIdx / sr) * 0.35 * metroVol * (1 - clickIdx / len);
-    mixL[i] = (float)(mixL[i] + y); mixR[i] = (float)(mixR[i] + y);
-  }
+  for (int i = 0; i < n; i++) ck[i] = 0;
+  for (int i = (int)clickOff; i < n && clickIdx < len; i++, clickIdx++) ck[i] = std::sin(TWO_PI * clickF * clickIdx / sr) * 0.35 * metroVol * (1 - clickIdx / len);
   clickOff = 0;
+  if (pdcClk > 0) ckl.run(ck, n, pdcClk); else ckl.clear();
+  for (int i = 0; i < n; i++) { mixL[i] = (float)(mixL[i] + ck[i]); mixR[i] = (float)(mixR[i] + ck[i]); }
 }
 
 }  // namespace mdaw

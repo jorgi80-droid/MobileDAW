@@ -10,6 +10,7 @@ const NOTE_BEATS = [0.125, 0.25, 0.5, 1, 2, 4, 8, 16];          // 1/32 ... 4 ba
 
 // ---- STFT: Hann analysis + synthesis, 4x overlap, latency N samples. frame(re, im) gets both channels' bins 0..N/2 and edits them in place.
 export class Stft {
+  get latency() { return this.N; }   // measured: an impulse comes out exactly N samples later (tools/pdc-test.mjs)
   constructor(N, hop) {
     this.N = N; this.hop = hop; this.B = N / 2 + 1; this.k = 0; this.win = new Float64Array(N);
     for (let i = 0; i < N; i++) this.win[i] = 0.5 - 0.5 * Math.cos(TWO_PI * i / N);
@@ -56,6 +57,7 @@ function bands(m, B, sr, N, o, off, NB) {
 // 15 notes 16 16th steps 17 stereo 18 mix 19 tilt ms 20 spray ms 21 mask
 const ST_N = 2048, ST_HOP = 512, ST_D = 384;
 export class SpectralTime extends Fx {
+  lat() { return this.st.latency; }   // PDC: the whole signal (dry included) goes through the STFT
   constructor(sr) {
     super(sr); this.p = [1, 1, 1, 0, 1, 2, 250, 0.5, 0, 0.25, 1, 250, 0.21, 0, 0, 2, 3, 0, 0.5, 0, 0, 0];
     this.st = new Stft(ST_N, ST_HOP); const B = this.st.B, A = () => [new Float32Array(B), new Float32Array(B)];
@@ -128,6 +130,7 @@ export class SpectralTime extends Fx {
 // 16 unison amount 17 input send dB 18 dry/wet
 const SR_N = 2048, SR_HOP = 512, UNI = [1, 2, 4, 8];
 export class SpectralResonator extends Fx {
+  lat() { return this.st.latency; }   // PDC: the whole signal (dry included) goes through the STFT
   constructor(sr) {
     super(sr); this.p = [0, 0, 110, 0, 2.6, 0, 0, 0, 0, 0, 0.1, 0, 128, 1, 16, 0, 0.2, 0, 0.5];
     this.st = new Stft(SR_N, SR_HOP); const B = this.st.B;

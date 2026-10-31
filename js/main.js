@@ -160,8 +160,10 @@ function exportWav() {
   const info = h('div', { class: 'hint xd-info' });
   const o = {
     fmt: prefs.exportFmt === 'mp3' ? 'mp3' : 'wav', bits: [16, 24, 32].includes(prefs.exportBits) ? prefs.exportBits : 16, kbps: [128, 192, 256, 320].includes(prefs.exportKbps) ? prefs.exportKbps : 192,
-    stems: !!prefs.exportStems, ret: prefs.exportRet !== false, master: !!prefs.exportMaster, range: ['all', 'manual'].includes(prefs.exportRange) ? prefs.exportRange : 'all', tail: [0, 3, 10].includes(prefs.exportTail) ? prefs.exportTail : 3, norm: !!prefs.exportNorm,
+    stems: !!prefs.exportStems, ret: prefs.exportRet !== false, master: !!prefs.exportMaster, range: ['all', 'loop', 'manual'].includes(prefs.exportRange) ? prefs.exportRange : 'all', tail: [0, 3, 10].includes(prefs.exportTail) ? prefs.exportTail : 3, norm: !!prefs.exportNorm,
+    ch: prefs.exportCh === 1 ? 1 : 2, rate: [0, 44100, 48000, 88200, 96000].includes(prefs.exportRate) ? prefs.exportRate : 0,
   };
+  const devRate = (eng.info && eng.info().sampleRate) || 48000;
   const rows = [];
   const seg = (label, opts, get, set) => {
     const box = h('div', { class: 'seg segc' });
@@ -171,11 +173,13 @@ function exportWav() {
   const tog = (label, key, text) => { const b = h('button', { class: 'b sw' + (o[key] ? ' on' : ''), onclick: () => { o[key] = !o[key]; b.classList.toggle('on', o[key]); refresh(); } }, text); return h('div', { class: 'xd-row' }, h('div', { class: 'xd-l' }, label), b); };
   const fmtRow = seg('Format', [['w16', 'WAV 16'], ['w24', 'WAV 24'], ['w32', 'WAV 32f'], ['mp3', 'MP3']], () => (o.fmt === 'mp3' ? 'mp3' : 'w' + o.bits), (v) => { if (v === 'mp3') o.fmt = 'mp3'; else { o.fmt = 'wav'; o.bits = +v.slice(1); } });
   const kbpsRow = seg('Kualitas', [[128, '128'], [192, '192'], [256, '256'], [320, '320 kbps']], () => o.kbps, (v) => { o.kbps = v; });
+  const rateRow = seg('Sample rate', [[0, 'Perangkat'], [44100, '44,1'], [48000, '48'], [88200, '88,2'], [96000, '96 kHz']], () => o.rate, (v) => { o.rate = v; });
+  const chRow = seg('Kanal', [[2, 'Stereo'], [1, 'Mono']], () => o.ch, (v) => { o.ch = v; });
   const modeRow = seg('Mode', [[false, 'Mixdown'], [true, 'Stem per track']], () => o.stems, (v) => { o.stems = v; });
   const stemOpts = h('div', { class: 'xd-row xd-ind' });
   const retB = h('button', { class: 'b sw' + (o.ret ? ' on' : ''), onclick: () => { o.ret = !o.ret; retB.classList.toggle('on', o.ret); refresh(); } }, 'Sertakan Return'), mstB = h('button', { class: 'b sw' + (o.master ? ' on' : ''), onclick: () => { o.master = !o.master; mstB.classList.toggle('on', o.master); refresh(); } }, 'Sertakan Master');
   stemOpts.append(retB, mstB);
-  const rangeRow = seg('Rentang', [['all', 'Seluruh proyek'], ['manual', 'Manual']], () => o.range, (v) => { o.range = v; });
+  const rangeRow = seg('Rentang', [['all', 'Seluruh proyek'], ['loop', 'Area loop'], ['manual', 'Manual']], () => o.range, (v) => { o.range = v; });
   rangeRow.append(manual);
   const tailRow = seg('Ekor efek', [[0, '0 dtk'], [3, '3 dtk'], [10, '10 dtk']], () => o.tail, (v) => { o.tail = v; });
   const normRow = tog('Normalisasi', 'norm', 'Puncak ke \u22120,1 dBFS');
@@ -192,20 +196,20 @@ function exportWav() {
     return it;
   };
   function refresh() {
-    kbpsRow.style.display = o.fmt === 'mp3' ? 'flex' : 'none'; stemOpts.style.display = o.stems ? 'flex' : 'none'; manual.style.display = o.range === 'manual' ? 'inline-flex' : 'none';
+    kbpsRow.style.display = o.fmt === 'mp3' ? 'flex' : 'none'; rateRow.style.display = o.fmt === 'mp3' ? 'none' : 'flex'; stemOpts.style.display = o.stems ? 'flex' : 'none'; manual.style.display = o.range === 'manual' ? 'inline-flex' : 'none';
     const sp = span(), n = itemsOf().length;
     if (!sp) { info.textContent = 'Area loop belum aktif: nyalakan Loop dan atur rentangnya di ruler.'; return; }
-    const sec = P.tickToSec(sp[1]) - P.tickToSec(sp[0]) + o.tail, mb = (sec * (o.fmt === 'mp3' ? o.kbps * 125 : 48000 * 2 * (o.bits / 8)) * n) / 1048576;
-    info.textContent = `${((P.barAt(sp[1]) - P.barAt(sp[0]) + (sp[1] - P.barStart(P.barAt(sp[1]))) / P.barLenAt(sp[1]) - (sp[0] - P.barStart(P.barAt(sp[0]))) / P.barLenAt(sp[0]))).toFixed(1).replace('.', ',')} bar + ekor ${o.tail} dtk, ${n} file (\u00b1${mb < 10 ? mb.toFixed(1).replace('.', ',') : Math.round(mb)} MB). ${o.fmt === 'wav' && o.bits === 16 ? '16-bit memakai dither. ' : ''}${o.stems ? 'Stem dikemas dalam satu ZIP; tiap stem tanpa rantai master. ' : ''}${hasNative || FS.isDevice() ? 'Disimpan di folder MobileDAW/Exports.' : isNativeApp() ? 'Disimpan di Documents/MobileDAW/Exports lalu bisa dibagikan.' : 'Diunduh ke perangkat dan tersimpan di File \u2192 Exports.'}`;
+    const sec = P.tickToSec(sp[1]) - P.tickToSec(sp[0]) + o.tail, mb = (sec * (o.fmt === 'mp3' ? o.kbps * 125 : (o.rate || devRate) * o.ch * (o.bits / 8)) * n) / 1048576;
+    info.textContent = `${((P.barAt(sp[1]) - P.barAt(sp[0]) + (sp[1] - P.barStart(P.barAt(sp[1]))) / P.barLenAt(sp[1]) - (sp[0] - P.barStart(P.barAt(sp[0]))) / P.barLenAt(sp[0]))).toFixed(1).replace('.', ',')} bar + ekor ${o.tail} dtk, ${n} file (\u00b1${mb < 10 ? mb.toFixed(1).replace('.', ',') : Math.round(mb)} MB). ${o.fmt === 'wav' && o.bits === 16 ? '16-bit memakai dither. ' : ''}${o.fmt === 'wav' && o.rate && o.rate !== devRate ? `Dirender di ${devRate / 1000} kHz lalu di-resample. ` : ''}${o.ch === 1 ? 'Mono = (L + R) / 2. ' : ''}${o.stems ? 'Stem dikemas dalam satu ZIP; tiap stem tanpa rantai master. ' : ''}${hasNative || FS.isDevice() ? 'Disimpan di folder MobileDAW/Exports.' : isNativeApp() ? 'Disimpan di Documents/MobileDAW/Exports lalu bisa dibagikan.' : 'Diunduh ke perangkat dan tersimpan di File \u2192 Exports.'}`;
   }
   from.oninput = to.oninput = refresh;
-  const body = h('div', { class: 'xdlg' }, name, fmtRow, kbpsRow, modeRow, stemOpts, rangeRow, tailRow, normRow, info);
+  const body = h('div', { class: 'xdlg' }, name, fmtRow, kbpsRow, rateRow, chRow, modeRow, stemOpts, rangeRow, tailRow, normRow, info);
   refresh();
   const close = modal('Ekspor audio', body, [{ label: 'Batal' }, { label: 'Ekspor', go: true, fn: () => {
     const sp = span(), items = itemsOf();
     if (!sp) { toast('Area loop belum aktif.'); return false; }
     if (!items.length) { toast('Tidak ada track untuk diekspor.'); return false; }
-    Object.assign(prefs, { exportFmt: o.fmt, exportBits: o.bits, exportKbps: o.kbps, exportStems: o.stems, exportRet: o.ret, exportMaster: o.master, exportRange: o.range, exportTail: o.tail, exportNorm: o.norm }); savePrefs();
+    Object.assign(prefs, { exportFmt: o.fmt, exportBits: o.bits, exportKbps: o.kbps, exportStems: o.stems, exportRet: o.ret, exportMaster: o.master, exportRange: o.range, exportTail: o.tail, exportNorm: o.norm, exportCh: o.ch, exportRate: o.rate }); savePrefs();
     runExport({ name: clean(name.value), items, sp, o });
   } }]);
   body.parentNode && body.parentNode.classList.add('big');
@@ -227,7 +231,7 @@ async function runExport({ name, items, sp, o }) {
   msg.textContent = 'Menyiapkan audio\u2026';
   await P.ensureBakes();                                   // audio clips on a tempo map / with swing must be rendered before the export copies the sample bank
   P.stop();
-  const job = { dir: `${eng.home()}/Exports`, name, format: ext, bits: o.bits, kbps: o.kbps, startTick: sp[0], endTick: sp[1], bpm: state.bpm, secs: P.tickToSec(sp[1]) - P.tickToSec(sp[0]), tailSec: o.tail, normalize: o.norm, zip: o.stems, items };
+  const job = { dir: `${eng.home()}/Exports`, name, format: ext, bits: o.bits, kbps: o.kbps, startTick: sp[0], endTick: sp[1], bpm: state.bpm, secs: P.tickToSec(sp[1]) - P.tickToSec(sp[0]), tailSec: o.tail, normalize: o.norm, channels: o.ch, rate: o.rate, zip: o.stems, items };
   if (eng.exportJob(job) !== true) { overlay.remove(); window.onExport = null; window.onExportDone = null; toast('Ekspor lain masih berjalan atau tidak didukung.'); }
 }
 
@@ -483,7 +487,7 @@ function boot() {
   Promise.resolve(eng.start()).catch((e) => showFatal(e));
   if (backendError()) showFatal(backendError());
   Promise.resolve(eng.init ? eng.init() : null).catch(() => {}).then(() => {
-    eng.setLatencyMs(prefs.latencyMs); eng.metroVol(prefs.metroVol ?? 1); eng.masterLimit(prefs.masterLimit !== false);
+    eng.setLatencyMs(prefs.latencyMs); eng.metroVol(prefs.metroVol ?? 1); eng.masterLimit(prefs.masterLimit !== false); if (eng.pdc) eng.pdc(prefs.pdc !== false);
     restore().then((ok) => { if (!ok) P.newProject(true); }).catch(() => P.newProject(true)).then(() => { showTab('dev'); startAutosave(); });
     if (prefs.midiOn && !isNativeApp()) enableMidi(true);   // no Web MIDI in the Android WebView
     if (isNativeApp() && eng.setEngine) {                 // Android: C++ engine when chosen in Pengaturan -> Audio (falls back to Web by itself)

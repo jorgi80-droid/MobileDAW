@@ -80,6 +80,7 @@ class Saturator extends Fx {
   constructor(sr) { super(sr); this.type = 0; this.clip = 0; this.drive = 1; this.mix = 1; this.out = 1; this.tb = [new Biquad(), new Biquad()]; this.tone = 20000; this.tb[0].lowpass(sr, 20000, 0.707); this.tb[1].copy(this.tb[0]); }
   setParam(i, v) { if (i === 4) { this.type = Math.round(clamp(v, 0, 5)); return; } if (i === 5) { this.clip = v > 0.5 ? 1 : 0; return; } if (i === 0) this.drive = dbToLin(clamp(v, 0, 36)); else if (i === 1) this.mix = clamp(v, 0, 1); else if (i === 2) this.out = dbToLin(clamp(v, -24, 6)); else if (i === 3) { this.tone = clamp(v, 500, 20000); this.tb[0].lowpass(this.sr, this.tone, 0.707); this.tb[1].copy(this.tb[0]); } }
   // v68: the shaper runs 4x oversampled (no alias tones at high drive); the dry signal goes through the same fixed delay so Mix stays phase-aligned
+  lat() { return OS4_LATENCY; }   // PDC: the oversampler round trip (wet and dry)
   process(L, R, n) {
     if (!this.os) { this.os = [new Os4(), new Os4()]; this.dl = new Float64Array(OS4_LATENCY); this.dr = new Float64Array(OS4_LATENCY); this.dp = 0; }
     { const d = this.drive, t = this.type | 0;   // Live Saturator curves: Analog Clip (tanh), Soft Sine, Medium Curve, Hard Curve, Sinoid Fold, Digital Clip
@@ -108,6 +109,7 @@ class Compressor extends Fx {
     super(sr); this.thr = -18; this.ratio = 4; this.atk = 10; this.rel = 120; this.mk = 1; this.gr = 0; this.knee = 6; this.cmix = 1; this.pin = 0; this.pout = 0;
     this.mode = 0; this.auto = 0; this.la = 0; this.lin = 0; this.arel = 0; this.rms = 0; this.slow = 0; this.dl = new Float32Array(Math.ceil(sr * 0.011)); this.dr = new Float32Array(this.dl.length); this.dp = 0; this.upd();
   }
+  lat() { return this.la; }   // PDC: Lookahead delays the audio (0 / 1 / 10 ms)
   upd() { this.aC = Math.exp(-1 / (Math.max(0.05, this.atk) * 0.001 * this.sr)); this.rC = Math.exp(-1 / (Math.max(1, this.rel) * 0.001 * this.sr)); this.linStep = 60 / (Math.max(1, this.rel) * 0.001 * this.sr); }
   setParam(i, v) {
     switch (i) {
@@ -159,6 +161,7 @@ class Limiter extends Fx {
     this.upd();
   }
   upd() { this.rC = Math.exp(-1 / (Math.max(1, this.rel) * 0.001 * this.sr)); }
+  lat() { return this.latency; }   // PDC: the look-ahead delay line
   setParam(i, v) { if (i === 0) this.ceil = dbToLin(v); else if (i === 1) { this.rel = v; this.upd(); } else if (i === 2) this.in = dbToLin(v); }
   process(L, R, n) {
     const ceil = this.ceil, inG = this.in, rel = 1 - this.rC, W = this.W, La = this.latency, dL = this.dL, dR = this.dR, qv = this.qv, qt = this.qt, ma = this.ma, Q = W + 1;

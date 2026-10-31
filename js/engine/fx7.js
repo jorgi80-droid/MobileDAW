@@ -4,7 +4,7 @@
 // Parameters: chain c (0..7) at 4c: volume dB (-60 = off), pan, activator, solo | 32 chain count | 33..40 macros (0..1) |
 // 41 + 8m: macro m map (chain (-1 = none), device index, parameter, target min, target max, log, Min, Max) | 105 chain selector (0..127) |
 // 106 + 2c: chain c select zone low / high (the chain plays while the selector is inside its zone)
-import { clamp } from './dsp.js';
+import { clamp, chainLat, PdcLine, PDC_MAX } from './dsp.js';
 
 export const RACK_CHAINS = 8, RACK_MACROS = 8, RACK_MAP0 = 41;
 export class AudioEffectRack {
@@ -13,7 +13,12 @@ export class AudioEffectRack {
     this.p = []; for (let c = 0; c < RACK_CHAINS; c++) this.p.push(0, 0, 1, 0); this.p.push(1); for (let m = 0; m < RACK_MACROS; m++) this.p.push(0); for (let m = 0; m < RACK_MACROS; m++) this.p.push(-1, 0, 0, 0, 1, 0, 0, 1); this.p.push(0); for (let c = 0; c < RACK_CHAINS; c++) this.p.push(0, 127);
     this.ch = Array.from({ length: RACK_CHAINS }, () => ({ dev: [] })); this.L = new Float32Array(128); this.R = new Float32Array(128); this.sL = new Float32Array(128); this.sR = new Float32Array(128);
     this.pk = new Float32Array(RACK_CHAINS); this.last = new Float64Array(RACK_MACROS).fill(NaN);
+    for (const c of this.ch) c.pdl = new PdcLine();   // PDC inside the rack: the faster parallel chains wait for the slowest one
   }
+  // latency of the rack = its slowest chain (every chain that exists counts, so switching a chain on / off never moves the timing)
+  lat() { const cnt = clamp(Math.round(this.p[32]), 0, RACK_CHAINS); let m = 0; for (let c = 0; c < cnt; c++) { const l = chainLat(this.ch[c].dev); if (l > m) m = l; } return Math.min(m, PDC_MAX - 1); }
+  // after chain c's devices: delay it to the slowest chain (D = 0: untouched)
+  align(c, bl, br, n, M) { const x = this.ch[c], D = M - Math.min(M, chainLat(x.dev)); if (D > 0) x.pdl.run(bl, br, n, D); else x.pdl.clear(); }
   setParam(i, v) { this.p[i] = v; if (i >= RACK_MAP0 && i < RACK_MAP0 + 64) this.last[Math.floor((i - RACK_MAP0) / 8)] = NaN; }
   setTempo(b) { this.bpm = b; for (const c of this.ch) for (const d of c.dev) if (d.setTempo) d.setTempo(b); }
   tr(playing, beat) { for (const c of this.ch) for (const d of c.dev) if (d.tr) d.tr(playing, beat); }
@@ -40,11 +45,12 @@ export class AudioEffectRack {
     this.macros();
     const p = this.p, cnt = clamp(Math.round(p[32]), 0, RACK_CHAINS); if (!cnt) return;   // a rack without chains passes the audio
     let solo = false; for (let c = 0; c < cnt; c++) if (p[c * 4 + 3] > 0.5 && p[c * 4 + 2] > 0.5) solo = true;   // a soloed chain mutes the others
-    const sL = this.sL, sR = this.sR, bl = this.L, br = this.R; sL.fill(0, 0, n); sR.fill(0, 0, n);
+    const sL = this.sL, sR = this.sR, bl = this.L, br = this.R, M = this.lat(); sL.fill(0, 0, n); sR.fill(0, 0, n);
     for (let c = 0; c < cnt; c++) {
-      const o = c * 4, sel = p[105]; if (p[o + 2] < 0.5 || (solo && p[o + 3] < 0.5) || sel < p[106 + c * 2] || sel > p[107 + c * 2]) { this.pk[c] *= 0.9; continue; }
+      const o = c * 4, sel = p[105]; if (p[o + 2] < 0.5 || (solo && p[o + 3] < 0.5) || sel < p[106 + c * 2] || sel > p[107 + c * 2]) { this.pk[c] *= 0.9; this.ch[c].pdl.clear(); continue; }
       bl.set(L.subarray(0, n)); br.set(R.subarray(0, n));
       for (const d of this.ch[c].dev) if (!d.bypass) d.process(bl, br, n);
+      this.align(c, bl, br, n, M);
       const g = p[o] <= -60 ? 0 : Math.pow(10, p[o] / 20), pan = p[o + 1], gl = g * Math.min(1, 1 - pan), gr = g * Math.min(1, 1 + pan); let pk = 0;
       for (let i = 0; i < n; i++) { const l = bl[i] * gl, r = br[i] * gr; sL[i] += l; sR[i] += r; const a = Math.max(Math.abs(l), Math.abs(r)); if (a > pk) pk = a; }
       this.pk[c] = Math.max(pk, this.pk[c] * 0.95);
@@ -91,16 +97,17 @@ export class InstrumentRack extends AudioEffectRack {
   render(L, R, from, to) { const cnt = clamp(Math.round(this.p[32]), 0, RACK_CHAINS); for (let c = 0; c < cnt; c++) { const x = this.ch[c]; if (x.inst) x.inst.render(x.L, x.R, from, to); } }
   endBlock(L, R, n) {
     this.macros();
-    const p = this.p, cnt = clamp(Math.round(p[32]), 0, RACK_CHAINS);
+    const p = this.p, cnt = clamp(Math.round(p[32]), 0, RACK_CHAINS), M = this.lat();
     let solo = false; for (let c = 0; c < cnt; c++) if (p[c * 4 + 3] > 0.5 && p[c * 4 + 2] > 0.5) solo = true;
     for (let c = 0; c < cnt; c++) {
       const x = this.ch[c], o = c * 4, bl = x.L, br = x.R;
       if (p[o + 2] > 0.5 && !(solo && p[o + 3] < 0.5)) {
         for (const d of x.dev) if (!d.bypass) d.process(bl, br, n);
+        this.align(c, bl, br, n, M);
         const g = p[o] <= -60 ? 0 : Math.pow(10, p[o] / 20), pan = p[o + 1], gl = g * Math.min(1, 1 - pan), gr = g * Math.min(1, 1 + pan); let pk = 0;
         for (let i = 0; i < n; i++) { const l = bl[i] * gl, r = br[i] * gr; L[i] += l; R[i] += r; const a = Math.max(Math.abs(l), Math.abs(r)); if (a > pk) pk = a; }
         this.pk[c] = Math.max(pk, this.pk[c] * 0.95);
-      } else this.pk[c] *= 0.9;
+      } else { this.pk[c] *= 0.9; x.pdl.clear(); }
       bl.fill(0, 0, n); br.fill(0, 0, n);
     }
   }

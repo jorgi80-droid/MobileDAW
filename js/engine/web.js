@@ -1,7 +1,7 @@
 // Web backend of the `eng` interface: AudioWorklet engine + offline file library (IndexedDB) + recording + MIDI + WAV export.
 import { Engine, NSTRIPS, MASTER, RET0, NFX } from './core.js';
 import { parseSf2 } from './sf2.js';
-import { encodeWav } from './wav.js';
+import { encodeWav, finishRender } from './wav.js';
 import { Mp3Encoder, Resampler, mp3Rate, concatBytes } from './mp3.js';
 import { makeZip } from '../zip.js';
 import { buildPyramid } from '../waveform.js';
@@ -160,7 +160,7 @@ const safeName = (n) => n.replace(/[\\/:*?"<>|]+/g, '_').trim() || 'file';
 class OfflineTarget {
   constructor(sr, bank, sfs) { this.e = new Engine(sr); for (let i = 0; i < bank.length; i++) if (bank[i]) this.e.bank[i] = { l: bank[i].l, r: bank[i].r, frames: bank[i].l.length, rate: sr }; for (let i = 0; i < sfs.length; i++) this.e.sfs[i] = sfs[i]; }
   play() { this.e.play(); } playCountIn() { this.e.play(); } stop() { this.e.stop(); } seek(t) { this.e.seek(t); } tempo(b) { this.e.tempo(b); } tempoMap(on, f) { this.e.tempoMap(on, f); } sig(bt, n) { this.e.setSig(bt, n); } meter(f) { this.e.setMeter(f); }
-  loop(on, s, e) { this.e.loop(on, s, e); } metro(on) { this.e.setMetro(on); } metroVol(v) { this.e.setMetroVol(v); } masterLimit(on) { this.e.masterLimit(on); }
+  loop(on, s, e) { this.e.loop(on, s, e); } metro(on) { this.e.setMetro(on); } metroVol(v) { this.e.setMetroVol(v); } masterLimit(on) { this.e.masterLimit(on); } pdc(on) { this.e.setPdc(on); }
   trackVol(t, v) { this.e.trackVol(t, v); } trackPan(t, v) { this.e.trackPan(t, v); } trackMute(t, m) { this.e.trackMute(t, m); } trackSolo(t, m) { this.e.trackSolo(t, m); }
   trackInst(t, ty) { this.e.trackInst(t, ty); } instParam(t, i, v) { this.e.instParam(t, i, v); }
   trackNotes(t, f, n) { this.e.trackNotes(t, f, n); } trackClips(t, f, n) { this.e.trackClips(t, f, n); } trackCC(t, f, n) { this.e.trackCC(t, f, n); } resetTrack(t) { this.e.resetTrack(t); }
@@ -306,6 +306,8 @@ export function createWebBackend() {
     trackNotes: cmd('trackNotes'), trackCC: cmd('trackCC'), trackClips: cmd('trackClips'), resetTrack: cmd('resetTrack'), insertDevice: cmd('insertDevice'), removeDevice: cmd('removeDevice'),
     devParam: cmd('devParam'), devBypass: cmd('devBypass'), rackCmd: cmd('rackCmd'), preview: cmd('preview'), bend: cmd('bend'), send: cmd('trackSend'), trackOut: cmd('trackOut'), trackLoad: cmd('trackLoad'), automation: cmd('automation'),
     masterLimit: (on) => { st.limOn = !!on; post('masterLimit', !!on); },   // output-stage safety limiter (also used by the mix export)
+    pdc: (on) => { st.pdcOn = !!on; post('setPdc', !!on); },              // plugin delay compensation (also used by every export)
+    pdcMs: () => { const sr = nat.on && nat.sink && nat.sink.sr ? nat.sink.sr : st.ctx ? st.ctx.sampleRate : 0; return sr && st.poll && st.poll.lat ? st.poll.lat / sr * 1000 : 0; },   // how far the heard output trails the song position
     poll: () => st.poll,
     devOut: (t, d) => { st.wanted.set(t + ',' + d, Date.now()); return st.dev[t + ',' + d] || []; },
   });
@@ -582,6 +584,12 @@ export function createWebBackend() {
   me.info = () => ({ sampleRate: st.ctx ? st.ctx.sampleRate : 0, baseLatency: st.ctx ? Math.round((st.ctx.baseLatency || 0) * 1000) : 0, outputLatency: st.ctx ? Math.round((st.ctx.outputLatency || 0) * 1000) : 0, state: st.ctx ? st.ctx.state : 'none' });
 
   // ---- WAV export: render the project in this thread, as fast as the CPU allows
+  // PDC: the output trails the song by off.e.pdcLatency() frames (compensation + master chain + output limiter when on). Render that much and
+  // drop it, so frame 0 of every file is the start position: the mix and the stems (which run without the output limiter) line up exactly.
+  function preroll(off) {
+    let k = off.e.pdcLatency(); const l = new Float32Array(4096), r = new Float32Array(4096);
+    while (k > 0) { const n = Math.min(4096, k); off.e.render(l, r, n); k -= n; }
+  }
   me.exportWav = (path, endTick, bpm, bits, replay) => {
     if (st.exporting) return false;
     st.exporting = true; st.cancel = false;
@@ -590,8 +598,8 @@ export function createWebBackend() {
       try {
         await me.start();
         const sr = st.ctx.sampleRate, off = new OfflineTarget(sr, st.bank, st.sfs);
-        replay(off); off.masterLimit(st.limOn !== false);   // the export sounds like playback
-        off.loop(false, 0, 0); off.metro(false); off.seek(0); off.play();
+        replay(off); off.masterLimit(st.limOn !== false); off.pdc(st.pdcOn !== false);   // the export sounds like playback
+        off.loop(false, 0, 0); off.metro(false); off.seek(0); off.play(); preroll(off);
         const total = Math.floor(((globalThis.__exportSecs > 0 ? globalThis.__exportSecs : endTick / 960 * 60 / bpm) + 3) * sr), chunk = 4096, L = [], R = [];
         let done = 0, lastYield = Date.now();
         while (done < total && !st.cancel) {
@@ -630,9 +638,9 @@ export function createWebBackend() {
         for (let n = 0; n < items.length && !st.cancel; n++) {
           const it = items[n], base = n / items.length, span = 1 / items.length, label = items.length > 1 ? `${it.name} (${n + 1}/${items.length})` : it.name;
           const off = new OfflineTarget(sr, st.bank, st.sfs);
-          replay(off); off.masterLimit(it.kind === 'mix' && st.limOn !== false);   // stems stay raw (no master limiter), the mix sounds like playback
+          replay(off); off.masterLimit(it.kind === 'mix' && st.limOn !== false); off.pdc(st.pdcOn !== false);   // stems stay raw (no master limiter), the mix sounds like playback
           if (it.kind === 'track') off.stemTrack(it.idx); else if (it.kind === 'return') off.stemReturn(it.idx);
-          off.loop(false, 0, 0); off.metro(false); off.seek(job.startTick); off.play();
+          off.loop(false, 0, 0); off.metro(false); off.seek(job.startTick); off.play(); preroll(off);
           let L = [], R = [], done = 0, peak = 0, lastYield = Date.now();
           while (done < total && !st.cancel) {
             const c = Math.min(4096, total - done), l = new Float32Array(c), r = new Float32Array(c);
@@ -642,10 +650,11 @@ export function createWebBackend() {
             if (Date.now() - lastYield > 60) { report(base + span * 0.75 * done / total, label); await tick(); lastYield = Date.now(); }
           }
           if (st.cancel) break;
-          if (job.normalize && peak > 1e-5) { const g = 0.9886 / peak; for (const a of L) for (let i = 0; i < a.length; i++) a[i] *= g; for (const a of R) for (let i = 0; i < a.length; i++) a[i] *= g; }
+          const mono = job.channels === 1, rate = job.format !== 'mp3' && job.rate > 0 ? job.rate : sr;
+          ({ L, R, frames: done } = finishRender(L, R, sr, { mono, rate, normalize: job.normalize, peak }));
           let data;
           if (job.format === 'mp3') {
-            const outSr = mp3Rate(sr), rs = outSr !== sr ? [new Resampler(sr, outSr), new Resampler(sr, outSr)] : null, enc = new Mp3Encoder(outSr, 2, job.kbps), parts = [];
+            const outSr = mp3Rate(sr), rs = outSr !== sr ? [new Resampler(sr, outSr), new Resampler(sr, outSr)] : null, enc = new Mp3Encoder(outSr, mono ? 1 : 2, job.kbps), parts = [];
             for (let k = 0; k < L.length && !st.cancel; k++) {
               let l = L[k], r = R[k]; if (rs) { l = rs[0].process(l); r = rs[1].process(r); }
               for (const f of enc.encode(l, r, l.length)) parts.push(f);
@@ -655,7 +664,7 @@ export function createWebBackend() {
             if (st.cancel) break;
             for (const f of enc.finish()) parts.push(f);
             data = concatBytes(parts).buffer;
-          } else { report(base + span * 0.9, label); await tick(); data = encodeWav(L, R, done, sr, job.bits); }
+          } else { report(base + span * 0.9, label); await tick(); data = encodeWav(L, mono ? null : R, done, rate, job.bits, mono ? 1 : 2); }
           L = R = null;
           files.push({ name: uniq(job.zip || items.length > 1 ? it.name : job.name) + '.' + ext, data });
         }

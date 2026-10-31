@@ -165,3 +165,33 @@ export class Os4 {
   up(x) { const u = this.a.up(x), u0 = u[0], u1 = u[1], o = this.o; let v = this.b.up(u0); o[0] = v[0]; o[1] = v[1]; v = this.b.up(u1); o[2] = v[0]; o[3] = v[1]; return o; }
   down(s0, s1, s2, s3) { const y0 = this.b.down(s0, s1), y1 = this.b.down(s2, s3); return this.a.down(y0, y1); }
 }
+
+// ---- plugin delay compensation (PDC) helpers, shared by core.js (tracks / returns / master / click) and fx7.js (parallel rack chains)
+// A path never gets more than PDC_MAX - 1 frames of compensation. The rings grow in powers of two (512 .. PDC_MAX) only when a longer delay is
+// needed; growing starts from silence (the native engine does the same in its preallocated buffer, so both stay sample-identical).
+export const PDC_MAX = 16384;
+export function pdcCap(D) { let c = 512; while (c <= D && c < PDC_MAX) c *= 2; return c; }
+// latency of a device chain in frames: the devices that report one (d.lat(): look-ahead, oversampling, STFT) and are switched on
+export function chainLat(dev) { let l = 0; for (let i = 0; i < dev.length; i++) { const d = dev[i]; if (!d.bypass && d.lat) l += d.lat(); } return l; }
+// stereo delay ring for PDC: write first, then read D frames back
+export class PdcLine {
+  constructor() { this.L = null; this.R = null; this.n = 0; this.w = 0; this.used = false; }
+  run(L, R, n, D) {
+    if (D >= this.n) { this.n = pdcCap(D); this.L = new Float32Array(this.n); this.R = new Float32Array(this.n); this.w = 0; }   // rare: a longer delay than ever before on this path
+    const bl = this.L, br = this.R, M = this.n - 1; let w = this.w;
+    for (let i = 0; i < n; i++) { bl[w] = L[i]; br[w] = R[i]; const r = (w - D) & M; L[i] = bl[r]; R[i] = br[r]; w = (w + 1) & M; }
+    this.w = w; this.used = true;
+  }
+  clear() { if (this.used) { this.L.fill(0); this.R.fill(0); this.used = false; } }   // stale audio must never come out when the path starts again
+}
+// mono delay ring for the metronome (double precision: a click that is not delayed adds exactly as before)
+export class ClickLine {
+  constructor() { this.b = null; this.n = 0; this.w = 0; this.used = false; }
+  run(x, n, D) {
+    if (D >= this.n) { this.n = pdcCap(D); this.b = new Float64Array(this.n); this.w = 0; }
+    const b = this.b, M = this.n - 1; let w = this.w;
+    for (let i = 0; i < n; i++) { b[w] = x[i]; x[i] = b[(w - D) & M]; w = (w + 1) & M; }
+    this.w = w; this.used = true;
+  }
+  clear() { if (this.used) { this.b.fill(0); this.used = false; } }
+}

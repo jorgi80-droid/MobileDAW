@@ -91,6 +91,23 @@ export const SCENARIOS = [
       const g = []; for (let k = 0; k < 40; k++) g.push(k * PPQ / 8, PPQ * 2, 48 + (k % 20), 0.8, 0); e.trackNotes(1, g, g.length / 5);
       e.play(); play(e, 3, [128, 64, 200]); e.stop(); play(e, 0.5);
     } },
+  { name: 'core-pdc', info: 'plugin delay compensation: Limiter / Saturator / Compressor look-ahead on tracks, a send return, a group return and the master; latency changes (bypass, Lookahead, insert / remove) while playing, metronome + count-in, loop seam, mute, PDC off / on',
+    run(e) {
+      samples(e); e.tempo(126); e.setMetro(true); e.setMetroVol(0.6);
+      e.trackClips(0, clipsA, 3); e.trackClips(1, clipsB, 3); e.trackInst(2, 1); const f = []; for (let k = 0; k < 32; k++) f.push(k * PPQ / 2, PPQ * 0.4, 48 + ((k * 7) % 24), 0.8, 0); e.trackNotes(2, f, f.length / 5);
+      e.insertDevice(0, 0, 5); e.insertDevice(1, 0, 3); e.devParam(1, 0, 0, 12);                     // track 0 Limiter (72), track 1 Saturator (37)
+      e.insertDevice(2, 0, 4); [-24, 4, 2, 80].forEach((v, k) => e.devParam(2, 0, k, v)); e.devParam(2, 0, 9, 1);   // track 2 Compressor, Lookahead 1 ms
+      e.trackSend(0, 0, 0.6); e.trackSend(2, 0, 0.3); e.insertDevice(65, 0, 3); e.devParam(65, 0, 1, 0.5);   // Return A: Saturator
+      e.trackOut(1, 1); e.insertDevice(66, 0, 4); e.devParam(66, 0, 9, 2);                         // track 1 grouped into Return B: Compressor 10 ms
+      e.insertDevice(64, 0, 3); e.devParam(64, 0, 1, 0.3);                                          // master: Saturator
+      e.playCountIn(4); play(e, 2.4, [128, 96, 256]);
+      e.devParam(2, 0, 9, 2); play(e, 0.6); e.devBypass(0, 0, true); play(e, 0.5, [128, 77]); e.devBypass(0, 0, false); play(e, 0.5);
+      e.trackMute(1, true); play(e, 0.4); e.trackMute(1, false); play(e, 0.4);
+      e.setPdc(false); play(e, 0.5); e.setPdc(true); play(e, 0.5);
+      e.removeDevice(66, 0); play(e, 0.4); e.insertDevice(3, 0, 5); e.trackClips(3, [0, BAR * 8, 2, 0.6, 0, 0, 0], 1); play(e, 0.4);
+      e.loop(true, BAR, BAR * 2); e.seek(BAR); play(e, 4.5, [128, 333]); e.loop(false, 0, 0);
+      e.stop(); play(e, 0.6);
+    } },
   ...fxScenarios(),
   { name: 'fx-autoduck-sc', info: 'Autoduck: track 2 (short bass notes) ducks the pad on track 1; source / threshold / amount / attack / release changes while playing',
     run(e) {

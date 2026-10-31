@@ -4,6 +4,7 @@
 // they replace goes to the retire queue and is deleted later on a non-audio thread. render() never allocates, never locks.
 #pragma once
 #include <array>
+#include <cstring>
 #include <atomic>
 #include <cstdint>
 #include <vector>
@@ -16,6 +17,32 @@ namespace mdaw {
 
 constexpr int PPQ = 960, MAX_TRACKS = 64, MASTER = 64, RET0 = 65, NFX = 8, NSTRIPS = RET0 + NFX, MAX_DEV = 16;
 constexpr double TAIL_SECONDS = 2;
+constexpr int PDC_MAX = 16384;        // core.js / dsp.js: longest compensation per path + 1 (frames, power of two)
+inline int pdcCap(int D) { int c = 512; while (c <= D && c < PDC_MAX) c *= 2; return c; }
+
+// dsp.js PdcLine: stereo PDC delay ring. The storage (PDC_MAX frames) is handed in by the engine at construction (calloc: untouched pages
+// cost no RAM); n is the ring size JS would have allocated, so growing starts from silence exactly as in JS.
+struct PdcLine {
+  float* L = nullptr; float* R = nullptr; int n = 0, w = 0; bool used = false;
+  void run(float* x, float* y, int cnt, int D) {
+    if (D >= n) { n = pdcCap(D); std::memset(L, 0, sizeof(float) * n); std::memset(R, 0, sizeof(float) * n); w = 0; }
+    int M = n - 1;
+    for (int i = 0; i < cnt; i++) { L[w] = x[i]; R[w] = y[i]; int r = (w - D) & M; x[i] = L[r]; y[i] = R[r]; w = (w + 1) & M; }
+    used = true;
+  }
+  void clear() { if (used) { std::memset(L, 0, sizeof(float) * n); std::memset(R, 0, sizeof(float) * n); used = false; } }
+};
+// dsp.js ClickLine: mono, double precision
+struct ClickLine {
+  double* b = nullptr; int n = 0, w = 0; bool used = false;
+  template <class T> void run(T* x, int cnt, int D) {
+    if (D >= n) { n = pdcCap(D); std::memset(b, 0, sizeof(double) * n); w = 0; }
+    int M = n - 1;
+    for (int i = 0; i < cnt; i++) { b[w] = x[i]; x[i] = (T)b[(w - D) & M]; w = (w + 1) & M; }
+    used = true;
+  }
+  void clear() { if (used) { std::memset(b, 0, sizeof(double) * n); used = false; } }
+};
 
 struct NoteData {                     // trackNotes: events sorted (offs before ons) + note list for catch-up
   int n = 0;
@@ -60,6 +87,7 @@ struct Strip {
   double peakL = 0, peakR = 0;
   int32_t sevT[512]; uint8_t sevP[512]; float sevV[512]; uint8_t sevOn[512]; float sevPn[512];
   double nPan = 0;
+  int lat = 0, pd = 0; PdcLine pdl;   // PDC: chain latency, compensation delay, its ring (storage owned by the engine)
   void init(double v);
 };
 
@@ -82,6 +110,8 @@ class Engine {
   double tailFrames;
   bool tl = false;
   Device* lim = nullptr; bool limOn = true; double mgK = 0;   // core.js: master safety limiter (the Limiter device) at the output stage
+  bool pdcOn = true; int pdcMt = 0, pdcMr = 0, pdcClk = 0, pdcOut = 0; double ck[BLOCK] = {}; ClickLine ckl;   // core.js PDC
+  float* pdcMem = nullptr; double* ckMem = nullptr;
   // set by the owner to see engine faults (instrument / device switched off): kind 0 = engine, 1 = instrument, 2 = device
   void (*onError)(void* ctx, int kind, int strip, int dev, const char* msg) = nullptr; void* errCtx = nullptr;
 
@@ -98,6 +128,9 @@ class Engine {
   void setMetro(bool on) { metro = on; }
   void setMetroVol(double v);
   void masterLimit(bool on) { limOn = on; }
+  void setPdc(bool on) { pdcOn = on; }
+  void pdcPlan();
+  int pdcLatency() { pdcPlan(); return pdcOut; }
   void trackLoad(bool on) { tl = on; }
   void trackVol(int t, double v) { if (ok(t)) s[t].vol = jsMax(0, v); }
   void trackPan(int t, double v) { if (ok(t)) s[t].pan = clamp(v, -1, 1); }
@@ -144,6 +177,7 @@ class Engine {
   void bendNew(Strip& st);
   void runDev(int strip, int di, Device* d, float* L, float* R, int n);
   void runChain(Strip& st, int strip, float* L, float* R, int n);
+  static int chainLat(const Strip& st) { int l = 0; for (int i = 0; i < st.ndev; i++) if (!st.dev[i]->bypass) l += st.dev[i]->lat(); return l; }
   double spt() const { return sr * 60 / (bpm * PPQ); }
   static void balance(float* L, float* R, int a, int b, double pan);
   void cinChunk(int n);

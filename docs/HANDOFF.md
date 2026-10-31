@@ -37,6 +37,37 @@ Baca juga `README-ANDROID.md` (build, install, status fase 2).
 | Arrangement gaya gambar pemilik: klip warna penuh + isi gelap, fade klip audio + handle (seret), locator outline, garis track tebal, palet warna Live jenuh | selesai (`docs/redesign/40-*.jpg`) |
 | Drum Rack: chain per pad (instrumen + efek di pad, `pad.chain`; engine `DrumSynth.cmd/endBlock`, project `setPadChainInst / padChain*`, UI `padChainView` di fxkit.js, tes `tools/drumrack-test.mjs`) | selesai (`docs/redesign/39-drumrack-chain.png`) |
 | Ekspor WAV lewat engine native; angka CPU/underrun Web vs Native dari HP | belum |
+| Plugin Delay Compensation (PDC): track, send/return, grup, master, chain paralel rack, metronom + count-in, ekspor, rekaman; JS + C++ identik | selesai (`tools/pdc-test.mjs`, golden `core-pdc`, `tools/engine-e2e.mjs`) |
+| Ekspor: Mono, pilihan sample rate (resampler Kaiser HQ), rentang Area loop | selesai (`tools/export-test.mjs`) |
+
+## Plugin Delay Compensation (PDC) + opsi ekspor (sesi ini)
+- **Laporan latensi**: device dengan latensi punya `lat()` (frame): Saturator `OS4_LATENCY` (37, oversampler 4x, wet + dry), Compressor
+  Lookahead (`la`: 0 / 1 / 10 ms), Limiter (`latency`, 1,5 ms), Spectral Time / Spectral Resonator (`Stft.latency` = N = 2048, diukur), Audio
+  Effect Rack / Instrument Rack = chain paling lambat. C++: `Device::lat()` (units.h), sama untuk Saturator / Compressor / Limiter. Semua angka
+  dicek dengan impuls di `tools/pdc-test.mjs` (dilaporkan == terukur). Device yang di-bypass tidak dihitung (tidak menunda sinyal).
+- **Rencana per blok** `Engine.pdcPlan()` (core.js + engine.cpp, dipanggil di awal `chunk()` dan count-in): `chainLat(dev)` per strip;
+  track yang bisa berbunyi (punya instrumen / klip) ditunda ke track paling lambat (`pdcMt`), return ditunda ke return paling lambat (`pdcMr`),
+  bus langsung ke master (`mixL/mixR` sebelum return ditambahkan) ditunda `pdcMr`. Jadi semua jalur (langsung, send, grup `trackOut`) tiba
+  di master dengan `pdcMt + pdcMr`. Metronom (dan count-in) ditunda `pdcClk = pdcMt + pdcMr + rantai master` (`ClickLine`, double).
+  `pdcOut = pdcClk + limiter output` = berapa frame output tertinggal dari posisi lagu (`pdcLatency()`; worklet mengirim `lat` di poll, bridge
+  Android menaruhnya di akhir snapshot).
+- **Ring delay** `PdcLine` / `ClickLine` (dsp.js; C++ di engine.h dengan memori `calloc` sekali di konstruktor, halaman yang tak dipakai tidak
+  memakan RAM): ukuran tumbuh 512 .. `PDC_MAX` (16384) hanya saat delay lebih panjang dibutuhkan, mulai dari hening (JS dan C++ sama persis).
+  Jalur yang diam / di-mute / dilewati mengosongkan ring-nya (`clear()`), jadi audio basi tidak pernah keluar saat jalur aktif lagi.
+  Delay 0 = jalur tidak disentuh: proyek tanpa device berlatensi identik bit dengan sebelum PDC (tes 7 di pdc-test).
+- **Rack**: `AudioEffectRack.align()` menunda chain yang lebih cepat ke chain paling lambat (semua chain yang ada dihitung, jadi menyalakan /
+  mematikan chain tidak menggeser timing). Rack belum di-port C++ (fallback Web seperti sebelumnya).
+- **Perintah** `setPdc(on)` (worklet, OfflineTarget `pdc()`, commands.cpp `SETPDC`), pref `pdc` (default on), Pengaturan -> Audio -> Master.
+- **Ekspor**: `preroll()` di web.js merender lalu membuang `pdcLatency()` frame, jadi frame 0 file = posisi awal; mix dan stem (stem tanpa
+  limiter output) tetap sejajar sampel. **Rekaman**: offset klip rekaman = `latencyMs` + `pdcMs()` (pemain mendengar lagu terlambat sebanyak itu).
+- **Sidechain** (`eng.sc`) membaca sinyal track SETELAH kompensasi. Batas yang diketahui: device sidechain (Autoduck) di track yang
+  sinyalnya sendiri belum dikompensasi bisa melihat pemicu terlambat `pd` frame (sama seperti banyak DAW tanpa "sidechain PDC").
+- **Opsi ekspor baru** (`exportWav()` di main.js, `finishRender()` di wav.js): Kanal Stereo / Mono ((L + R) / 2), Sample rate Perangkat / 44,1 /
+  48 / 88,2 / 96 kHz (WAV; engine tetap merender di rate perangkat lalu `Resampler(from, to, true)` = 64 tap per sisi, jendela Kaiser beta 9,
+  pass band 0,91 Nyquist: 18 kHz rata, 23 kHz -> 44,1 kHz teredam habis), Rentang "Area loop". Pref `exportCh`, `exportRate`.
+  MP3 tetap memakai resampler lama (output MP3 tidak berubah).
+- Tes: `tools/pdc-test.mjs`, `tools/export-test.mjs` (keduanya di run-tests), golden `core-pdc` (identik), `tools/engine-e2e.mjs` (Chromium
+  sungguhan: latensi dari worklet + ekspor mono 44,1 kHz 24-bit; butuh Playwright, tidak di CI).
 
 ## Gestur klip + editor layar penuh (logika FL Studio Mobile, sesi ini)
 - Tombol tab **Clip dihapus**: bar bawah hanya Device dan Keys. Editor klip (piano roll / drum step / audio editor / titik otomasi) dibuka lewat
