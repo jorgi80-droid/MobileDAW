@@ -26,9 +26,12 @@ Baca juga `README-ANDROID.md` (build, install, status fase 2).
 | Audio Effect Rack dengan macro (engine JS; port C++ belum) | selesai |
 | Instrument Rack (instrumen + efek per chain, zona Key / Vel / Chain, macro) | selesai (instrumen bersampel di dalam chain belum) |
 | Port C++: DS Kick/Snare/Tom/HH/Clap/FM, Electric, Tension, Collision, Impulse, Granulator III (`native/engine/inst_live.*`) | selesai, identik bit (golden `play-*`, `params-*`) |
-| **Port C++: GMS, Moisture, Osphere, DirectWave/Keystone/Sampler, Drum Sampler, SoundFont, Wavetable, Drift, Operator, Analog, Poli, Meld, Simpler, Instrument Rack** | **belum** |
+| Port C++: Drift (`drift.*`), Poli (`poli.*`); engine C++ kini mendukung `setBend` (PB Range per instrumen) | selesai, golden `play-*` / `params-*` |
+| **Port C++: GMS, Moisture, Osphere, DirectWave/Keystone/Sampler, Drum Sampler (+ chain per pad), SoundFont, Wavetable, Operator, Analog, Meld, Simpler, Instrument Rack** | **belum** |
 | Port C++: Utility, Auto Filter, EQ Three, Saturator (oversampler 4x), Compressor, Limiter, Echo, Reverb, Parametric EQ, Roar (`native/engine/fx*.{h,cpp}`) | selesai, identik bit (golden `fx-*`) |
-| **Port C++: efek lainnya (Autoduck, Level/Analyzer/MiniMeters, Stereolizer, Spacer, fx3/fx4/fx5/fx6, Audio Effect Rack; juga `tr` (posisi lagu) dan modulator di runChain C++)** | **belum** |
+| Port C++: seluruh fx3.js (Delay ... Spectrum, 16 efek, `fx3*.{h,cpp}`); engine C++ memanggil `tr()` untuk efek tersinkron bar | selesai, golden `fx-*` identik |
+| **Port C++: Autoduck, Level/Analyzer/MiniMeters, Stereolizer, Spacer, fx4 (Amp .. Looper), fx5 (Spectral), fx6 (modulator + Map), Audio Effect Rack** | **belum** |
+| Arrangement gaya gambar pemilik: klip warna penuh + isi gelap, fade klip audio + handle (seret), locator outline, garis track tebal, palet warna Live jenuh | selesai (`docs/redesign/40-*.jpg`) |
 | Drum Rack: chain per pad (instrumen + efek di pad, `pad.chain`; engine `DrumSynth.cmd/endBlock`, project `setPadChainInst / padChain*`, UI `padChainView` di fxkit.js, tes `tools/drumrack-test.mjs`) | selesai (`docs/redesign/39-drumrack-chain.png`) |
 | Ekspor WAV lewat engine native; angka CPU/underrun Web vs Native dari HP | belum |
 
