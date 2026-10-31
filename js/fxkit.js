@@ -1126,7 +1126,7 @@ const dsPanel = (k) => {
     g.fillStyle = DISPC.bl; g.fill(); label(g, def.name, w - 6, 12, DISPC.ink, 9, 'right');
   }, { onDown: () => { const i = k.ctx.i; P.noteEvent(i, 60, 0.9, true); setTimeout(() => P.noteEvent(i, 60, 0, false), 120); return false; } });
   const knobs = [], lists = [];
-  def.params.forEach((p, j) => { if (j === n - 1) return; if (p.fmt === 'list') lists.push(k.TL(p.n, k.CH(j, p.items, { cls: 'sm' }))); else if (p.fmt === 'onoff') lists.push(k.TL(p.n, k.T(j, p.n, { w: 52 }))); else knobs.push(k.K(j)); });
+  def.params.forEach((p, j) => { if (j === n - 1) return; if (p.fmt === 'list') lists.push(k.TL(p.n, k.CH(j, p.items, { cls: 'sm' }))); else if (p.fmt === 'onoff') lists.push(k.T(j, p.n, { w: 52 })); else knobs.push(k.K(j)); });
   return h('div', { class: 'lk-col lk-ds' }, k.dk(disp, lists.length ? h('div', { class: 'lk-row lk-sev' }, ...lists) : null), h('div', { class: 'lk-row lk-dsk' }, ...knobs, k.sep(), k.K(n - 1, { big: true })));
 };
 for (const t of [19, 20, 21, 22, 23, 24]) VI[t] = dsPanel;

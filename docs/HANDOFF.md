@@ -188,7 +188,13 @@ Permintaan pemilik: SEMUA efek dan instrumen diganti dengan set stok Ableton Liv
   `wavetablePanel` di liveinst.js tidak dipakai lagi (hanya cadangan untuk view 'lwavetable').
   **Simpler ditata ulang**: tab Controls = grid 3 x 2 (display di atas strip kontrolnya), tab Sample satu baris bawah, kedua tab sama ukuran
   (`docs/redesign/33-simpler-rapi.jpg`, CSS `.lk-simp/.lk-sgrid`). Pola grid ini (`.lk-dk` + `.lk-sev` + `.lk-shead`) dipakai untuk panel berikutnya.
-  Belum: Sampler (redesign), Drum Rack (redesign), Impulse, Electric, Collision,
+  **Sesi ini juga jadi**: Sampler (tata letak Live 12, `docs/redesign/37-*.jpg`), Drum Rack (pad 4 x 4 dengan M / ▶ / S, panel pad
+  terpilih), jendela mengambang (header kartu = bar judul jendela lewat `mergeHead` di floatwin.js, nama tampil sekali, tombol jendela
+  satu grup; `38-float.png`), instrumen baru: DS Kick / Snare / Tom / HH / Clap / FM (19..24, `js/engine/ds.js`), Electric 25, Tension 26,
+  Collision 27 (`js/engine/phys.js`), Impulse 28 (`js/engine/impulse.js`, 8 slot = zona 0..7, C3..G3, parameter slot 92 + k * 13 + f),
+  Granulator III 29 (`js/engine/granulator.js`, zona 0). Perbandingan: `docs/redesign/35-*.jpg`, `36-*.jpg`. Semua lulus inst-test.
+  Pola panel: `hitDisp()` di fxkit.js menggambar bunyi dari engine asli (render offline) - ketuk = audisi.
+  Belum: port C++ untuk semua instrumen / efek baru (engine native otomatis kembali ke Web), Drum Rack dengan chain per pad,
   Tension, Granulator III, DS Kick / Snare / Tom / HH / Clap / FM. Tipe instrumen lama tetap bisa dimuat (proyek lama).
 - Aturan: parameter baru selalu DITAMBAHKAN di akhir (indeks lama tetap), `migrate()` bila arti berubah; efek tanpa padanan Live 12 masuk
   'Lainnya (lama)'; native engine otomatis kembali ke engine web untuk device yang belum di-port.
