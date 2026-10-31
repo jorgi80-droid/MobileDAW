@@ -123,6 +123,10 @@ function shade(hex, k) {                 // darken a colour by k (0..1): clip ou
 // Right-edge resize of MIDI / drum / audio clips: pulling a clip longer than its content makes the content repeat (c.ll = repeat length)
 function applyLoop(c, ll0, len0, hadLl) {
   if (c.pts) return;
+  if (c.notes) {                                                    // pattern clip: only the clip length changes (by hand); the cycle and the notes stay
+    if (c.len === len0 && !hadLl && !c.cm) { delete c.ll; delete c.lp; return; }
+    c.cm = true; c.ll = ll0; P.normLoop(c); return;
+  }
   if (c.len === len0 && !hadLl) return;
   if (c.len === ll0 && !hadLl) { delete c.ll; delete c.lp; } else c.ll = ll0;
 }
@@ -193,8 +197,8 @@ function drawClip(t, c, y, hh) {
       const gx = x + g.o * view.ppt;
       if (gx > xe || gx + g.len * view.ppt < xs) continue;
       for (const n of c.notes) {
-        if (n.t >= g.len) continue;
-        const nx = gx + n.t * view.ppt, nw = Math.max(1.5, Math.min(n.d, g.len - n.t) * view.ppt - 0.5);
+        if (n.t < g.s || n.t >= g.s + g.len) continue;              // the piece of the cycle this repeat plays (g.s = where in the pattern it starts)
+        const nx = gx + (n.t - g.s) * view.ppt, nw = Math.max(1.5, Math.min(n.d, g.s + g.len - n.t) * view.ppt - 0.5);
         if (nx + nw < xs || nx > xe) continue;
         ctx.fillRect(nx, by + (hi - n.p) / span * (bh - nh) , nw, nh);
       }
@@ -211,7 +215,7 @@ function drawClip(t, c, y, hh) {
       ctx.fillStyle = shade(t.color, 0.7); ctx.fillRect(Math.round(x) + 1, bot - 7, 7, 7); ctx.fillRect(Math.round(x + w) - 8, bot - 7, 7, 7);   // Live's clip corner marks
     }
   }
-  if (c.ll > 0 && c.len > c.ll && w > 0) {                       // loop restarts: a notch in the title strip and a hairline through the body (Live's loop marks)
+  if (c.ll > 0 && (c.len > c.ll || c.lp > 0) && w > 0) {         // loop restarts: a notch in the title strip and a hairline through the body (Live's loop marks)
     for (const g of P.loopSegs(c)) {
       if (!g.o) continue; const gx = Math.round(x + g.o * view.ppt); if (gx < xs || gx > xe) continue;
       ctx.fillStyle = 'rgba(0,0,0,.22)'; ctx.fillRect(gx, y0 + hd, 1, h0 - hd);
@@ -853,6 +857,8 @@ function placeBar() {
   selbar.classList.toggle('hide', !!drag);
 }
 function clearSel() { if (!msel.size) return; msel.clear(); marq = null; updateBar(); invalidate(); }
+// canvas coordinates of a tick on track row i (UI tests drive real touches with it)
+export function probe(tick, i) { return { x: tx(tick), y: rowY(i) + rh(i) / 2, top: rowY(i) }; }
 export function openEditor() { if (hooks.openEditor) hooks.openEditor(); }   // the selected clip's editor (full screen)
 export function clearSelection() { const had = msel.size > 0; clearSel(); return had; }
 function selAll() {
@@ -1069,7 +1075,6 @@ function setup() {
       if (t.type === 'ruler') { drag = { k: 'rpend', a: snapT(t.tick), tick0: t.tick, p0: view.ppt }; return true; }   // direction decides: Live zoom (vertical) or time selection (horizontal)
       if (t.type === 'clip' && msel.has(t.c.id)) {                // group move / group resize of every picked clip
         checkpoint(); P.selectClip(t.i, t.c.id);
-        if (t.zone === 'left' && t.c.notes) P.bakeLoop(t.c, t.i);          // trimming the left edge of a looped clip: turn the repeats into real notes first
         if (t.zone === 'right' && stretchMode && state.tracks[t.i].kind === 'audio') { delete t.c.ll; delete t.c.lp; }
         drag = { ll0: P.patternLen(t.c, state.tracks[t.i].kind), had: t.c.ll > 0, lp0: t.c.lp || 0, looped: !!P.loopOf(t.c), k: t.zone === 'right' ? 'gresize' : 'gmove', t0: t.tick, refStart: t.c.start, refEnd: t.c.start + t.c.len, row0: rowAt(y0), items: selList().map(({ i, c }) => ({ i, cur: i, c, start: c.start, len: c.len, ll0: P.patternLen(c, state.tracks[i].kind), had: c.ll > 0 })) };
         return true;
@@ -1079,7 +1084,6 @@ function setup() {
       if (t.type === 'clip' && (t.zone === 'fadeIn' || t.zone === 'fadeOut')) { checkpoint(); drag = { k: t.zone, c: t.c, i: t.i }; return true; }
       if (t.type === 'clip') {
         checkpoint(); P.selectClip(t.i, t.c.id);
-        if (t.zone === 'left' && t.c.notes) P.bakeLoop(t.c, t.i);          // trimming the left edge of a looped clip: turn the repeats into real notes first
         if (t.zone === 'right' && stretchMode && state.tracks[t.i].kind === 'audio') { delete t.c.ll; delete t.c.lp; }
         drag = { ll0: P.patternLen(t.c, state.tracks[t.i].kind), had: t.c.ll > 0, lp0: t.c.lp || 0, looped: !!P.loopOf(t.c), k: t.zone === 'right' ? (stretchMode && state.tracks[t.i].kind === 'audio' ? 'stretch' : 'resize') : t.zone === 'left' ? 'resizeL' : 'move', c: t.c, i: t.i, start: t.c.start, len: t.c.len, off: t.tick - t.c.start, t0: t.tick,
           offset: t.c.offset || 0, notes: t.c.notes ? t.c.notes.map((n) => ({ ...n })) : null, pts: t.c.pts ? t.c.pts.map((n) => ({ ...n })) : null };
@@ -1176,8 +1180,8 @@ function setup() {
         c.start = ns; c.len = end - ns;
         if (isAudio && drag.looped) c.lp = (((drag.lp0 + shift) % c.ll) + c.ll) % c.ll;          // looped audio: the loop phase moves, the loop keeps repeating to the left
         else if (isAudio) c.offset = Math.max(0, drag.offset + shift / PPQ * 60 / state.bpm);
-        else if (drag.notes) {
-          c.notes = drag.notes.map((n) => { const t = n.t - shift; return t < 0 ? { ...n, t: 0, d: n.d + t } : { ...n, t }; }).filter((n) => n.d > 0);
+        else if (drag.notes) {                                       // pattern clip: the start moves inside the cycle (c.lp); no note is moved, cut or copied
+          const L = drag.ll0; c.ll = L; c.lp = (((drag.lp0 + shift) % L) + L) % L; c.cm = true; P.normLoop(c);
         } else if (drag.pts) c.pts = drag.pts.map((p) => ({ ...p, t: p.t - shift })).filter((p) => p.t >= 0 && p.t <= c.len);
         P.touchClips(drag.i); P.emit('notes');
       }

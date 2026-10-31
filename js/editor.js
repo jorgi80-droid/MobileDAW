@@ -99,7 +99,7 @@ function clampV(c) {
   v.ppt = clamp(v.ppt, 0.02, 1.5); v.keyH = clamp(v.keyH, 8, 44);
   const rows = (gridBottom() - RULER) / v.keyH;
   const room = Math.max(1, W - KEYS) / v.ppt;                                       // never scroll before the clip start; to the right the editor stays open 8 bars past the clip end
-  v.top = clamp(v.top, Math.min(rows - 1, NROWS()), NROWS()); v.x0 = clamp(v.x0, 0, Math.max(0, (c ? (c.pts ? c.len : c.len + 8 * BAR) : BAR) - room * (c && c.pts ? 0.5 : 0.85)));
+  v.top = clamp(v.top, Math.min(rows - 1, NROWS()), NROWS()); v.x0 = clamp(v.x0, 0, Math.max(0, (c ? (c.pts ? c.len : Math.max(winOf(c).E, contentEnd(c)) + 8 * BAR) : BAR) - room * (c && c.pts ? 0.5 : 0.85)));
 }
 
 // ------------------------------------------------------------------ drawing
@@ -139,21 +139,23 @@ function drawRoll(t, c) {
   const g = [60, 120, 240, 480, 960, 1920, 3840].find((x) => x * v.ppt >= 12) || 3840;
   gridLocal(g, (q, kd) => { if (kd === 2) return; ctx.fillStyle = kd === 1 ? C('#3a3a3f') : C('#303034'); ctx.fillRect(Math.round(px(q)), RULER, 1, gb - RULER); });
   ctx.fillStyle = C('#4c4c52'); barLinesLocal((q) => ctx.fillRect(Math.round(px(q)), RULER, 1, gb - RULER));   // bar lines per bar (7/8, 5/4 ...)
-  const ll = P.loopOf(c), ce = px(c.len);
-  if (ll) {                                                                        // looped clip: the repeats after the loop source, drawn as ghosts that follow every edit
+  // the editor shows the pattern source from its start; the clip is the window [lp, lp + len) over the repeating cycle
+  const { S: ll, lp, E } = winOf(c), ce = px(E);
+  if (lp > 0) { const a = px(lp); if (a > KEYS) { ctx.fillStyle = 'rgba(0,0,0,.26)'; ctx.fillRect(KEYS, RULER, Math.min(W, a) - KEYS, gb - RULER); } }   // before the clip start (left-trimmed / split clip)
+  if (E > ll) {                                                                    // looped clip: the repeats after the loop source, drawn as ghosts that follow every edit
     const le = px(ll); if (le < W) { ctx.fillStyle = 'rgba(0,0,0,.14)'; ctx.fillRect(Math.max(KEYS, le), RULER, Math.min(W, ce) - Math.max(KEYS, le), gb - RULER); }
     ctx.globalAlpha = 0.4;
-    for (let o = ll; o < c.len && px(o) < W; o += ll) {
+    for (let o = ll; o < E && px(o) < W; o += ll) {
       if (px(o + ll) < KEYS) continue;
       for (const n of c.notes) {
         if (n.t >= ll) continue;
-        const x = px(o + n.t), w = Math.max(3, Math.min(n.d, ll - n.t, c.len - o - n.t) * v.ppt), y = py(n.p) - v.keyH;
+        const x = px(o + n.t), w = Math.max(3, Math.min(n.d, ll - n.t, E - o - n.t) * v.ppt), y = py(n.p) - v.keyH;
         if (x + w < KEYS || x > W || y > gb || y + v.keyH < RULER) continue;
         ctx.fillStyle = velCol(t.color, n.v, false); ctx.fillRect(x, y + 1, w - 1, v.keyH - 1);
       }
     }
     ctx.globalAlpha = 1; ctx.fillStyle = t.color;
-    for (let o = ll; o < c.len; o += ll) { const x = Math.round(px(o)); if (x > W) break; if (x >= KEYS) ctx.fillRect(x, RULER, 1, gb - RULER); }   // loop restarts
+    for (let o = ll; o < E; o += ll) { const x = Math.round(px(o)); if (x > W) break; if (x >= KEYS) ctx.fillRect(x, RULER, 1, gb - RULER); }   // loop restarts
   }
   ctx.fillStyle = 'rgba(0,0,0,.26)'; if (ce < W) ctx.fillRect(Math.max(KEYS, ce), RULER, W - ce, gb - RULER);   // past the clip end: still open, a note there makes the clip longer
   if (tsel) { ctx.fillStyle = 'rgba(120,182,230,.18)'; ctx.fillRect(px(tsel.a), RULER, px(tsel.b) - px(tsel.a), gb - RULER); }
@@ -200,10 +202,10 @@ function drawRoll(t, c) {
 function drawEdRuler(t, c) {
   ctx.fillStyle = C('#2c2c2f'); ctx.fillRect(0, 0, W, RULER); ctx.fillStyle = C('#141415'); ctx.fillRect(0, RULER - 1, W, 1);
   ctx.save(); ctx.beginPath(); ctx.rect(KEYS, 0, W - KEYS, RULER); ctx.clip();
-  const L = contentEnd(c), a = Math.max(KEYS, px(0)), b = Math.min(W, px(L)), e = Math.min(W, px(c.len));
+  const { S: L, E: cend } = c.notes ? winOf(c) : { S: contentEnd(c), E: c.len }, a = Math.max(KEYS, px(0)), b = Math.min(W, px(L)), e = Math.min(W, px(cend));
   if (b > a) { ctx.fillStyle = t.color; ctx.fillRect(a, RULER - 6, b - a, 4); ctx.fillStyle = shadeC(t.color, 0.45); ctx.fillRect(a, RULER - 2, b - a, 1); }   // the loop brace: the content (loop source)
-  if (e > b && L < c.len) { ctx.globalAlpha = 0.4; ctx.fillStyle = t.color; ctx.fillRect(Math.max(KEYS, b), RULER - 5, e - Math.max(KEYS, b), 2); ctx.globalAlpha = 1; }   // the clip's repeats
-  if (L < c.len && px(L) >= KEYS && px(L) <= W) { const x = Math.round(px(L)); ctx.fillStyle = t.color; ctx.beginPath(); ctx.moveTo(x - 5, RULER - 7); ctx.lineTo(x + 1, RULER - 7); ctx.lineTo(x + 1, RULER - 1); ctx.closePath(); ctx.fill(); }   // loop end marker
+  if (e > b && L < cend) { ctx.globalAlpha = 0.4; ctx.fillStyle = t.color; ctx.fillRect(Math.max(KEYS, b), RULER - 5, e - Math.max(KEYS, b), 2); ctx.globalAlpha = 1; }   // the clip's repeats
+  if (L < cend && px(L) >= KEYS && px(L) <= W) { const x = Math.round(px(L)); ctx.fillStyle = t.color; ctx.beginPath(); ctx.moveTo(x - 5, RULER - 7); ctx.lineTo(x + 1, RULER - 7); ctx.lineTo(x + 1, RULER - 1); ctx.closePath(); ctx.fill(); }   // loop end marker
   ctx.fillStyle = C('#4a4a50'); gridLocal(BEAT, (q, kd) => { if (kd !== 2) ctx.fillRect(Math.round(px(q)), RULER - 9, 1, 3); });
   ctx.font = FONT(500, 10); ctx.textBaseline = 'middle';
   barLinesLocal((q, bi) => { const x = Math.round(px(q)); if (x < KEYS - 1) return; ctx.fillStyle = C('#6a6a70'); ctx.fillRect(x, 3, 1, RULER - 4); ctx.fillStyle = C('#b4b4ba'); ctx.fillText(String(bi + 1), x + 4, RULER / 2 - 2); });
@@ -350,8 +352,9 @@ function drawSteps(t, c) {
 
 let ov, octx, headPx = -1e9, headDirty = true;
 function headX(c, t, tick) {
-  if (t.kind === 'drum' && stepsMode()) { let rel = tick - c.clip.start; const ll = P.loopOf(c.clip); if (ll && rel >= 0 && rel <= c.clip.len) rel %= ll; return LANE_HEAD + (rel / STEP) * sv.stepW - sv.x0; }   // a looped pattern: the playhead runs round the source steps
-  return px(tick - c.clip.start);
+  const w = c.clip.notes ? winOf(c.clip) : { S: 0, lp: 0, E: c.clip.len }, rel = tick - c.clip.start + w.lp;   // clip time -> pattern time (left-trimmed clips start inside the cycle)
+  if (t.kind === 'drum' && stepsMode()) { let r = rel; if (w.S > 0 && w.E > w.S && r >= 0 && r <= w.E) r %= w.S; return LANE_HEAD + (r / STEP) * sv.stepW - sv.x0; }   // a looped pattern: the playhead runs round the source steps
+  return px(rel);
 }
 function drawHeadEd(c, t, tick) {
   octx.setTransform(dpr, 0, 0, dpr, 0, 0); octx.clearRect(0, 0, W, H);
@@ -372,9 +375,9 @@ export function frame() {
   if (stepEd(c, dt)) dirty = true;
   if (state.playing && cfg.follow && !drag && !stepsMode() && t.kind !== 'auto' && W > KEYS + 40) {
     // continuous follow (same behaviour as the arrangement): the roll scrolls under the playhead one device pixel at a time
-    const rel = P.currentTick() - c.clip.start, vis = (W - KEYS) / v.ppt, q = v.ppt * dpr;
-    const maxX = Math.max(0, c.clip.len - vis + 24 / v.ppt);                  // never scroll past the end of the clip; a clip that fits the view does not scroll at all
-    if (rel >= -1 && rel <= c.clip.len + 1 && maxX > 0) {
+    const w = c.clip.notes ? winOf(c.clip) : { lp: 0, E: c.clip.len }, rel = P.currentTick() - c.clip.start + w.lp, vis = (W - KEYS) / v.ppt, q = v.ppt * dpr;
+    const maxX = Math.max(0, w.E - vis + 24 / v.ppt);                         // never scroll past the end of the clip; a clip that fits the view does not scroll at all
+    if (rel >= w.lp - 1 && rel <= w.E + 1 && maxX > 0) {
       let target = v.x0;
       if (rel < v.x0 || rel > v.x0 + vis) target = rel - vis * 0.1; else if (rel > v.x0 + vis * 0.45) target = rel - vis * 0.45;
       target = Math.min(maxX, Math.max(0, Math.round(target * q) / q));
@@ -435,7 +438,9 @@ function guessMenu(notes, x, y) {
 // its loop source: every repeat follows the edit, and content growing past the loop length makes the loop longer (the clip grows when the loop
 // reaches the clip's own length).
 const MAX_BARS = 256;
-const contentEnd = (c) => (c.ll > 0 ? c.ll : c.len);   // the pattern: a looped clip repeats it, a trimmed clip shows only its start - the editor always edits all of it
+const contentEnd = (c) => (c.ll > 0 ? c.ll : c.len);
+// the clip as a window over the repeating pattern, in pattern ticks: S = cycle, lp = where the clip starts in it, E = where it ends (may be past S)
+const winOf = (c) => { const S = contentEnd(c), lp = c.ll > 0 ? (c.lp || 0) % S : 0; return { S, lp, E: lp + c.len }; };   // the pattern: a looped clip repeats it, a trimmed clip shows only its start - the editor always edits all of it
 // Pattern sizes: P.patternFor / P.patternBars (piano roll 1, 4, 8, 16 ... bars; drum step any whole number of bars).
 const maxEnd = () => MAX_BARS * BAR;
 // After every edit the pattern is measured again from the notes (it grows AND shrinks): a 4-bar pattern with a note added in bar 5 becomes
@@ -575,7 +580,7 @@ function rollHandlers() {
       } else if (t.type === 'lanehead') { const r = canvas.getBoundingClientRect(); laneChooser(r.left + x, r.top + y); }
       else if (t.type === 'lane') { checkpoint(); if (laneSet(c, x, y)) changed(); ccLast = null; }
       else if (t.type === 'rsel') { if (tsel) timeMenu(x); }
-      else if (t.type === 'ruler') { tsel = null; P.seekTo(Math.max(0, cur().clip.start + snapT(t.tick))); invalidate(); }
+      else if (t.type === 'ruler') { tsel = null; const cl = cur().clip; P.seekTo(Math.max(0, cl.start + snapT(t.tick) - (cl.notes ? winOf(cl).lp : 0))); invalidate(); }
     },
     long(x, y, t) {
       if (t.type === 'note') {
@@ -940,16 +945,28 @@ function buildProps() {
     h('button', { class: 'cp-name', 'aria-label': 'Ganti nama klip', onclick: () => ask('Nama klip', name, (x) => { checkpoint(); cl.name = String(x || '').trim().slice(0, 40); P.emit('clips'); }) }, name),
     h('button', { class: 'cp-hide', 'aria-label': 'Sembunyikan panel properti', onclick: () => setPanel(false) }, '◂'))];
   // ---- Clip box
-  const sg = P.sigAtTick(cl.start), lenMenu = (x, y) => menu([...[1, 2, 4, 8].map((b) => ({ label: b + ' bar', check: cl.len === clipBars(cl, b), fn: () => { checkpoint(); cl.len = clipBars(cl, b); trimToLen(cl); P.clipChanged(c.track); P.emit('clips'); } })),
-    { label: 'Ketik panjang (beat)…', fn: () => ask('Panjang klip (beat)', String(Math.round(cl.len / BEAT * 100) / 100), (x2) => { if (Number.isFinite(x2) && x2 >= 0.25 && x2 <= 512) { checkpoint(); cl.len = Math.max(P.PPQ / 4, Math.round(x2 * BEAT)); trimToLen(cl); P.clipChanged(c.track); P.emit('clips'); } else toast('Panjang harus 0,25 sampai 512 beat.'); }, 'number') }], x, y);
+  // Panjang = the clip length (as resizing it in the arrangement): a pattern clip keeps its cycle and every note, the clip only shows
+  // more repeats or fewer; automation clips are cut at the new end as before
+  let ll0 = 0;
+  const setLen = (nl) => { if (cl.notes) P.setClipLength(cl, nl, ll0 || P.patternOf(cl)); else cl.len = nl; };
+  const sg = P.sigAtTick(cl.start), lenMenu = (x, y) => menu([...[1, 2, 4, 8].map((b) => ({ label: b + ' bar', check: cl.len === clipBars(cl, b), fn: () => { checkpoint(); ll0 = 0; setLen(clipBars(cl, b)); trimToLen(cl); P.clipChanged(c.track); P.emit('clips'); } })),
+    { label: 'Ketik panjang (beat)…', fn: () => ask('Panjang klip (beat)', String(Math.round(cl.len / BEAT * 100) / 100), (x2) => { if (Number.isFinite(x2) && x2 >= 0.25 && x2 <= 512) { checkpoint(); ll0 = 0; setLen(Math.max(P.PPQ / 4, Math.round(x2 * BEAT))); trimToLen(cl); P.clipChanged(c.track); P.emit('clips'); } else toast('Panjang harus 0,25 sampai 512 beat.'); }, 'number') }], x, y);
   const editable = !!cl.notes || kind === 'auto';
-  const lenBox = editable ? numBox({ get: () => Math.round(cl.len / BEAT), set: (b) => { cl.len = Math.max(BEAT, b * BEAT); P.clipChanged(c.track); }, fmt: () => lenTxt(cl.len, cl.start), min: 1, max: 512, px: 7, begin: () => checkpoint(), end: () => { trimToLen(cl); P.clipChanged(c.track); P.emit('clips'); }, tap: lenMenu }) : val(lenTxt(cl.len, cl.start));
+  const lenBox = editable ? numBox({ get: () => Math.round(cl.len / BEAT), set: (b) => { setLen(Math.max(BEAT, b * BEAT)); P.clipChanged(c.track); }, fmt: () => lenTxt(cl.len, cl.start), min: 1, max: 512, px: 7, begin: () => { checkpoint(); ll0 = cl.notes ? P.patternOf(cl) : 0; }, end: () => { ll0 = 0; trimToLen(cl); P.clipChanged(c.track); P.emit('clips'); }, tap: lenMenu }) : val(lenTxt(cl.len, cl.start));
+  // Pattern = the cycle (manual length): piano roll 1, 4, 8, 16 ... bars, drum step any number of bars; never shorter than the notes need.
+  // "Otomatis" = from the notes only (the base goes back to 1 bar).
+  const patBars = kind === 'drum' ? [1, 2, 3, 4, 6, 8, 12, 16] : P.PATTERN_BARS.filter((b) => b <= 256);
+  const patMenu = (x, y) => menu([{ label: 'Otomatis (dari not)', fn: () => { checkpoint(); P.setPatternBase(c.track, cl.id, clipBars(cl, 1)); buildProps(); invalidate(); } }, { sep: true },
+    ...patBars.map((b) => ({ label: b + ' bar', check: P.patternOf(cl) === clipBars(cl, b), fn: () => { checkpoint(); P.setPatternBase(c.track, cl.id, clipBars(cl, b)); if (P.patternOf(cl) !== clipBars(cl, b)) toast('Not di pattern butuh lebih panjang: ' + lenTxt(P.patternOf(cl), cl.start) + '.', 2200); buildProps(); invalidate(); } })),
+    ...(kind === 'drum' ? [{ label: 'Ketik jumlah bar…', fn: () => ask('Panjang pattern (bar)', String(Math.round(P.patternOf(cl) / P.barLenAt(cl.start))), (b) => { if (Number.isFinite(b) && b >= 1 && b <= 256) { checkpoint(); P.setPatternBase(c.track, cl.id, clipBars(cl, Math.round(b))); buildProps(); invalidate(); } else toast('Panjang pattern 1 sampai 256 bar.'); }, 'number') }] : [])], x, y);
+  const patRow = cl.notes && (kind === 'midi' || kind === 'drum') ? row('Pattern', ch(lenTxt(P.patternOf(cl), cl.start), patMenu)) : null;
   const own = cl.swing != null && cl.swing >= 0, setSw = (x) => { checkpoint(); if (x == null) delete cl.swing; else cl.swing = x; P.clipChanged(c.track); buildProps(); };
   const ll = cl.notes ? P.loopOf(cl) : 0;
   kids.push(sec('Clip',
     row('Signature', val(sg.n + ' / ' + sg.d)),
     row('Posisi', val(posTxt(cl.start))),
     row('Panjang', lenBox),
+    patRow,
     ll ? row('Loop', val(lenTxt(ll, cl.start) + ' \u00D7' + (Math.round(cl.len / ll * 10) / 10))) : null,
     ll ? h('div', { class: 'cp-line' }, btn('Lepas loop', () => { checkpoint(); P.bakeLoop(cl, c.track); P.emit('clips'); refresh(); toast('Pengulangan jadi not biasa (bisa diedit satu per satu).', 2200); })) : null,
     cl.notes ? row('Groove', ch(Math.round(P.swingOf(cl) * 100) + '%' + (own ? '' : ' global'), (x, y) => menu([
@@ -1026,9 +1043,9 @@ function buildProps() {
   if (kind === 'audio') kids.push(...AE.panel({ sec, row, val, ch, sw, btn }), sec('Sample', row('File', val(((cl.dsample || cl.sample) || {}).name || '-'))));   // Audio / Pitch / Warp / Region boxes
   props.replaceChildren(h('div', { class: 'cp-in' }, ...kids));
 }
-function trimToLen(cl) {                                     // after a length change: notes / points past the new end go (the change is one undo step)
+function trimToLen(cl) {                                     // after a length change: automation points past the new end go (one undo step); pattern clips keep every note
+  if (cl.notes) { P.normLoop(cl); return; }
   if (cl.ll && cl.ll >= cl.len) { delete cl.ll; delete cl.lp; }   // shortened to (or below) its loop: not looped any more
-  if (cl.notes) cl.notes = cl.notes.filter((n) => n.t < cl.len);
   if (cl.pts) { cl.pts = cl.pts.filter((q) => q.t <= cl.len); if (!cl.pts.length) cl.pts = [{ t: 0, v: 0.5 }]; }
 }
 
@@ -1139,4 +1156,6 @@ export const KEY_NAMES = NAMES;
 export const SCALE_NAMES = Object.keys(SCALES);
 export const getTheory = () => ({ key: cfg.key, scale: cfg.scale });
 export const scaleSteps = () => SCALES[cfg.scale] || null;   // semitones of the Clip View scale from its key, null = chromatic (Keys tab highlight)
+// overlay coordinates of pattern tick t / pitch p in the piano roll (UI tests drive real touches with it)
+export function probe(t, p) { return { x: px(t), y: py(p) - v.keyH / 2 }; }
 export function setTheory(key, scale) { if (key !== undefined) cfg.key = key; if (scale !== undefined) { cfg.scale = scale; if (SCALES[scale]) cfg.lastScale = scale; } buildProps(); invalidate(); }

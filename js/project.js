@@ -172,42 +172,88 @@ export function contentLen(c, kind) {
   }
   return c.len;
 }
-// Loop length used when a clip is dragged longer in the arrangement (same in every DAW): the pattern length in whole bars. A clip trimmed
-// shorter keeps its pattern length (c.ll), so dragging it out again repeats the whole pattern, not the trimmed part.
-// Pattern sizes (FL Studio Mobile): a piano-roll pattern is 1, 4, 8, 16, 32 ... bars - 2 or 3 bars of notes make a 4-bar pattern (the
-// rest of it is silent), a note in bar 5 makes it 8 bars. A drum-step pattern is any whole number of bars (1, 2, 3 ...).
+// ------------------------------------------------------------------ pattern clips (MIDI / drum)
+// Four separate things (none of them is derived from another one by accident):
+//   pattern data      c.notes / c.cc: the source. Looping never copies it; playback reads it again in every cycle.
+//   source length     patternOf(c) = c.ll when set, else c.len: one cycle of the pattern (where it repeats).
+//   clip length       c.len: the instance in the arrangement; it may end anywhere inside a cycle.
+//   loop position     c.lp: where in the cycle the clip starts (left-trimmed / split clips). For a point `local` ticks into the clip the
+//                     pattern plays sourcePos = (local + lp) % sourceLength (loopSegs() hands that out as pieces).
+// Auto vs manual length:
+//   c.pb  base length of the pattern (ticks): its length when it was made, or the length the person picked in the Clip panel. The auto
+//         length never goes below it, so a 4-bar pattern that grew to 8 for a note in bar 5 returns to 4 when that note is deleted, and
+//         empty bars that are part of a sequence stay.
+//   c.cm  the clip length was set by hand (arrangement resize / trim, Clip panel): note edits never change c.len, only the cycle.
+// Pattern sizes: a piano-roll cycle is 1, 4, 8, 16, 32 ... 1024 bars (2 or 3 bars of notes make a 4-bar cycle, the rest of it silent); a
+// drum-step cycle is any whole number of bars (1, 2, 3 ...).
 export const PATTERN_BARS = [1, 4, 8, 16, 32, 64, 128, 256, 512, 1024];
 export function patternBars(nb, kind) { nb = Math.max(1, Math.ceil(nb)); return kind === 'drum' ? nb : (PATTERN_BARS.find((k) => k >= nb) || nb); }
-// length in ticks of the pattern that holds content up to `end` ticks into clip c
+// length in ticks of the pattern that holds content up to `end` ticks into clip c (bars counted from the clip start: time signatures apply)
 export function patternFor(c, kind, end) {
   const b0 = barAt(c.start), nb = end > 0 ? barAt(c.start + end - 1) - b0 + 1 : 1;
   return barStart(b0 + patternBars(nb, kind)) - c.start;
 }
-export const notesEnd = (notes) => { let e = 0; for (const n of notes) if (n.t + n.d > e) e = n.t + n.d; return e; };
-// After every note edit the pattern is measured again from the notes (it grows AND shrinks): a 4-bar pattern with a note added in bar 5
-// becomes 8 bars, and 4 again when that note is deleted. A clip showing exactly its pattern follows it; a looped clip keeps its length and
-// repeats the new pattern (it grows when the pattern outgrows it); a trimmed clip keeps showing its start. Returns true when anything changed.
+export const notesEnd = (notes) => { let e = 0; for (const n of notes || []) if (n.t + n.d > e) e = n.t + n.d; return e; };
+const ccEnd = (c) => { let e = 0; for (const l of c.cc || []) for (const q of l.pts) if (q.t > e) e = q.t; return e; };
+export const patternOf = (c) => (c.ll > 0 ? c.ll : c.len);
+export const isPatternClip = (c, kind) => !!c.notes && (kind === 'midi' || kind === 'drum');
+// hand-sized clip: the flag, or a clip saved before the flag existed that was resized / trimmed (its loop length differs from its length)
+export const clipManual = (c) => !!c.cm || (c.ll > 0 && c.ll !== c.len) || (c.lp || 0) > 0;
+// projects saved before c.pb: piano roll starts from 1 bar (its cycle comes from the notes), a drum sequence keeps the length it has
+function basePattern(c, kind) { if (!(c.pb > 0)) c.pb = kind === 'drum' ? patternOf(c) : patternFor(c, kind, 1); return c.pb; }
+// the auto length: the base, grown to hold every note / controller point, rounded to the pattern sizes of the editor
+export function autoPattern(c, kind) { return patternFor(c, kind, Math.max(basePattern(c, kind), notesEnd(c.notes), ccEnd(c))); }
+// keep the stored fields minimal: c.ll / c.lp only when they say something (old project files read the same)
+export function normLoop(c) {
+  if (c.ll > 0 && c.lp) c.lp = ((c.lp % c.ll) + c.ll) % c.ll;
+  if (!c.lp) delete c.lp;
+  if (c.ll > 0 && c.ll === c.len && !c.lp) delete c.ll;
+  if (!(c.ll > 0)) { delete c.ll; delete c.lp; }
+}
+// set the source length of a pattern clip: a clip that follows its pattern changes length with it, a hand-sized clip keeps its length
+function setPattern(c, nl) {
+  if (clipManual(c)) { c.cm = true; c.ll = nl; } else { c.len = nl; delete c.ll; delete c.lp; }
+  normLoop(c);
+}
+// After every note edit: measure the auto length again (it grows AND shrinks). Returns true when the cycle or the clip length changed.
 export function fitPattern(c, kind, max = Infinity) {
-  if (!c.notes || (kind !== 'midi' && kind !== 'drum')) return false;
-  const ll = c.ll > 0 ? c.ll : 0, old = ll || c.len, nl = Math.min(max, patternFor(c, kind, notesEnd(c.notes)));
+  if (!isPatternClip(c, kind)) return false;
+  const old = patternOf(c), nl = Math.min(max, autoPattern(c, kind));
   if (nl === old) return false;
-  if (!ll) c.len = nl;                                                            // the clip shows exactly the pattern: both change together
-  else if (c.len > ll && nl >= c.len) { c.len = nl; delete c.ll; delete c.lp; }   // looped clip whose pattern outgrows it: the clip grows, the loop ends
-  else { c.ll = nl; if (c.ll === c.len) { delete c.ll; delete c.lp; } }           // looped / trimmed clip: only the pattern changes, the clip keeps its length
+  setPattern(c, nl);
   return true;
 }
-// Loop length used when a clip is dragged longer (patternLen): a clip that is not looped yet is its own pattern, rounded up to a pattern size.
+// Manual pattern length (Clip panel): the base becomes `len`; the cycle never cuts notes off (content past it keeps the cycle longer).
+export function setPatternBase(i, id, len) {
+  const t = state.tracks[i], c = t && t.clips.find((x) => x.id === id);
+  if (!c || !isPatternClip(c, t.kind) || !(len > 0)) return false;
+  c.pb = len; const nl = autoPattern(c, t.kind);
+  if (nl !== patternOf(c)) setPattern(c, nl);
+  syncClips(i); emit('clips'); emit('notes');
+  return true;
+}
+// Clip length by hand (arrangement resize, Clip panel): only c.len changes; the cycle is kept (c.ll), no note is added, moved or removed.
+export function setClipLength(c, len, ll0) {
+  const ll = ll0 > 0 ? ll0 : patternOf(c);
+  c.len = len; c.cm = true;
+  if (c.notes) { c.ll = ll; normLoop(c); }
+}
+// Loop length used when a clip is dragged longer in the arrangement: the cycle of a pattern clip (a clip that follows its pattern: the
+// pattern size that holds it), the content of an audio clip.
 export function patternLen(c, kind) {
   if (c.ll > 0 || !c.notes) return contentLen(c, kind);
+  if (kind !== 'midi' && kind !== 'drum') return c.len;
+  if (clipManual(c)) return c.len;
   return patternFor(c, kind, Math.max(c.len, notesEnd(c.notes)));
 }
-// Turn the repeats of a looped MIDI clip into real notes (needed before anything edits the clip's inside: split, left-trim, piano roll).
+// Unlink: turn the repeats of a looped clip into real notes (only on request: "Lepas loop" / "Unlink Loop", "Ulangi"). The clip then
+// shows exactly its new notes.
 export function bakeLoop(c, i) {
-  const ll = loopOf(c);
-  if (!ll || !c.notes) { if (c.ll) delete c.ll; return false; }
-  const src = c.notes.filter((n) => n.t < ll).map((n) => ({ ...n, d: Math.min(n.d, ll - n.t) })), out = [];
-  for (let o = 0; o < c.len; o += ll) for (const n of src) { if (o + n.t < c.len) out.push({ ...n, t: o + n.t, d: Math.min(n.d, c.len - o - n.t) }); }
-  c.notes = out; delete c.ll;
+  if (!c.notes || !(loopOf(c) || (c.ll > 0 && c.lp > 0))) return false;
+  const segs = loopSegs(c), out = [];
+  for (const g of segs) for (const n of c.notes) if (n.t >= g.s && n.t < g.s + g.len) out.push({ ...n, t: g.o + n.t - g.s, d: Math.min(n.d, g.s + g.len - n.t) });
+  if (c.cc) for (const l of c.cc) { const pts = []; for (const g of segs) for (const q of l.pts) if (q.t >= g.s && q.t <= g.s + g.len) pts.push({ ...q, t: g.o + q.t - g.s }); l.pts = pts; }
+  c.notes = out; delete c.ll; delete c.lp; c.pb = c.len; c.cm = true;
   if (i !== undefined) syncClips(i);
   return true;
 }
@@ -225,9 +271,10 @@ export function repeatClipContent(i, id, n) {
   const t = state.tracks[i], c = t && t.clips.find((x) => x.id === id);
   if (!c || !c.notes) return { error: 'Klip ini tidak punya not.' };
   n = Math.max(2, Math.min(64, n | 0)); bakeLoop(c, i);
-  const base = c.len, src = c.notes.map((x) => ({ ...x })), out = [];
+  const base = c.len, src = c.notes.filter((x) => x.t < base).map((x) => ({ ...x, d: Math.min(x.d, base - x.t) })), out = [];   // what the clip plays (a trimmed clip: only its visible part)
+  delete c.ll; delete c.lp;
   for (let k = 0; k < n; k++) for (const x of src) out.push({ ...x, t: x.t + k * base });
-  c.notes = out; c.len = base * n;
+  c.notes = out; c.len = base * n; c.pb = c.len;
   syncClips(i); emit('clips'); emit('notes');
   return { ok: true };
 }
@@ -268,32 +315,40 @@ export function syncClips(i) {
   } else {
     for (const c of t.clips) {
       if (c.muted) continue;
-      const ll = loopOf(c), reps = ll ? Math.min(512, Math.ceil(c.len / ll)) : 1, xp = t.kind === 'drum' ? 0 : (c.xpose | 0);   // longer than its content: the notes loop; xpose = clip transpose (semitones, playback only)
-      for (let k = 0; k < reps; k++) {
-        const o = ll ? k * ll : 0, lim = ll ? Math.min(ll, c.len - o) : c.len;
-        for (const nt of c.notes) {
-          if (nt.t >= lim) continue;
-          const sw = swingShift(c, o + nt.t);
-          f.push(c.start + o + nt.t + sw, Math.min(nt.d, lim - nt.t), xp ? Math.max(0, Math.min(127, nt.p + xp)) : nt.p, nt.v, nt.pan || 0);
-          n++;
-        }
-      }
+      n += clipNoteEvents(c, t.kind, f);
     }
     eng.trackNotes(i, f, n);
     const cf = []; let cn = 0;                                   // controller lanes (pitch bend, CC7 / 10 / 11) of the clips
     const KIND = { bend: 0, 7: 1, 10: 2, 11: 3 };
     for (const c of t.clips) {
       if (c.muted || !c.cc) continue;
-      const ll = loopOf(c), reps = ll ? Math.min(512, Math.ceil(c.len / ll)) : 1;
+      const segs = loopSegs(c);
       for (const l of c.cc) {
         const kd = l.k === 'bend' ? 0 : KIND[l.n]; if (kd === undefined) continue;
-        for (let k = 0; k < reps; k++) { const o = ll ? k * ll : 0, lim = ll ? Math.min(ll, c.len - o) : c.len; for (const q of l.pts) if (q.t <= lim) { cf.push(c.start + o + q.t, kd, q.v); cn++; } }
+        for (const g of segs) for (const q of l.pts) if (q.t >= g.s && q.t <= g.s + g.len) { cf.push(c.start + g.o + q.t - g.s, kd, q.v); cn++; }
       }
     }
     eng.trackCC(i, cf, cn);
   }
 }
 
+// The note events a pattern clip plays (appended to `f` as start, length, pitch, velocity, pan; returns the count). One event per note per
+// cycle, read from the source: sourcePos = (local + lp) % cycle. A note sounds in a piece of the clip when it starts inside that piece and
+// is cut at the piece end (cycle end / clip end), so nothing hangs over into the next cycle and nothing triggers twice.
+export function clipNoteEvents(c, kind, f = []) {
+  let n = 0;
+  const xp = kind === 'drum' ? 0 : (c.xpose | 0);   // xpose = clip transpose (semitones, playback only)
+  for (const g of loopSegs(c)) {
+    const e = g.s + g.len;
+    for (const nt of c.notes) {
+      if (nt.t < g.s || nt.t >= e) continue;
+      const at = g.o + nt.t - g.s, sw = swingShift(c, at);
+      f.push(c.start + at + sw, Math.min(nt.d, e - nt.t), xp ? Math.max(0, Math.min(127, nt.p + xp)) : nt.p, nt.v, nt.pan || 0);
+      n++;
+    }
+  }
+  return n;
+}
 const dirty = new Set();
 let pending = false;
 // Drags can produce hundreds of edits per second; the engine only needs the latest state once per frame.
@@ -927,7 +982,7 @@ export function addClip(i, start, len) {
   if (!t || t.kind === 'audio') return null;
   if (!(len > 0)) len = barLenAt(Math.max(0, start));          // default: one bar of the signature that is active there
   const c = { id: uid(), start: Math.max(0, start), len, name: '' };
-  if (t.kind === 'auto') { const v = autoCurrent(t); c.pts = [{ t: 0, v }, { t: len, v }]; } else c.notes = [];
+  if (t.kind === 'auto') { const v = autoCurrent(t); c.pts = [{ t: 0, v }, { t: len, v }]; } else { c.notes = []; c.pb = len; }   // pb: the pattern's base length
   t.clips.push(c);
   syncClips(i);
   selectClip(i, c.id);
@@ -1017,7 +1072,12 @@ export function splitClip(i, id, tick) {
   const c = t.clips.find((x) => x.id === id);
   if (!c || tick <= c.start || tick >= c.start + c.len) return;
   const cut = tick - c.start;
-  if (c.notes) bakeLoop(c);
+  if (c.notes && (c.ll > 0 || c.lp > 0)) {   // a pattern clip that loops / is trimmed: both halves keep the same pattern and cycle, the right half starts later in it
+    const ll = patternOf(c), right = JSON.parse(JSON.stringify(c));
+    Object.assign(right, { id: uid(), start: tick, len: c.len - cut, ll, lp: ((c.lp || 0) + cut) % ll, cm: true });
+    c.len = cut; c.ll = ll; c.cm = true; normLoop(c); normLoop(right);
+    t.clips.push(right); syncClips(i); emit('clips'); return;
+  }
   if (t.kind === 'audio' && loopOf(c)) {   // a looped audio clip: both halves keep the repeating pattern in phase
     const ll = c.ll, right = { ...c, id: uid(), start: tick, len: c.len - cut, fadeIn: 0, lp: ((c.lp || 0) + cut) % ll };
     if (c.warp) right.warp = { ...c.warp };
@@ -1044,13 +1104,13 @@ export function splitClip(i, id, tick) {
     syncClips(i); emit('clips');
     return;
   }
-  const right = { id: uid(), start: tick, len: c.len - cut, notes: [], name: c.name };
+  const right = { id: uid(), start: tick, len: c.len - cut, notes: [], name: c.name, pb: c.len - cut, cm: true };   // a plain clip: its notes go to the half they start in
   c.notes = c.notes.filter((n) => {
     if (n.t >= cut) { right.notes.push({ ...n, t: n.t - cut }); return false; }
     if (n.t + n.d > cut) n.d = cut - n.t;
     return true;
   });
-  c.len = cut;
+  c.len = cut; c.pb = cut; c.cm = true;
   t.clips.push(right);
   syncClips(i);
   emit('clips');

@@ -24,7 +24,7 @@ const miss = web.filter((f) => !assets.has(f)), gone = [...assets].filter((a) =>
 if (miss.length || gone.length) { bad++; console.log('not in ASSETS: ' + miss.join(', ') + (gone.length ? ' | listed but missing: ' + gone.join(', ') : '')); }
 console.log(`${miss.length || gone.length ? 'FAIL' : 'ok  '} sw.js ASSETS lists every web file`);
 // 3. the tests
-for (const t of ['browser-test', 'clipview-test', 'header-test', 'combine-test', 'dsp-quality-test', 'presets-test', 'drumrack-test']) run(t, ['tools/' + t + '.mjs']);
+for (const t of ['browser-test', 'clipview-test', 'pattern-test', 'header-test', 'combine-test', 'dsp-quality-test', 'presets-test', 'drumrack-test']) run(t, ['tools/' + t + '.mjs']);
 run('fx-test (every effect: no dummy parameters, no NaN)', ['tools/fx-test.mjs']);
 run('inst-test (every Live 12 instrument: no dummy parameters, no NaN)', ['tools/inst-test.mjs']);
 // 4. wavetable tables: sliced build must equal the all-at-once build

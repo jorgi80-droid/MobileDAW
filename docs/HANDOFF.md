@@ -126,16 +126,34 @@ Baca juga `README-ANDROID.md` (build, install, status fase 2).
 - Toolbar hanya: Browser, Tempo, Undo/Redo | Play/Pause, Rekam, Metronom | FPS+CPU, Arrange/Mixer, menu.
 - Klip yang dipilih tidak boleh ikut buram saat ada popup aksi klip.
 
-## Panjang pattern & loop (aturan pemilik, gaya FL Studio Mobile)
-- Ukuran pattern **piano roll** = 1, 4, 8, 16, 32 ... 1024 bar (`P.PATTERN_BARS`): not di bar 1 saja = 1 bar; isi 2 atau 3 bar = pattern 4 bar
-  (sisa bar diam); not di bar 5 = 8 bar; bar 9 = 16 bar. Pattern **drum step** = jumlah bar isi apa saja (1, 2, 3 ...). `P.patternBars()` / `P.patternFor()`.
-- Setelah SETIAP edit not (tambah, hapus, geser, ubah panjang, step) pattern diukur ulang: `P.fitPattern(c, kind)` (dipanggil dari `changed()`
-  dan drag di `js/editor.js`). Pattern bisa tumbuh DAN menyusut (4 -> not di bar 5 -> 8 -> not dihapus -> 4). Klip yang tepat sepanjang
-  pattern ikut berubah; klip ber-loop (ditarik lebih panjang) tetap panjangnya dan mengulang pattern baru (`c.ll`), kecuali pattern melewati
-  panjang klip (loop selesai, klip memanjang); klip terpotong tetap menampilkan awalnya.
-- Klip yang ditarik lebih panjang di arrangement mengulang pattern itu (`P.patternLen(c)` = ukuran pattern dari panjang klip + isi):
-  pattern 4 bar ditarik ke 8 = bar 5-8 mengulang bar 1-4; pattern 8 ke 16 = mengulang dari bar 9. Klip yang dipotong menyimpan `c.ll`.
-  Tes: bagian "pattern sizes" di `tools/clipview-test.mjs`.
+## Pattern clip (MIDI / drum): model data, panjang, pengulangan (audit + perbaikan sesi ini)
+Empat hal terpisah (project.js, blok "pattern clips"):
+- **Data pattern** `c.notes` / `c.cc` = sumber; pengulangan TIDAK pernah menyalinnya. Hanya "Lepas loop" / "Unlink Loop" / "Ulangi" (atas
+  permintaan) yang mengubah pengulangan menjadi not biasa (`bakeLoop`, sekarang ikut `c.lp` dan lane CC).
+- **Panjang sumber (siklus)** `P.patternOf(c)` = `c.ll` bila ada, kalau tidak `c.len`.
+- **Panjang klip** `c.len` (instance di arrangement; boleh berakhir di tengah siklus).
+- **Posisi loop** `c.lp` = di mana klip mulai di dalam siklus (trim kiri / split). Pemutaran: `sourcePos = (local + lp) % siklus`.
+  `P.loopSegs(c)` memberi potongan-potongannya; `P.clipNoteEvents(c, kind, f)` = daftar event yang dikirim `syncClips` ke engine JS dan C++
+  (satu event per not per siklus, dipotong di akhir siklus / klip: tidak ada not menggantung atau terpicu dua kali). Engine tidak diubah:
+  ia tetap menerima daftar event datar (identik dengan algoritma lama untuk klip tanpa `lp`, dites pada 300 klip acak).
+Auto vs manual:
+- `c.pb` = panjang dasar pattern (saat dibuat, atau dipilih di baris **Pattern** panel Clip). Panjang otomatis = `P.autoPattern(c)` =
+  dasar yang tumbuh untuk memuat semua not / titik CC, dibulatkan: piano roll 1, 4, 8, 16 ... 1024 bar (`P.PATTERN_BARS`), drum step bar
+  bulat apa saja. `P.fitPattern(c, kind)` dipanggil setelah SETIAP edit not (tumbuh DAN menyusut, tidak pernah di bawah dasar, tidak
+  memindah / menghapus not; bar kosong di tengah tetap).
+- `c.cm` = panjang klip diatur tangan (resize kanan/kiri, grup, panel "Panjang"; `P.setClipLength`). Klip manual tidak pernah dipendekkan /
+  dipanjangkan oleh edit not, hanya siklusnya (`c.ll`) yang berubah. Klip tanpa `cm` mengikuti pattern-nya (len = siklus).
+- Proyek lama tanpa `pb`: piano roll mulai dari 1 bar (siklus dari not), drum memakai panjang yang dimilikinya (`basePattern`). Klip lama
+  dengan `ll != len` atau `lp` dianggap manual (`P.clipManual`).
+- Panel Clip: "Panjang" = panjang klip (tidak lagi menghapus not di luar panjang baru untuk klip pattern), "Pattern" = panjang siklus manual
+  (menu ukuran yang sah; "Otomatis (dari not)" = dasar 1 bar), "Loop" = siklus x pengulangan, "Lepas loop".
+- Arrangement: resize kanan/kiri/grup hanya mengubah `len` (+ `lp` untuk trim kiri), snap seperti biasa; trim kiri dan split klip ber-loop
+  tidak lagi melakukan `bakeLoop`. Split klip biasa (tanpa loop) tetap membagi not ke kedua bagian seperti dulu.
+- Editor: menampilkan sumber dari 0; klip = jendela `[lp, lp + len)` (`winOf()`), pengulangan sebagai ghost, playhead / follow / seek ikut `lp`.
+- Tes: `tools/pattern-test.mjs` (di run-tests; semua kasus spesifikasi + regresi), `tools/pattern-ui-test.mjs` (Chromium emulasi Pixel 7,
+  sentuhan nyata; butuh Playwright + Chromium, tidak di CI), bagian "pattern sizes" di `tools/clipview-test.mjs`.
+- Uji UI: `TL.probe(tick, track)` dan `ED.probe(tick, pitch)` memberi koordinat layout; kirim PointerEvent `pointerType: 'touch'` dengan
+  koordinat x `emuK()` (shim skala UI membaginya kembali).
 
 ## Perangkat Live 12 (efek + instrumen) - status pekerjaan
 Permintaan pemilik: SEMUA efek dan instrumen diganti dengan set stok Ableton Live 12, tampilan harus sama dengan gambar referensi

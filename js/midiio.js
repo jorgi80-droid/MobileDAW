@@ -29,13 +29,12 @@ export function buildProjectMidi() {
     const notes = [], lanes = new Map();
     for (const c of t.clips) {
       if (c.muted) continue;
-      const ll = P.loopOf(c), reps = ll ? Math.min(512, Math.ceil(c.len / ll)) : 1;
-      for (let k = 0; k < reps; k++) {
-        const o = ll ? k * ll : 0, lim = ll ? Math.min(ll, c.len - o) : c.len;
-        for (const n of c.notes || []) if (n.t < lim) notes.push({ t: c.start + o + n.t, d: Math.min(n.d, lim - n.t), p: n.p, v: n.v });
+      for (const g of P.loopSegs(c)) {                              // the same cycles the engine plays (sourcePos = (local + lp) % cycle)
+        const e = g.s + g.len;
+        for (const n of c.notes || []) if (n.t >= g.s && n.t < e) notes.push({ t: c.start + g.o + n.t - g.s, d: Math.min(n.d, e - n.t), p: n.p, v: n.v });
         for (const l of c.cc || []) {
           const key = l.k + ':' + l.n; let q = lanes.get(key); if (!q) { q = { k: l.k, n: l.n, pts: [] }; lanes.set(key, q); }
-          for (const pt of l.pts) if (pt.t <= lim) q.pts.push({ t: c.start + o + pt.t, v: pt.v });
+          for (const pt of l.pts) if (pt.t >= g.s && pt.t <= e) q.pts.push({ t: c.start + g.o + pt.t - g.s, v: pt.v });
         }
       }
     }
