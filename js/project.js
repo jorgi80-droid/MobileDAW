@@ -303,6 +303,7 @@ export function syncTrackFull(i) {
     eng.trackInst(i, t.inst.type);
     if (t.inst.type === 11 && t.inst.params && t.inst.params[90] !== undefined) { if (t.inst.params[106] === undefined) t.inst.params[106] = t.inst.params[90]; delete t.inst.params[90]; }   // old projects: Vel>Filter Res moved from 90 (pitch) to 106
     for (const [k, v] of Object.entries(t.inst.params)) eng.instParam(i, +k, v);
+    if (INSTRUMENTS[t.inst.type] && INSTRUMENTS[t.inst.type].full) INSTRUMENTS[t.inst.type].params.forEach((q, k) => { if (!(k in t.inst.params)) eng.instParam(i, k, q.def); });
     eng.instParam(i, 90, t.inst.pitch || 0);
     if (t.inst.chains) rackSync(i, -1);
   }
@@ -534,6 +535,7 @@ export function setInstrument(i, type) {
   if (type === IRACK) { t.inst.chains = [{ id: uid(), name: 'Chain', devices: [], inst: null }]; t.inst.macroMap = []; t.inst.params[IRB + 32] = 1; }
   eng.trackInst(i, type);
   for (const [k, v] of Object.entries(t.inst.params)) eng.instParam(i, +k, v);
+  if (INSTRUMENTS[type] && INSTRUMENTS[type].full) INSTRUMENTS[type].params.forEach((q, k) => { if (!(k in t.inst.params)) eng.instParam(i, k, q.def); });
   if (type === IRACK) rackSync(i, -1);
   syncZones(i);
   emit('devices');

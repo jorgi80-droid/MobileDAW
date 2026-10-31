@@ -4,7 +4,7 @@ import { wtName, WT_COUNT } from './engine/live.js';
 // (app/src/main/cpp/instruments.h and devices.h).
 export const INST = { MINISYNTH: 1, SUPERSAW: 2, DRUM: 3, DIRECTWAVE: 4, GMS: 5, SOUNDFONT: 6, MOISTURE: 7, OSPHERE: 8, KEYSTONE: 9, SAMPLER: 10, WAVETABLE: 11 };
 // Instruments a synth/sampler track can switch between (drums have their own track type).
-export const INST_LIST = [11, 10, 1, 2, 4, 5, 6, 7, 8, 9, 12];
+export const INST_LIST = [14, 13, 11, 10, 1, 2, 4, 5, 6, 7, 8, 9, 12];
 
 export const INSTRUMENTS = {
   1: { name: 'Mini Synth', params: [
@@ -543,6 +543,40 @@ export const IRACK_DEF = { name: 'Instrument Rack', rack: true, params: [] };   
   });
 }
 
+// ---- Live 12 instruments (full: true = the project sends every parameter, stored or default, so engine and panel never disagree)
+{
+  const ms = (n, d, max = 20000) => q(n, 0.5, max, d, { curve: 'log', unit: 'ms' }), pct = (n, d) => q(n, 0, 1, d, { unit: '%' }), bi = (n, d = 0) => q(n, -1, 1, d, { fmt: 'pct1' });
+  const SRC = ['Env 1', 'Env 2', 'LFO', 'Velocity', 'Key', 'Random'], DEST = ['Off', 'Osc 1 Gain', 'Osc 2 Gain', 'Noise Gain', 'Shape', 'Osc 2 Detune', 'Pitch', 'Filter Freq', 'Res', 'HP', 'LFO Rate', 'Amp', 'Pan'];
+  const gain = (n, d) => q(n, -60, 0, d, { fmt: 'dbinf' });
+  INSTRUMENTS[13] = { name: 'Drift', view: 'kit', full: true, params: [
+    list('Osc 1 Wave', ['Sine', 'Triangle', 'Shark Tooth', 'Saturated', 'Saw', 'Pulse', 'Rectangle'], 0), q('Osc 1 Oct', -2, 3, 0, { step: 1, fmt: 'num' }), q('Shape', 0, 1, 0, { unit: '' }),
+    list('Shape Mod', SRC, 0), bi('Shape Mod Amt'), list('Osc 2 Wave', ['Sine', 'Triangle', 'Saturated', 'Saw', 'Rectangle'], 3), q('Osc 2 Oct', -2, 3, -1, { step: 1, fmt: 'num' }), q('Detune', -12, 12, 0, { unit: '' }),
+    list('Pitch Mod 1', SRC, 1), bi('Pitch Mod 1 Amt'), list('Pitch Mod 2', SRC, 2), bi('Pitch Mod 2 Amt', 0.047),
+    onoff('Osc 1 On', 1), gain('Osc 1 Gain', -3.7), onoff('Osc 1 Filter', 1), onoff('Osc 2 On', 1), gain('Osc 2 Gain', -60), onoff('Osc 2 Filter', 1), onoff('Noise On', 1), gain('Noise Gain', -7.4), onoff('Noise Filter', 1),
+    onoff('Reset'), q('Freq', 20, 20000, 3280, { curve: 'log', unit: 'Hz' }), list('Type', ['I', 'II'], 1), q('Key', 0, 1, 1, { unit: '' }), q('Res', 0, 1, 0, { unit: '' }), q('HP', 10, 1000, 10, { curve: 'log', unit: 'Hz' }),
+    list('Freq Mod 1', SRC, 1), bi('Freq Mod 1 Amt'), list('Freq Mod 2', SRC, 2), bi('Freq Mod 2 Amt'),
+    ms('Env 1 Attack', 2), ms('Env 1 Decay', 600), pct('Env 1 Sustain', 0.096), ms('Env 1 Release', 491), ms('Env 2 Attack', 1), ms('Env 2 Decay', 600), pct('Env 2 Sustain', 0.7), ms('Env 2 Release', 600), onoff('Env 2 Cycle'),
+    list('LFO Wave', ['Sine', 'Triangle', 'Saw Up', 'Saw Down', 'Square', 'S&H', 'Wander', 'Linear Env', 'Exp Env'], 0), list('LFO Mode', ['Hz', 'Ratio', 'Time', 'Sync'], 1), q('LFO Rate', 0.01, 40, 1, { curve: 'log', unit: 'Hz' }),
+    q('LFO Ratio', 1, 1600, 100, { curve: 'log', fmt: 'ratio' }), q('LFO Time', 25, 10000, 1000, { curve: 'log', unit: 'ms' }), list('LFO Sync', ['1/16', '1/8', '1/4', '1/2', '1 Bar', '2 Bars', '4 Bars'], 2), onoff('LFO Retrig'),
+    pct('LFO Amount', 1), list('LFO Mod', SRC, 1), bi('LFO Mod Amt'),
+    list('Mode', ['Poly', 'Mono', 'Stereo', 'Unison'], 0), list('Voices', ['2', '4', '6', '8', '12', '16', '24', '32'], 7), pct('Drift', 0.072), onoff('Legato'), q('Glide', 0, 5000, 0, { unit: 'ms' }),
+    q('Volume', -60, 6, -0.3, { fmt: 'dbinf' }), pct('Vel > Vol', 0.1), q('Transpose', -48, 48, 0, { step: 1, fmt: 'st' }), q('PB Range', 0, 48, 7, { step: 1, fmt: 'st' }),
+    ...[0, 1, 2].flatMap((m) => [list(`Mod ${m + 1} Source`, SRC, [0, 2, 3][m]), list(`Mod ${m + 1} Target`, DEST, 0), bi(`Mod ${m + 1} Amount`)])] };
+}
+
+// Operator (instrument 14, engine js/engine/operator.js): operator o (A = 0 .. D = 3) at 16 * o
+{
+  const ms = (n, d) => q(n, 0.1, 20000, Math.max(0.1, d), { curve: 'log', unit: 'ms' }), dB = (n, d) => q(n, -60, 0, d, { fmt: 'dbinf' });
+  const op = (o) => { const L = 'ABCD'[o]; return [onoff(`${L} On`, 1), q(`${L} Coarse`, 0, 48, 1, { step: 1, fmt: 'coarse' }), q(`${L} Fine`, 0, 1000, 0, { step: 1, fmt: 'num' }), onoff(`${L} Fixed`),
+    q(`${L} Freq`, 1, 20000, 100, { curve: 'log', unit: 'Hz' }), q(`${L} Multi`, 0.01, 10, 1, { curve: 'log', unit: '' }), dB(`${L} Level`, [0, -12, -60, -60][o]),
+    list(`${L} Wave`, ['Sine', 'Saw', 'Square', 'Triangle', 'Noise'], 0), q(`${L} Feedback`, 0, 1, 0, { unit: '%' }), q(`${L} Vel > Level`, 0, 1, 0.5, { unit: '%' }),
+    ms(`${L} Attack`, 0), ms(`${L} Decay`, 600), dB(`${L} Sustain`, o ? -12 : -6), ms(`${L} Release`, 300), dB(`${L} Initial`, -60), dB(`${L} Peak`, 0)]; };
+  INSTRUMENTS[14] = { name: 'Operator', view: 'kit', full: true, params: [...op(0), ...op(1), ...op(2), ...op(3), ...[0, 1, 2, 3].map((o) => list(`${'ABCD'[o]} Loop`, ['None', 'Loop', 'Trigger'], 0)),
+    q('Algorithm', 0, 10, 0, { step: 1, fmt: 'algo' }), onoff('Filter On'), list('Filter Type', ['Low', 'High', 'Band'], 0), q('Filter Freq', 20, 20000, 18000, { curve: 'log', unit: 'Hz' }), q('Filter Res', 0, 1, 0.1, { unit: '%' }),
+    q('Filter Env', -1, 1, 0, { fmt: 'pct1' }), ms('Filter Attack', 5), ms('Filter Decay', 400), q('Pan', -1, 1, 0, { fmt: 'pan' }), q('Time', -2, 2, 0, { fmt: 'pct1' }), q('Tone', 0, 1, 0.7, { unit: '%' }),
+    q('Volume', -60, 6, -6, { fmt: 'dbinf' }), q('Transpose', -48, 48, 0, { step: 1, fmt: 'st' }), q('Spread', 0, 1, 0, { unit: '%' }), q('PB Range', 0, 48, 5, { step: 1, fmt: 'st' }), q('Voices', 1, 16, 6, { step: 1, fmt: 'num' })] };
+}
+
 // ---- Audio Effect Rack (engine: js/engine/fx7.js; project: d.chains, d.macroMap)
 {
   const H = { hidden: true }, P = [];
@@ -734,6 +768,9 @@ export function fmtParam(p, v) {
     case 'st': return (v > 0 ? '+' : '') + Math.round(v) + ' st';
     case 'num': return String(Math.round(v));
     case 'macro': return String(Math.round(v * 127));
+    case 'coarse': return v < 0.5 ? '0.5' : String(Math.round(v));
+    case 'algo': return String(Math.round(v) + 1);
+    case 'ratio': return (v / 100).toFixed(2);
     case 'steps': return v < 2 ? 'Off' : String(Math.round(v));
     case 'interp': return Math.round(v) ? 'High' : 'Norm';
     case 'suboct': return ['0', '-1', '-2'][Math.round(v)] || '0';

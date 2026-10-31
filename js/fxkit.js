@@ -5,7 +5,8 @@ import { h, knob, menu, ask, fromNorm, toNorm } from './ui.js';
 import { C } from './theme.js';
 import { fmtParam, normOf, valOf, MOD_MAP, DEVICES, INSTRUMENTS, FX_GROUPS, IRACK_DEF } from './defs.js';
 import { buildSynth } from './devviz.js';
-import { lvNum, lvTog, lvBtn, lvChoice, lvSel, lvDisp, lvDrag, lvRing, lvPath, lvTabs, DISPC } from './liveui.js';
+import { OP_ALGOS } from './engine/operator.js';
+import { lvNum, lvTog, lvBtn, lvChoice, lvSel, lvDisp, lvDrag, lvRing, lvPath, lvTabs, lvEnvPts, DISPC } from './liveui.js';
 import { eq8Stages } from './engine/fx3.js';
 import { offerAutomation } from './automate.js';
 import { Biquad } from './engine/dsp.js';
@@ -836,6 +837,109 @@ export function irackView(i, t, every) {
   const ctx = { i, di: -1, d, def, every, outD: 999, setParam: (kk, v) => P.setInstParam(i, 100 + kk, v),
     autoFn: (kk) => (rect) => offerAutomation(rect, { kind: 5, strip: P.stripOf(i), param: 100 + kk, def: def.params[kk] }, `${t.name} \u2022 ${def.params[kk].n}`) };
   const k = kit(ctx); const el = rackPanel(k); el.classList.add('lk'); return { el, draw: k.redraw };
+}
+
+// ================================================================================================ Live 12 instruments (kit panels)
+// instrument panels use the same kit as the effects: parameters live in t.inst.params (missing = default), automation lanes are kind 5
+const VI = {};
+const WAVE_ICO = { Sine: 'M1 6Q4 -1 7 6T13 6', Triangle: 'M1 9L4 2L10 10L13 4', 'Shark Tooth': 'M1 10L8 2L13 10', Saturated: 'M1 7Q2 2 4 2H6Q7 2 7 6Q7 10 9 10H11Q13 10 13 6', Saw: 'M1 10L12 2V10', Pulse: 'M1 10V2H4V10H13', Rectangle: 'M1 10V2H7V10H13',
+  'Saw Up': 'M1 10L12 2V10', 'Saw Down': 'M1 2L12 10V2', Square: 'M1 10V2H7V10H13', 'S&H': 'M1 8H4V3H7V9H10V5H13', Wander: 'M1 7Q3 2 5 6T9 5T13 7', 'Linear Env': 'M1 2L13 10', 'Exp Env': 'M1 2Q2 10 13 10' };
+function waveSel(k, j, col) {
+  const p = k.def.params[j], b = h('button', { class: 'lk-wsel', style: `color:${col}` });
+  const draw = () => { const n = p.items[Math.round(k.get(j))]; b.innerHTML = `<svg viewBox="0 0 14 12" width="18" height="14"><path d="${WAVE_ICO[n] || ''}" fill="none" stroke="currentColor" stroke-width="1.6"/></svg><i class="tri"></i>`; b.title = n; };
+  b.onclick = () => { const r = b.getBoundingClientRect(); menu(p.items.map((n, v) => ({ label: n, check: v === Math.round(k.get(j)), fn: () => { k.set(j, v); draw(); } })), r.left, r.bottom + 1); };
+  b.update = draw; draw(); return k.reg(b, j);
+}
+const DY = '#f5b324', DB = '#4fc3f0', DR = '#ff6464';
+// Drift: dark oscillator area (Osc 1 / Osc 2 / Pitch Mod / Osc Mix with 1 / 2 / N switches, filter routes › and R), Filter, Envelopes,
+// LFO / Mod tabs, Mode / Voices / Drift / Legato / Glide, Volume / Vel > Vol / Transpose / PB Range
+VI[13] = (k) => {
+  const Y = (j, o = {}) => k.K(j, { ...o, col: DY }), B = (j, o = {}) => k.K(j, { ...o, col: DB });
+  const wave = k.D(150, 64, (g, w, hh) => {                                                           // the oscillators' mixed waveform (white, as in Live)
+    const w1 = Math.round(k.get(0)), sh = k.get(2), w2 = Math.round(k.get(5)), g1 = k.get(12) > 0.5 ? Math.pow(10, k.get(13) / 20) : 0, g2 = k.get(15) > 0.5 ? Math.pow(10, k.get(16) / 20) : 0, r2 = Math.pow(2, k.get(6) - k.get(1) + k.get(7) / 12);
+    const o1 = (a) => { switch (w1) { case 0: return Math.sin(2 * Math.PI * a + sh * 3 * Math.sin(2 * Math.PI * a)); case 1: return Math.sin((1 - 4 * Math.abs(a - 0.5)) * (1 + sh * 3) * Math.PI / 2); case 2: { const s2 = 0.5 + sh * 0.49; return a < s2 ? 2 * a / s2 - 1 : 1 - 2 * (a - s2) / (1 - s2); } case 3: { const q = 1 + sh * 8; return Math.tanh(Math.sin(2 * Math.PI * a) * q) / Math.tanh(q); } case 4: { const q = a * (1 + sh * 3); return 2 * (q - Math.floor(q)) - 1; } default: { const pw = w1 === 5 ? 0.5 - sh * 0.45 : 0.5 + sh * 0.45; return a < pw ? 1 : -1; } } };
+    const o2 = (b) => { b -= Math.floor(b); switch (w2) { case 0: return Math.sin(2 * Math.PI * b); case 1: return 1 - 4 * Math.abs(b - 0.5); case 2: return Math.tanh(Math.sin(2 * Math.PI * b) * 3) / Math.tanh(3); case 3: return 2 * b - 1; default: return b < 0.5 ? 1 : -1; } };
+    const pts = []; for (let x = 0; x <= w; x++) { const a = (x / w * 2) % 1, y = (o1(a) * g1 + o2(x / w * 2 * r2) * g2) / Math.max(0.3, g1 + g2); pts.push([x, hh / 2 - y * (hh / 2 - 6)]); }
+    lvPath(g, pts, '#f2f2f2', null, 1.6);
+  });
+  const mix = (n, on, gj, fj, col, lbl) => { const r = k.row(k.T(on, lbl, { cls: 'lk-mixb', w: 22 }), k.K(gj, { n, col }), k.T(fj, '›', { cls: 'lk-mixb', w: 22 })); r.style.setProperty('--mixc', col); return r; };
+  const osc = k.dk(
+    k.row(k.col(h('span', { class: 'lk-lb' }, 'Osc 1'), waveSel(k, 0, DY)), Y(1, { n: 'Oct' }), Y(2), h('div', { class: 'lk-modbox' }, k.S(3, { w: 70, cls: 'dk or' }), k.NT(4, { w: 64, cls: 'or' })), k.sep(),
+      k.col(h('div', { class: 'lk-st c' }, 'Osc Mix'), mix('Osc 1', 12, 13, 14, DY, '1'))),
+    k.row(k.col(h('span', { class: 'lk-lb' }, 'Osc 2'), waveSel(k, 5, DB)), B(6, { n: 'Oct' }), B(7), h('span', { class: 'lk-grow' }), k.T(21, 'R', { cls: 'lk-mixb lk-r', w: 22 }), k.sep(), mix('Osc 2', 15, 16, 17, DB, '2')),
+    k.row(k.col(h('span', { class: 'lk-lb' }, 'Pitch Mod'), k.row(k.S(8, { w: 60, cls: 'dk or' }), k.S(10, { w: 60, cls: 'dk or' })), k.row(k.NT(9, { w: 56, cls: 'or' }), k.NT(11, { w: 56, cls: 'or' }))), wave, k.sep(), mix('Noise', 18, 19, 20, DR, 'N')));
+  const filt = k.sec('Filter', k.row(k.col(k.K(22, { big: true }), k.K(25)), k.col(k.TL('Type', k.CH(23, ['I', 'II'], { cls: 'cy' })), k.TL('Key', k.N(24, { w: 46 })), k.K(26))),
+    h('div', { class: 'lk-st' }, 'Freq Mod'), k.row(k.S(27, { w: 60 }), k.S(29, { w: 60 })), k.row(k.N(28, { w: 60, fill: false }), k.N(30, { w: 60, fill: false })));
+  let ev = 0;
+  const envD = k.D(300, 70, (g, w, hh) => {
+    for (const e of ev === 0 ? [0, 1] : [ev - 1]) { const b = e ? 35 : 31, pts = lvEnvPts(w - 36, hh, k.get(b) / 1000, k.get(b + 1) / 1000, k.get(b + 2), k.get(b + 3) / 1000, 6).map(([x, y]) => [x + 30, y]); lvPath(g, pts, e ? 'rgba(79,195,240,.45)' : DISPC.bl, null, 1.6); for (const n of [1, 2, 4]) { g.strokeStyle = DISPC.or; g.lineWidth = 1.2; g.strokeRect(pts[n][0] - 3, pts[n][1] - 3, 6, 6); } }
+  });
+  const envTabs = lvChoice([{ label: '1' }, { label: '2' }], () => ev - 1, (j) => { ev = ev === j + 1 ? 0 : j + 1; envD.paint(); }, { cls: 'lk-ch v lk-envt' });
+  const envs = k.sec('Envelopes', k.row(h('span', { class: 'lk-lb' }, '1'), k.K(31, { n: 'Attack' }), k.K(32, { n: 'Decay' }), k.K(33, { n: 'Sustain' }), k.K(34, { n: 'Release' })),
+    h('div', { class: 'lk-envw' }, envD, envTabs), k.row(k.T(39, '⟳', { w: 22 }), k.K(35, { n: 'Attack' }), k.K(36, { n: 'Decay' }), k.K(37, { n: 'Sustain' }), k.K(38, { n: 'Release' })));
+  const page = h('div', { class: 'lk-page' });
+  const lfoD = k.D(170, 52, (g, w, hh) => { const wf = Math.round(k.get(40)), pts = []; for (let x = 0; x <= w; x++) { const t = x / w * 4, a = t - Math.floor(t); let v; switch (wf) { case 1: v = 1 - 4 * Math.abs(a - 0.5); break; case 2: v = 2 * a - 1; break; case 3: v = 1 - 2 * a; break; case 4: v = a < 0.5 ? 1 : -1; break; case 5: { const r = Math.sin(Math.floor(t) * 12.9898) * 43758.5; v = (r - Math.floor(r)) * 2 - 1; break; } case 6: v = Math.sin(t * 2.1) * 0.6 + Math.sin(t * 5.3) * 0.3; break; case 7: v = t < 1 ? 1 - 2 * a : -1; break; case 8: v = t < 1 ? 2 * Math.exp(-a * 5) - 1 : -1; break; default: v = Math.sin(2 * Math.PI * a); } pts.push([x, hh / 2 - v * k.get(47) * (hh / 2 - 6)]); } lvPath(g, pts, DISPC.bl, null, 1.6); });
+  const tabs = [
+    () => k.row(k.col(k.swapN(41, (m) => k.K([42, 43, 44, 45][m], { n: ['Rate', 'Ratio', 'Time', 'Rate'][m] })), k.K(47, { n: 'Amount' })), k.CH(41, ['Hz', '1:1', 'ms', '♪'], { cls: 'g2 sm' }),
+      k.col(k.dk(k.row(waveSel(k, 40, DB), h('span', { class: 'lk-grow' }), k.T(46, 'R', { cls: 'lk-r', w: 22 })), lfoD), k.row(k.TL('Mod', k.S(48, { w: 64 })), k.N(49, { w: 60, fill: false })))),
+    () => k.col(...[0, 1, 2].map((m) => k.row(k.S(59 + m * 3, { w: 76 }), h('span', { class: 'lk-lb' }, '→'), k.S(60 + m * 3, { w: 96 }), k.N(61 + m * 3, { w: 60, fill: false })))),
+  ];
+  const tb = lvTabs([{ label: 'LFO' }, { label: 'Mod' }], 0, (j) => page.replaceChildren(tabs[j]()), { cls: 'lk-tabs' }); page.replaceChildren(tabs[0]());
+  const glob = k.row(k.col(k.TL('Mode', k.S(50, { w: 80 })), k.TL('Voices', k.S(51, { w: 80 })), k.TL('Drift', k.N(52, { w: 80 })), k.T(53, 'Legato', { w: 80 }), k.TL('Glide', k.N(54, { w: 80, fill: false }))), k.sep(),
+    k.col(k.K(55), k.TL('Vel > Vol', k.N(56, { w: 80 })), k.TL('Transpose', k.N(57, { w: 80, fill: false })), k.TL('PB Range', k.N(58, { w: 80 }))));
+  return k.row(osc, k.sep(), filt, k.sep(), envs, k.sep(), k.col(tb, page), k.sep(), glob);
+};
+// Operator: operator rows D / C / B / A (Coarse + Fine, or Freq + Multi when Fixed; Level; coloured switch = operator on, tap a row = show it
+// on the right), dark display with the selected operator's envelope (drag the Peak / Sustain points) and oscillator, algorithm picture,
+// filter, global (Time, Tone, Volume, Pan, Transpose, Spread, PB Range, Voices)
+const OPC = ['#f5e052', '#4ccd5a', '#3fe0c8', '#f59b24'];   // A yellow, B green, C cyan, D orange (Live)
+const OPST = new Map();
+VI[14] = (k) => {
+  const st = OPST.get(k.d.id) || { sel: 0 }; OPST.set(k.d.id, st);
+  const right = h('div', { class: 'lk-opr' });
+  const rows = [3, 2, 1, 0].map((o) => {
+    const b = o * 16, L = 'ABCD'[o];
+    const sw = k.T(b, L, { cls: 'lk-opsw', w: 22 }); sw.style.setProperty('--opc', OPC[o]);
+    const fx = h('div', { class: 'lk-opfx' }, k.T(b + 3, '', { cls: 'lk-chkbox' }));
+    const r = h('div', { class: 'lk-oprow' + (st.sel === o ? ' sel' : '') }, k.swap(b + 3, () => k.K(b + 4, { n: 'Freq' }), () => k.K(b + 1, { n: 'Coarse' })), k.swap(b + 3, () => k.K(b + 5, { n: 'Multi' }), () => k.K(b + 2, { n: 'Fine' })),
+      k.TL('Fixed', fx), k.K(b + 6, { n: 'Level', col: '#f08a24' }), sw);
+    r.addEventListener('pointerdown', (e) => { if (e.target.closest('.knob, button')) return; st.sel = o; for (const x of rowsEls) x.classList.toggle('sel', x === r); fillRight(); });
+    return r;
+  });
+  const rowsEls = rows;
+  function fillRight() {
+    const o = st.sel, b = o * 16, W = 210, H = 76, X0 = 8;
+    const env = k.D(W, H, (g, w, hh) => {
+      const db = (x) => hh - 6 - Math.max(0, (k.get(x) + 60) / 60) * (hh - 12), a = Math.sqrt(k.get(b + 10)), d = Math.sqrt(k.get(b + 11)), r = Math.sqrt(k.get(b + 13)), hold = Math.max(8, (a + d + r) * 0.4), K = (w - 2 * X0) / (a + d + hold + r + 1e-9);
+      const pts = [[X0, db(b + 14)], [X0 + a * K, db(b + 15)], [X0 + (a + d) * K, db(b + 12)], [X0 + (a + d + hold) * K, db(b + 12)], [X0 + (a + d + hold + r) * K, hh - 6]];
+      lvPath(g, pts, '#f08a24', hh, 1.6); g.strokeStyle = '#f08a24'; g.lineWidth = 1.3; for (const n of [0, 1, 2, 4]) g.strokeRect(pts[n][0] - 3, pts[n][1] - 3, 6, 6);
+    }, { onDown: (x) => ({ which: x < W * 0.3 ? b + 15 : b + 12, v: k.get(x < W * 0.3 ? b + 15 : b + 12) }), onMove: (x, y, dx, dy, s) => k.set(s.which, Math.max(-60, Math.min(0, s.v - dy * 0.4))) });
+    const T = (n, j, o2 = {}) => k.TL(n, k.NT(j, { w: o2.w || 58, cls: 'or' }));
+    right.replaceChildren(k.dk(env, h('div', { class: 'lk-opeh', style: `--opc:${OPC[o]}` }, h('i', {}), 'Envelope ' + 'ABCD'[o]),
+      k.row(T('Attack', b + 10), T('Decay', b + 11), T('Sustain', b + 12)), k.row(T('Initial', b + 14), T('Peak', b + 15), T('Release', b + 13)),
+      k.row(k.TL('Loop', k.S(64 + o, { w: 70, cls: 'dk or' })), k.TL('Wave', k.S(b + 7, { w: 70, cls: 'dk or' }))), k.row(T('Feedback', b + 8), T('Vel > Lvl', b + 9))));
+  }
+  fillRight();
+  const algo = k.D(96, 72, (g, w, hh) => {
+    const A = OP_ALGOS[Math.round(k.get(68))], lvl = [0, 0, 0, 0], tgt = [-1, -1, -1, -1];
+    A.m.forEach((ms, o) => ms.forEach((m) => { tgt[m] = o; }));
+    const depth = (o) => (tgt[o] < 0 ? 0 : 1 + depth(tgt[o])); for (let o = 0; o < 4; o++) lvl[o] = depth(o);
+    const byL = {}; [3, 2, 1, 0].forEach((o) => { (byL[lvl[o]] = byL[lvl[o]] || []).push(o); });
+    const pos = []; for (const [l, os] of Object.entries(byL)) os.forEach((o, j) => { pos[o] = [w / 2 + (j - (os.length - 1) / 2) * 22, hh - 12 - l * 18]; });
+    g.strokeStyle = DISPC.ink; g.lineWidth = 1; for (let o = 0; o < 4; o++) if (tgt[o] >= 0) { g.beginPath(); g.moveTo(pos[o][0], pos[o][1]); g.lineTo(pos[tgt[o]][0], pos[tgt[o]][1]); g.stroke(); }
+    for (let o = 0; o < 4; o++) { g.fillStyle = OPC[o]; g.fillRect(pos[o][0] - 7, pos[o][1] - 6, 14, 12); label(g, 'ABCD'[o], pos[o][0], pos[o][1] + 4, '#1b1b1d', 9, 'center'); }
+  }, { onDown: () => { const r = algo.getBoundingClientRect(); menu(OP_ALGOS.map((_, n) => ({ label: 'Algoritma ' + (n + 1), check: n === Math.round(k.get(68)), fn: () => k.set(68, n) })), r.left, r.bottom + 1); return false; }, onMove: () => {} });
+  const glob = k.col(k.row(k.col(h('div', { class: 'lk-st' }, 'Algorithm'), algo), k.col(k.T(69, 'Filter'), k.CH(70, ['Low', 'High', 'Band'], { v: true }))),
+    k.row(k.K(71, { n: 'Freq' }), k.K(72, { n: 'Res' }), k.K(73, { n: 'Env' }), k.K(74, { n: 'Attack' }), k.K(75, { n: 'Decay' })));
+  const g2 = k.col(k.row(k.K(77), k.K(78), k.K(79)), k.row(k.K(76), k.K(81)), k.row(k.TL('Transpose', k.N(80, { w: 60, fill: false })), k.TL('PB Range', k.N(82, { w: 56 })), k.TL('Voices', k.N(83, { w: 50 }))));
+  return k.row(h('div', { class: 'lk-ops' }, ...rows), right, k.sep(), glob, k.sep(), g2);
+};
+export function instKitView(i, t, every) {
+  const def = INSTRUMENTS[t.inst.type]; if (!VI[t.inst.type]) return null;
+  const d = { id: 'in' + t.id, type: t.inst.type, params: new Proxy({}, { get: (_, kk) => t.inst.params[kk] ?? (def.params[kk] ? def.params[kk].def : undefined) }) };
+  const ctx = { i, di: -1, d, def, every, setParam: (kk, v) => P.setInstParam(i, +kk, v),
+    autoFn: (kk) => (rect) => offerAutomation(rect, { kind: 5, strip: P.stripOf(i), param: +kk, def: def.params[kk] }, `${t.name} • ${def.params[kk].n}`) };
+  const k = kit(ctx), el = VI[t.inst.type](k); el.classList.add('lk', 'lk-inst'); return { el, draw: k.redraw };
 }
 
 export const KIT = V;

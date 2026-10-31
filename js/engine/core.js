@@ -122,6 +122,7 @@ export class Engine {
   bend(t, st) {
     if (!this.ok(t) || t >= MASTER) return; const s = this.s[t]; st = clamp(+st || 0, -12, 12);
     const r = Math.pow(2, (st - s.bend) / 12); s.bend = st;
+    if (s.inst && s.inst.setBend) { s.inst.setBend(st); return; }   // Live 12 instruments scale the wheel by their own PB Range
     if (s.inst && s.inst.bendVoice && r !== 1) for (const v of s.inst.v) if (v.on) s.inst.bendVoice(v, r);
   }
   bendNew(s) { const n = s.inst.counter, r = Math.pow(2, s.bend / 12); for (const v of s.inst.v) if (v.on && v.age === n) s.inst.bendVoice(v, r); }

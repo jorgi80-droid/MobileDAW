@@ -1,6 +1,8 @@
 // Instruments of the web engine. Interface: noteOn(p, vel), noteOff(p), allOff(), setParam(i, v),
 // render(L, R, from, to) (adds into the buffers), active(), setTempo(bpm).
 import { LiveSampler, LiveWavetable } from './live.js';
+import { Drift } from './drift.js';
+import { Operator } from './operator.js';
 import { TWO_PI, clamp, midiToHz, lcg, Biquad, Adsr, adsrParams, polyBlep, sawBl, squareBl, triNaive, wave4, JOBS, runJobNow, adsrInto } from './dsp.js';
 
 const N_ZONES = 16;
@@ -611,6 +613,8 @@ export function makeInstrument(type, sr, bank, sfs) {
     case 8: return new Osphere(sr);
     case 10: return new LiveSampler(sr, bank);
     case 11: return new LiveWavetable(sr);
+    case 13: return new Drift(sr);
+    case 14: return new Operator(sr);
     default: return null;
   }
 }

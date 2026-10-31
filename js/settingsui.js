@@ -173,7 +173,7 @@ export function openSettings() {
   const sw = navigator.serviceWorker && navigator.serviceWorker.controller;
 
   const scaleVal = h('span', { class: 'sval' });
-  const scaleSlider = h('input', { type: 'range', class: 'sl', min: 50, max: 160, step: 5, value: Math.round((prefs.uiScale || 0.8) * 100), 'aria-label': 'Skala UI' });
+  const scaleSlider = h('input', { type: 'range', class: 'sl', min: 50, max: 160, step: 5, value: Math.round((prefs.uiScale || 0.7) * 100), 'aria-label': 'Skala UI' });
   const paintScale = () => { scaleSlider.style.setProperty('--p', ((scaleSlider.value - 50) / 110 * 100) + '%'); scaleVal.textContent = scaleSlider.value + '%'; };
   const commitScale = () => { prefs.uiScale = +scaleSlider.value / 100; savePrefs(); applyViewportMeta(); relayoutSoon(); };   // applied on release so the slider is not rebuilt while dragging
   const stepScale = (d, label, name) => h('button', { class: 'b step', 'aria-label': name, onclick: () => { scaleSlider.value = clamp(+scaleSlider.value + d, 50, 160); paintScale(); commitScale(); } }, label);
