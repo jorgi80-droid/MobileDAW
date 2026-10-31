@@ -5,6 +5,7 @@ import { Drift } from './drift.js';
 import { Operator } from './operator.js';
 import { Analog } from './analog.js';
 import { Poli } from './poli.js';
+import { Meld } from './meld.js';
 import { TWO_PI, clamp, midiToHz, lcg, Biquad, Adsr, adsrParams, polyBlep, sawBl, squareBl, triNaive, wave4, JOBS, runJobNow, adsrInto } from './dsp.js';
 
 const N_ZONES = 16;
@@ -619,6 +620,7 @@ export function makeInstrument(type, sr, bank, sfs) {
     case 14: return new Operator(sr);
     case 15: return new Analog(sr);
     case 16: return new Poli(sr);
+    case 17: return new Meld(sr);
     default: return null;
   }
 }

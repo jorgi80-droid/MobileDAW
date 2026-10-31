@@ -7,6 +7,7 @@ import { fmtParam, normOf, valOf, MOD_MAP, DEVICES, INSTRUMENTS, FX_GROUPS, IRAC
 import { buildSynth } from './devviz.js';
 import { OP_ALGOS } from './engine/operator.js';
 import { POLI_TGT, POLI_GRID, POLI_MIDI } from './engine/poli.js';
+import { MELD_B, MELD_G, MELD_N, MO, MELD_TGT, MELD_SRC, MELD_OSC } from './engine/meld.js';
 import { lvNum, lvTog, lvBtn, lvChoice, lvSel, lvDisp, lvDrag, lvRing, lvPath, lvTabs, lvEnvPts, DISPC } from './liveui.js';
 import { eq8Stages } from './engine/fx3.js';
 import { offerAutomation } from './automate.js';
@@ -909,6 +910,57 @@ VI[16] = (k) => {
     k.row(k.col(h('span', { class: 'lk-lb' }, 'PBend'), k.N(61, { w: 62 }), k.T(62, 'All', { w: 62 })), k.col(h('span', { class: 'lk-lb' }, 'Glide'), k.S(63, { w: 70 }), k.N(64, { w: 70, fill: false })), k.col(h('span', { class: 'lk-lb' }, 'Voices/Spread'), k.S(65, { w: 76 }), k.N(66, { w: 76, fill: false }))),
     k.row(k.K(67, { n: 'Attack' }), k.K(68, { n: 'Decay' }), k.K(69, { n: 'Sustain' }), k.K(70, { n: 'Release' })));
   return k.row(osc, k.sep(), lfo, k.sep(), mods, k.sep(), glob);
+};
+// Meld: Engines (A / B oscillator with picture, prev / next, oct / sd / ct; Shape / Tone), dark centre with A / B / Settings tabs (Envelopes or
+// LFOs of the engine; Settings = modulation grid, Copy to B, PB Range), Filters (type, Freq, Q, third control), Mix (pan, Tone, level fader),
+// global (Limit, voice mode, voices, Spread, Stack, Drive, Volume)
+const MLC = ['#2fd3e8', '#ffad32'], MLST = new Map();
+function meldWave(type, sh, tn, x) {
+  const a = x - Math.floor(x), s = Math.sin(2 * Math.PI * a);
+  switch (type) { case 1: return (s + Math.sin(2 * Math.PI * a * (1 + sh * 0.05)) + Math.sin(2 * Math.PI * a * (1 - sh * 0.05))) / 3; case 2: return Math.sin(2 * Math.PI * a + tn * 4 * Math.sin(2 * Math.PI * a * (1 + Math.round(sh * 7)))); case 3: return Math.sin(Math.sin(2 * Math.PI * a + tn * 3 * Math.sin(4 * Math.PI * a)) * (1 + sh * 5) * Math.PI / 2);
+    case 4: return (2 * a - 1) * (0.6 + tn * 0.4) * Math.cos(a * (2 + sh * 20)); case 5: return Math.sin(a * 37.1 + Math.sin(a * 91.7) * 3) * (1 - a * 0.5); case 6: { const q = Math.pow(2, 2 + Math.round((1 - sh) * 10)); return Math.round(s * q) / q; } case 7: return a < [0.125, 0.25, 0.5, 0.75][Math.min(3, Math.floor(sh * 4))] ? 1 : -1;
+    default: { const k = sh * 3, sq = a < 0.5 - tn * 0.4 ? 1 : -1, w = [s, 1 - 4 * Math.abs(a - 0.5), 2 * a - 1, sq], i0 = Math.min(2, Math.floor(k)), f = k - i0; return w[i0] * (1 - f) + w[i0 + 1] * f; } }
+}
+VI[17] = (k) => {
+  const st = MLST.get(k.d.id) || { tab: 0, sub: 1, matE: 0 }; MLST.set(k.d.id, st);
+  const B = (e) => (e ? MELD_B : 0), O = MO, badge = (e) => h('span', { class: 'lk-mbadge', style: `--mc:${MLC[e]}` }, 'AB'[e]);
+  const engRow = (e) => {
+    const b = B(e), pic = k.D(96, 40, (g, w, hh) => { const pts = []; for (let x = 0; x <= w; x++) pts.push([x, hh / 2 - meldWave(Math.round(k.get(b)), k.get(b + O.shape), k.get(b + O.tone), x / w * 2) * (hh / 2 - 4)]); lvPath(g, pts, k.get(b + O.on) > 0.5 ? MLC[e] : '#777', null, 1.4); });
+    const step = (d) => lvBtn(d < 0 ? '◀' : '▶', () => { const n = MELD_OSC.length; k.set(b, (Math.round(k.get(b)) + d + n) % n); }, { cls: 'lk-marr' });
+    const on = k.T(b + O.on, 'AB'[e], { cls: 'lk-mbadge', w: 18 }); on.style.setProperty('--mc', MLC[e]);
+    return k.dk(k.row(on, k.S(b, { w: 100, cls: 'dk' })), k.row(step(-1), pic, step(1)), k.row(k.NT(b + O.oct, { w: 44 }), k.NT(b + O.semi, { w: 40 }), k.NT(b + O.fine, { w: 40 })));
+  };
+  const macros = (e) => k.row(k.K(B(e) + O.shape, { n: 'Shape', col: e ? '#999' : MLC[0] }), k.K(B(e) + O.tone, { n: 'Tone', col: e ? '#999' : MLC[0] }));
+  const centre = h('div', { class: 'lk-mcen' });
+  const env = (e, base, name) => { const d = k.D(150, 46, (g, w, hh) => lvPath(g, lvEnvPts(w, hh, k.get(base) / 1000, k.get(base + 1) / 1000, k.get(base + 2), k.get(base + 3) / 1000, 4), MLC[e], hh, 1.5)); return k.col(h('span', { class: 'lk-st c' }, name), d, k.row(k.K(base, { n: 'Attack' }), k.K(base + 1, { n: 'Decay' }), k.K(base + 2, { n: 'Sustain' }), k.K(base + 3, { n: 'Release' }))); };
+  const lfoD = (e, wj, sj, fj, pj, w = 150) => k.D(w, 50, (g, ww, hh) => { const pts = []; for (let x = 0; x <= ww; x++) { let t = x / ww * 2 + (pj >= 0 ? k.get(pj) / 360 : 0), a = t - Math.floor(t); const sh = sj >= 0 ? k.get(sj) : 0; if (sh) a = sh > 0 ? Math.pow(a, 1 + sh * 3) : 1 - Math.pow(1 - a, 1 - sh * 3);
+    let y; switch (Math.round(k.get(wj))) { case 1: y = 1 - 4 * Math.abs(a - 0.5); break; case 2: y = 2 * a - 1; break; case 3: y = a < 0.5 ? 1 : -1; break; case 4: case 5: { const r = Math.sin(Math.floor(t * 4) * 12.9898) * 43758.5; y = (r - Math.floor(r)) * 2 - 1; break; } default: y = Math.sin(2 * Math.PI * a); }
+    if (fj >= 0 && k.get(fj) > 0) y = Math.sin(y * (1 + k.get(fj) * 4) * Math.PI / 2); pts.push([x, hh / 2 - y * (hh / 2 - 5)]); } lvPath(g, pts, MLC[e], null, 1.5); });
+  const lfos = (e) => { const b = B(e);
+    return k.row(k.col(h('span', { class: 'lk-st c' }, 'LFO 1'), lfoD(e, b + O.l1w, b + O.l1sh, b + O.l1f, b + O.l1p), k.row(k.S(b + O.l1w, { w: 80, cls: 'dk' }), k.NT(b + O.l1p, { w: 46 }), k.T(b + O.l1rt, 'R', { cls: 'lk-r', w: 20 })),
+        k.row(k.CH(b + O.l1s, ['Hz', '♪'], { v: true, cls: 'sm cy' }), k.swap(b + O.l1s, () => k.K(b + O.l1d, { n: 'Rate' }), () => k.K(b + O.l1r, { n: 'Rate' })), k.K(b + O.l1sh, { n: 'Shape' }), k.K(b + O.l1f, { n: 'Fold' }))),
+      h('span', { class: 'lk-lb lk-arrow' }, '›'),
+      k.col(h('span', { class: 'lk-st c' }, 'LFO 1 FX'), lfoD(e, b + O.l1w, b + O.l1sh, b + O.l1f, b + O.l1p), k.row(h('span', { class: 'lk-lb' }, 'FX1 Attenuv.'), h('span', { class: 'lk-lb' }, 'FX2 Fade In')), k.row(k.K(b + O.fx1, { n: 'Scale' }), k.K(b + O.fx2, { n: 'Ramp' }))), k.sep(),
+      k.col(h('span', { class: 'lk-st c' }, 'LFO 2'), lfoD(e, b + O.l2w, -1, -1, b + O.l2p, 70), k.S(b + O.l2w, { w: 70, cls: 'dk' }), k.swap(b + O.l2s, () => k.NT(b + O.l2d, { w: 60 }), () => k.NT(b + O.l2r, { w: 60 })), k.CH(b + O.l2s, ['Hz', '♪'], { cls: 'sm cy' }), k.row(k.NT(b + O.l2p, { w: 44 }), k.T(b + O.l2rt, 'R', { cls: 'lk-r', w: 20 })))); };
+  const grid = () => { const e = st.matE, b = B(e) + O.mat;
+    return k.col(k.row(lvChoice([{ label: 'A' }, { label: 'B' }], () => st.matE, (j) => { st.matE = j; fill(); }, { cls: 'lk-ch sm' }), lvBtn('Copy to B', () => { for (let j = 0; j < MELD_N; j++) if (j !== O.on) k.set(MELD_B + j, k.get(j)); fill(); }, { cls: 'lk-t' }), h('span', { class: 'lk-grow' }), k.LN('PB Range', k.N(MELD_G + 7, { w: 52 }))),
+      h('div', { class: 'lk-pgrid', style: 'grid-template-columns: 96px repeat(5, 52px)' }, h('span', { class: 'lk-pgh' }, 'Target'), ...MELD_SRC.map((s2) => h('span', { class: 'lk-pgh u' }, s2)),
+        ...MELD_TGT.flatMap((tn, t) => [h('span', { class: 'lk-pgt' }, tn), ...MELD_SRC.map((_, s2) => k.NT(b + t * 5 + s2, { w: 50 }))]))); };
+  function fill() {
+    const e = st.tab;
+    const body = e === 2 ? grid() : k.col(k.row(lvChoice([{ label: 'Envelopes' }, { label: 'LFOs' }], () => st.sub, (j) => { st.sub = j; fill(); }, { cls: 'lk-ch cy lk-msub' })),
+      st.sub === 0 ? k.row(env(e, B(e) + O.aenv, 'A Env'), k.sep(), env(e, B(e) + O.menv, 'M Env')) : lfos(e));
+    centre.replaceChildren(lvTabs([{ label: 'A' }, { label: 'B' }, { label: 'Settings' }], st.tab, (j) => { st.tab = j; fill(); }, { cls: 'lk-tabs lk-mtabs' }), k.dk(body));
+  }
+  fill();
+  const filt = (e) => { const b = B(e), third = k.swapN(b + O.ftype, (t) => k.TL(['L-B-H-N', 'L-B-H-N', 'Drive', 'Feedback'][t], k.N(b + O.morph, { w: 62, fill: false })));
+    return k.row(k.col(k.row(badge(e), k.S(b + O.ftype, { w: 90 })), k.K(b + O.freq, { n: '' })), k.col(k.TL('Q', k.N(b + O.q, { w: 62, fill: false })), third)); };
+  const fader = (e) => { const b = B(e) + O.level, W = 14, H = 70;
+    const c = k.D(W, H, (g, w, hh) => { const y = hh - (k.get(b) + 60) / 66 * hh; g.fillStyle = '#555'; g.fillRect(w / 2 - 1, 0, 2, hh); g.fillStyle = MLC[e]; g.fillRect(2, y - 2, w - 4, 4); }, { onDown: () => ({ v: k.get(b) }), onMove: (x, y, dx, dy, s) => k.set(b, Math.max(-60, Math.min(6, s.v - dy * 0.5))) });
+    return k.col(c, k.NT(b, { w: 54 })); };
+  const mix = (e) => k.row(k.col(k.N(B(e) + O.pan, { w: 40, fill: false }), k.K(B(e) + O.tilt, { n: 'Tone' })), fader(e));
+  const glob = k.col(k.T(MELD_G + 6, 'Limit', { w: 70 }), k.S(MELD_G, { w: 70 }), k.N(MELD_G + 1, { w: 70 }), k.TL('Spread', k.N(MELD_G + 2, { w: 70 })), k.TL('Stack', k.S(MELD_G + 3, { w: 70 })), k.TL('Drive', k.N(MELD_G + 4, { w: 70 })), k.K(MELD_G + 5));
+  return k.row(k.sec('Engines', k.row(engRow(0), macros(0)), k.row(engRow(1), macros(1))), centre, k.sec('Filters', filt(0), filt(1)), k.sec('Mix', mix(0), mix(1)), k.sep(), glob);
 };
 export function instKitView(i, t, every) {
   const def = INSTRUMENTS[t.inst.type]; if (!VI[t.inst.type]) return null;

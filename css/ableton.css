@@ -749,3 +749,12 @@
 .lkcard { display: flex; flex-direction: column; }
 .lk > .lk-col, .lk > .lk-sec { justify-content: flex-start; }
 .lk .lk-ch.g2c { display: grid; grid-template-rows: repeat(4, auto); grid-auto-flow: column; } .lk .lk-ch.g2c .lv-btn { min-width: 24px; }
+/* Meld */
+.lk-mbadge { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; font-weight: 700; background: var(--mc); color: #1b1b1d; }
+.lk .lv-btn.lk-mbadge { min-width: 18px; padding: 0; border: 1px solid var(--mc); background: transparent !important; color: var(--mc) !important; } .lk .lv-btn.lk-mbadge.on { background: var(--mc) !important; color: #1b1b1d !important; }
+.lk .lv-btn.lk-marr { min-width: 0; width: 18px; height: 18px; padding: 0; border-radius: 50%; background: transparent; border: 1px solid #777; color: #bbb; font-size: 8px; }
+.lk-mcen { display: flex; flex-direction: column; } .lk-mcen > .lk-dk { flex: 1; }
+.lk .lk-mtabs { align-self: stretch; } .lk .lk-mtabs .lv-tab { flex: 1; }
+.lk .lk-ch.lk-msub { background: none; border: 0; gap: 6px; } .lk .lk-ch.lk-msub .lv-btn { min-width: 90px; background: transparent; color: #4fc3f0; border: 0; } .lk .lk-ch.lk-msub .lv-btn.on { background: #4fc3f0; color: #1b1b1d; }
+.lk-arrow { align-self: center; font-size: 18px; }
+.lk .lk-ch.cy .lv-btn.on, .lk .lk-ch.lk-msub .lv-btn.on { background: #4fc3f0 !important; color: #1b1b1d !important; }

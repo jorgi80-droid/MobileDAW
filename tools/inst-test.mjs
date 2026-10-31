@@ -25,7 +25,17 @@ PRE[15][73] = { 10: 1, 74: 0.5 }; PRE[15][78] = { 22: 1, 79: 0.5 };   // Retrig:
 // Poli: the ring modulator is quiet by default, Rate counts with Sync off, glide needs Mono, spread needs Unison
 PRE[16] = { 4: { 9: 1 }, 10: { 9: 1 }, 14: { 12: 0 }, 63: { 65: 1 }, 64: { 65: 1, 63: 1 }, 66: { 65: 2 } };
 for (let k = 26; k < 58; k++) if (/^RM Freq/.test(INSTRUMENTS[16].params[k].n)) PRE[16][k] = { 9: 1 };
-const NO_AUDIO = { 13: [58, 53], 14: [82], 15: [88, 84, 73, 78], 16: [13, 61, 62] };    // PB Range: only heard with the pitch wheel, Legato: only with overlapping notes (both tested below)
+// Meld: engine B is off by default; the modulation envelope and the LFOs are heard through the grid (Shape < M Env / LFO 1 / LFO 2)
+PRE[17] = { 70: { 71: 2 } };
+for (const b of [0, 91]) {
+  const on = b ? { [b + 13]: 1 } : {}, mat = b + 38, mm = { ...on, [mat + 1]: 1 }, l1 = { ...on, [mat + 2]: 1 }, l2 = { ...on, [mat + 3]: 1 };
+  for (let k = 0; k < 68; k++) PRE[17][b + k] = { ...on };
+  for (let k = 18; k < 22; k++) PRE[17][b + k] = mm;
+  for (let k = 22; k < 32; k++) PRE[17][b + k] = { ...l1 }; PRE[17][b + 25] = { ...l1, [b + 23]: 1 }; PRE[17][b + 31] = { ...l1 };
+  for (let k = 32; k < 38; k++) PRE[17][b + k] = { ...l2 }; PRE[17][b + 35] = { ...l2, [b + 33]: 1 };
+  for (let s2 = 0; s2 < 5; s2++) PRE[17][mat + 25 + s2] = { ...on, [mat + 2]: 1 };   // LFO 1 Rate < x: heard through LFO 1 on Shape
+}
+const NO_AUDIO = { 13: [58, 53], 14: [82], 15: [88, 84, 73, 78], 16: [13, 61, 62], 17: [75, 29, 37, 120, 128] };    // PB Range: only heard with the pitch wheel, Legato: only with overlapping notes (both tested below)
 const want = process.argv.slice(2).map(Number), types = Object.keys(INSTRUMENTS).map(Number).filter((t) => INSTRUMENTS[t].full && (!want.length || want.includes(t)));
 let bad = 0;
 function render(t, set, notes = [48, 55, 64]) {
@@ -72,6 +82,15 @@ if (types.includes(16)) {
   const rt = (on) => { const d = makeInstrument(16, SR); INSTRUMENTS[16].params.forEach((p, k) => d.setParam(k, p.def)); d.setParam(13, on); d.setParam(16, 0); const L = new Float32Array(N), R = new Float32Array(N), o = [];
     d.noteOn(48, 0.9); for (let b = 0; b < 160; b++) { if (b === 37) d.noteOn(52, 0.9); L.fill(0); R.fill(0); d.render(L, R, 0, N); o.push(...L); } return { out: Float32Array.from(o), e: o.reduce((x, y) => x + y * y, 0) }; };
   if (diff(rt(0), rt(1)) < 1e-6) { bad++; console.log('FAIL 16 Poli: LFO Retrig'); } else console.log('ok   16 Poli LFO retrigger');
+}
+// Meld pitch bend and LFO retrigger (engine A LFO 1 / LFO 2 and engine B LFO 1)
+if (types.includes(17)) {
+  const a = render(17, (d) => { d.setBend(2); d.setParam(75, 0); }), b = render(17, (d) => { d.setBend(2); d.setParam(75, 12); }); if (diff(a, b) < 1e-6) { bad++; console.log('FAIL 17 Meld: PB Range'); } else console.log('ok   17 Meld pitch bend range');
+  for (const [rt, pre] of [[29, { 40: 1 }], [37, { 41: 1 }], [120, { 104: 1, 131: 1 }], [128, { 104: 1, 132: 1 }]]) {
+    const run = (on) => { const d = makeInstrument(17, SR); INSTRUMENTS[17].params.forEach((p, k) => d.setParam(k, p.def)); for (const [j, v] of Object.entries(pre)) d.setParam(+j, v); d.setParam(rt, on); const L = new Float32Array(N), R = new Float32Array(N), o = [];
+      d.noteOn(48, 0.9); for (let bb = 0; bb < 160; bb++) { if (bb === 37) d.noteOn(52, 0.9); L.fill(0); R.fill(0); d.render(L, R, 0, N); o.push(...L); } return { out: Float32Array.from(o), e: o.reduce((x, y) => x + y * y, 0) }; };
+    if (diff(run(0), run(1)) < 1e-6) { bad++; console.log(`FAIL 17 Meld: ${INSTRUMENTS[17].params[rt].n}`); } else console.log(`ok   17 Meld ${INSTRUMENTS[17].params[rt].n}`);
+  }
 }
 // Operator PB Range
 if (types.includes(14)) { const a = render(14, (d) => { d.setBend(2); d.setParam(82, 0); }), b = render(14, (d) => { d.setBend(2); d.setParam(82, 12); }); if (diff(a, b) < 1e-6) { bad++; console.log('FAIL 14 Operator: PB Range'); } else console.log('ok   14 Operator pitch bend range'); }

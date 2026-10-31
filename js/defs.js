@@ -4,7 +4,7 @@ import { wtName, WT_COUNT } from './engine/live.js';
 // (app/src/main/cpp/instruments.h and devices.h).
 export const INST = { MINISYNTH: 1, SUPERSAW: 2, DRUM: 3, DIRECTWAVE: 4, GMS: 5, SOUNDFONT: 6, MOISTURE: 7, OSPHERE: 8, KEYSTONE: 9, SAMPLER: 10, WAVETABLE: 11 };
 // Instruments a synth/sampler track can switch between (drums have their own track type).
-export const INST_LIST = [16, 15, 14, 13, 11, 10, 1, 2, 4, 5, 6, 7, 8, 9, 12];
+export const INST_LIST = [17, 16, 15, 14, 13, 11, 10, 1, 2, 4, 5, 6, 7, 8, 9, 12];
 
 export const INSTRUMENTS = {
   1: { name: 'Mini Synth', params: [
@@ -612,6 +612,23 @@ export const IRACK_DEF = { name: 'Instrument Rack', rack: true, params: [] };   
     ms('Attack', 128), ms('Decay', 1960), pct('Sustain', 0.921), ms('Release', 1740)] };
 }
 
+// Meld (instrument 17, engine js/engine/meld.js): engine A at 0, globals at 68, placeholders 76..90 (90 = engine Pitch), engine B at 91
+{
+  const ms = (n, d) => q(n, 0.5, 20000, d, { curve: 'log', unit: 'ms' }), pct = (n, d) => q(n, 0, 1, d, { unit: '%' }), bi = (n, d = 0) => q(n, -1, 1, d, { unit: '%' });
+  const OSC = ['Basic Shapes', 'Swarm Sine', 'Harmonic FM', 'Fold FM', 'Squelch', 'Noise Loop', 'Bitgrinder', 'Chip'], LW = ['Sine', 'Triangle', 'Saw', 'Square', 'S&H', 'Wander'], SY = ['1/16', '1/8', '1/4', '1/2', '1 Bar', '2 Bars', '4 Bars'];
+  const TGT = ['Osc Macro 1', 'Osc Macro 2', 'Filter Freq', 'Filter Macro 1', 'Filter Macro 2', 'LFO 1 Rate'], SRC = ['A Env', 'M Env', 'LFO 1', 'LFO 2', 'Vel'];
+  const eng = (e) => { const L = 'AB'[e]; return [list(`${L} Osc`, OSC, 0), q(`${L} Oct`, -3, 3, 0, { step: 1, fmt: 'oct' }), q(`${L} Semi`, -12, 12, 0, { step: 1, fmt: 'sd' }), q(`${L} Fine`, -50, 50, 0, { step: 1, unit: 'ct' }),
+    q(`${L} Shape`, 0, 1, e ? 0 : 0.246, { fmt: 'mac' }), q(`${L} Tone`, 0, 1, e ? 0 : 0.484, { fmt: 'mac' }), list(`${L} Filter`, ['SVF 12dB', 'SVF 24dB', 'Ladder', 'Comb'], 0), q(`${L} Freq`, 20, 20500, 20500, { curve: 'log', unit: 'Hz' }),
+    q(`${L} Q`, 0, 1, 0, { fmt: 'num2' }), q(`${L} L-B-H-N`, 0, 1, 0, { fmt: 'num2' }), q(`${L} Pan`, -1, 1, 0, { fmt: 'pan' }), q(`${L} Tone Tilt`, -1, 1, 0, { fmt: 'num2' }), q(`${L} Level`, -60, 6, -3, { fmt: 'dbinf' }), onoff(`${L} On`, e ? 0 : 1),
+    ms(`${L} A Attack`, 2), ms(`${L} A Decay`, 600), pct(`${L} A Sustain`, 0.7), ms(`${L} A Release`, 300), ms(`${L} M Attack`, 10), ms(`${L} M Decay`, 800), pct(`${L} M Sustain`, 0), ms(`${L} M Release`, 300),
+    list(`${L} LFO 1 Wave`, LW, 0), onoff(`${L} LFO 1 Sync`), q(`${L} LFO 1 Rate`, 0.01, 40, 0.24, { curve: 'log', unit: 'Hz' }), list(`${L} LFO 1 Sync Rate`, SY, 2), bi(`${L} LFO 1 Shape`), pct(`${L} LFO 1 Fold`, 0), q(`${L} LFO 1 Phase`, 0, 360, 0, { fmt: 'deg' }), onoff(`${L} LFO 1 Retrig`),
+    bi(`${L} LFO 1 Attenuv.`, 1), q(`${L} LFO 1 Fade In`, 0, 10, 0, { unit: 's' }), list(`${L} LFO 2 Wave`, LW, 0), onoff(`${L} LFO 2 Sync`), q(`${L} LFO 2 Rate`, 0.01, 40, 6, { curve: 'log', unit: 'Hz' }), list(`${L} LFO 2 Sync Rate`, SY, 2), q(`${L} LFO 2 Phase`, 0, 360, 0, { fmt: 'deg' }), onoff(`${L} LFO 2 Retrig`),
+    ...TGT.flatMap((t) => SRC.map((sN) => bi(`${L} ${t} < ${sN}`, 0)))]; };
+  const ph = Array.from({ length: 15 }, () => ({ n: '-', min: 0, max: 1, def: 0, hidden: true }));
+  INSTRUMENTS[17] = { name: 'Meld', view: 'kit', full: true, params: [...eng(0), list('Voice Mode', ['Poly', 'Mono'], 0), q('Voices', 1, 16, 8, { step: 1, fmt: 'num' }), pct('Spread', 0), list('Stack', ['Off', '2', '3', '4'], 0),
+    pct('Drive', 0), q('Volume', -60, 6, 0, { fmt: 'dbinf' }), onoff('Limit', 1), q('PB Range', 0, 24, 2, { step: 1, fmt: 'st' }), ...ph, ...eng(1)] };
+}
+
 // ---- Audio Effect Rack (engine: js/engine/fx7.js; project: d.chains, d.macroMap)
 {
   const H = { hidden: true }, P = [];
@@ -804,6 +821,10 @@ export function fmtParam(p, v) {
     case 'num': return String(Math.round(v));
     case 'macro': return String(Math.round(v * 127));
     case 'f1f2': return v < 0.02 ? 'F1' : v > 0.98 ? 'F2' : Math.round((1 - v) * 100) + '/' + Math.round(v * 100);
+    case 'oct': return Math.round(v) + ' oct';
+    case 'sd': return Math.round(v) + ' sd';
+    case 'mac': return (v * 100).toFixed(1);
+    case 'num2': return v.toFixed(2);
     case 'coarse': return v < 0.5 ? '0.5' : String(Math.round(v));
     case 'algo': return String(Math.round(v) + 1);
     case 'ratio': return (v / 100).toFixed(2);
@@ -822,7 +843,7 @@ export function fmtParam(p, v) {
     case 'pan': return Math.abs(v) < 0.01 ? 'C' : (v < 0 ? Math.round(-v * 50) + 'L' : Math.round(v * 50) + 'R');
   }
   if (p.unit === '%') return Math.round(v * 100) + ' %';
-  if (p.unit === 'Hz') return v >= 1000 ? (v / 1000).toFixed(1) + ' kHz' : Math.round(v) + ' Hz';
+  if (p.unit === 'Hz') return v >= 1000 ? (v / 1000).toFixed(1) + ' kHz' : v < 10 ? v.toFixed(2) + ' Hz' : v < 100 ? v.toFixed(1) + ' Hz' : Math.round(v) + ' Hz';   // LFO rates below 10 Hz keep their decimals
   if (p.unit === 's') return v < 1 ? Math.round(v * 1000) + ' ms' : v.toFixed(2) + ' s';
   if (p.unit === 'ms') return v < 10 ? v.toFixed(1) + ' ms' : Math.round(v) + ' ms';
   if (p.unit === ':1') return v.toFixed(1) + ':1';
