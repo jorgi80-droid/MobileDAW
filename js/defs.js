@@ -4,7 +4,7 @@ import { wtName, WT_COUNT } from './engine/live.js';
 // (app/src/main/cpp/instruments.h and devices.h).
 export const INST = { MINISYNTH: 1, SUPERSAW: 2, DRUM: 3, DIRECTWAVE: 4, GMS: 5, SOUNDFONT: 6, MOISTURE: 7, OSPHERE: 8, KEYSTONE: 9, SAMPLER: 10, WAVETABLE: 11, SIMPLER: 18 };
 // Instruments a synth/sampler track can switch between (drums have their own track type).
-export const INST_LIST = [18, 17, 16, 15, 14, 13, 11, 10, 19, 20, 21, 22, 23, 24, 1, 2, 4, 5, 6, 7, 8, 9, 12];
+export const INST_LIST = [18, 17, 16, 15, 14, 13, 11, 10, 25, 26, 27, 19, 20, 21, 22, 23, 24, 1, 2, 4, 5, 6, 7, 8, 9, 12];
 
 export const INSTRUMENTS = {
   1: { name: 'Mini Synth', params: [
@@ -654,6 +654,19 @@ export const IRACK_DEF = { name: 'Instrument Rack', rack: true, params: [] };   
   INSTRUMENTS[22] = { name: 'DS HH', view: 'kit', full: true, ds: true, params: [hz('Tune', 150, 900, 420), dec(0.12), hz('Tone', 2000, 16000, 7000), list('Type', ['Metal', 'Noise', 'Mix'], 2), vol()] };
   INSTRUMENTS[23] = { name: 'DS Clap', view: 'kit', full: true, ds: true, params: [hz('Tune', 500, 3000, 1200), dec(0.3), pct('Tone', 0.5), pct('Spread', 0.3), pct('Sloppy', 0.3), pct('Tail', 0.5), vol()] };
   INSTRUMENTS[24] = { name: 'DS FM', view: 'kit', full: true, ds: true, params: [hz('Tune', 40, 800, 200), dec(0.4), pct('Amount', 0.4), q('Ratio', 0.5, 8, 1.41, { curve: 'log', unit: 'x' }), pct('Feedback', 0.2), pct('Tone', 0.7), vol()] };
+}
+
+// ---- Live 12 physical models (engine js/engine/phys.js): Electric, Tension, Collision
+{
+  const pct = (n, d) => q(n, 0, 1, d, { unit: '%' }), bi = (n, d = 0) => q(n, -1, 1, d, { unit: '%' }), ms = (n, d, hi = 5000) => q(n, 0, hi, d, { unit: 'ms' }), vol = (d = -6) => q('Volume', -60, 6, d, { fmt: 'dbinf' });
+  INSTRUMENTS[25] = { name: 'Electric', view: 'kit', full: true, params: [pct('Stiffness', 0.44), pct('Noise', 0.67), pct('Tine', 0.75), pct('Tone', 0.79), pct('Symmetry', 0.64), list('Type', ['R', 'W'], 0),
+    bi('Stiff < Vel', 0.5), pct('Force', 0.37), bi('Force < Vel', 0.49), pct('Noise Pitch', 0.35), pct('Noise Decay', 0.77), pct('Damper', 0.3), vol(-4)] };
+  INSTRUMENTS[26] = { name: 'Tension', view: 'kit', full: true, params: [list('Exciter', ['Bow', 'Hammer', 'Plectrum'], 2), pct('Protrusion', 0.34), pct('Stiffness', 0.38), pct('Velocity', 0.35), pct('Position', 0.25), pct('Exc Damping', 0.96),
+    pct('Decay', 0.81), pct('Ratio', 0.4), pct('Inharm', 0.2), pct('Damping', 0.56), onoff('Termination', 0), pct('Finger Mass', 0.63), pct('Finger Stiff', 0.65), pct('Fret Stiff', 0.65), onoff('Pickup', 1), pct('Pickup Position', 0.38), vol()] };
+  INSTRUMENTS[27] = { name: 'Collision', view: 'kit', full: true, params: [onoff('Mallet', 1), q('Mallet Volume', -60, 0, -12, { fmt: 'dbinf' }), pct('Stiffness', 0.39), pct('Mallet Noise', 0.62), pct('Color', 0.25),
+    onoff('Noise', 1), list('Noise Filter', ['LP', 'HP', 'BP'], 2), q('Noise Volume', -60, 0, -24, { fmt: 'dbinf' }), bi('Env Amt', 0.3), q('Freq', 50, 18000, 4100, { curve: 'log', unit: 'Hz' }), q('Res', 0.5, 10, 1.46, { curve: 'log', unit: '' }),
+    ms('Attack', 0), ms('Decay', 36), pct('Sustain', 0), ms('Release', 16),
+    list('Resonator', ['Beam', 'Marimba', 'String', 'Membrane', 'Plate', 'Pipe', 'Tube'], 3), q('Res Decay', 0.05, 10, 2, { curve: 'log', unit: 's' }), bi('Material', -0.55), pct('Bright', 0.9), bi('Inharm', 0), q('Ratio', 0.25, 4, 1, { curve: 'log', unit: 'x' }), vol()] };
 }
 
 // ---- Audio Effect Rack (engine: js/engine/fx7.js; project: d.chains, d.macroMap)

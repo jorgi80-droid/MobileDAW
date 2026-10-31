@@ -10,6 +10,7 @@ import { POLI_TGT, POLI_GRID, POLI_MIDI } from './engine/poli.js';
 import { MELD_B, MELD_G, MELD_N, MO, MELD_TGT, MELD_SRC, MELD_OSC } from './engine/meld.js';
 import { lvNum, lvTog, lvBtn, lvChoice, lvSel, lvDisp, lvDrag, lvRing, lvPath, lvTabs, lvEnvPts, DISPC } from './liveui.js';
 import { eq8Stages } from './engine/fx3.js';
+import { Electric, Tension, Collision } from './engine/phys.js';
 import { DsKick, DsSnare, DsTom, DsHH, DsClap, DsFm } from './engine/ds.js';
 import { WT_CATS, WT_LIST, WT_COUNT, WT_N_FRAMES, wtTable, wtCatOf } from './engine/live.js';
 import { offerAutomation } from './automate.js';
@@ -1129,6 +1130,58 @@ const dsPanel = (k) => {
   return h('div', { class: 'lk-col lk-ds' }, k.dk(disp, lists.length ? h('div', { class: 'lk-row lk-sev' }, ...lists) : null), h('div', { class: 'lk-row lk-dsk' }, ...knobs, k.sep(), k.K(n - 1, { big: true })));
 };
 for (const t of [19, 20, 21, 22, 23, 24]) VI[t] = dsPanel;
+// a display of what the instrument plays with the current settings (rendered offline by the real engine at a low rate); tap = audition
+const hitDisp = (k, Cls, w, hh, note = 60, secs = 0.8, col = DISPC.bl) => {
+  const n = k.def.params.length, sr = 8000, len = Math.round(sr * secs);
+  return k.D(w, hh, (g) => {
+    const d = new Cls(sr); for (let j = 0; j < n; j++) d.setParam(j, k.get(j)); d.setParam(n - 1, 0); d.noteOn(note, 0.8);
+    const L = new Float32Array(len), R = new Float32Array(len); d.render(L, R, 0, Math.round(len * 0.7)); d.noteOff(note); d.render(L, R, Math.round(len * 0.7), len);
+    let pk = 1e-6; for (const x of L) pk = Math.max(pk, Math.abs(x)); const mid = hh / 2, per = len / w, sc = (mid - 6) / Math.max(pk, 0.25);
+    g.fillStyle = DISPC.grid; g.fillRect(0, Math.round(mid), w, 1); g.beginPath();
+    for (let x = 0; x < w; x++) { let mx = 0; for (let j = Math.floor(x * per); j < Math.floor((x + 1) * per); j++) mx = Math.max(mx, Math.abs(L[j])); g.rect(x, mid - mx * sc, 1, Math.max(1, mx * sc * 2)); }
+    g.fillStyle = col; g.fill();
+  }, { onDown: () => { const i = k.ctx.i; P.noteEvent(i, note, 0.8, true); setTimeout(() => P.noteEvent(i, note, 0, false), 400); return false; } });
+};
+const ttl = (t) => h('div', { class: 'lk-st c' }, t);
+const box = (...kids) => h('div', { class: 'lk-box' }, ...kids.filter(Boolean));
+// Electric: Hammer | Fork | Damper / Pickup | Global on top; below, the sound display and the Stiffness / Force / Noise rows
+VI[25] = (k) => {
+  const O = (n, j) => k.TL(n, k.NT(j, { w: 54, cls: j === 6 || j === 8 ? 'or' : '' }));
+  const rows = h('div', { class: 'lk-elr' },
+    h('span', { class: 'lk-elh' }, 'Stiffness'), h('span'), O('Vel', 6),
+    h('span', { class: 'lk-elh' }, 'Force'), O('Amount', 7), O('Vel', 8),
+    h('span', { class: 'lk-elh' }, 'Noise'), O('Pitch', 9), O('Decay', 10));
+  return h('div', { class: 'lk-col lk-phys' },
+    h('div', { class: 'lk-pr' }, box(ttl('Hammer'), k.row(k.K(0), k.K(1))), box(ttl('Fork'), k.row(k.K(2), k.K(3))), box(ttl('Damper / Pickup'), k.row(k.K(4), k.TL('Type', k.CH(5, ['R', 'W'], { v: true, cls: 'lk-orb sm' })))), box(ttl('Global'), k.row(k.K(11), k.K(12)))),
+    h('div', { class: 'lk-pr2' }, k.dk(hitDisp(k, Electric, 236, 96)), k.dk(rows)));
+};
+// Tension: Exciter | String (dark strip) | Termination | Pickup | Volume
+VI[26] = (k) => h('div', { class: 'lk-col lk-phys' },
+  h('div', { class: 'lk-pr' }, box(k.row(ttl('Exciter'), k.S(0, { w: 86 })), k.row(k.K(1), k.K(2), k.K(3), k.K(4), k.K(5, { n: 'Damping' })))),
+  h('div', { class: 'lk-pr2' }, k.dk(hitDisp(k, Tension, 200, 80, 52, 1.2)), k.dk(h('div', { class: 'lk-row lk-sev' }, h('span', { class: 'lk-elh' }, 'String'),
+    k.TL('Decay', k.NT(6, { w: 54 })), k.TL('Ratio', k.NT(7, { w: 54 })), k.TL('Inharm', k.NT(8, { w: 54 })), k.TL('Damping', k.NT(9, { w: 54 }))))),
+  h('div', { class: 'lk-pr' }, box(k.row(k.T(10, 'Termination', { w: 92 })), k.row(k.K(11), k.K(12), k.K(13))), box(k.row(k.T(14, 'Pickup', { w: 64 })), k.row(k.K(15, { n: 'Position' }))), box(ttl('Global'), k.row(k.K(16, { big: true })))));
+// Collision: Mallet | Noise | Resonator (type, mode display, Decay / Material) with Bright / Inharm / Ratio / Volume below
+VI[27] = (k) => {
+  const g = k.get;
+  const modes = k.D(250, 96, (c, w, hh) => {
+    const t = Math.round(g(15)), r = g(20), inh = g(19); c.fillStyle = DISPC.grid; c.fillRect(0, hh - 14, w, 1);
+    for (let m = 1; m <= 12; m++) {
+      let x; switch (t) { case 0: x = ((2 * m + 1) / 3) ** 2; break; case 1: x = [1, 3.9, 9.2, 13.4, 16.6, 21, 25.4, 30, 35.1, 40.3, 46, 52][m - 1]; break; case 3: x = [1, 1.59, 2.14, 2.3, 2.65, 2.92, 3.16, 3.5, 3.6, 4.06, 4.15, 4.6][m - 1] * (1 + (r - 1) * 0.15 * ((m % 3) / 2)); break;
+        case 4: { const a = Math.ceil(m / 3), b = (m % 3) + 1; x = (a * a + b * b * r * r) / (1 + r * r); break; } case 5: x = 2 * m - 1; break; default: x = m; }
+      x *= 1 + inh * (x - 1) * 0.05; const X = 8 + Math.log(x) / Math.log(64) * (w - 16), a = Math.pow(m, -2.2 + g(18) * 2.2), dec = g(16) / (1 + (m - 1) * (1 + g(17)) * 0.6);
+      const y = (hh - 16) * Math.min(1, a * 0.9 + 0.05); c.fillStyle = DISPC.bl; c.fillRect(Math.round(X), hh - 14 - y, 2, y); c.fillStyle = DISPC.or; c.fillRect(Math.round(X) - 1, hh - 14 - y - 2, 4, 2);
+      c.globalAlpha = 0.35; c.fillRect(Math.round(X), hh - 12, 2, Math.min(10, dec * 3)); c.globalAlpha = 1;
+    }
+    label(c, 'Partials', 6, 12, DISPC.ink, 9);
+  });
+  const N = (j, w = 60) => k.N(j, { w });
+  return h('div', { class: 'lk-col lk-phys' }, h('div', { class: 'lk-pr lk-colr' },
+    box(k.T(0, 'Mallet', { w: 72 }), k.K(1, { n: 'Volume' }), k.TL('Stiffness', N(2)), k.TL('Noise', N(3)), k.TL('Color', N(4))),
+    box(k.row(k.T(5, 'Noise', { w: 60 }), k.CH(6, ['LP', 'HP', 'BP'], { cls: 'sm' })), k.row(k.K(7, { n: 'Volume' }), k.K(8)), k.row(k.K(9), k.TL('Res', N(10, 52))), k.row(k.TL('A', N(11, 50)), k.TL('D', N(12, 50)), k.TL('S', N(13, 44)), k.TL('R', N(14, 50)))),
+    h('div', { class: 'lk-col lk-colres' }, k.dk(h('div', { class: 'lk-row lk-shead' }, k.S(15, { w: 96, cls: 'dk or' })), modes, h('div', { class: 'lk-row lk-sev' }, k.TL('Decay', k.NT(16, { w: 60, cls: 'or' })), k.TL('Material', k.NT(17, { w: 60, cls: 'or' })))),
+      h('div', { class: 'lk-row lk-dsk' }, k.K(18), k.K(19), k.K(20), k.sep(), k.K(21, { big: true })))));
+};
 export function instKitView(i, t, every) {
   const def = INSTRUMENTS[t.inst.type]; if (!VI[t.inst.type]) return null;
   const d = { id: 'in' + t.id, type: t.inst.type, params: new Proxy({}, { get: (_, kk) => t.inst.params[kk] ?? (def.params[kk] ? def.params[kk].def : undefined) }) };

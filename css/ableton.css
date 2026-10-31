@@ -855,3 +855,12 @@
 .lk-ds > .lk-dk { align-items: center; }
 .lk-ds .lk-sev { align-self: stretch; justify-content: center; gap: var(--sp-4); }
 .lk-dsk { justify-content: space-between; align-items: flex-end !important; }
+/* Physical models (Electric, Tension, Collision): rows of framed sections of equal height, a dark display row below */
+.lk-phys { align-items: stretch !important; gap: var(--sp-3) !important; }
+.lk-pr { display: flex; gap: var(--sp-3); align-items: stretch; }
+.lk-pr > * { flex: 1 1 auto; }
+.lk-box { display: flex; flex-direction: column; align-items: center; justify-content: space-between; gap: var(--sp-2); padding: 6px 8px; border: 1px solid var(--lv-div); border-radius: var(--r-1); background: color-mix(in srgb, var(--lv-ink) 4%, transparent); }
+.lk-pr2 { display: flex; gap: var(--sp-3); align-items: stretch; } .lk-pr2 > .lk-dk { justify-content: center; } .lk-pr2 > .lk-dk:last-child { flex: 1; }
+.lk-elr { display: grid; grid-template-columns: auto 1fr 1fr; gap: 6px 18px; align-items: end; }
+.lk-elh { font: var(--fw-sb) var(--fs-3)/1 var(--font); color: #9a9aa2; align-self: center; }
+.lk-colr > .lk-box { flex: 0 0 auto; } .lk-colres { flex: 1 1 auto !important; align-items: stretch !important; justify-content: space-between; }

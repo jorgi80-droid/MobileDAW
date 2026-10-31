@@ -41,6 +41,9 @@ for (const b of [0, 91]) {
   for (let k = 26; k < 30; k++) PRE[18][k] = { 25: 1, 21: 2000, 28: 0.5 };
   for (let k = 30; k < 39; k++) PRE[18][k] = { 39: 1 }; PRE[18][34] = { 39: 1, 32: 1 }; PRE[18][37] = { 39: 1, 38: 1 };
   for (let k = 43; k < 49; k++) PRE[18][k] = { 44: 12 }; }
+// Tension: the finger controls only with Termination on; Collision: noise filter Res heard with the noise up, Release needs a sustain
+PRE[26] = { 11: { 10: 1 }, 12: { 10: 1 }, 13: { 10: 1 } };
+PRE[27] = { 10: { 7: 0 }, 14: { 13: 0.5, 7: 0 } };
 const NO_AUDIO = { 18: [5, 38], 13: [58, 53], 14: [82], 15: [88, 84, 73, 78], 16: [13, 61, 62], 17: [75, 29, 37, 120, 128] };    // PB Range: only heard with the pitch wheel, Legato: only with overlapping notes (both tested below)
 const want = process.argv.slice(2).map(Number), types = Object.keys(INSTRUMENTS).map(Number).filter((t) => INSTRUMENTS[t].full && (!want.length || want.includes(t)));
 let bad = 0;
