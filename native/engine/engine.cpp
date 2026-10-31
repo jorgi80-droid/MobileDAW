@@ -153,7 +153,9 @@ void Engine::runDev(int strip, int di, Device* d, float* L, float* R, int n) {
   double x = (double)L[0] + L[n - 1] + R[n - 1];
   if (!(x > -1e6 && x < 1e6)) { d->bypass = true; for (int i = 0; i < n; i++) { L[i] = 0; R[i] = 0; } err(2, strip, di, "nilai tidak valid (NaN/tak hingga)"); }
 }
-void Engine::runChain(Strip& st, int strip, float* L, float* R, int n) { for (int i = 0; i < st.ndev; i++) if (!st.dev[i]->bypass) runDev(strip, i, st.dev[i], L, R, n); }
+void Engine::runChain(Strip& st, int strip, float* L, float* R, int n) {
+  for (int i = 0; i < st.ndev; i++) if (!st.dev[i]->bypass) { if (st.dev[i]->hasTr) st.dev[i]->tr(playing, f2t(pos) / PPQ); runDev(strip, i, st.dev[i], L, R, n); }
+}
 void Engine::balance(float* L, float* R, int a, int b, double pan) {
   if (!pan) return;
   double gl = pan > 0 ? 1 - pan : 1, gr = pan < 0 ? 1 + pan : 1;

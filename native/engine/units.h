@@ -33,6 +33,8 @@ class Device {
  public:
   virtual ~Device() {}
   bool bypass = false;
+  bool hasTr = false;                                           // JS: d.tr exists (bar-synced effects read the song position)
+  virtual void tr(bool playing, double beat) {}
   virtual void setParam(int p, double v) = 0;
   virtual void setTempo(double bpm) {}
   virtual void process(float* L, float* R, int n) = 0;
