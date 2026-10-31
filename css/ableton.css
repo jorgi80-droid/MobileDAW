@@ -758,3 +758,13 @@
 .lk .lk-ch.lk-msub { background: none; border: 0; gap: 6px; } .lk .lk-ch.lk-msub .lv-btn { min-width: 90px; background: transparent; color: #4fc3f0; border: 0; } .lk .lk-ch.lk-msub .lv-btn.on { background: #4fc3f0; color: #1b1b1d; }
 .lk-arrow { align-self: center; font-size: 18px; }
 .lk .lk-ch.cy .lv-btn.on, .lk .lk-ch.lk-msub .lv-btn.on { background: #4fc3f0 !important; color: #1b1b1d !important; }
+/* controls stay clear of the screen edges (owner's request: rounded phone corners, thumbs): toolbar, Device / Clip / Keys bar, device chain */
+:root { --edge-x: 22px; }
+#top { padding-left: max(var(--edge-x), var(--sal)); padding-right: max(var(--edge-x), var(--sar)); }
+#dtabs { padding-left: max(var(--edge-x), var(--sal)); padding-right: max(var(--edge-x), var(--sar)); }
+#dbody .dev-scroll { padding-left: max(var(--edge-x), var(--sal)); padding-right: max(var(--edge-x), var(--sar)); }
+#dbody .dev-scroll::after { content: ''; flex: none; width: 1px; }   /* the last card keeps the right inset when scrolled to the end */
+/* Simpler */
+.lk .lk-ch.lk-smode { background: none; border: 0; gap: 6px; } .lk .lk-ch.lk-smode .lv-btn { min-width: 64px; background: transparent; color: #bbb; border: 0; } .lk .lk-ch.lk-smode .lv-btn.on { color: #f5e03a; background: transparent; box-shadow: inset 0 -2px #f5e03a; }
+.lk .lv-btn.lk-warp.on { background: #f5e03a !important; color: #1b1b1d !important; }
+.lk .lk-ch.lk-smode .lv-btn.on { color: #f5e03a !important; background: transparent !important; box-shadow: inset 0 -2px #f5e03a; }

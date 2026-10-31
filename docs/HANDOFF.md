@@ -160,7 +160,13 @@ Permintaan pemilik: SEMUA efek dan instrumen diganti dengan set stok Ableton Liv
   2000 + chain * 16 + j = efek di dalam. UI: `rackPanel()` di fxkit.js dipakai kedua rack (`irackView()` dari devices.js instCard).
   `node tools/ui-shots.mjs <folder> irack`.
 - Belum ada: instrumen bersampel di dalam Instrument Rack, Drum Rack versi rack (pad = chain), External Audio Effect (tidak mungkin di HP).
-- Instrumen Live 12: **Meld jadi** (tipe 17, engine `js/engine/meld.js`: dua engine A/B dengan 8 tipe osilator `MELD_OSC` + macro Shape/Tone,
+- Instrumen Live 12: **Simpler jadi** (tipe 18, engine `js/engine/simpler.js`: sampel = zona 0 dari sistem zona (200 + field, `isSampler`/`bigZ`
+  di project.js), Classic (start/length/loop + fade, Snap, Voices, Retrig) / 1-Shot (Trigger/Gate, fade in/out) / Slice (Transients /
+  Beats / Region dari C1, Mono/Poly), Warp Re-Pitch / Beats (dua grain), filter + circuit, LFO, pitch envelope, glide; panel `VI[18]`
+  dengan tab Sample / Controls; `docs/redesign/33-simpler.jpg`). inst-test memberi instrumen `sampler: true` sampel uji di bank slot 0;
+  `PRE` boleh berisi `n` (not uji khusus, mis. Slice mulai C1). ui-shots memuat 'Loop Tone.wav' ke instrumen bersampel; `TAB=Controls`.
+  Jarak tepi layar: variabel `--edge-x` (22 px) untuk toolbar, bar Device/Clip/Keys, rantai device (permintaan pemilik).
+  **Meld jadi** (tipe 17, engine `js/engine/meld.js`: dua engine A/B dengan 8 tipe osilator `MELD_OSC` + macro Shape/Tone,
   filter SVF 12/24 / Ladder / Comb, mix, envelope A/M, LFO 1 + FX (attenuverter, fade-in) + LFO 2, kisi modulasi per engine, Copy to B,
   Poly/Mono, Stack, Spread, Drive, Limit; engine B mulai di indeks 91 agar parameter 90 (Pitch engine) kosong; panel `VI[17]`;
   `docs/redesign/32-meld.jpg`). Format Hz < 10 kini dengan desimal.
@@ -177,7 +183,7 @@ Permintaan pemilik: SEMUA efek dan instrumen diganti dengan set stok Ableton Liv
   jadi default engine tidak penting); panel `VI[n](k)` memakai kit yang sama dengan efek (`k.get/set/K/S/N/...`, otomasi kind 5);
   `setBend(st)` opsional (core.bend memanggilnya; Drift menskalakan dengan PB Range). Tes: `tools/inst-test.mjs` (setiap parameter harus
   terdengar, `PRE` / `NO_AUDIO` per instrumen, plus tes khusus PB Range / Legato), ikut `run-tests`. "Note PB" Drift tidak dibuat (butuh MPE).
-  Belum: Wavetable (redesign), Simpler, Sampler (redesign), Drum Rack (redesign), Impulse, Electric, Collision,
+  Belum: Wavetable (redesign), Sampler (redesign), Drum Rack (redesign), Impulse, Electric, Collision,
   Tension, Granulator III, DS Kick / Snare / Tom / HH / Clap / FM. Tipe instrumen lama tetap bisa dimuat (proyek lama).
 - Aturan: parameter baru selalu DITAMBAHKAN di akhir (indeks lama tetap), `migrate()` bila arti berubah; efek tanpa padanan Live 12 masuk
   'Lainnya (lama)'; native engine otomatis kembali ke engine web untuk device yang belum di-port.

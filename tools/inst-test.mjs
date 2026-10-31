@@ -35,11 +35,21 @@ for (const b of [0, 91]) {
   for (let k = 32; k < 38; k++) PRE[17][b + k] = { ...l2 }; PRE[17][b + 35] = { ...l2, [b + 33]: 1 };
   for (let s2 = 0; s2 < 5; s2++) PRE[17][mat + 25 + s2] = { ...on, [mat + 2]: 1 };   // LFO 1 Rate < x: heard through LFO 1 on Shape
 }
-const NO_AUDIO = { 13: [58, 53], 14: [82], 15: [88, 84, 73, 78], 16: [13, 61, 62], 17: [75, 29, 37, 120, 128] };    // PB Range: only heard with the pitch wheel, Legato: only with overlapping notes (both tested below)
+// Simpler: 1-Shot / Slice / Warp controls need their mode (Slice plays from C1, so those tests use notes 36 / 37 / 38), the filter / pitch
+// envelopes and the LFO need an amount, Decay needs a sustain below 100 %, glide needs a glide mode
+{ const sl = { 0: 2, n: [36, 37, 38] }; PRE[18] = { 3: { 208: 0.3 }, 6: { 0: 1 }, 7: { 0: 1 }, 8: { 0: 1, 6: 1 }, 9: sl, 10: sl, 11: { ...sl, 9: 1 }, 12: { ...sl, 9: 2 }, 13: { ...sl, n: [36, 36, 37] }, 14: { 15: 4 }, 15: { 14: 1 }, 16: { 14: 1, 15: 4 }, 55: { 54: 1 }, 57: { 58: 0.3 } };
+  for (let k = 26; k < 30; k++) PRE[18][k] = { 25: 1, 21: 2000, 28: 0.5 };
+  for (let k = 30; k < 39; k++) PRE[18][k] = { 39: 1 }; PRE[18][34] = { 39: 1, 32: 1 }; PRE[18][37] = { 39: 1, 38: 1 };
+  for (let k = 43; k < 49; k++) PRE[18][k] = { 44: 12 }; }
+const NO_AUDIO = { 18: [5, 38], 13: [58, 53], 14: [82], 15: [88, 84, 73, 78], 16: [13, 61, 62], 17: [75, 29, 37, 120, 128] };    // PB Range: only heard with the pitch wheel, Legato: only with overlapping notes (both tested below)
 const want = process.argv.slice(2).map(Number), types = Object.keys(INSTRUMENTS).map(Number).filter((t) => INSTRUMENTS[t].full && (!want.length || want.includes(t)));
 let bad = 0;
+// sample-based instruments (defs sampler: true) get a test sample in bank slot 0: four hits (saw tone + noise burst) over one second
+const TEST = (() => { const n = SR, l = new Float32Array(n), r = new Float32Array(n); let ph = 0, seed = 9; for (let i = 0; i < n; i++) { const t = (i % (n / 4)) / SR, a = [0.5, 0.13, 0.5, 0.08][Math.floor(i / (n / 4))], e = Math.exp(-t * 6) * a; /* hits of different strength (Sensitivity) */ ph += 220 / SR; seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+  const x = ((ph % 1) * 2 - 1) * e + (seed / 4294967296 - 0.5) * Math.exp(-t * 60) * a * 2; l[i] = x; r[i] = x * 0.9; } return { l, r, frames: n, rate: SR }; })();
+const BANK = [TEST];
 function render(t, set, notes = [48, 55, 64]) {
-  const d = makeInstrument(t, SR); d.setTempo && d.setTempo(120); INSTRUMENTS[t].params.forEach((p, k) => d.setParam(k, p.def)); set(d);
+  const d = makeInstrument(t, SR, BANK); if (INSTRUMENTS[t].sampler) { d.setParam(200, 0); d.setParam(201, 60); d.setParam(209, 1); d.setParam(211, 1); } d.setTempo && d.setTempo(120); INSTRUMENTS[t].params.forEach((p, k) => d.setParam(k, p.def)); set(d);
   const L = new Float32Array(N), R = new Float32Array(N), out = new Float32Array(BLOCKS * N * 2); let e = 0, peak = 0;
   notes.forEach((p, j) => d.noteOn(p, [0.9, 0.6, 0.35][j % 3]));
   for (let b = 0; b < BLOCKS; b++) {
@@ -56,9 +66,9 @@ for (const t of types) {
   const issues = [];
   def.params.forEach((p, k) => {
     if (p.hidden || (NO_AUDIO[t] || []).includes(k)) return;
-    const pre = (d) => { for (const [j, v] of Object.entries((PRE[t] || {})[k] || {})) d.setParam(+j, v); };
-    const r0 = render(t, (d) => { pre(d); d.setParam(k, p.def); }); let changed = false;
-    for (const v of [p.min, p.max, p.min + (p.max - p.min) * 0.37]) { const r = render(t, (d) => { pre(d); d.setParam(k, v); }); if (r.bad || r.peak > 8) { issues.push(`${p.n}=${v}: ${r.bad || 'peak ' + r.peak.toFixed(1)}`); continue; } if (diff(r, r0) > 1e-6) changed = true; }
+    const P0 = (PRE[t] || {})[k] || {}, notes = P0.n, pre = (d) => { for (const [j, v] of Object.entries(P0)) if (j !== 'n') d.setParam(+j, v); };
+    const r0 = render(t, (d) => { pre(d); d.setParam(k, p.def); }, notes); let changed = false;
+    for (const v of [p.min, p.max, p.min + (p.max - p.min) * 0.37]) { const r = render(t, (d) => { pre(d); d.setParam(k, v); }, notes); if (r.bad || r.peak > 8) { issues.push(`${p.n}=${v}: ${r.bad || 'peak ' + r.peak.toFixed(1)}`); continue; } if (diff(r, r0) > 1e-6) changed = true; }
     if (!changed) issues.push(`${p.n} has no audible effect`);
   });
   if (issues.length) { bad++; console.log(`FAIL ${t} ${def.name}: ${issues.join('; ')}`); } else console.log(`ok   ${t} ${def.name} (${def.params.length} parameters)`);
@@ -91,6 +101,14 @@ if (types.includes(17)) {
       d.noteOn(48, 0.9); for (let bb = 0; bb < 160; bb++) { if (bb === 37) d.noteOn(52, 0.9); L.fill(0); R.fill(0); d.render(L, R, 0, N); o.push(...L); } return { out: Float32Array.from(o), e: o.reduce((x, y) => x + y * y, 0) }; };
     if (diff(run(0), run(1)) < 1e-6) { bad++; console.log(`FAIL 17 Meld: ${INSTRUMENTS[17].params[rt].n}`); } else console.log(`ok   17 Meld ${INSTRUMENTS[17].params[rt].n}`);
   }
+}
+// Simpler Retrig (the same note again restarts its voice) and LFO retrigger
+if (types.includes(18)) {
+  const seq = (k, v, extra = {}) => { const d = makeInstrument(18, SR, BANK); INSTRUMENTS[18].params.forEach((p, j) => d.setParam(j, p.def)); d.setParam(200, 0); d.setParam(201, 60); d.setParam(209, 1); d.setParam(211, 1);
+    for (const [j, x] of Object.entries(extra)) d.setParam(+j, x); d.setParam(k, v); const L = new Float32Array(N), R = new Float32Array(N), o = [];
+    d.noteOn(60, 0.9); for (let b = 0; b < 160; b++) { if (b === 37) d.noteOn(60, 0.9); L.fill(0); R.fill(0); d.render(L, R, 0, N); o.push(...L); } return { out: Float32Array.from(o), e: o.reduce((x, y) => x + y * y, 0) }; };
+  if (diff(seq(5, 0), seq(5, 1)) < 1e-6) { bad++; console.log('FAIL 18 Simpler: Retrig'); } else console.log('ok   18 Simpler retrigger');
+  if (diff(seq(38, 0, { 39: 1, 4: 1 }), seq(38, 1, { 39: 1, 4: 1 })) < 1e-6) { bad++; console.log('FAIL 18 Simpler: LFO Retrig'); } else console.log('ok   18 Simpler LFO retrigger');
 }
 // Operator PB Range
 if (types.includes(14)) { const a = render(14, (d) => { d.setBend(2); d.setParam(82, 0); }), b = render(14, (d) => { d.setBend(2); d.setParam(82, 12); }); if (diff(a, b) < 1e-6) { bad++; console.log('FAIL 14 Operator: PB Range'); } else console.log('ok   14 Operator pitch bend range'); }

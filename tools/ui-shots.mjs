@@ -115,7 +115,8 @@ if (go('devs')) {                                        // every instrument and
   if (process.env.INST) { const oi = process.env.INST.split(',').map(Number); list.inst = list.inst.filter((t) => oi.includes(t)); if (!only) list.fx = []; }
   await sel(2); await tab('dev');
   for (const k of list.inst) {
-    await ev(async (k) => { const P = await import('./js/project.js'); P.setInstrument(2, k); P.state.tracks[2].devices = []; P.syncAll(); P.emit('all'); }, k);
+    await ev(async (k) => { const P = await import('./js/project.js'), D = await import('./js/defs.js'); P.setInstrument(2, k); P.state.tracks[2].devices = []; P.syncAll(); if (D.INSTRUMENTS[k].sampler) await P.setZoneSample(2, 0, '/Samples/Loop Tone.wav'); P.emit('all'); }, k);
+    if (process.env.TAB) await ev((n) => { const b = [...document.querySelectorAll('.lk-tabs .lv-tab')].find((x) => x.textContent === n); if (b) b.click(); }, process.env.TAB);
     await shot('inst-' + k); await btn('btn-max'); await shot('inst-' + k + '-max'); await btn('btn-max');
   }
   for (const k of list.fx) {

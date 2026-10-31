@@ -2,9 +2,9 @@ import { factoryPresets } from './presetlib.js';
 import { wtName, WT_COUNT } from './engine/live.js';
 // Instrument + device definitions. Parameter ORDER must match the C++ side
 // (app/src/main/cpp/instruments.h and devices.h).
-export const INST = { MINISYNTH: 1, SUPERSAW: 2, DRUM: 3, DIRECTWAVE: 4, GMS: 5, SOUNDFONT: 6, MOISTURE: 7, OSPHERE: 8, KEYSTONE: 9, SAMPLER: 10, WAVETABLE: 11 };
+export const INST = { MINISYNTH: 1, SUPERSAW: 2, DRUM: 3, DIRECTWAVE: 4, GMS: 5, SOUNDFONT: 6, MOISTURE: 7, OSPHERE: 8, KEYSTONE: 9, SAMPLER: 10, WAVETABLE: 11, SIMPLER: 18 };
 // Instruments a synth/sampler track can switch between (drums have their own track type).
-export const INST_LIST = [17, 16, 15, 14, 13, 11, 10, 1, 2, 4, 5, 6, 7, 8, 9, 12];
+export const INST_LIST = [18, 17, 16, 15, 14, 13, 11, 10, 1, 2, 4, 5, 6, 7, 8, 9, 12];
 
 export const INSTRUMENTS = {
   1: { name: 'Mini Synth', params: [
@@ -629,6 +629,22 @@ export const IRACK_DEF = { name: 'Instrument Rack', rack: true, params: [] };   
     pct('Drive', 0), q('Volume', -60, 6, 0, { fmt: 'dbinf' }), onoff('Limit', 1), q('PB Range', 0, 24, 2, { step: 1, fmt: 'st' }), ...ph, ...eng(1)] };
 }
 
+// Simpler (instrument 18, engine js/engine/simpler.js): parameters 0..61, the sample is zone 0 of the zone system (200 + field)
+{
+  const ms = (n, d, lo = 0.1) => q(n, lo, 20000, d, { curve: 'log', unit: 'ms' }), pct = (n, d) => q(n, 0, 1, d, { unit: '%' }), bi = (n, d = 0) => q(n, -1, 1, d, { unit: '%' });
+  const SY = ['1/16', '1/8', '1/4', '1/2', '1 Bar', '2 Bars', '4 Bars'];
+  INSTRUMENTS[18] = { name: 'Simpler', view: 'kit', full: true, sampler: true, params: [list('Mode', ['Classic', '1-Shot', 'Slice'], 0), q('Gain', -36, 24, 0, { unit: 'dB' }), onoff('Loop'), onoff('Snap'), q('Voices', 1, 32, 6, { step: 1, fmt: 'num' }), onoff('Retrig'),
+    list('Trigger Mode', ['Trigger', 'Gate'], 0), ms('Fade In', 0.1), ms('Fade Out', 0.1), list('Slice By', ['Transients', 'Beats', 'Region'], 0), pct('Sensitivity', 0.91), list('Division', ['1/16', '1/8', '1/4', '1/2', '1 Bar'], 2),
+    q('Regions', 2, 64, 8, { step: 1, fmt: 'num' }), list('Playback', ['Mono', 'Poly'], 0), onoff('Warp'), q('Beats', 1, 64, 2, { step: 1, fmt: 'beats' }), list('Warp Mode', ['Re-Pitch', 'Beats'], 1),
+    onoff('Filter On', 1), list('Filter Type', ['Low-pass', 'High-pass', 'Band-pass', 'Notch'], 0), list('Slope', ['12', '24'], 1), list('Circuit', ['Clean', 'OSR', 'MS2', 'SMP', 'PRD'], 0), q('Frequency', 20, 22000, 22000, { curve: 'log', unit: 'Hz' }), pct('Res', 0),
+    bi('Freq < Vel'), q('Freq < Key', 0, 1, 1, { unit: '%' }), bi('Filter Env'), ms('Filter Attack', 0.1), ms('Filter Decay', 600), pct('Filter Sustain', 0), ms('Filter Release', 50),
+    onoff('LFO On', 1), list('LFO Wave', ['Sine', 'Square', 'Triangle', 'Saw Down', 'Saw Up', 'Random'], 0), onoff('LFO Sync'), q('LFO Rate', 0.01, 30, 1, { curve: 'log', unit: 'Hz' }), list('LFO Sync Rate', SY, 2),
+    ms('LFO Attack', 0.1), pct('LFO Key', 0), q('LFO Offset', 0, 360, 0, { fmt: 'deg' }), onoff('LFO Retrig', 1), pct('LFO > Vol', 0), pct('LFO > Pitch', 0), pct('LFO > Pan', 0), pct('LFO > Filter', 0),
+    onoff('Pitch Env', 1), q('Pitch Env Amount', -48, 48, 0, { unit: 'st' }), ms('Pitch Attack', 0.1), ms('Pitch Decay', 600), pct('Pitch Sustain', 0), ms('Pitch Release', 50),
+    q('Pan', -1, 1, 0, { fmt: 'pan' }), pct('Ran > Pan', 0), pct('Spread', 0), q('Transp', -48, 48, 0, { step: 1, fmt: 'st' }), q('Detune', -50, 50, 0, { step: 1, unit: 'ct' }), list('Glide', ['Off', 'Portamento', 'Glide'], 0), q('Glide Time', 0, 2000, 50, { unit: 'ms' }),
+    ms('Attack', 0.1), ms('Decay', 600), pct('Sustain', 1), ms('Release', 50), pct('Vol < Vel', 0.35), q('Volume', -60, 6, -12, { fmt: 'dbinf' })] };
+}
+
 // ---- Audio Effect Rack (engine: js/engine/fx7.js; project: d.chains, d.macroMap)
 {
   const H = { hidden: true }, P = [];
@@ -825,6 +841,7 @@ export function fmtParam(p, v) {
     case 'sd': return Math.round(v) + ' sd';
     case 'mac': return (v * 100).toFixed(1);
     case 'num2': return v.toFixed(2);
+    case 'beats': return Math.round(v) + ' Beats';
     case 'coarse': return v < 0.5 ? '0.5' : String(Math.round(v));
     case 'algo': return String(Math.round(v) + 1);
     case 'ratio': return (v / 100).toFixed(2);
