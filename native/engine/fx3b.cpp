@@ -98,7 +98,7 @@ void Spectrum::process(float* L, float* R, int n) {
   int ch = (int)jsRound(p[1]); for (int i = 0; i < n; i++) { buf[toInt32(w) & 16383] = (float)(ch == 0 ? L[i] : ch == 1 ? R[i] : ((double)L[i] + R[i]) * 0.5); w++; }
 }
 static void fftC(double* re, double* im, int n) {     // in-place radix-2 (display only)
-  for (int i = 1, j = 0; i < n; i++) { int bit = n >> 1; for (; j & bit; bit >>= 1) j ^= bit; j ^= bit; if (i < j) { std::swap(re[i], re[j]); std::swap(im[i], im[j]); } }
+  for (int i = 1, j = 0; i < n; i++) { int bit = n >> 1; for (; j & bit; bit >>= 1) j ^= bit; j ^= bit; if (i < j) { double t0 = re[i]; re[i] = re[j]; re[j] = t0; t0 = im[i]; im[i] = im[j]; im[j] = t0; } }
   for (int len = 2; len <= n; len <<= 1) { double a = -2 * PI / len, wr = std::cos(a), wi = std::sin(a);
     for (int i = 0; i < n; i += len) { double cr = 1, ci = 0; for (int k = 0; k < len / 2; k++) { int u = i + k, v = u + len / 2; double tr = re[v] * cr - im[v] * ci, ti = re[v] * ci + im[v] * cr; re[v] = re[u] - tr; im[v] = im[u] - ti; re[u] += tr; im[u] += ti; double nr = cr * wr - ci * wi; ci = cr * wi + ci * wr; cr = nr; } } }
 }
