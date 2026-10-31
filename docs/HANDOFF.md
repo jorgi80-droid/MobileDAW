@@ -195,7 +195,7 @@ Permintaan pemilik: SEMUA efek dan instrumen diganti dengan set stok Ableton Liv
   Granulator III 29 (`js/engine/granulator.js`, zona 0). Perbandingan: `docs/redesign/35-*.jpg`, `36-*.jpg`. Semua lulus inst-test.
   Pola panel: `hitDisp()` di fxkit.js menggambar bunyi dari engine asli (render offline) - ketuk = audisi.
   Belum: port C++ untuk semua instrumen / efek baru (engine native otomatis kembali ke Web), Drum Rack dengan chain per pad,
-  Tension, Granulator III, DS Kick / Snare / Tom / HH / Clap / FM. Tipe instrumen lama tetap bisa dimuat (proyek lama).
+  dan External Instrument (tidak mungkin di HP). Tipe instrumen lama tetap bisa dimuat (proyek lama).
 - Aturan: parameter baru selalu DITAMBAHKAN di akhir (indeks lama tetap), `migrate()` bila arti berubah; efek tanpa padanan Live 12 masuk
   'Lainnya (lama)'; native engine otomatis kembali ke engine web untuk device yang belum di-port.
 
