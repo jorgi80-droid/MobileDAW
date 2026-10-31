@@ -5,6 +5,7 @@ const D = await import(path.join(path.dirname(fileURLToPath(import.meta.url)), '
 
 const PPQ = 960, BAR = PPQ * 4;
 const PARAM_SYNTHS = [19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29];   // Live 12 instruments with a min / max sweep of every parameter
+const FX_PORTED = [0, 2, 3, 4, 5, 7, 8];   // effects with a min / max sweep scenario (fx-<name>)
 const SYNTHS = [1, 2, 5, 7, 8, 11, 19, 20, 21, 22, 23, 24, 25, 26, 27];   // instruments with golden scenarios (presets + playing)
 function lcg(seed) { let s = seed >>> 0; return () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 4294967296 * 2 - 1; }; }
 function tone(sec, hz, sr = 48000, amp = 0.5) { const n = Math.round(sec * sr), a = new Float32Array(n); for (let i = 0; i < n; i++) a[i] = Math.sin(2 * Math.PI * hz * i / sr) * amp * Math.min(1, (n - i) / 2000); return a; }
@@ -68,6 +69,7 @@ export const SCENARIOS = [
     } },
   ...instScenarios(),
   ...paramScenarios(),
+  ...fxScenarios(),
   { name: 'demo-ghibli', info: 'demo song Ghibli Sky (SoundFont + Osphere)', run: (e, o) => demo(e, o, 'ghibli-sky.mdaw', 30) },
   { name: 'demo-meadow', info: 'demo song Meadow Wind (SoundFont + Osphere)', run: (e, o) => demo(e, o, 'meadow-wind.mdaw', 30) },
 ];
@@ -147,6 +149,22 @@ function paramScenarios() {
       const hit = () => { const f = []; notes.forEach((nn, j) => f.push(j * 60, PPQ * 0.8, nn, 0.3 + (j % 4) * 0.2, 0)); e.trackNotes(0, f, f.length / 5); e.seek(0); e.play(); play(e, 0.9, [128, 64, 200]); e.stop(); play(e, 0.15); };
       e.resetTrack(0); e.trackInst(0, t); base(); hit();
       def.params.forEach((q, k) => { if (q.hidden) return; for (const v of [q.min, q.max]) { base(); e.instParam(0, k, v); hit(); } });
+    } };
+  });
+}
+
+// Effects: a SuperSaw + DS Kick pattern through the effect; every parameter in turn at its minimum, maximum and a middle value (plus the
+// defaults first), the effect instance kept between settings (state carries over, as in a real session); render sizes vary.
+function fxScenarios() {
+  return FX_PORTED.filter((t) => D.DEVICES[t]).map((t) => {
+    const def = D.DEVICES[t], key = def.name.toLowerCase().replace(/[^a-z0-9]+/g, '');
+    return { name: 'fx-' + key, info: `${def.name}: every parameter at min / max / middle`, run(e) {
+      e.tempo(120); e.trackInst(0, 2);
+      const f = []; for (let k = 0; k < 16; k++) f.push(k * PPQ / 2, PPQ * 0.45, 48 + ((k * 5) % 19), 0.4 + (k % 4) * 0.15, 0); e.trackNotes(0, f, f.length / 5);
+      e.insertDevice(0, 0, t); const base = () => def.params.forEach((q, k) => e.devParam(0, 0, k, q.def));
+      base(); e.seek(0); e.play(); play(e, 1, [128, 64, 200]);
+      def.params.forEach((q, k) => { if (q.hidden) return; for (const v of [q.min, q.max, q.min + (q.max - q.min) * 0.37]) { base(); e.devParam(0, 0, k, v); play(e, 0.35, [128, 96]); } });
+      e.stop(); play(e, 0.5);
     } };
   });
 }
