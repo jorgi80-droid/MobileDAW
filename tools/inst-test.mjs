@@ -44,6 +44,9 @@ for (const b of [0, 91]) {
 // Tension: the finger controls only with Termination on; Collision: noise filter Res heard with the noise up, Release needs a sustain
 PRE[26] = { 11: { 10: 1 }, 12: { 10: 1 }, 13: { 10: 1 } };
 PRE[27] = { 10: { 7: 0 }, 14: { 13: 0.5, 7: 0 } };
+// Impulse: a slot is heard on its own key (C3 + slot); Drive needs Sat, Freq / Res need the filter
+PRE[28] = { 0: { n: [60, 64, 67] }, 1: { n: [60, 64, 67] }, 2: { n: [60, 64, 67] } };
+for (let k = 0; k < 8; k++) { const b = 92 + k * 13, n = [60 + k]; for (let f = 0; f < 13; f++) PRE[28][b + f] = { n }; PRE[28][b + 3] = { n, [b + 4]: 1 }; PRE[28][b + 6] = { n, [b + 5]: 1 }; PRE[28][b + 7] = { n, [b + 5]: 1, [b + 6]: 1500 }; }
 const NO_AUDIO = { 18: [5, 38], 13: [58, 53], 14: [82], 15: [88, 84, 73, 78], 16: [13, 61, 62], 17: [75, 29, 37, 120, 128] };    // PB Range: only heard with the pitch wheel, Legato: only with overlapping notes (both tested below)
 const want = process.argv.slice(2).map(Number), types = Object.keys(INSTRUMENTS).map(Number).filter((t) => INSTRUMENTS[t].full && (!want.length || want.includes(t)));
 let bad = 0;
@@ -52,7 +55,7 @@ const TEST = (() => { const n = SR, l = new Float32Array(n), r = new Float32Arra
   const x = ((ph % 1) * 2 - 1) * e + (seed / 4294967296 - 0.5) * Math.exp(-t * 60) * a * 2; l[i] = x; r[i] = x * 0.9; } return { l, r, frames: n, rate: SR }; })();
 const BANK = [TEST];
 function render(t, set, notes = [48, 55, 64]) {
-  const d = makeInstrument(t, SR, BANK); if (INSTRUMENTS[t].sampler) { d.setParam(200, 0); d.setParam(201, 60); d.setParam(209, 1); d.setParam(211, 1); } d.setTempo && d.setTempo(120); INSTRUMENTS[t].params.forEach((p, k) => d.setParam(k, p.def)); set(d);
+  const d = makeInstrument(t, SR, BANK); if (INSTRUMENTS[t].sampler) for (let z = 0; z < (INSTRUMENTS[t].slots || 1); z++) { d.setParam(200 + z * 16, 0); d.setParam(201 + z * 16, 60); d.setParam(209 + z * 16, 1); d.setParam(211 + z * 16, 1); } d.setTempo && d.setTempo(120); INSTRUMENTS[t].params.forEach((p, k) => d.setParam(k, p.def)); set(d);
   const L = new Float32Array(N), R = new Float32Array(N), out = new Float32Array(BLOCKS * N * 2); let e = 0, peak = 0;
   notes.forEach((p, j) => d.noteOn(p, [0.9, 0.6, 0.35][j % 3]));
   for (let b = 0; b < BLOCKS; b++) {

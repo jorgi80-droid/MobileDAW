@@ -2,9 +2,9 @@ import { factoryPresets } from './presetlib.js';
 import { wtName, WT_COUNT } from './engine/live.js';
 // Instrument + device definitions. Parameter ORDER must match the C++ side
 // (app/src/main/cpp/instruments.h and devices.h).
-export const INST = { MINISYNTH: 1, SUPERSAW: 2, DRUM: 3, DIRECTWAVE: 4, GMS: 5, SOUNDFONT: 6, MOISTURE: 7, OSPHERE: 8, KEYSTONE: 9, SAMPLER: 10, WAVETABLE: 11, SIMPLER: 18 };
+export const INST = { MINISYNTH: 1, SUPERSAW: 2, DRUM: 3, DIRECTWAVE: 4, GMS: 5, SOUNDFONT: 6, MOISTURE: 7, OSPHERE: 8, KEYSTONE: 9, SAMPLER: 10, WAVETABLE: 11, SIMPLER: 18, IMPULSE: 28 };
 // Instruments a synth/sampler track can switch between (drums have their own track type).
-export const INST_LIST = [18, 17, 16, 15, 14, 13, 11, 10, 25, 26, 27, 19, 20, 21, 22, 23, 24, 1, 2, 4, 5, 6, 7, 8, 9, 12];
+export const INST_LIST = [18, 17, 16, 15, 14, 13, 11, 10, 28, 25, 26, 27, 19, 20, 21, 22, 23, 24, 1, 2, 4, 5, 6, 7, 8, 9, 12];
 
 export const INSTRUMENTS = {
   1: { name: 'Mini Synth', params: [
@@ -667,6 +667,16 @@ export const IRACK_DEF = { name: 'Instrument Rack', rack: true, params: [] };   
     onoff('Noise', 1), list('Noise Filter', ['LP', 'HP', 'BP'], 2), q('Noise Volume', -60, 0, -24, { fmt: 'dbinf' }), bi('Env Amt', 0.3), q('Freq', 50, 18000, 4100, { curve: 'log', unit: 'Hz' }), q('Res', 0.5, 10, 1.46, { curve: 'log', unit: '' }),
     ms('Attack', 0), ms('Decay', 36), pct('Sustain', 0), ms('Release', 16),
     list('Resonator', ['Beam', 'Marimba', 'String', 'Membrane', 'Plate', 'Pipe', 'Tube'], 3), q('Res Decay', 0.05, 10, 2, { curve: 'log', unit: 's' }), bi('Material', -0.55), pct('Bright', 0.9), bi('Inharm', 0), q('Ratio', 0.25, 4, 1, { curve: 'log', unit: 'x' }), vol()] };
+}
+
+// ---- Impulse (engine js/engine/impulse.js): 8 sample slots (zones 0..7) on C3..G3; 0 Volume, 1 Time, 2 Transp, slot k = 92 + k * 13 + field
+{
+  const slot = (k) => { const S = 'S' + (k + 1) + ' '; return [q(S + 'Start', 0, 0.9, 0, { unit: '%' }), q(S + 'Transp', -48, 48, 0, { step: 1, fmt: 'st' }), q(S + 'Stretch', -1, 1, 0, { unit: '%' }),
+    q(S + 'Drive', 0, 1, 0.3, { unit: '%' }), onoff(S + 'Sat', 0), onoff(S + 'Filter', 0), q(S + 'Freq', 30, 20000, 8600, { curve: 'log', unit: 'Hz' }), q(S + 'Res', 0.5, 10, 0.7, { curve: 'log', unit: '' }),
+    q(S + 'Decay', 0.01, 10, 2, { curve: 'log', unit: 's' }), list(S + 'Mode', ['Trig', 'Gate'], 0), q(S + 'Pan', -1, 1, 0, { fmt: 'pan' }), q(S + 'Volume', -60, 6, 0, { fmt: 'dbinf' }), q(S + 'Vol < Vel', 0, 1, 0.7, { unit: '%' })]; };
+  const ph = Array.from({ length: 89 }, () => ({ n: '-', min: 0, max: 1, def: 0, hidden: true }));
+  INSTRUMENTS[28] = { name: 'Impulse', view: 'kit', full: true, sampler: true, slots: 8, params: [q('Volume', -60, 6, 0, { fmt: 'dbinf' }), q('Time', -1, 1, 0, { unit: '%' }), q('Transp', -48, 48, 0, { step: 1, fmt: 'st' }), ...ph,
+    ...[0, 1, 2, 3, 4, 5, 6, 7].flatMap(slot)] };
 }
 
 // ---- Audio Effect Rack (engine: js/engine/fx7.js; project: d.chains, d.macroMap)

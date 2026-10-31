@@ -1182,6 +1182,32 @@ VI[27] = (k) => {
     h('div', { class: 'lk-col lk-colres' }, k.dk(h('div', { class: 'lk-row lk-shead' }, k.S(15, { w: 96, cls: 'dk or' })), modes, h('div', { class: 'lk-row lk-sev' }, k.TL('Decay', k.NT(16, { w: 60, cls: 'or' })), k.TL('Material', k.NT(17, { w: 60, cls: 'or' })))),
       h('div', { class: 'lk-row lk-dsk' }, k.K(18), k.K(19), k.K(20), k.sep(), k.K(21, { big: true })))));
 };
+// Impulse: eight slot pads (sample name; tap = select + audition C3..G3), the selected slot's sections (Start | Transp, Stretch | Drive + Sat |
+// Freq, Res + Filter | Decay + Trig / Gate | Pan | Volume + Vol < Vel) and the global Volume / Time / Transp column
+const IMST = new Map();
+VI[28] = (k) => {
+  const { i } = k.ctx, t = P.state.tracks[i], st = IMST.get(k.d.id) || { s: 0 }; IMST.set(k.d.id, st);
+  const zs = () => t.inst.zones || [], name = (z) => (zs()[z] && zs()[z].sample ? zs()[z].sample.name.replace(/\.[^.]+$/, '') : '');
+  const pads = h('div', { class: 'lk-impads' }), page = h('div', { class: 'lk-impage' });
+  const J = (f) => 92 + st.s * 13 + f, KN = (f, n, o = {}) => k.K(J(f), { n, ...o });
+  const build = () => {
+    pads.replaceChildren(...Array.from({ length: 8 }, (_, z) => {
+      const b = h('button', { class: 'lk-impad' + (z === st.s ? ' sel' : '') + (name(z) ? '' : ' empty') }, h('span', {}, name(z) || 'Drop'), h('small', {}, ['C3', 'C#3', 'D3', 'D#3', 'E3', 'F3', 'F#3', 'G3'][z]));
+      b.addEventListener('pointerdown', () => { if (st.s !== z) { st.s = z; build(); } if (name(z)) { P.noteEvent(i, 60 + z, 0.9, true); setTimeout(() => P.noteEvent(i, 60 + z, 0, false), 300); } });
+      return b; }));
+    const sec = (...kids) => h('div', { class: 'lk-imsec' }, ...kids);
+    page.replaceChildren(
+      sec(KN(0, 'Start'), lvBtn(name(st.s) ? 'Sample…' : 'Pilih…', () => BR.openBrowser('file', { track: i, zone: st.s }), { cls: 'lk-t' })),
+      sec(k.row(KN(1, 'Transp'), KN(2, 'Stretch'))),
+      sec(KN(3, 'Drive'), k.T(J(4), 'Sat', { w: 52 })),
+      sec(k.row(KN(6, 'Freq'), KN(7, 'Res')), k.row(k.T(J(5), 'Filter', { w: 60 }))),
+      sec(KN(8, 'Decay'), k.CH(J(9), ['Trig', 'Gate'], { cls: 'sm' })),
+      sec(KN(10, 'Pan')),
+      sec(KN(11, 'Volume'), k.TL('Velocity', k.N(J(12), { w: 54 }))));
+  };
+  build();
+  return h('div', { class: 'lk-row lk-imp' }, h('div', { class: 'lk-col lk-imm' }, pads, page), h('div', { class: 'lk-col lk-imglob' }, k.K(0, { n: 'Volume' }), k.K(1, { n: 'Time' }), k.K(2, { n: 'Transp' })));
+};
 export function instKitView(i, t, every) {
   const def = INSTRUMENTS[t.inst.type]; if (!VI[t.inst.type]) return null;
   const d = { id: 'in' + t.id, type: t.inst.type, params: new Proxy({}, { get: (_, kk) => t.inst.params[kk] ?? (def.params[kk] ? def.params[kk].def : undefined) }) };

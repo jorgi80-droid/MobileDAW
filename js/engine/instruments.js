@@ -6,6 +6,7 @@ import { Operator } from './operator.js';
 import { Analog } from './analog.js';
 import { Poli } from './poli.js';
 import { Electric, Tension, Collision } from './phys.js';
+import { Impulse } from './impulse.js';
 import { DsKick, DsSnare, DsTom, DsHH, DsClap, DsFm } from './ds.js';
 import { Meld } from './meld.js';
 import { Simpler } from './simpler.js';
@@ -626,6 +627,7 @@ export function makeInstrument(type, sr, bank, sfs) {
     case 17: return new Meld(sr);
     case 18: return new Simpler(sr, bank);
     case 19: return new DsKick(sr); case 20: return new DsSnare(sr); case 21: return new DsTom(sr);
+    case 28: return new Impulse(sr, bank);
     case 25: return new Electric(sr); case 26: return new Tension(sr); case 27: return new Collision(sr);
     case 22: return new DsHH(sr); case 23: return new DsClap(sr); case 24: return new DsFm(sr);
     default: return null;
