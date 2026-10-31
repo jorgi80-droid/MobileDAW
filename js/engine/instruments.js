@@ -105,10 +105,16 @@ export class SuperSaw extends Base {
 //   200 + pad*16 + f: 0 sample id (-1 none), 1 synth kind (-1 silent), 2 pan, 3 start 0..1, 4 end 0..1, 5 reverse, 6 attack s,
 //                     7 decay s, 8 sustain 0..1, 9 release s (0 = ignore note-off, play the sample through), 10 mute, 11 midi pitch (-1 = pad unused)
 const N_PADS = 16, DEF_PITCH = [36, 38, 39, 42, 46, 41];
+// Drum Rack chains (Live 12): a pad can hold a chain = an instrument + effects instead of its built-in sound / sample. The pad's note plays
+// the chain's instrument at C3 + the pad's Pitch (Live's "Receive"); the chain renders into its own buffer, runs its effects and is mixed with
+// the pad's Level / Pan, muted when the pad is muted (or another pad soloed). rackCmd (core.js, d = -1): op 0 = clear all chains,
+// 1..4 = chain effects (insert type a at j / parameter a = b / bypass a / remove j), 5 = chain instrument type a (0 = none),
+// 6 = chain instrument parameter a = b, 7 = clear chain c.
 export class DrumSynth extends Base {
-  constructor(sr, bank) {
+  constructor(sr, bank, mkInst) {
     super(sr);
-    this.bank = bank || [];
+    this.bank = bank || []; this.mkInst = mkInst; this.rack = true; this.pst = 0;
+    this.ch = Array.from({ length: N_PADS }, () => ({ inst: null, dev: [], L: new Float32Array(128), R: new Float32Array(128), note: -1 }));
     this.v = Array.from({ length: 24 }, () => ({ on: false, held: false, kind: 0, t: 0, vel: 0, ph: 0, age: 0, env: new Adsr(), n: { seed: 1 }, bp: new Biquad(), hp: 0,
       smp: false, pad: 0, sid: -1, pos: 0, dir: 1, lo: 0, hi: 0, ratio: 1, lv: 0, st: 0, ea: 0, ed: 0, es: 1, er: 0, rel: 0, g: 1, pl: 1, pr: 1 }));
     this.gain = 0.8; this.rate = 1; this.pitchNative = true;
@@ -116,7 +122,7 @@ export class DrumSynth extends Base {
   }
   setParam(i, x) {
     if (!Number.isFinite(x)) return;
-    if (i === 90) { this.rate = Math.pow(2, clamp(x, -24, 24) / 12); return; }
+    if (i === 90) { this.pst = Math.round(clamp(x, -24, 24)); this.rate = Math.pow(2, clamp(x, -24, 24) / 12); return; }
     if (i >= 0 && i < N_PADS * 3) {
       const q = this.pads[(i / 3) | 0], j = i % 3;
       if (j === 0) q.lvl = Math.pow(10, clamp(x, -60, 12) / 20); else if (j === 1) q.pit = clamp(x, -24, 24); else q.dec = clamp(x, 0.25, 3);
@@ -140,9 +146,23 @@ export class DrumSynth extends Base {
     if (al >= 0) for (let k = 0; k < a.length; k++) if (a[k].pitch === al) return k;
     return -1;
   }
+  cmd(op, c, j, a, b, eng) {
+    if (op === 0) { for (const x of this.ch) { if (x.inst) x.inst.allOff(); x.inst = null; x.dev.length = 0; x.note = -1; } return; }
+    const x = this.ch[c]; if (!x) return;
+    if (op === 7) { if (x.inst) x.inst.allOff(); x.inst = null; x.dev.length = 0; x.note = -1; return; }
+    if (op === 5) { x.inst = a > 0 && this.mkInst ? this.mkInst(a) : null; if (x.inst && x.inst.setTempo) x.inst.setTempo(this.bpm || 120); return; }
+    if (op === 6) { if (x.inst) x.inst.setParam(a, b); return; }
+    if (op === 1) { const d = eng.mk(a); if (d) { if (d.setTempo) d.setTempo(this.bpm || 120); x.dev.splice(clamp(j, 0, x.dev.length), 0, d); } return; }
+    if (op === 4) { if (j >= 0 && j < x.dev.length) x.dev.splice(j, 1); return; }
+    const d = x.dev[j]; if (!d) return;
+    if (op === 2) d.setParam(a, b); else if (op === 3) d.bypass = !!a;
+  }
+  setTempo(b) { this.bpm = b; for (const x of this.ch) { if (x.inst && x.inst.setTempo) x.inst.setTempo(b); for (const d of x.dev) if (d.setTempo) d.setTempo(b); } }
   noteOn(p, vel) {
     const k = this.padFor(p); if (k < 0) return;
     const q = this.pads[k]; if (q.mute) return;
+    const cx = this.ch[k];
+    if (cx.inst) { if (cx.note >= 0) cx.inst.noteOff(cx.note); cx.note = clamp(60 + Math.round(q.pit) + this.pst, 0, 127); cx.inst.noteOn(cx.note, vel); return; }
     const s = q.sid >= 0 ? this.bank[q.sid] : null;
     if (q.sid >= 0 && (!s || s.frames < 4)) return;       // sample not loaded (yet): stay silent
     if (!s && q.kind < 0) return;
@@ -164,12 +184,14 @@ export class DrumSynth extends Base {
     }
   }
   noteOff(p) {
+    const k = this.padFor(p); if (k >= 0 && this.ch[k].inst && this.ch[k].note >= 0) { this.ch[k].inst.noteOff(this.ch[k].note); this.ch[k].note = -1; }
     for (const v of this.v) if (v.on && v.smp && v.held && v.pitch === p && v.st < 3) {
       v.held = false;
       if (v.er > 0) { v.st = 3; v.rel = Math.max(v.lv, 1e-4) / (v.er * this.sr); }   // release 0 = one-shot: the sample plays to its end
     }
   }
-  allOff() { for (const v of this.v) v.on = false; }
+  allOff() { for (const v of this.v) v.on = false; for (const x of this.ch) if (x.inst) { x.inst.allOff(); x.note = -1; } }
+  active() { if (super.active()) return true; for (const x of this.ch) if (x.inst && x.inst.active()) return true; return false; }
   renderSample(v, L, R, from, to) {
     const s = this.bank[v.sid];
     if (!s) { v.on = false; return; }
@@ -189,8 +211,22 @@ export class DrumSynth extends Base {
       v.pos = pos + dir * ratio;
     }
   }
+  // chain instruments render sample-accurately into their buffers; effects + mix once per block (endBlock, called by core.js)
+  endBlock(L, R, n) {
+    for (let k = 0; k < N_PADS; k++) {
+      const x = this.ch[k]; if (!x.inst) continue;
+      const q = this.pads[k], bl = x.L, br = x.R;
+      if (!q.mute) {
+        for (const d of x.dev) if (!d.bypass) d.process(bl, br, n);
+        const pl = q.pan <= 0 ? 1 : 1 - q.pan, pr = q.pan >= 0 ? 1 : 1 + q.pan, gl = q.lvl * pl, gr = q.lvl * pr;
+        for (let i = 0; i < n; i++) { L[i] += bl[i] * gl; R[i] += br[i] * gr; }
+      }
+      bl.fill(0, 0, n); br.fill(0, 0, n);
+    }
+  }
   render(L, R, from, to) {
     const sr = this.sr;
+    for (const x of this.ch) if (x.inst) x.inst.render(x.L, x.R, from, to);
     for (const v of this.v) {
       if (!v.on) continue;
       if (v.smp) { this.renderSample(v, L, R, from, to); continue; }
@@ -613,7 +649,7 @@ export function makeInstrument(type, sr, bank, sfs) {
   switch (type) {
     case 1: return new MiniSynth(sr);
     case 2: return new SuperSaw(sr);
-    case 3: return new DrumSynth(sr, bank);
+    case 3: return new DrumSynth(sr, bank, (k) => (k === 3 ? null : makeInstrument(k, sr, bank, sfs)));
     case 4: case 9: return new Sampler(sr, bank);
     case 5: return new Gms(sr);
     case 6: return new SfPlayer(sr, sfs);

@@ -13,7 +13,7 @@ import * as BR from './browser.js';
 import * as P from './project.js';
 import * as FW from './floatwin.js';
 import { buildSuite, minimetersView } from './minimeters.js';
-import { kitView, irackView, instKitView } from './fxkit.js';
+import { kitView, irackView, instKitView, padChainView } from './fxkit.js';
 import { prefs } from './prefs.js';
 import * as DP from './drumpad.js';
 const { state } = P;
@@ -207,6 +207,12 @@ function instCard(i, t, o = {}) {
       const q = PD[cur], pk = (j) => { const idx = cur * 3 + j, p = PK[j]; return knob(p, () => t.inst.params[idx] ?? p.def, (v) => P.setInstParam(i, idx, v), fmtParam, col, (rect) => offerAutomation(rect, { kind: 5, strip: P.stripOf(i), param: idx, def: p }, `${t.name} • ${q.name} ${p.n}`)); };
       const pf = (f, p) => knob(p, () => q[f], (v) => P.setPad(i, cur, f, v), fmtParam, col);
       const pick = () => BR.openBrowser('file', { track: i, pad: cur, done: () => render() });
+      if (q.chain && q.chain.inst) {                 // the pad plays its chain: Level / Pan / Pitch (shifts the note the chain receives) only
+        side.replaceChildren(h('div', { class: 'drk-st' }, h('b', {}, q.name), h('span', {}, noteName(q.pitch))), h('div', { class: 'drk-kn' }, pk(0), pf('pan', PAN), pk(1)),
+          h('div', { class: 'drk-kn drk-note' }, 'Pad ini memainkan chain ' + INSTRUMENTS[q.chain.inst.type].name + ' (C3 + Pitch). Atur suaranya di kolom Chain.'),
+          h('div', { class: 'drk-rack' }, h('span', {}, 'Rack'), pitchKnob(i, t)));
+        return;
+      }
       side.replaceChildren(
         h('div', { class: 'drk-st' }, h('b', {}, q.name), h('span', {}, noteName(q.pitch))),
         h('div', { class: 'drk-kn' }, pk(0), pf('pan', PAN), pk(1), pk(2)),
@@ -225,14 +231,15 @@ function instCard(i, t, o = {}) {
         h('div', { class: 'drk-top' }, h('span', { class: 'drk-n' }, d.name), h('small', {}, noteName(d.pitch))),
         h('div', { class: 'drk-ms' }, sbtn('M', d.mute, (x) => { P.setPad(i, k, 'mute', !d.mute); x.classList.toggle('on', d.mute); b.classList.toggle('mut', d.mute); }), play, sbtn('S', d.solo, (x) => { P.setPad(i, k, 'solo', !d.solo); x.classList.toggle('on', d.solo); }, 'so')));
       const top = b.firstChild;
-      top.addEventListener('pointerdown', (e) => { top.setPointerCapture(e.pointerId); b.classList.add('hit'); cur = k; padSel.set(t.id, k); cells.forEach((x, m) => x.classList.toggle('sel', m === k)); showSide(); P.noteEvent(i, d.pitch, 0.9, true); });
+      top.addEventListener('pointerdown', (e) => { top.setPointerCapture(e.pointerId); b.classList.add('hit'); const was = cur; cur = k; padSel.set(t.id, k); cells.forEach((x, m) => x.classList.toggle('sel', m === k)); showSide(); P.noteEvent(i, d.pitch, 0.9, true); if (was !== k) setTimeout(render, 0); });
       const off = () => { b.classList.remove('hit'); P.noteEvent(i, d.pitch, 0, false); };
       top.addEventListener('pointerup', off); top.addEventListener('pointercancel', off);
       cells.push(b);
     }
     for (let r = 3; r >= 0; r--) for (let c = 0; c < 4; c++) pads.append(cells[r * 4 + c]);   // Live: the first pad is bottom left
     showSide();
-    return h('div', { class: 'card drack drk' }, head, h('div', { class: 'drk-body' }, pads, side));
+    const chain = padChainView(i, cur, o.every || every);
+    return h('div', { class: 'card drack drk' }, head, h('div', { class: 'drk-body' }, pads, side, chain.el));
   }
   if (def.view === 'soundfont') {
     const sf = t.inst.sf;

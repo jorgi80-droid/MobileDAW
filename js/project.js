@@ -655,6 +655,55 @@ export function syncPads(i) {
   if (!t || t.kind !== 'drum' || !t.inst) return;
   padsOf(i);
   for (let k = 0; k < MAX_PADS; k++) sendPad(i, k);
+  eng.rackCmd(i, -1, 0, 0, 0, 0, 0);
+  for (let k = 0; k < MAX_PADS; k++) sendPadChain(i, k);
+}
+// ---- Drum Rack chains: a pad can hold an instrument + effects (pad.chain = { inst: { type, params, sample }, devices: [{ id, type, params, bypass }] }).
+// The engine plays the chain instead of the pad's own sound (instruments.js DrumSynth.cmd). Every change is one undo step (the whole chain).
+export const PAD_INSTS = [19, 20, 21, 22, 23, 24, 18, 25, 26, 27, 13, 14, 15, 16, 17, 1, 2];   // DS ..., Simpler, physical models, synths
+const cloneChain = (c) => (c ? { inst: c.inst ? { ...c.inst, params: { ...c.inst.params } } : null, devices: c.devices.map((d) => ({ ...d, params: [...d.params] })) } : null);
+function sendPadChain(i, k) {
+  const q = padsOf(i)[k], x = q && q.chain;
+  eng.rackCmd(i, -1, 7, k, 0, 0, 0);
+  if (!x) return;
+  const def = x.inst && INSTRUMENTS[x.inst.type];
+  if (def) {
+    eng.rackCmd(i, -1, 5, k, 0, x.inst.type, 0);
+    def.params.forEach((p, j) => { if (!p.hidden) eng.rackCmd(i, -1, 6, k, 0, j, x.inst.params[j] ?? p.def); });
+    if (def.sampler) { eng.rackCmd(i, -1, 6, k, 0, 200, x.inst.sample ? x.inst.sample.id : -1); eng.rackCmd(i, -1, 6, k, 0, 201, 60); }   // Simpler: the sample is its zone 0
+  }
+  x.devices.forEach((d, j) => { if (!DEVICES[d.type]) return; fillParams(d, DEVICES); eng.rackCmd(i, -1, 1, k, j, d.type, 0); d.params.forEach((v, p) => eng.rackCmd(i, -1, 2, k, j, p, v)); if (d.bypass) eng.rackCmd(i, -1, 3, k, j, 1, 0); });
+}
+const padChainEdit = (i, k, key, fn) => {
+  const q = padsOf(i)[k]; if (!q) return null;
+  if (HK.on && !(key && HK.hit('pdc' + state.tracks[i].id + '.' + k + key))) HK.add({ t: 'val', k: 'pad', s: state.tracks[i].id, d: k, p: 'chain', v: cloneChain(q.chain) });
+  if (!q.chain) q.chain = { inst: null, devices: [] };
+  const r = fn(q.chain, q);
+  if (!q.chain.inst && !q.chain.devices.length) q.chain = null;            // an empty chain = the pad's own sound again
+  return r;
+};
+export function setPadChainInst(i, k, type) {
+  padChainEdit(i, k, null, (c, q) => { c.inst = type ? { type, params: {}, sample: null } : null; if (type) q.name = INSTRUMENTS[type].name.slice(0, 14); });
+  sendPadChain(i, k); emit('devices');
+}
+export function padChainParam(i, k, j, v) {
+  padChainEdit(i, k, 'p' + j, (c) => { if (c.inst) c.inst.params[j] = v; });
+  eng.rackCmd(i, -1, 6, k, 0, j, v);
+}
+export async function setPadChainSample(i, k, path) {
+  const s = await loadSampleObj(path); if (!s) return { error: 'Sample tidak bisa dimuat (format atau file terlalu panjang).' };
+  padChainEdit(i, k, null, (c, q) => { if (!c.inst || !INSTRUMENTS[c.inst.type].sampler) c.inst = { type: 18, params: {}, sample: null }; c.inst.sample = s; q.name = cleanName(s.name); });
+  sendPadChain(i, k); emit('devices'); return { k };
+}
+export function padChainAddDevice(i, k, type) {
+  padChainEdit(i, k, null, (c) => { if (c.devices.length < 8) c.devices.push({ id: uid(), type, params: DEVICES[type].params.map((p) => p.def), bypass: false }); });
+  sendPadChain(i, k); emit('devices');
+}
+export function padChainRemoveDevice(i, k, j) { padChainEdit(i, k, null, (c) => { c.devices.splice(j, 1); }); sendPadChain(i, k); emit('devices'); }
+export function padChainBypass(i, k, j) { padChainEdit(i, k, null, (c) => { const d = c.devices[j]; if (d) d.bypass = !d.bypass; }); sendPadChain(i, k); emit('devices'); }
+export function padChainDevParam(i, k, j, p, v) {
+  padChainEdit(i, k, 'd' + j + '.' + p, (c) => { const d = c.devices[j]; if (d) d.params[p] = v; });
+  eng.rackCmd(i, -1, 2, k, j, p, v);
 }
 const PAD_FIELD_PARAM = { sample: 0, kind: 1, pan: 2, start: 3, end: 4, rev: 5, a: 6, d: 7, s: 8, r: 9, pitch: 11 };
 export function setPad(i, k, field, v) {
@@ -662,6 +711,7 @@ export function setPad(i, k, field, v) {
   if (HK.on && q[field] !== v && !HK.hit('pd' + state.tracks[i].id + '.' + k + field)) HK.add({ t: 'val', k: 'pad', s: state.tracks[i].id, d: k, p: field, v: q[field] });
   q[field] = v;
   if (field === 'name') return;
+  if (field === 'chain') { sendPadChain(i, k); return; }
   if (field === 'mute' || field === 'solo') { for (let m = 0; m < MAX_PADS; m++) sendPad(i, m); return; }
   const b = 200 + k * 16;
   if (field === 'gain') eng.instParam(i, k * 3, v); else if (field === 'pit') eng.instParam(i, k * 3 + 1, v); else if (field === 'dec') eng.instParam(i, k * 3 + 2, v);
@@ -1118,6 +1168,13 @@ async function deserializeInner(text) {
     if (!Array.isArray(t.inst.pads)) { delete t.inst.pads; continue; }
     t.inst.pads = t.inst.pads.filter((q) => q && Number.isFinite(q.pitch)).slice(0, MAX_PADS).map((q) => newPad(q));
     for (const q of t.inst.pads) {
+      if (q.chain) {                                                          // Drum Rack chain: instrument (+ its sample) and effects
+        const c = q.chain; c.devices = (Array.isArray(c.devices) ? c.devices : []).filter((d) => d && DEVICES[d.type] && !DEVICES[d.type].hidden);
+        for (const d of c.devices) { if (!Array.isArray(d.params)) d.params = []; fillParams(d, DEVICES); d.bypass = !!d.bypass; }
+        if (c.inst && !INSTRUMENTS[c.inst.type]) c.inst = null;
+        if (c.inst) { c.inst.params = c.inst.params || {}; if (c.inst.sample) { const sm = c.inst.sample.path ? await loadSampleObj(c.inst.sample.path) : null; if (!sm && c.inst.sample.path) missing.push(c.inst.sample.path); c.inst.sample = sm; } }
+        if (!c.inst && !c.devices.length) q.chain = null;
+      }
       if (!q.sample) continue;
       const sm = q.sample.path ? await loadSampleObj(q.sample.path) : null;
       if (sm) q.sample = sm; else { if (q.sample.path) missing.push(q.sample.path); q.sample = null; if (q.kind < 0) q.mute = true; }
@@ -1126,8 +1183,10 @@ async function deserializeInner(text) {
   let maxId = 0;
   for (const t of state.tracks) { maxId = Math.max(maxId, t.id || 0); for (const c of t.clips) maxId = Math.max(maxId, c.id || 0); }
   for (const c of chains) for (const d of c.devices) maxId = Math.max(maxId, d.id || 0);
+  for (const t of state.tracks) for (const q of (t.kind === 'drum' && t.inst && t.inst.pads) || []) if (q.chain) for (const d of q.chain.devices) maxId = Math.max(maxId, d.id || 0);
   _id = 1 + maxId;
   for (const c of chains) for (const d of c.devices) if (!d.id) d.id = uid();
+  for (const t of state.tracks) for (const q of (t.kind === 'drum' && t.inst && t.inst.pads) || []) if (q.chain) for (const d of q.chain.devices) if (!d.id) d.id = uid();
   state.sel = { track: 0, clip: null };
   syncAll();
   emit('all');

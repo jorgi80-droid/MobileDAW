@@ -877,3 +877,10 @@
 .lk-imsec:first-child { border-left: 0; }
 .lk-imglob { justify-content: space-between; padding-left: var(--sp-3); border-left: 1px solid var(--lv-div); }
 .lk-ds > .lk-dk > .lk-shead { align-self: stretch; }
+/* Drum Rack: chain of the selected pad (instrument + effects in a row, as Live shows the pad's chain next to the rack) */
+.drk-chain { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 260px; padding-left: var(--sp-3); border-left: 1px solid var(--lv-div); }
+.drk-chh { display: flex; align-items: center; gap: var(--sp-2); font: var(--fw-b) var(--fs-3)/1 var(--font); color: var(--lv-ink); }
+.drk-chb { display: flex; gap: var(--sp-3); align-items: stretch; }
+.drk-chb > .card { margin: 0; }
+.drk-chb > .drk-note { max-width: 240px; }
+.lk-pcs { align-items: stretch !important; gap: var(--sp-3) !important; }

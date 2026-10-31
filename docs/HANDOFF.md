@@ -25,8 +25,11 @@ Baca juga `README-ANDROID.md` (build, install, status fase 2).
 | Perombakan UI Live 12 tahap 2 (Fase 0-8): fondasi CSS/token, control bar + jendela global, internal device, tab Keys, arrangement (tinggi baris, overview, loop brace), Clip View (Transform + Envelopes), mixer (lebar strip, input return, send di header) | selesai (`docs/redesign/11..17-*.jpg`, `docs/redesign/PERF.md`) |
 | Audio Effect Rack dengan macro (engine JS; port C++ belum) | selesai |
 | Instrument Rack (instrumen + efek per chain, zona Key / Vel / Chain, macro) | selesai (instrumen bersampel di dalam chain belum) |
-| **Port C++: GMS, Moisture, Osphere, DirectWave/Keystone/Sampler, Drum Sampler, SoundFont, Wavetable** | **belum** |
-| **Port C++: semua efek (Utility, EQ Three, Parametric EQ, Compressor, Limiter, Saturator, Auto Filter, Echo, Reverb, Roar, Autoduck, Stereolizer, Spacer, Level/Analyzer/MiniMeters)** | **belum** |
+| Port C++: DS Kick/Snare/Tom/HH/Clap/FM, Electric, Tension, Collision, Impulse, Granulator III (`native/engine/inst_live.*`) | selesai, identik bit (golden `play-*`, `params-*`) |
+| **Port C++: GMS, Moisture, Osphere, DirectWave/Keystone/Sampler, Drum Sampler, SoundFont, Wavetable, Drift, Operator, Analog, Poli, Meld, Simpler, Instrument Rack** | **belum** |
+| Port C++: Utility, Auto Filter, EQ Three, Saturator (oversampler 4x), Compressor, Limiter, Echo, Reverb, Parametric EQ, Roar (`native/engine/fx*.{h,cpp}`) | selesai, identik bit (golden `fx-*`) |
+| **Port C++: efek lainnya (Autoduck, Level/Analyzer/MiniMeters, Stereolizer, Spacer, fx3/fx4/fx5/fx6, Audio Effect Rack; juga `tr` (posisi lagu) dan modulator di runChain C++)** | **belum** |
+| Drum Rack: chain per pad (instrumen + efek di pad, `pad.chain`; engine `DrumSynth.cmd/endBlock`, project `setPadChainInst / padChain*`, UI `padChainView` di fxkit.js, tes `tools/drumrack-test.mjs`) | selesai (`docs/redesign/39-drumrack-chain.png`) |
 | Ekspor WAV lewat engine native; angka CPU/underrun Web vs Native dari HP | belum |
 
 ## Redesign UI Live 12 (sesi ini) - di mana dan bagaimana
@@ -209,3 +212,14 @@ Permintaan pemilik: SEMUA efek dan instrumen diganti dengan set stok Ableton Liv
 - **Instrument / Effect Rack dengan macro**: usulan desain ada di laporan sesi ini (rantai paralel = node "rack" berisi beberapa chain,
   mixer per chain, 8 macro yang memetakan ke parameter device di dalamnya; butuh engine JS + C++ + golden). Belum dikerjakan.
 - **Isi klip menyusut otomatis** saat not terakhir dihapus (seperti FL Studio Mobile): sekarang hanya memanjang (`growTo`). Belum dikerjakan.
+
+## Port C++ (sesi ini) - catatan
+- Semua instrumen sesi lalu dan 10 efek inti sudah di C++; tiap port lulus golden identik bit. Skenario baru: `params-<instrumen>` (setiap parameter
+  min/max, dengan sample uji untuk Impulse/Granulator) dan `fx-<efek>` (synth lewat efek, setiap parameter min/maks/tengah). Untuk efek baru:
+  tambahkan tipe ke `FX_PORTED` di `tools/golden/scenarios.mjs`; untuk instrumen: `PARAM_SYNTHS` / `SYNTHS`.
+- Math.random tidak boleh dipakai di engine (Auto Filter S&H dan Roar kini LCG berseed). Umpan balik yang chaotic (contoh lama: DS FM Feedback)
+  tidak bisa identik antar-implementasi sin(); buat stabil (rata-rata dua sampel) sebelum port.
+- Semua kelas instrumen WAJIB punya allOff() (engine memanggilnya saat Stop/panic); inst-test sekarang memeriksanya.
+- Drum Rack chain: pad.chain = { inst: { type, params, sample }, devices }. Note pad memainkan instrumen chain di C3 + Pitch pad; Level/Pan/Mute/Solo pad
+  berlaku untuk chain; rackCmd op 7 = kosongkan satu chain. Simpler di pad memakai sample sendiri (browser `padChain`). DrumSynth belum di-port C++,
+  jadi track drum tetap di engine Web.

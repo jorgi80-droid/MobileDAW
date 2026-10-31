@@ -1341,3 +1341,37 @@ V[21] = (k) => {
 export const KIT = V;
 export function kitView(ctx) { if (!V[ctx.d.type]) return null;   // no Live 12 panel yet: the card falls back to the automatic knob layout
   const k = kit(ctx); const el = V[ctx.d.type](k); el.classList.add('lk'); return { el, draw: k.redraw }; }
+
+// ---- Drum Rack chain of one pad (devices.js Drum Rack card): instrument chooser, the instrument's Live 12 panel, the chain's effects in a row.
+// Parameters go through project.js padChain* (one undo step per change, no automation lanes: map them through the pad's knobs instead).
+export function padChainView(i, k, every) {
+  const t = P.state.tracks[i], q = P.padsOf(i)[k], c = q && q.chain, draws = [];
+  const r = (e) => e.currentTarget.getBoundingClientRect();
+  const pickInst = (e) => { const rc = r(e); menu([{ label: 'Suara pad sendiri (tanpa instrumen)', check: !(c && c.inst), fn: () => P.setPadChainInst(i, k, 0) }, { sep: true },
+    ...P.PAD_INSTS.map((ty) => ({ label: INSTRUMENTS[ty].name, check: !!(c && c.inst && c.inst.type === ty), fn: () => P.setPadChainInst(i, k, ty) }))], rc.left, rc.bottom + 1); };
+  const pickSample = () => BR.openBrowser('file', { track: i, padChain: k });
+  const head = h('div', { class: 'drk-chh' }, h('b', {}, 'Chain'), h('span', { class: 'lk-grow' }),
+    h('button', { class: 'lv-btn', onclick: pickInst }, c && c.inst ? INSTRUMENTS[c.inst.type].name + ' ▾' : 'Instrumen ▾'),
+    h('button', { class: 'lv-btn', onclick: (e) => fxMenu(r(e), (ty) => P.padChainAddDevice(i, k, ty)) }, '+ Efek'));
+  const body = h('div', { class: 'drk-chb' });
+  if (c && c.inst) {
+    const def = INSTRUMENTS[c.inst.type], ip = c.inst.params;
+    const d = { id: 'pc' + t.id + '.' + k, type: c.inst.type, params: new Proxy({}, { get: (_, kk) => ip[kk] ?? (def.params[kk] ? def.params[kk].def : undefined) }) };
+    const ctx = { i, di: -1, d, def, every, nested: true, setParam: (kk, v) => P.padChainParam(i, k, +kk, v), autoFn: () => null };
+    let el;
+    if (def.sampler) {                                                        // Simpler in a pad: its sample + the main controls
+      const kk = kit(ctx), K = (n) => kk.K(def.params.findIndex((x) => x.n === n));
+      el = h('div', { class: 'lk-col lk-pcs' }, h('div', { class: 'lk-row lk-shead' }, h('span', { class: 'lk-st' }, c.inst.sample ? c.inst.sample.name : 'Belum ada sample'), lvBtn('Sample…', pickSample, { cls: 'lk-t' })),
+        h('div', { class: 'lk-row lk-dsk' }, K('Gain'), K('Transp'), K('Frequency'), K('Res'), K('Attack'), K('Decay'), K('Release'), K('Volume')));
+      draws.push(kk.redraw);
+    } else if (VI[c.inst.type]) { const kk = kit(ctx); el = VI[c.inst.type](kk); draws.push(kk.redraw); }
+    if (el) { el.classList.add('lk', 'lk-inst'); body.append(h('div', { class: 'card lkcard lk-rcard drk-chi' }, h('h4', {}, h('span', {}, def.name)), el)); }
+  } else body.append(h('div', { class: 'drk-note' }, 'Pad ini memakai suaranya sendiri. Pilih instrumen untuk membuat chain (instrumen + efek), seperti Drum Rack Live.'));
+  (c ? c.devices : []).forEach((x, j) => {
+    const def = DEVICES[x.type], ctx = { i, di: -1, d: x, def, every, nested: true, setParam: (kk, v) => P.padChainDevParam(i, k, j, kk, v), autoFn: () => null };
+    const kv = kitView(ctx); if (kv) draws.push(kv.draw);
+    const more = h('button', { class: 'dv-more', 'aria-label': 'Menu efek', onclick: (e) => { const rc = r(e); menu([{ label: x.bypass ? 'Aktifkan' : 'Bypass', fn: () => P.padChainBypass(i, k, j) }, { label: 'Hapus efek', fn: () => P.padChainRemoveDevice(i, k, j) }], rc.left - 120, rc.bottom); } }, '⋯');
+    body.append(h('div', { class: 'card lkcard lk-rcard' + (x.bypass ? ' off' : '') }, h('h4', {}, h('span', {}, def.name), more), kv ? kv.el : null));
+  });
+  return { el: h('div', { class: 'drk-chain' }, head, body), draw: () => { for (const f of draws) f(); } };
+}

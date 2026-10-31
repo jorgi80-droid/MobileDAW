@@ -246,6 +246,13 @@ async function addSample0(file) {
     if (pd.done) pd.done(r.k);
     return;
   }
+  if (pending && pending.padChain != null) {      // sample for the Simpler in a Drum Rack pad chain
+    toast('Memuat sample\u2026', 4000);
+    const r = await P.setPadChainSample(pending.track, pending.padChain, file);
+    if (!r || r.error) return toast((r && r.error) || 'Sample tidak bisa dimuat.', 3500);
+    pending = null; closeBrowser(); toast('Sample dipasang ke chain pad.');
+    return;
+  }
   if (pending && pending.zone != null) {          // sample for a DirectWave / Keystone zone
     toast('Memuat sample\u2026', 4000);
     const sm = await P.setZoneSample(pending.track, pending.zone, file);
