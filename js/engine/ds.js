@@ -20,6 +20,7 @@ class DrumBase {
   active() { return this.v.length > 0; }
   noteOn(pitch, vel) { if (this.v.length >= 6) this.v.shift(); const v = this.voice(vel); v.t = 0; v.vel = vel; this.v.push(v); }
   noteOff() {}                                                     // one-shot: the hit decays by itself
+  allOff() {}                                                      // (stop / panic: the hits still ring out, as in Live)
   render(L, R, from, to) {
     const vol = dbl(this.p[this.p.length - 1]), dt = 1 / this.sr;
     for (let j = this.v.length - 1; j >= 0; j--) {

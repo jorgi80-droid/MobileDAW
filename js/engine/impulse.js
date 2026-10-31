@@ -24,6 +24,7 @@ export class Impulse {
     Object.assign(v, { on: true, held: true, vel, t: 0, pos: st, tpos: st, gp: 0, env: 1, a: 0, b: 0, fade: v.on ? 0 : 1 });
   }
   noteOff(p) { const k = p - 60; if (k >= 0 && k < 8) this.v[k].held = false; }
+  allOff() { for (const v of this.v) v.held = false; }
   render(L, R, from, to) {
     const gv = dbl(this.p[0]), time = Math.pow(2, this.p[1] * 3), sr = this.sr, dt = 1 / sr;
     for (let k = 0; k < 8; k++) {

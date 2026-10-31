@@ -21,6 +21,7 @@ export class Granulator {
     this.v.push({ pitch, vel, held: true, env: 0, head: this.p[1], next: 0, g: [], t: 0, rate: Math.pow(2, (pitch - 60 + this.p[9]) / 12) });
   }
   noteOff(pitch) { for (const v of this.v) if (v.pitch === pitch) v.held = false; }
+  allOff() { for (const v of this.v) v.held = false; }
   spawn(v, s) {
     const p = this.p, n = s.frames, len = Math.max(8, Math.round(p[3] / 1000 * this.sr)), sp = (rnd(this.rng) * 2 - 1) * p[5] * 0.25;
     const pos = clamp(v.head + sp, 0, 1) * (n - 1), r = v.rate * Math.pow(2, (rnd(this.rng) * 2 - 1) * p[8] / 12);

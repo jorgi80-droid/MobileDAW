@@ -58,6 +58,7 @@ const TEST = (() => { const n = SR, l = new Float32Array(n), r = new Float32Arra
 const BANK = [TEST];
 function render(t, set, notes = [48, 55, 64]) {
   const d = makeInstrument(t, SR, BANK); if (INSTRUMENTS[t].sampler) for (let z = 0; z < (INSTRUMENTS[t].slots || 1); z++) { d.setParam(200 + z * 16, 0); d.setParam(201 + z * 16, 60); d.setParam(209 + z * 16, 1); d.setParam(211 + z * 16, 1); } d.setTempo && d.setTempo(120); INSTRUMENTS[t].params.forEach((p, k) => d.setParam(k, p.def)); set(d);
+  for (const fn of ['noteOn', 'noteOff', 'allOff', 'render', 'active', 'setParam']) if (typeof d[fn] !== 'function') return { bad: 'missing ' + fn + '()' };   // the engine calls all of these (allOff: stop / panic / silent track)
   const L = new Float32Array(N), R = new Float32Array(N), out = new Float32Array(BLOCKS * N * 2); let e = 0, peak = 0;
   notes.forEach((p, j) => d.noteOn(p, [0.9, 0.6, 0.35][j % 3]));
   for (let b = 0; b < BLOCKS; b++) {

@@ -15,6 +15,7 @@ class Poly {
   active() { return this.v.length > 0; }
   noteOn(pitch, vel) { if (this.v.length >= this.nv) this.v.shift(); const v = this.voice(pitch, vel); v.pitch = pitch; v.vel = vel; v.on = true; v.t = 0; v.amp = 1; this.v.push(v); }
   noteOff(pitch) { for (const v of this.v) if (v.pitch === pitch && v.on) v.on = false; }
+  allOff() { for (const v of this.v) v.on = false; }
   render(L, R, from, to) {
     const vol = dbl(this.p[this.p.length - 1]), dt = 1 / this.sr, rel = this.relGain();
     for (let j = this.v.length - 1; j >= 0; j--) {
