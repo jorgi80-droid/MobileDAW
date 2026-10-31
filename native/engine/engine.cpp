@@ -120,6 +120,7 @@ void Engine::bend(int t, double st0) {
   if (!ok(t) || t >= MASTER) return;
   Strip& st = s[t]; double x = (st0 == st0 && st0 != 0) ? st0 : 0; x = clamp(x, -12, 12);
   double r = std::pow(2, (x - st.bend) / 12); st.bend = x;
+  if (st.inst && st.inst->hasSetBend()) { st.inst->setBend(x); return; }
   if (st.inst && st.inst->canBend() && r != 1) st.inst->bendSounding(r);
 }
 void Engine::bendNew(Strip& st) { double r = std::pow(2, st.bend / 12); st.inst->bendNewest(r); }

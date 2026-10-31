@@ -24,6 +24,8 @@ class Instrument {
   virtual bool active() = 0;
   virtual void allOff() = 0;
   virtual bool canBend() { return false; }                      // JS: inst.bendVoice exists
+  virtual bool hasSetBend() { return false; }                   // JS: inst.setBend exists (Live 12 instruments scale the wheel by their PB Range)
+  virtual void setBend(double st) {}
   virtual void bendSounding(double ratio) {}                    // every voice that is on
   virtual void bendNewest(double ratio) {}                      // voices started by the last noteOn (v.age === counter)
   virtual int voicesOn() { return 0; }
