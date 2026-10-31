@@ -393,6 +393,7 @@ function keys() {
     else if (e.code === 'Home') P.seekTo(0);
     else if (mod && e.code === 'KeyZ') { e.preventDefault(); e.shiftKey ? redoOp() : undoOp(); }
     else if (mod && e.code === 'KeyY') { e.preventDefault(); redoOp(); }
+    else if (view === 'arr' && TL.clipKey(e.code, mod)) e.preventDefault();      // Live's clip shortcuts: Ctrl+C / X / V / D / R / E, 0
     else if (e.code === 'Delete' || e.code === 'Backspace') { if (!TL.deleteSelected()) { const c = P.selectedClip(); if (c) { checkpoint(); P.removeClip(c.track, c.clip.id); } } }
     else if (e.code === 'Escape') TL.clearSelection();
     else if (e.code === 'KeyM') P.toggleMetro();

@@ -884,3 +884,7 @@
 .drk-chb > .card { margin: 0; }
 .drk-chb > .drk-note { max-width: 240px; }
 .lk-pcs { align-items: stretch !important; gap: var(--sp-3) !important; }
+/* context menus: the keyboard shortcut right-aligned in a dim column (Live) */
+.menu .mi { display: flex; align-items: center; gap: 24px; }
+.menu .mi .mk { margin-left: auto; color: var(--lv-dim); font: 500 11px/1 var(--font); letter-spacing: .02em; }
+.menu .mi:hover .mk, .menu .mi:active .mk { color: rgba(255, 255, 255, .8); }

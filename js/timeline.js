@@ -83,14 +83,14 @@ function hdr(i) {
   const t = state.tracks[i], y = rowY(i), h = rh(i), x = CW, auto = t.kind === 'auto', L = x + 5, R = x + HEAD - METW - 5, th = Math.min(TH, h - 3);
   const r = { y, h, th, title: { x, y, w: HEAD - METW, h: th }, fold: { x, y, w: 26, h: th } };
   if (h < 46) { r.mute = { x: R - (auto ? 26 : 20), y: y + 3, w: auto ? 26 : 20, h: Math.max(10, th - 6) }; return r; }   // folded: the activator sits in the title bar, as in Live
-  const by = y + th + 4, bh = 20;
-  r.mute = { x: L, y: by, w: auto ? 36 : 26, h: bh };
+  const by = y + th + 5, bh = 19, bw = 22, gp = 3;                    // one grid: equal squares, equal gaps, both groups flush with the edges
+  r.mute = { x: L, y: by, w: auto ? 36 : bw, h: bh };
   if (!auto) {
-    r.solo = { x: L + 28, y: by, w: 22, h: bh }; r.arm = { x: L + 52, y: by, w: 22, h: bh };
-    r.aut = { x: R - 20, y: by, w: 20, h: bh };
-    if (t.kind !== 'audio' && R - 52 >= L + 76) r.mon = { x: R - 52, y: by, w: 30, h: bh };
-    if (h >= 70) { const sy = by + bh + 5, vw = Math.round((R - L) * 0.56); r.vol = { x: L, y: sy, w: vw, h: 15 }; r.pan = { x: L + vw + 4, y: sy, w: R - L - vw - 4, h: 15 }; }
-    if (h >= 96 && state.returns.length >= 2) { const sy = by + bh + 25, hw = Math.round((R - L - 4) / 2); r.sa = { x: L, y: sy, w: hw, h: 15 }; r.sb = { x: L + hw + 4, y: sy, w: R - L - hw - 4, h: 15 }; }   // tall row: Send A / B like the mixer strip
+    r.solo = { x: L + bw + gp, y: by, w: bw, h: bh }; r.arm = { x: L + (bw + gp) * 2, y: by, w: bw, h: bh };
+    r.aut = { x: R - bw, y: by, w: bw, h: bh };
+    if (t.kind !== 'audio' && R - bw - gp - 30 >= L + (bw + gp) * 3) r.mon = { x: R - bw - gp - 30, y: by, w: 30, h: bh };
+    if (h >= 70) { const sy = by + bh + 5, vw = Math.round((R - L - gp) * 0.6); r.vol = { x: L, y: sy, w: vw, h: 16 }; r.pan = { x: L + vw + gp, y: sy, w: R - L - vw - gp, h: 16 }; }
+    if (h >= 96 && state.returns.length >= 2) { const sy = by + bh + 26, hw = Math.round((R - L - gp) / 2); r.sa = { x: L, y: sy, w: hw, h: 16 }; r.sb = { x: L + hw + gp, y: sy, w: R - L - hw - gp, h: 16 }; }   // tall row: Send A / B like the mixer strip
   }
   return r;
 }
@@ -286,7 +286,7 @@ function draw() {
   // clips
   const first = Math.max(0, rowAt(RULER)), last = Math.min(n - 1, rowAt(LB));
   for (let i = first; i <= last; i++) { const y = rowY(i), h = rh(i); for (const c of state.tracks[i].clips) drawClip(state.tracks[i], c, y, h); }
-  if (sel) { const a = Math.max(0, tx(sel.a)), b = Math.min(CW, tx(sel.b)); ctx.fillStyle = 'rgba(120,182,230,.2)'; ctx.fillRect(a, RULER, Math.max(0, b - a), gy1 - RULER); }
+  if (sel) { const a = Math.max(0, tx(sel.a)), b = Math.min(CW, tx(sel.b)); ctx.fillStyle = 'rgba(255,255,255,.2)'; ctx.fillRect(a, RULER, Math.max(0, b - a), gy1 - RULER); ctx.fillStyle = 'rgba(255,255,255,.55)'; ctx.fillRect(Math.round(a), RULER, 1, gy1 - RULER); ctx.fillRect(Math.round(b), RULER, 1, gy1 - RULER); }   // Live: the selection is a white wash with bright edges
   if (marq) {
     const ax = tx(marq.t0), bx = tx(marq.t1), ay = RULER - view.y0 + marq.y0, by = RULER - view.y0 + marq.y1;
     const x = Math.min(ax, bx), y = Math.min(ay, by), w = Math.abs(bx - ax), hh = Math.abs(by - ay);
@@ -306,7 +306,7 @@ function drawRuler(g) {
   ctx.fillStyle = C('#2c2c2f'); ctx.fillRect(0, MROW, CW, RULER - MROW);                   // beat time ruler
   ctx.fillStyle = C('#141415'); ctx.fillRect(0, MROW - 1, CW, 1); ctx.fillRect(0, RULER - 1, CW, 1);
   ctx.save(); ctx.beginPath(); ctx.rect(0, 0, CW, RULER); ctx.clip();
-  if (sel) { ctx.fillStyle = 'rgba(120,182,230,.32)'; ctx.fillRect(tx(sel.a), MROW, tx(sel.b) - tx(sel.a), RULER - MROW - 1); }
+  if (sel) { ctx.fillStyle = 'rgba(255,255,255,.22)'; ctx.fillRect(tx(sel.a), MROW, tx(sel.b) - tx(sel.a), RULER - MROW - 1); }
   // loop brace along the bottom of the beat ruler: grey when the loop is off, lit when it is on (Live's Arrangement Loop)
   const LP = state.loop;
   if (LP && LP.end > LP.start) {
@@ -361,8 +361,8 @@ function drawTimeRuler() {
   }
   ctx.restore();
   ctx.font = FONT(600, 10); ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
-  for (const [type, lbl, r] of badges()) {                   // Live-style fields: flat, 1 px border, lighter while pressed
-    ctx.fillStyle = C('#2c2c2f'); ctx.fillRect(r.x - 6, y + 1, r.w + 8, BOT - 1);
+  const bg = badges(); if (bg.length) { ctx.fillStyle = C('#2c2c2f'); ctx.fillRect(bg[0][2].x - 8, y + 1, CW - bg[0][2].x + 8, BOT - 1); ctx.fillStyle = C('#141415'); ctx.fillRect(bg[0][2].x - 8, y + 1, 1, BOT - 1); }
+  for (const [type, lbl, r] of bg) {                         // Live-style fields: flat, 1 px border, lighter while pressed
     ctx.fillStyle = pressed === type ? C('#55555b') : C('#3a3a3e'); ctx.fillRect(r.x, r.y, r.w, r.h);
     ctx.strokeStyle = C('#141415'); ctx.lineWidth = 1; ctx.strokeRect(r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
     ctx.fillStyle = C('#d4d4d8'); ctx.fillText(lbl, r.x + r.w / 2, r.y + r.h / 2 + 0.5, r.w - 6);
@@ -424,10 +424,11 @@ function cut2(txt, maxW) {                    // text that fits maxW, with an el
   let t = txt; while (t.length > 1 && ctx.measureText(t + '…').width > maxW) t = t.slice(0, -1);
   return t + '…';
 }
-function foldTri(cx, cy, folded, col) {        // Live's fold toggle: a small solid triangle (right = folded, down = open)
+function foldTri(cx, cy, folded, col) {        // Live 12 fold toggle: a ring with a small triangle (right = folded, down = open)
+  ctx.strokeStyle = col; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.arc(cx, cy, 5.5, 0, 6.2832); ctx.stroke();
   ctx.fillStyle = col; ctx.beginPath();
-  if (folded) { ctx.moveTo(cx - 2.5, cy - 4.5); ctx.lineTo(cx + 3.5, cy); ctx.lineTo(cx - 2.5, cy + 4.5); }
-  else { ctx.moveTo(cx - 4.5, cy - 2.5); ctx.lineTo(cx + 4.5, cy - 2.5); ctx.lineTo(cx, cy + 3.5); }
+  if (folded) { ctx.moveTo(cx - 1.5, cy - 3); ctx.lineTo(cx + 2.5, cy); ctx.lineTo(cx - 1.5, cy + 3); }
+  else { ctx.moveTo(cx - 3, cy - 1.5); ctx.lineTo(cx + 3, cy - 1.5); ctx.lineTo(cx, cy + 2.5); }
   ctx.closePath(); ctx.fill();
 }
 // header button: flat grey with a 1 px border when off, filled with its colour when on (activator yellow, solo blue, arm red)
@@ -447,12 +448,12 @@ function drawBtn(r, label, on, col, quiet) {
 // Live's header slider: a dark well, a grey fill up to the value (from the centre for pan) and the value written over it
 function drawSlider(r, frac, label, fromCenter) {
   ctx.fillStyle = C('#19191a'); ctx.fillRect(r.x, r.y, r.w, r.h);
-  ctx.fillStyle = C('#5a5a60');
+  ctx.fillStyle = T('--lv-sel');
   if (fromCenter) { const c = r.x + r.w / 2, e = r.x + frac * r.w; if (Math.abs(e - c) >= 1) ctx.fillRect(Math.min(c, e), r.y + 1, Math.abs(e - c), r.h - 2); }
   else ctx.fillRect(r.x + 1, r.y + 1, Math.max(0, frac * (r.w - 2)), r.h - 2);
   ctx.strokeStyle = C('#141415'); ctx.lineWidth = 1; ctx.strokeRect(r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
-  ctx.font = FONT(600, 9.5); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillStyle = C('#e4e4e6'); ctx.fillText(label, r.x + r.w / 2, r.y + r.h / 2 + 0.5, r.w - 4); ctx.textAlign = 'left';
+  ctx.font = FONT(700, 9.5); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = C('#f2f2f4'); ctx.fillText(label, r.x + r.w / 2, r.y + r.h / 2 + 0.5, r.w - 4); ctx.textAlign = 'left';
 }
 function drawSwitch(r, label, on, isPressed) {   // Live-style switch: LED + text in a flat field
   ctx.fillStyle = isPressed ? C('#55555b') : C('#3a3a3e'); ctx.fillRect(r.x, r.y, r.w, r.h);
@@ -498,7 +499,7 @@ function drawHeads() {
     foldTri(hx + 12, y + r.th / 2, !!t.fold, ik);
     ctx.fillStyle = ik; ctx.font = FONT(on ? 700 : 600, 11); ctx.textBaseline = 'middle';
     const nameR = h < 46 ? r.mute.x - 4 : hx + HEAD - METW - 6;
-    ctx.fillText(cut2(t.name, nameR - hx - 24), hx + 22, y + r.th / 2 + 0.5);                           // one line + ellipsis, never split mid-word (as Live's track names)
+    ctx.fillText(cut2(t.name, nameR - hx - 28), hx + 24, y + r.th / 2 + 0.5);                           // one line + ellipsis, never split mid-word (as Live's track names)
     if (h < 46) { drawBtn(r.mute, auto ? 'On' : String(i + 1), !t.mute, T('--mute')); }
     else {
       drawBtn(r.mute, auto ? 'On' : String(i + 1), !t.mute, T('--mute'));
@@ -512,8 +513,8 @@ function drawHeads() {
       for (const [k, rc] of [[0, r.sa], [1, r.sb]]) if (rc) { const v = (t.send && t.send[k]) || 0; drawSlider(rc, v, 'AB'[k] + ' ' + Math.round(v * 100) + '%', false); }
     }
     if (!auto) meterWell(); else { ctx.fillStyle = C('#161617'); ctx.fillRect(hx + HEAD - METW, y, METW, h - 1); }
-    ctx.fillStyle = C('#141415'); ctx.fillRect(hx, y + h - 1, HEAD, 1);
-    if (!t.fold && h >= MIN_ROW) { ctx.fillStyle = drag && drag.k === 'rowh' && drag.i === i ? T('--accent') : C('#4a4a50'); ctx.fillRect(hx + (HEAD - METW) / 2 - 9, y + h - 4, 18, 2); }   // grip: drag = row height
+    ctx.fillStyle = C('#141415'); ctx.fillRect(hx, y + h - 2, HEAD, 2);                  // the same heavy line as the lane
+    if (!t.fold && h >= MIN_ROW && (on || (drag && drag.k === 'rowh' && drag.i === i))) { ctx.fillStyle = drag && drag.k === 'rowh' && drag.i === i ? T('--accent') : C('#46464c'); ctx.fillRect(hx + (HEAD - METW) / 2 - 8, y + h - 3, 16, 1); }   // grip of the selected track: drag the bottom edge = row height
   }
   ctx.restore();
   ctx.fillStyle = C('#141415'); ctx.fillRect(hx, 0, 1, H);                                   // hairline between clip area and headers
@@ -686,14 +687,53 @@ function hit(x, y) {
 }
 
 const canvasOrigin = () => canvas.getBoundingClientRect();
+// Live's clip context menu: edit commands with their shortcuts, then clip commands, then the clip view
+const MODK = /Mac|iPhone|iPad/.test(navigator.platform || '') ? '\u2318' : 'Ctrl+';
+function clipMenu(i, c, tick, sx, sy) {
+  const t = state.tracks[i], r = canvasOrigin();
+  menu([
+    { label: 'Cut', key: MODK + 'X', fn: () => { copyList([{ i, c }]); checkpoint(); P.removeClip(i, c.id); } },
+    { label: 'Copy', key: MODK + 'C', fn: () => copyList([{ i, c }]) },
+    { label: 'Duplicate', key: MODK + 'D', fn: () => { checkpoint(); P.duplicateClip(i, c.id); invalidate(); } },
+    { label: 'Delete', key: 'Del', fn: () => { checkpoint(); P.removeClip(i, c.id); } },
+    { sep: true },
+    { label: 'Rename', key: MODK + 'R', fn: () => renameClip(i, c) },
+    { label: 'Split', key: MODK + 'E', fn: () => { checkpoint(); P.splitClip(i, c.id, snapT(tick)); } },
+    { label: 'Snap Edges to Grid', fn: () => snapClip(i, c) },
+    { label: c.muted ? 'Activate Clip' : 'Deactivate Clip', key: '0', fn: () => { checkpoint(); P.setClipsMuted([{ i, c }], !c.muted); invalidate(); } },
+    ...(c.notes && P.loopOf(c) ? [{ label: 'Unlink Loop', fn: () => { checkpoint(); P.bakeLoop(c, i); P.emit('clips'); invalidate(); toast('Pengulangan jadi not biasa.', 1600); } }] : []),
+    ...(t.kind === 'audio' ? [{ label: 'Stretch Mode', check: stretchMode, fn: () => { stretchMode = !stretchMode; toast(stretchMode ? 'Mode stretch: tarik ujung kanan klip audio untuk meregangkan (pitch tetap).' : 'Mode stretch mati: tarik ujung kanan untuk memotong.', 3200); invalidate(); } }] : []),
+    { sep: true },
+    { label: 'Show in Clip View', fn: () => hooks.openEditor && hooks.openEditor() },
+  ], sx != null ? sx : r.left + clamp(tx(c.start), 0, Math.max(0, CW - 220)), sy != null ? sy : r.top + Math.max(RULER, rowY(i)) + 20);
+}
+function renameClip(i, c) { ask('Nama klip', c.name || '', (v) => { checkpoint(); c.name = String(v || '').trim().slice(0, 40); P.emit('clips'); invalidate(); }); }
+function snapClip(i, c) {
+  const a = Math.max(0, snapT(c.start)), e = snapT(c.start + c.len);
+  if (a === c.start && e - a === c.len) return toast('Tepi klip sudah pas di grid.');
+  if (e - a < 1) return toast('Klip terlalu pendek untuk di-snap.');
+  checkpoint(); c.len = e - a; c.start = a; P.syncClips(i); P.touchClips(i); invalidate();
+}
+// keyboard commands on the selected clip (desktop / hardware keyboard): Ctrl+C / X / V / D / R / E, 0 = (de)activate
+export function clipKey(code, mod) {
+  const s = P.selectedClip(); if (!s) return false; const i = s.track, c = s.clip;
+  if (mod && code === 'KeyC') { copyList([{ i, c }]); return true; }
+  if (mod && code === 'KeyX') { copyList([{ i, c }]); checkpoint(); P.removeClip(i, c.id); return true; }
+  if (mod && code === 'KeyV') { pasteClips(i, P.beatRound(state.pos)); return true; }
+  if (mod && code === 'KeyD') { checkpoint(); P.duplicateClip(i, c.id); invalidate(); return true; }
+  if (mod && code === 'KeyR') { renameClip(i, c); return true; }
+  if (mod && code === 'KeyE') { checkpoint(); P.splitClip(i, c.id, snapT(state.pos)); return true; }
+  if (!mod && (code === 'Digit0' || code === 'Numpad0')) { checkpoint(); P.setClipsMuted([{ i, c }], !c.muted); invalidate(); return true; }
+  return false;
+}
 function clipBar(i, c, tick) {
   const r = canvasOrigin(), t = state.tracks[i];
   const x = r.left + clamp(tx(c.start), 0, Math.max(0, CW - 250)), y = r.top + Math.max(RULER, rowY(i)) - 38;
   bar([
     { label: 'Copy', fn: () => copyList([{ i, c }]) },
     { label: 'Cut', fn: () => { copyList([{ i, c }]); checkpoint(); P.removeClip(i, c.id); } },
-    { label: 'Hapus', fn: () => { checkpoint(); P.removeClip(i, c.id); } },
-    { label: 'Duplikat', fn: () => { checkpoint(); P.duplicateClip(i, c.id); invalidate(); } },     // v65 (FL Studio Mobile: copy + paste next to the clip in one tap)
+    { label: 'Delete', fn: () => { checkpoint(); P.removeClip(i, c.id); } },
+    { label: 'Duplicate', fn: () => { checkpoint(); P.duplicateClip(i, c.id); invalidate(); } },     // v65 (FL Studio Mobile: copy + paste next to the clip in one tap)
     { label: 'Snap', fn: () => {                                                                       // v65: snap both clip edges to the grid
       const a = Math.max(0, snapT(c.start)), e = snapT(c.start + c.len);
       if (a === c.start && e - a === c.len) return toast('Tepi klip sudah pas di grid.');
@@ -701,10 +741,11 @@ function clipBar(i, c, tick) {
       checkpoint(); c.len = e - a; c.start = a; P.syncClips(i); P.touchClips(i); invalidate();
     } },
     { label: c.muted ? 'Unmute' : 'Mute', fn: () => { checkpoint(); P.setClipsMuted([{ i, c }], !c.muted); invalidate(); } },
-    { label: 'Trim', fn: () => { checkpoint(); P.splitClip(i, c.id, snapT(tick)); } },
-    ...(c.notes && P.loopOf(c) ? [{ label: 'Lepas loop', fn: () => { checkpoint(); P.bakeLoop(c, i); P.emit('clips'); invalidate(); toast('Pengulangan jadi not biasa.', 1600); } }] : []),   // FL Studio Mobile "Unlink loop"
+    { label: 'Split', fn: () => { checkpoint(); P.splitClip(i, c.id, snapT(tick)); } },
+    ...(c.notes && P.loopOf(c) ? [{ label: 'Unlink', fn: () => { checkpoint(); P.bakeLoop(c, i); P.emit('clips'); invalidate(); toast('Pengulangan jadi not biasa.', 1600); } }] : []),   // FL Studio Mobile "Unlink loop"
     ...(t.kind === 'audio' ? [{ label: stretchMode ? 'Stretch \u2713' : 'Stretch', fn: () => { stretchMode = !stretchMode; toast(stretchMode ? 'Mode stretch: tarik ujung kanan klip audio untuk meregangkan (pitch tetap).' : 'Mode stretch mati: tarik ujung kanan untuk memotong.', 3200); invalidate(); } }] : []),
     { label: 'Edit', fn: () => hooks.openEditor && hooks.openEditor() },
+    { label: '\u22EF', fn: () => clipMenu(i, c, tick) },                                             // the full Live context menu
   ], x, y);
 }
 
@@ -1242,4 +1283,9 @@ export function initTimeline(host, h) {
   window.addEventListener('themechange', invalidate); window.addEventListener('applayout', fit);
   fit(); setup(); buildSelBar(host);
   P.onChange((w) => { if (w === 'all') { stopMotion(); view.x0 = 0; view.y0 = 0; sel = null; msel.clear(); fh.clear(); gl.clear(); } if (msel.size && !drag) updateBar(); invalidate(); });
+  ov.addEventListener('contextmenu', (e) => {                    // right click (mouse / trackpad): Live's clip context menu
+    const r = canvas.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top, t = hit(x, y);
+    if (t.type !== 'clip') return;
+    e.preventDefault(); P.selectClip(t.i, t.c.id); invalidate(); clipMenu(t.i, t.c, t.tick, e.clientX, e.clientY);
+  });
 }

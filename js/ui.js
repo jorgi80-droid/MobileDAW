@@ -77,7 +77,7 @@ export function menu(items, x, y) {
     node.append(h('div', {
       class: 'mi' + (it.check ? ' ck' : '') + (head ? ' hd' : it.dim ? ' dim' : '') + (sub ? ' sub' : ''),
       onclick: () => { if (!armed(node)) return; close(); if (it.fn) it.fn(); },
-    }, it.label));
+    }, it.label, it.key ? h('span', { class: 'mk' }, it.key) : null));
   }
   close = floating(node, x, y);
   return close;
