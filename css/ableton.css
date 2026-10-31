@@ -804,3 +804,21 @@
 .lk .lv-fld.lk-wmc { min-width: 0; width: auto; height: 16px; padding: 0; justify-content: center; font: var(--fw-sb) var(--fs-1)/16px var(--font); border: 0; border-radius: 0; background: #333336; color: #e4e4e6; }
 .lk .lv-fld.lk-wmc.pos { background: linear-gradient(0deg, #ffad32 0 2px, #333336 2px); color: #ffad32; }
 .lk .lv-fld.lk-wmc.neg { background: linear-gradient(0deg, #4fc3f0 0 2px, #333336 2px); color: #4fc3f0; }
+/* Sampler (liveinst.js samplerPanel): Live tab bar over a fixed-size page; every section is a framed dark box, boxes of a page share one
+   height and split the width; the Sample tab = header (zone, sample name), waveform, two rows of fields in nine equal columns */
+.lv-dev.smp { width: 900px; }
+.lv-dev.smp > .lv-tabs { padding: 4px 8px 0; }
+.lv-dev.smp > .lv-pane { min-height: 236px; gap: var(--sp-3); padding: 8px; background: transparent; }
+.lv-dev.smp .lv-pane > .lv-sec { flex: 1 0 auto; justify-content: space-between; align-items: center; gap: var(--sp-2); padding: 6px 8px; background: #262628; border: 1px solid var(--lv-edge); color: #9a9aa2; }
+.lv-dev.smp .lv-pane > .lv-sec > .lv-st { align-self: flex-start; }
+.lv-dev.smp .lv-krow { gap: var(--sp-2); justify-content: center; }
+.lv-dev.smp .lv-pane > .lv-sec:only-child { align-items: stretch; }
+.smp-head { display: flex; align-items: flex-end; gap: var(--sp-2); }
+.smp-head .lv-info { max-width: 50%; font-weight: var(--fw-sb); color: var(--lv-ink); }
+.smp-grid { display: grid; grid-template-columns: repeat(9, 1fr); gap: 4px var(--sp-2); }
+.smp-grid > .lv-fl.span3 { grid-column: span 3; }
+.smp-grid .lv-fld, .smp-grid .lv-btn, .smp-grid .lv-grp { width: 100% !important; min-width: 0 !important; }
+.smp-grid .lv-grp .lv-btn { flex: 1; }
+.smp-grid .lv-btn.wide { max-width: none; justify-content: flex-start; }
+.card.lvcard { display: flex; flex-direction: column; } .card.lvcard > .lv-dev.smp { margin-block: auto; }
+.lv-dev.smp .lv-krow .knob { width: 54px; }

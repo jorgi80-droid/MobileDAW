@@ -66,7 +66,7 @@ export function samplerPanel(i, t) {
 
   // ---- Zone tab: key / velocity map
   const zoneTab = () => {
-    const W = 360, H = 86, rl = 12;
+    const W = 560, H = 120, rl = 12;
     const kx = (k) => (k / 128) * W;
     const cv = lvDisp(W, H, (g, w, hh) => {
       g.fillStyle = '#2e2e31'; g.fillRect(0, 0, w, rl);
@@ -110,7 +110,7 @@ export function samplerPanel(i, t) {
 
   // ---- Sample tab: waveform with start / end / loop markers (Live "Sample" tab)
   const sampleTab = () => {
-    const W = 560, H = 58, z0 = Z();
+    const W = 876, H = 118, z0 = Z();
     const nf = frames();
     const px = (f) => 4 + f * (W - 8);
     const cv = lvDisp(W, H, (g, w, hh) => {
@@ -161,16 +161,12 @@ export function samplerPanel(i, t) {
     const volv = lvLab('Vol', keep(lvNum({ n: 'Vol', min: -36, max: 12, def: 0 }, () => Z().vol, (v) => zset('vol', v), zFmt.db, { w: 56 })));
     const panv = lvLab('Pan', keep(lvNum({ n: 'Pan', min: -1, max: 1, def: 0 }, () => Z().pan, (v) => zset('pan', v), zFmt.pan, { w: 56 })));
     const info = h('div', { class: 'lv-info' }, z0.sample ? z0.sample.name : '(kosong)');
-    return [sec(cv, row(
-      h('div', { class: 'lv-col' }, lvLab('Reverse', revBtn), lvLab('Snap', snap)),
-      h('div', { class: 'lv-col' }, lvLab('Sample', lvBtn(z0.sample ? z0.sample.name : 'Pilih\u2026', pick, { cls: 'wide' })), row(zn('RootKey', 'root', 0, 127, 60, zFmt.keys, 48), zn('Detune', 'tune', -100, 100, 0, zFmt.ct, 48), lvLab('Scale', B.num(6, { w: 48, label: 'Scale' })))),
-      h('div', { class: 'lv-col' }, volv, panv),
-      h('div', { class: 'lv-col' }, keep(pf('Sample Start', 's0')), keep(pf('Sample End', 's1', { def: fr }))),
-      h('div', { class: 'lv-col' }, lvLab('Sustain Mode', sustain), lvLab('Release Mode', rel)),
-      h('div', { class: 'lv-col' }, keep(pf('Loop Start', 'l0')), keep(pf('Loop End', 'l1', { def: fr }))),
-      h('div', { class: 'lv-col' }, zn('Crossfade', 'xf', 0, 1, 0, zFmt.pct, 52, 0.01), lvLab('Interpol', interp)),
-      h('div', { class: 'lv-col' }, lvLab('Zone', zoneSel), row(zoneAdd, zoneDel))
-    ))];
+    // Live: zone + sample name above the waveform, then two rows of labelled fields in equal columns
+    const head = h('div', { class: 'smp-head' }, lvLab('Zone', zoneSel), zoneAdd, zoneDel, h('span', { class: 'lk-grow' }), info);
+    const rootK = zn('Root', 'root', 0, 127, 60, zFmt.keys, 48), detK = zn('Detune', 'tune', -100, 100, 0, zFmt.ct, 48);
+    return [sec(head, cv, h('div', { class: 'smp-grid' },
+      lvLab('Reverse', revBtn), lvLab('Sample', lvBtn(z0.sample ? z0.sample.name : 'Pilih\u2026', pick, { cls: 'wide' }), 'span3'), volv, keep(pf('Sample Start', 's0')), lvLab('Sustain Mode', sustain), keep(pf('Loop Start', 'l0')), zn('Crossfade', 'xf', 0, 1, 0, zFmt.pct, 52, 0.01),
+      lvLab('Snap', snap), rootK, detK, lvLab('Scale', B.num(6, { w: 48, label: 'Scale' })), panv, keep(pf('Sample End', 's1', { def: fr })), lvLab('Release Mode', rel), keep(pf('Loop End', 'l1', { def: fr })), lvLab('Interpol', interp)))];
   };
 
   // ---- Pitch/Osc tab
@@ -243,7 +239,7 @@ export function samplerPanel(i, t) {
     const kv = (st) => lvLab(st.n, st.el);
     const nv = h('div', { class: 'lv-info' }, '');
     return [sec(title('Velocity'), vcv, krow(B.knob(7, 'Vol<Vel'))),
-      sec(title('Voices'), krow(B.knob(5), B.knob(4, 'Spread'), B.knob(32, 'Time')), row(lvLab('Voices', B.num(5, { w: 44 })), lvLab('Time', B.num(32, { w: 52, fill: true })))),
+      sec(title('Voices'), krow(B.knob(5), B.knob(4, 'Spread'), B.knob(32, 'Time'))),
       sec(title('Keyboard'), krow(B.knob(6, 'Scale'), B.knob(2, 'Transpose'), B.knob(3, 'Detune'))),
       sec(title('Playback'), row(lvLab('Interpol', B.sel(8, { w: 60 })), lvLab('Snap', B.tog(31, 'Snap')), lvLab('Release Mode', B.tog(30, 'Rel'))), row(lvLab('Pan', B.num(1, { w: 52 })), lvLab('Volume', B.num(0, { w: 56, fill: true }))))];
   };
