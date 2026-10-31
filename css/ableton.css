@@ -850,3 +850,8 @@
 .drk-smp .drk-b { width: 40px; height: var(--ctl-s); border-radius: var(--r-1); border: 1px solid var(--lv-edge); }
 .drk-rack { display: flex; align-items: center; justify-content: space-between; padding-top: 4px; border-top: 1px solid #444; font: var(--fw-sb) var(--fs-2)/1 var(--font); }
 .drk-rack .knob { width: 54px; }
+/* Drum Synths */
+.lk-ds { align-items: stretch !important; gap: var(--sp-3) !important; }
+.lk-ds > .lk-dk { align-items: center; }
+.lk-ds .lk-sev { align-self: stretch; justify-content: center; gap: var(--sp-4); }
+.lk-dsk { justify-content: space-between; align-items: flex-end !important; }

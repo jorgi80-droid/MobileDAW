@@ -10,6 +10,7 @@ import { POLI_TGT, POLI_GRID, POLI_MIDI } from './engine/poli.js';
 import { MELD_B, MELD_G, MELD_N, MO, MELD_TGT, MELD_SRC, MELD_OSC } from './engine/meld.js';
 import { lvNum, lvTog, lvBtn, lvChoice, lvSel, lvDisp, lvDrag, lvRing, lvPath, lvTabs, lvEnvPts, DISPC } from './liveui.js';
 import { eq8Stages } from './engine/fx3.js';
+import { DsKick, DsSnare, DsTom, DsHH, DsClap, DsFm } from './engine/ds.js';
 import { WT_CATS, WT_LIST, WT_COUNT, WT_N_FRAMES, wtTable, wtCatOf } from './engine/live.js';
 import { offerAutomation } from './automate.js';
 import { Biquad } from './engine/dsp.js';
@@ -1111,6 +1112,23 @@ VI[11] = (k) => {
     h('div', { class: 'lk-wr lk-wr2' }, env('Amp', 35), env('Env 2', 39), env('Env 3', 43), lfo('LFO 1', 47), lfo('LFO 2', 50)),
     h('div', { class: 'lk-wr lk-wr3' }, filt1, filt2, matrix, glob));
 };
+// Drum Synths (DS Kick / Snare / Tom / HH / Clap / FM): the hit drawn from the real engine (rendered offline with the current settings,
+// tap the display = audition), one row of knobs, list parameters as joined buttons, Volume after a divider
+const DS_CLS = { 19: DsKick, 20: DsSnare, 21: DsTom, 22: DsHH, 23: DsClap, 24: DsFm };
+const dsPanel = (k) => {
+  const type = k.d.type, def = k.def, n = def.params.length, sr = 12000, len = Math.round(sr * 0.6);
+  let shape = null;
+  const calc = () => { const d = new DS_CLS[type](sr); for (let j = 0; j < n; j++) d.setParam(j, k.get(j)); d.setParam(n - 1, 0); d.noteOn(60, 1); const L = new Float32Array(len), R = new Float32Array(len); d.render(L, R, 0, len); shape = L; };
+  const disp = k.D(420, 92, (g, w, hh) => {
+    calc(); const mid = hh / 2, per = len / w; g.fillStyle = DISPC.grid; g.fillRect(0, Math.round(mid), w, 1);
+    g.beginPath(); for (let x = 0; x < w; x++) { let mx = 0; const a = Math.floor(x * per), b = Math.floor((x + 1) * per); for (let j = a; j < b; j++) mx = Math.max(mx, Math.abs(shape[j])); g.rect(x, mid - mx * (mid - 6), 1, mx * (mid - 6) * 2); }
+    g.fillStyle = DISPC.bl; g.fill(); label(g, def.name, w - 6, 12, DISPC.ink, 9, 'right');
+  }, { onDown: () => { const i = k.ctx.i; P.noteEvent(i, 60, 0.9, true); setTimeout(() => P.noteEvent(i, 60, 0, false), 120); return false; } });
+  const knobs = [], lists = [];
+  def.params.forEach((p, j) => { if (j === n - 1) return; if (p.fmt === 'list') lists.push(k.TL(p.n, k.CH(j, p.items, { cls: 'sm' }))); else if (p.fmt === 'onoff') lists.push(k.TL(p.n, k.T(j, p.n, { w: 52 }))); else knobs.push(k.K(j)); });
+  return h('div', { class: 'lk-col lk-ds' }, k.dk(disp, lists.length ? h('div', { class: 'lk-row lk-sev' }, ...lists) : null), h('div', { class: 'lk-row lk-dsk' }, ...knobs, k.sep(), k.K(n - 1, { big: true })));
+};
+for (const t of [19, 20, 21, 22, 23, 24]) VI[t] = dsPanel;
 export function instKitView(i, t, every) {
   const def = INSTRUMENTS[t.inst.type]; if (!VI[t.inst.type]) return null;
   const d = { id: 'in' + t.id, type: t.inst.type, params: new Proxy({}, { get: (_, kk) => t.inst.params[kk] ?? (def.params[kk] ? def.params[kk].def : undefined) }) };
@@ -1178,7 +1196,7 @@ V[6] = (k) => {
 // below it | Drive, Dry/Wet
 V[1] = (k) => {
   let fc = 0;
-  const disp = k.D(300, 92, (g, w, hh) => {
+  const disp = k.D(420, 92, (g, w, hh) => {
     grid(g, w, hh); const b = new Biquad(), t = Math.round(k.get(0)), q = k.get(2);
     const draw = (f, col, fill) => { if (t === 0) b.lowpass(SR, f, q); else if (t === 1) b.highpass(SR, f, q); else if (t === 2) b.bandpass(SR, f, q); else b.notch(SR, f, q);
       const pts = []; for (let x = 0; x <= w; x += 2) { let m = mag(b, xl(x, w)); if (k.get(3) > 0.5) m *= m; pts.push([x, hh - 20 - Math.min(2, m) / 2 * (hh - 30)]); } lvPath(g, pts, col, fill ? hh - 16 : null, 1.7); };

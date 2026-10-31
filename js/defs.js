@@ -4,7 +4,7 @@ import { wtName, WT_COUNT } from './engine/live.js';
 // (app/src/main/cpp/instruments.h and devices.h).
 export const INST = { MINISYNTH: 1, SUPERSAW: 2, DRUM: 3, DIRECTWAVE: 4, GMS: 5, SOUNDFONT: 6, MOISTURE: 7, OSPHERE: 8, KEYSTONE: 9, SAMPLER: 10, WAVETABLE: 11, SIMPLER: 18 };
 // Instruments a synth/sampler track can switch between (drums have their own track type).
-export const INST_LIST = [18, 17, 16, 15, 14, 13, 11, 10, 1, 2, 4, 5, 6, 7, 8, 9, 12];
+export const INST_LIST = [18, 17, 16, 15, 14, 13, 11, 10, 19, 20, 21, 22, 23, 24, 1, 2, 4, 5, 6, 7, 8, 9, 12];
 
 export const INSTRUMENTS = {
   1: { name: 'Mini Synth', params: [
@@ -643,6 +643,17 @@ export const IRACK_DEF = { name: 'Instrument Rack', rack: true, params: [] };   
     onoff('Pitch Env', 1), q('Pitch Env Amount', -48, 48, 0, { unit: 'st' }), ms('Pitch Attack', 0.1), ms('Pitch Decay', 600), pct('Pitch Sustain', 0), ms('Pitch Release', 50),
     q('Pan', -1, 1, 0, { fmt: 'pan' }), pct('Ran > Pan', 0), pct('Spread', 0), q('Transp', -48, 48, 0, { step: 1, fmt: 'st' }), q('Detune', -50, 50, 0, { step: 1, unit: 'ct' }), list('Glide', ['Off', 'Portamento', 'Glide'], 0), q('Glide Time', 0, 2000, 50, { unit: 'ms' }),
     ms('Attack', 0.1), ms('Decay', 600), pct('Sustain', 1), ms('Release', 50), pct('Vol < Vel', 0.35), q('Volume', -60, 6, -12, { fmt: 'dbinf' })] };
+}
+
+// ---- Live 12 Drum Synths (engine js/engine/ds.js): one-shot drum voices, any note plays the tuned sound
+{
+  const pct = (n, d) => q(n, 0, 1, d, { unit: '%' }), hz = (n, lo, hi, d) => q(n, lo, hi, d, { curve: 'log', unit: 'Hz' }), dec = (d) => q('Decay', 0.02, 2, d, { curve: 'log', unit: 's' }), vol = () => q('Volume', -60, 6, -6, { fmt: 'dbinf' });
+  INSTRUMENTS[19] = { name: 'DS Kick', view: 'kit', full: true, ds: true, params: [hz('Pitch', 30, 120, 50), dec(0.5), pct('Tone', 0.2), pct('Env', 0.5), pct('Drive', 0.2), pct('Attack', 0.5), onoff('Click', 1), vol()] };
+  INSTRUMENTS[20] = { name: 'DS Snare', view: 'kit', full: true, ds: true, params: [hz('Tune', 100, 400, 180), dec(0.25), pct('Tone', 0.6), hz('Color', 800, 14000, 5000), list('Filter Type', ['LP', 'HP', 'BP'], 0), pct('Spread', 0.3), vol()] };
+  INSTRUMENTS[21] = { name: 'DS Tom', view: 'kit', full: true, ds: true, params: [hz('Tune', 50, 400, 120), dec(0.45), pct('Tone', 0.3), pct('Bend', 0.4), vol()] };
+  INSTRUMENTS[22] = { name: 'DS HH', view: 'kit', full: true, ds: true, params: [hz('Tune', 150, 900, 420), dec(0.12), hz('Tone', 2000, 16000, 7000), list('Type', ['Metal', 'Noise', 'Mix'], 2), vol()] };
+  INSTRUMENTS[23] = { name: 'DS Clap', view: 'kit', full: true, ds: true, params: [hz('Tune', 500, 3000, 1200), dec(0.3), pct('Tone', 0.5), pct('Spread', 0.3), pct('Sloppy', 0.3), pct('Tail', 0.5), vol()] };
+  INSTRUMENTS[24] = { name: 'DS FM', view: 'kit', full: true, ds: true, params: [hz('Tune', 40, 800, 200), dec(0.4), pct('Amount', 0.4), q('Ratio', 0.5, 8, 1.41, { curve: 'log', unit: 'x' }), pct('Feedback', 0.2), pct('Tone', 0.7), vol()] };
 }
 
 // ---- Audio Effect Rack (engine: js/engine/fx7.js; project: d.chains, d.macroMap)
