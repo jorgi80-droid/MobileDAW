@@ -10,6 +10,7 @@ import { POLI_TGT, POLI_GRID, POLI_MIDI } from './engine/poli.js';
 import { MELD_B, MELD_G, MELD_N, MO, MELD_TGT, MELD_SRC, MELD_OSC } from './engine/meld.js';
 import { lvNum, lvTog, lvBtn, lvChoice, lvSel, lvDisp, lvDrag, lvRing, lvPath, lvTabs, lvEnvPts, DISPC } from './liveui.js';
 import { eq8Stages } from './engine/fx3.js';
+import { WT_CATS, WT_LIST, WT_COUNT, WT_N_FRAMES, wtTable, wtCatOf } from './engine/live.js';
 import { offerAutomation } from './automate.js';
 import { Biquad } from './engine/dsp.js';
 import { eng, MASTER, RET0 } from './engine.js';
@@ -1037,6 +1038,78 @@ VI[18] = (k) => {
   const tb = lvTabs([{ label: 'Sample' }, { label: 'Controls' }], st.tab, (j) => { st.tab = j; page.replaceChildren(j ? controlsTab() : sampleTab()); }, { cls: 'lk-tabs' });
   page.replaceChildren(st.tab ? controlsTab() : sampleTab());
   return h('div', { class: 'lk-col lk-simp' }, tb, page);
+};
+// Wavetable (Live 12 layout): Osc 1 | Osc 2 (stacked frames with the current one in orange, drag up / down = Position; category and table
+// menus, FX mode, FX 1 / 2, Semi, Det, Gain) | Sub; then Amp / Env 2 / Env 3 / LFO 1 / LFO 2 displays; then Filter | Filter 2 | Matrix | Global
+const WTC = new Map();
+const wtCurves = (idx) => {
+  let c = WTC.get(idx); if (c) return c;
+  const T = wtTable(idx), N = 128; c = [];
+  for (let f = 0; f < WT_N_FRAMES; f++) { const o = T.at(f, 0), a = new Float32Array(N); for (let x = 0; x < N; x++) a[x] = T.d[o + Math.floor((x / N) * 2048)]; c.push(a); }
+  WTC.set(idx, c); if (WTC.size > 8) WTC.delete(WTC.keys().next().value); return c;
+};
+const WT_SRC = ['Env 2', 'Env 3', 'LFO 1', 'LFO 2', 'Vel', 'Key'], WT_DST = ['Osc 1 Pos', 'Osc 1 Pitch', 'Osc 2 Pos', 'Osc 2 Pitch', 'Filter Freq', 'Filter Res', 'Osc 1 Gain', 'Osc 2 Gain'];
+const lfoY = (sh, ph, u) => (sh === 0 ? Math.sin(6.2832 * ph) : sh === 1 ? 1 - 4 * Math.abs(ph - 0.5) : sh === 2 ? 2 * ph - 1 : sh === 3 ? (ph < 0.5 ? 1 : -1) : Math.sin(Math.floor(u * 9) * 12.9898) * 0.9);
+VI[11] = (k) => {
+  const g = k.get, cl = (v, a, b) => Math.max(a, Math.min(b, v));
+  const O = (n, j, w = 50) => k.TL(n, k.NT(j, { w, cls: 'or' }));
+  const osc = (n) => {
+    const b = n * 9, idx = () => Math.round(g(b)), cat = () => wtCatOf(idx());
+    const cv = k.D(360, 112, (c, w, hh) => {
+      const cur = wtCurves(idx()), on = g(b + 8) > 0.5, pos = cl(g(b + 1), 0, 1), L = 10, wv = w - 44, step = (hh - 34) / (WT_N_FRAMES - 1), amp = 14;
+      const line = (arr, f) => { c.beginPath(); for (let x = 0; x < arr.length; x++) { const X = L + f * 1.6 + (x / (arr.length - 1)) * wv, Y = hh - 18 - f * step - arr[x] * amp; x ? c.lineTo(X, Y) : c.moveTo(X, Y); } };
+      c.lineWidth = 1; c.strokeStyle = on ? 'rgba(200,200,206,.42)' : 'rgba(120,120,126,.35)'; for (let f = 0; f < WT_N_FRAMES; f++) { line(cur[f], f); c.stroke(); }
+      const tp = pos * (WT_N_FRAMES - 1), f0 = Math.min(WT_N_FRAMES - 2, Math.floor(tp)), fr = tp - f0, mix = cur[f0].map((v, x) => v * (1 - fr) + cur[f0 + 1][x] * fr);
+      line(mix, tp); c.strokeStyle = on ? DISPC.or : DISPC.orD; c.lineWidth = 2; c.stroke();
+      const sx = w - 16, top = 10, bot = hh - 12, py = bot - pos * (bot - top);
+      c.fillStyle = DISPC.grid2; c.fillRect(sx, top, 2, bot - top); c.fillStyle = on ? DISPC.or : DISPC.orD; c.fillRect(sx, py, 2, bot - py); c.fillRect(sx - 4, py - 2, 10, 4);
+      label(c, Math.round(pos * 100) + ' %', w - 4, hh - 1, on ? DISPC.or : DISPC.orD, 9, 'right');
+    }, { onDown: () => ({ p: g(b + 1) }), onMove: (x, y, dx, dy, s) => k.set(b + 1, cl(s.p - dy / 90, 0, 1)) });
+    const catSel = k.reg(lvSel(() => WT_CATS.map((c, j) => ({ value: j, label: c.name })), cat, (j) => k.set(b, WT_CATS[j].first), { w: 92, cls: 'lk-s dk or' }), 'c' + b);
+    const tabSel = k.reg(lvSel(() => WT_LIST.map((x, j) => ({ value: j, label: x.name })).filter((x) => WT_LIST[x.value].cat === cat()), idx, (j) => k.set(b, j), { w: 124, cls: 'lk-s dk or' }), 't' + b);
+    const stp = (d) => lvBtn(d < 0 ? '◂' : '▸', () => k.set(b, (idx() + d + WT_COUNT) % WT_COUNT), { cls: 'lk-t lk-wstep', w: 20 });
+    return k.dk(h('div', { class: 'lk-row lk-shead' }, k.T(b + 8, '', { cls: 'lk-chkbox' }), h('span', { class: 'lk-st' }, 'Osc ' + (n + 1)), h('span', { class: 'lk-grow' }), catSel, tabSel, stp(-1), stp(1)), cv,
+      h('div', { class: 'lk-row lk-sev' }, k.TL('FX Mode', k.S(b + 4, { w: 70, cls: 'dk or' })), O('FX 1', b + 2), O('FX 2', b + 3), O('Semi', b + 6, 46), O('Det', b + 7, 52), O('Gain', b + 5, 58)));
+  };
+  const sub = k.dk(h('div', { class: 'lk-row lk-shead' }, k.T(18, 'Sub', { w: 56 })), k.K(19, { n: 'Gain' }), k.K(20, { n: 'Tone' }), k.TL('Octave', k.CH(21, ['0', '-1', '-2'], { cls: 'sm' })), O('Transpose', 22, 56));
+  // modulation sources: envelope (A D S R) or LFO (shape, rate, attack) with its display
+  const env = (name, j) => k.dk(h('div', { class: 'lk-row lk-shead' }, h('span', { class: 'lk-st' }, name)),
+    k.D(160, 64, (c, w, hh) => { const pts = lvEnvPts(w, hh, g(j), g(j + 1), g(j + 2), g(j + 3), 6); lvPath(c, pts, DISPC.bl, hh - 4); for (const pt of pts.slice(1, 4)) lvRing(c, pt[0], pt[1]); }),
+    h('div', { class: 'lk-row lk-sev' }, O('A', j, 38), O('D', j + 1, 38), O('S', j + 2, 38), O('R', j + 3, 38)));
+  const lfo = (name, j) => k.dk(h('div', { class: 'lk-row lk-shead' }, h('span', { class: 'lk-st' }, name)),
+    k.D(160, 64, (c, w, hh) => { c.fillStyle = DISPC.grid; c.fillRect(0, Math.round(hh / 2), w, 1); const sh = Math.round(g(j)), att = g(j + 2), pts = [];
+      for (let x = 0; x <= w - 8; x += 1) { const u = x / (w - 8), ph = (u * 3) % 1, a = att > 0.001 ? Math.min(1, u * 3 / (att * g(j + 1) + 0.01) * 0.3) : 1; pts.push([x + 4, hh / 2 - lfoY(sh, ph, u) * a * (hh / 2 - 6)]); }
+      lvPath(c, pts, DISPC.bl, null, 1.6); }),
+    h('div', { class: 'lk-row lk-sev' }, k.TL('Shape', k.S(j, { w: 66, cls: 'dk or' })), O('Rate', j + 1, 48), O('Attack', j + 2, 44)));
+  // filters: response display (drag x = Freq, y = Res)
+  const fdisp = (on, ty, fq, rq) => k.D(184, 64, (c, w, hh) => {
+    grid(c, w, hh); const bq = new Biquad(), t = Math.round(g(ty)), f = g(fq), q = g(rq);
+    if (t === 1) bq.highpass(SR, f, q); else if (t === 2) bq.bandpass(SR, f, q); else if (t === 3) bq.notch(SR, f, q); else bq.lowpass(SR, Math.min(f, 20000), q);
+    const pts = []; for (let x = 0; x <= w; x += 2) pts.push([x, hh - 6 - Math.min(2.5, mag(bq, xl(x, w))) / 2.5 * (hh - 12)]);
+    lvPath(c, pts, g(on) > 0.5 ? DISPC.bl : DISPC.grid2, hh, 1.6); lvRing(c, cl(lx(f, w), 6, w - 6), hh - 6 - Math.min(2.5, mag(bq, f)) / 2.5 * (hh - 12), 4.5);
+  }, { onDown: () => ({ f: g(fq), r: g(rq) }), onMove: (x, y, dx, dy, s) => { k.set(fq, cl(s.f * Math.pow(2, dx / 18), 20, 20000)); k.set(rq, cl(s.r * Math.pow(2, -dy / 30), 0.5, 12)); } });
+  const filt1 = k.dk(h('div', { class: 'lk-row lk-shead' }, k.T(30, 'Filter', { w: 56 }), h('span', { class: 'lk-grow' }), k.S(31, { w: 84, cls: 'dk or' })), fdisp(30, 31, 32, 33),
+    h('div', { class: 'lk-row lk-sev' }, k.K(32, { n: 'Freq' }), k.K(33, { n: 'Res' }), k.K(34, { n: 'Drive' })));
+  const filt2 = k.dk(h('div', { class: 'lk-row lk-shead' }, k.T(101, 'Filter 2', { w: 64 }), h('span', { class: 'lk-grow' }), k.S(102, { w: 84, cls: 'dk or' })), fdisp(101, 102, 103, 104),
+    h('div', { class: 'lk-row lk-sev' }, k.K(103, { n: 'Freq' }), k.K(104, { n: 'Res' }), k.TL('Routing', k.CH(105, ['Ser', 'Par'], { cls: 'sm' }))));
+  // matrix: rows = targets, columns = sources (drag a cell up / down; blank = 0)
+  const mx = h('div', { class: 'lk-wmx' }, h('span', { class: 'lk-wmh t' }, 'Target'), ...WT_SRC.map((s) => h('span', { class: 'lk-wmh' }, s)));
+  WT_DST.forEach((dn, d) => {
+    mx.append(h('span', { class: 'lk-wmt' }, dn));
+    WT_SRC.forEach((sn, s) => {
+      const j = 53 + s * 8 + d === 90 ? 106 : 53 + s * 8 + d, p = INSTRUMENTS[11].params[j];
+      const cell = lvNum(p, () => g(j), (v) => { k.set(j, Math.abs(v) < 0.02 ? 0 : v); paint(); }, (pp, v) => (Math.abs(v) < 0.005 ? '' : String(Math.round(v * 100))), { cls: 'lk-wmc', label: `${sn} → ${dn}`, onLong: k.auto(j) });
+      const paint = () => { const v = g(j); cell.style.setProperty('--f', String(Math.abs(v))); cell.classList.toggle('neg', v < 0); cell.classList.toggle('pos', v > 0); };
+      const up = cell.update; cell.update = () => { if (up) up(); paint(); }; paint(); k.reg(cell, j); mx.append(cell);
+    });
+  });
+  const matrix = k.dk(h('div', { class: 'lk-row lk-shead' }, h('span', { class: 'lk-st' }, 'Matrix')), mx);
+  const glob = k.dk(h('div', { class: 'lk-row lk-shead' }, h('span', { class: 'lk-st' }, 'Unison')), h('div', { class: 'lk-row lk-sev' }, k.TL('Mode', k.S(26, { w: 84, cls: 'dk or' })), O('Voices', 27, 36), O('Amount', 28, 44)),
+    h('div', { class: 'lk-row lk-shead' }, h('span', { class: 'lk-st' }, 'Global')), h('div', { class: 'lk-row lk-sev' }, k.TL('Poly', k.T(23, 'Mono', { w: 48 })), O('Voices', 25, 36), k.K(24, { n: 'Glide' }), k.K(29, { n: 'Volume' })));
+  return h('div', { class: 'lk-col lk-wt' },
+    h('div', { class: 'lk-wr lk-wr1' }, osc(0), osc(1), sub),
+    h('div', { class: 'lk-wr lk-wr2' }, env('Amp', 35), env('Env 2', 39), env('Env 3', 43), lfo('LFO 1', 47), lfo('LFO 2', 50)),
+    h('div', { class: 'lk-wr lk-wr3' }, filt1, filt2, matrix, glob));
 };
 export function instKitView(i, t, every) {
   const def = INSTRUMENTS[t.inst.type]; if (!VI[t.inst.type]) return null;

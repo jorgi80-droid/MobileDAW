@@ -145,7 +145,7 @@ export const INSTRUMENTS = {
     { n: 'Osc Semi', min: -48, max: 48, def: 0, step: 1, fmt: 'st' },
     { n: 'Osc Detune', min: -50, max: 50, def: 0, unit: 'ct' },
     { n: 'Sample Level', min: -48, max: 6, def: 0, unit: 'dB' } ] },
-  11: { name: 'Wavetable', view: 'lwavetable', params: [
+  11: { name: 'Wavetable', view: 'kit', params: [
     { n: 'O1 Table', min: 0, max: 33, def: 0, step: 1, fmt: 'wtab' },
     { n: 'O1 Pos', min: 0, max: 1, def: 0.7, unit: '%' },
     { n: 'O1 FX 1', min: 0, max: 1, def: 0, unit: '%' },

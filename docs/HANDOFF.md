@@ -1,6 +1,6 @@
 # Serah-terima pekerjaan (untuk sesi berikutnya)
 
-Branch kerja: `ccr-d4b2cd74-5td2k9` (repo `jorgi80-droid/MobileDAW`), lanjutan langsung (fast-forward) dari `ccr-591624f7-8xa2wb` <- `ccr-9362ed99-sntgvi`
+Branch kerja: `ccr-49b1b317-5ba57j` (lanjutan fast-forward dari `ccr-d4b2cd74-5td2k9`) (repo `jorgi80-droid/MobileDAW`), lanjutan langsung (fast-forward) dari `ccr-591624f7-8xa2wb` <- `ccr-9362ed99-sntgvi`
 <- `ccr-34212a29-z1qc7f`. Tidak ada riwayat yang ditulis ulang. Semua pekerjaan sudah di-commit.
 Baca juga `README-ANDROID.md` (build, install, status fase 2).
 
@@ -183,7 +183,12 @@ Permintaan pemilik: SEMUA efek dan instrumen diganti dengan set stok Ableton Liv
   jadi default engine tidak penting); panel `VI[n](k)` memakai kit yang sama dengan efek (`k.get/set/K/S/N/...`, otomasi kind 5);
   `setBend(st)` opsional (core.bend memanggilnya; Drift menskalakan dengan PB Range). Tes: `tools/inst-test.mjs` (setiap parameter harus
   terdengar, `PRE` / `NO_AUDIO` per instrumen, plus tes khusus PB Range / Legato), ikut `run-tests`. "Note PB" Drift tidak dibuat (butuh MPE).
-  Belum: Wavetable (redesign), Sampler (redesign), Drum Rack (redesign), Impulse, Electric, Collision,
+  **Wavetable didesain ulang** (tipe 11, engine lama tidak berubah; `view: 'kit'`, panel `VI[11]` di fxkit.js; tiga baris selebar sama:
+  Osc 1 | Osc 2 | Sub, Amp / Env 2 / Env 3 / LFO 1 / LFO 2, Filter | Filter 2 | Matrix | Unison+Global; `docs/redesign/34-wavetable.jpg`).
+  `wavetablePanel` di liveinst.js tidak dipakai lagi (hanya cadangan untuk view 'lwavetable').
+  **Simpler ditata ulang**: tab Controls = grid 3 x 2 (display di atas strip kontrolnya), tab Sample satu baris bawah, kedua tab sama ukuran
+  (`docs/redesign/33-simpler-rapi.jpg`, CSS `.lk-simp/.lk-sgrid`). Pola grid ini (`.lk-dk` + `.lk-sev` + `.lk-shead`) dipakai untuk panel berikutnya.
+  Belum: Sampler (redesign), Drum Rack (redesign), Impulse, Electric, Collision,
   Tension, Granulator III, DS Kick / Snare / Tom / HH / Clap / FM. Tipe instrumen lama tetap bisa dimuat (proyek lama).
 - Aturan: parameter baru selalu DITAMBAHKAN di akhir (indeks lama tetap), `migrate()` bila arti berubah; efek tanpa padanan Live 12 masuk
   'Lainnya (lama)'; native engine otomatis kembali ke engine web untuk device yang belum di-port.
