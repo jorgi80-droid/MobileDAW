@@ -10,7 +10,7 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 
 add_library(mdaw_engine STATIC
-  engine/engine.cpp engine/commands.cpp engine/tmap.cpp engine/meter.cpp engine/units.cpp engine/instruments.cpp engine/inst_live.cpp engine/poli.cpp engine/drift.cpp engine/operator.cpp engine/fx.cpp engine/fx2.cpp engine/fx3.cpp engine/fx3b.cpp)
+  engine/engine.cpp engine/commands.cpp engine/tmap.cpp engine/meter.cpp engine/units.cpp engine/instruments.cpp engine/inst_live.cpp engine/poli.cpp engine/drift.cpp engine/operator.cpp engine/analog.cpp engine/fx.cpp engine/fx2.cpp engine/fx3.cpp engine/fx3b.cpp)
 target_include_directories(mdaw_engine PUBLIC engine)
 # Same results as the JS engine: no fused multiply-add, no fast-math reassociation (see engine/jsmath.h)
 target_compile_options(mdaw_engine PUBLIC -ffp-contract=off -fno-fast-math -Wall -Wno-misleading-indentation)

@@ -5,6 +5,7 @@
 #include "poli.h"
 #include "drift.h"
 #include "operator.h"
+#include "analog.h"
 #include "fx.h"
 #include "fx2.h"
 #include "fx3b.h"
@@ -15,7 +16,7 @@ Instrument* makeInstrument(int type, double sr, Bank* bank) {
   switch (type) {
     case 1: return new MiniSynth(sr);
     case 2: return new SuperSaw(sr);
-    case 13: return new Drift(sr); case 14: return new Operator(sr); case 16: return new Poli(sr);
+    case 13: return new Drift(sr); case 14: return new Operator(sr); case 15: return new Analog(sr); case 16: return new Poli(sr);
     case 19: return new DsKick(sr); case 20: return new DsSnare(sr); case 21: return new DsTom(sr);
     case 22: return new DsHH(sr); case 23: return new DsClap(sr); case 24: return new DsFm(sr);
     case 25: return new Electric(sr); case 26: return new Tension(sr); case 27: return new Collision(sr);
@@ -34,7 +35,7 @@ Device* makeDevice(int type, double sr, float* sidechain) {
     default: return nullptr;
   }
 }
-bool instPorted(int type) { return type == 1 || type == 2 || type == 13 || type == 14 || type == 16 || (type >= 19 && type <= 29); }
+bool instPorted(int type) { return type == 1 || type == 2 || type == 13 || type == 14 || type == 15 || type == 16 || (type >= 19 && type <= 29); }
 bool devPorted(int type) { return (type >= 17 && type <= 32) || type == 1 || type == 6 || type == 9 || type == 0 || type == 2 || type == 3 || type == 4 || type == 5 || type == 7 || type == 8; }
 
 }  // namespace mdaw
