@@ -5,7 +5,7 @@ const D = await import(path.join(path.dirname(fileURLToPath(import.meta.url)), '
 
 const PPQ = 960, BAR = PPQ * 4;
 const PARAM_SYNTHS = [13, 14, 15, 17, 18, 16, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29];   // Live 12 instruments with a min / max sweep of every parameter
-const FX_PORTED = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45];   // effects with a min / max sweep scenario (fx-<name>)
+const FX_PORTED = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 14, 15, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45];   // effects with a min / max sweep scenario (fx-<name>)
 const SYNTHS = [1, 2, 5, 7, 8, 11, 13, 14, 15, 17, 16, 19, 20, 21, 22, 23, 24, 25, 26, 27];   // instruments with golden scenarios (presets + playing)
 function lcg(seed) { let s = seed >>> 0; return () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 4294967296 * 2 - 1; }; }
 function tone(sec, hz, sr = 48000, amp = 0.5) { const n = Math.round(sec * sr), a = new Float32Array(n); for (let i = 0; i < n; i++) a[i] = Math.sin(2 * Math.PI * hz * i / sr) * amp * Math.min(1, (n - i) / 2000); return a; }
@@ -70,6 +70,18 @@ export const SCENARIOS = [
   ...instScenarios(),
   ...paramScenarios(),
   ...fxScenarios(),
+  { name: 'fx-autoduck-sc', info: 'Autoduck: track 2 (short bass notes) ducks the pad on track 1; source / threshold / amount / attack / release changes while playing',
+    run(e) {
+      e.tempo(124); e.trackInst(0, 2); e.trackInst(1, 1);
+      const pad = []; for (let k = 0; k < 4; k++) pad.push(k * PPQ * 4, PPQ * 3.9, 55 + k * 2, 0.7, 0); e.trackNotes(0, pad, pad.length / 5);
+      const kick = []; for (let k = 0; k < 16; k++) kick.push(k * PPQ, PPQ * 0.2, 36, 1, 0); e.trackNotes(1, kick, kick.length / 5);
+      e.insertDevice(0, 0, 10); [2, -40, 18, 3, 150].forEach((v, k) => e.devParam(0, 0, k, v));
+      e.play(); play(e, 2, [128, 77, 256]);
+      e.devParam(0, 0, 1, -12); e.devParam(0, 0, 3, 40); play(e, 1);
+      e.devParam(0, 0, 2, 48); e.devParam(0, 0, 4, 900); play(e, 1, [128, 333]);
+      e.devParam(0, 0, 0, 1); play(e, 0.5); e.devParam(0, 0, 0, 0); play(e, 0.5);
+      e.stop(); play(e, 0.5);
+    } },
   { name: 'demo-ghibli', info: 'demo song Ghibli Sky (SoundFont + Osphere)', run: (e, o) => demo(e, o, 'ghibli-sky.mdaw', 30) },
   { name: 'demo-meadow', info: 'demo song Meadow Wind (SoundFont + Osphere)', run: (e, o) => demo(e, o, 'meadow-wind.mdaw', 30) },
 ];

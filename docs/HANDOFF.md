@@ -1,6 +1,6 @@
 # Serah-terima pekerjaan (untuk sesi berikutnya)
 
-Branch kerja: `ccr-49b1b317-5ba57j` (lanjutan fast-forward dari `ccr-d4b2cd74-5td2k9`) (repo `jorgi80-droid/MobileDAW`), lanjutan langsung (fast-forward) dari `ccr-591624f7-8xa2wb` <- `ccr-9362ed99-sntgvi`
+Branch kerja: `claude/gesture-logic-editor-clip-18jqqv` (lanjutan fast-forward dari `ccr-49b1b317-5ba57j` <- `ccr-d4b2cd74-5td2k9`) (repo `jorgi80-droid/MobileDAW`), lanjutan langsung (fast-forward) dari `ccr-591624f7-8xa2wb` <- `ccr-9362ed99-sntgvi`
 <- `ccr-34212a29-z1qc7f`. Tidak ada riwayat yang ditulis ulang. Semua pekerjaan sudah di-commit.
 Baca juga `README-ANDROID.md` (build, install, status fase 2).
 
@@ -32,10 +32,22 @@ Baca juga `README-ANDROID.md` (build, install, status fase 2).
 | Port C++: Utility, Auto Filter, EQ Three, Saturator (oversampler 4x), Compressor, Limiter, Echo, Reverb, Parametric EQ, Roar (`native/engine/fx*.{h,cpp}`) | selesai, identik bit (golden `fx-*`) |
 | Port C++: seluruh fx3.js (Delay ... Spectrum, 16 efek, `fx3*.{h,cpp}`); engine C++ memanggil `tr()` untuk efek tersinkron bar | selesai, golden `fx-*` identik |
 | Port C++: seluruh fx4.js (Amp .. Looper, 13 efek, `fx4.{h,cpp}`) | selesai, golden `fx-*` identik |
-| **Port C++: Autoduck, Level/Analyzer/MiniMeters, Stereolizer, Spacer, fx5 (Spectral), fx6 (modulator + Map), Audio Effect Rack** | **belum** |
+| Port C++: Autoduck (sidechain lewat `eng.sc`), Stereolizer, Spacer (`native/engine/fxu.*`) | selesai, golden `fx-autoduck`, `fx-autoduck-sc`, `fx-stereolizer`, `fx-spacer` identik |
+| **Port C++: Level/Analyzer/MiniMeters, fx5 (Spectral), fx6 (modulator + Map), Audio Effect Rack** | **belum** |
 | Arrangement gaya gambar pemilik: klip warna penuh + isi gelap, fade klip audio + handle (seret), locator outline, garis track tebal, palet warna Live jenuh | selesai (`docs/redesign/40-*.jpg`) |
 | Drum Rack: chain per pad (instrumen + efek di pad, `pad.chain`; engine `DrumSynth.cmd/endBlock`, project `setPadChainInst / padChain*`, UI `padChainView` di fxkit.js, tes `tools/drumrack-test.mjs`) | selesai (`docs/redesign/39-drumrack-chain.png`) |
 | Ekspor WAV lewat engine native; angka CPU/underrun Web vs Native dari HP | belum |
+
+## Gestur klip + editor layar penuh (logika FL Studio Mobile, sesi ini)
+- Tombol tab **Clip dihapus**: bar bawah hanya Device dan Keys. Editor klip (piano roll / drum step / audio editor / titik otomasi) dibuka lewat
+  **ketuk-ganda klip** atau item **Edit** (paling atas) di menu klip, SELALU layar penuh (`openEditor()` / `closeEditor()` di `js/main.js`,
+  kelas `#view-arr.edfull` + `max`). Tutup: tombol ✕ (`#btn-edclose`) di bar tab, tombol Back, atau ketuk Device / Keys (kembali ke tab
+  sebelumnya, panel tertutup lagi bila sebelumnya tertutup). Klip yang diedit hilang (hapus / undo) = editor tertutup sendiri.
+- **Ketuk-ganda ruang kosong** di baris track = klip baru 1 bar mulai di bar di bawah jari (`newClipAt()` di `js/timeline.js`; dipendekkan agar
+  tidak menabrak klip berikutnya; track audio membuka pemilih sample di bar itu).
+- Ketuk klip terpilih = menu klip, tapi ditunda `DTAP_MS` (330 ms) agar ketukan kedua (ketuk-ganda) membatalkannya dan membuka editor.
+  Tombol `⋯` di klip tetap membuka menu seketika. Uji: `TL.openEditor()` (diekspor) dipakai `tools/ui-shots.mjs` dan `tools/ui-perf.mjs`.
+- Bar Device / Keys saat panel tertutup 12 px lebih tinggi (36 px, akhir `css/ableton.css`), sesuai gambar referensi pemilik.
 
 ## Redesign UI Live 12 (sesi ini) - di mana dan bagaimana
 - Arrangement (`js/timeline.js`, satu canvas + overlay): konstanta tata letak di atas file (`RULER` = strip locator `MROW` + beat ruler,
