@@ -3,7 +3,7 @@
 // right-edge handle = resize, ruler drag = time selection) on an Ableton-style layout.
 import { C, T } from './theme.js';
 import { attachGestures } from './gesture.js';
-import { bar, menu, ask, modal, toast, clamp } from './ui.js';
+import { menu, ask, modal, toast, clamp } from './ui.js';
 import { checkpoint } from './history.js';
 import { prefs, savePrefs } from './prefs.js';
 import { wavePath, peaksPath } from './waveform.js';
@@ -220,7 +220,7 @@ function drawClip(t, c, y, hh) {
   }
   if (isSel) {
     ctx.strokeStyle = shade(t.color, 0.65); ctx.lineWidth = 1.5; ctx.strokeRect(x + 0.75, y0 + 0.75, w - 1.5, h0 - 1.5);
-    if (tall && w > 44) { const mx = Math.min(x + w, CW) - 12, my = y0 + hd / 2; ctx.fillStyle = shade(t.color, 0.75); for (const d of [-4, 0, 4]) { ctx.beginPath(); ctx.arc(mx + d, my, 1.3, 0, 6.2832); ctx.fill(); } }   // ⋯ : the clip's context menu
+    if (tall && w > 44 && !msel.size) { const mx = Math.min(x + w, CW) - 12, my = y0 + hd / 2; ctx.fillStyle = shade(t.color, 0.75); for (const d of [-4, 0, 4]) { ctx.beginPath(); ctx.arc(mx + d, my, 1.3, 0, 6.2832); ctx.fill(); } }   // ⋯ : the clip's context menu
     const hl = Math.min(26, h0 - hd - 10), hy = y0 + hd + (h0 - hd - hl) / 2, st = stretchMode && t.kind === 'audio';   // edge grips for touch: pills on both ends
     if (hl > 6 && w > 26) {
       ctx.fillStyle = shade(t.color, 0.7); ctx.fillRect(x + 3, hy, 3, hl);                              // edge grips: slim bars in the clip's ink
@@ -690,19 +690,18 @@ function hit(x, y) {
 
 const canvasOrigin = () => canvas.getBoundingClientRect();
 // Live's clip context menu: edit commands with their shortcuts, then clip commands, then the clip view
-const MODK = /Mac|iPhone|iPad/.test(navigator.platform || '') ? '\u2318' : 'Ctrl+';
 function clipMenu(i, c, tick, sx, sy) {
   const t = state.tracks[i], r = canvasOrigin();
   menu([
-    { label: 'Cut', key: MODK + 'X', fn: () => { copyList([{ i, c }]); checkpoint(); P.removeClip(i, c.id); } },
-    { label: 'Copy', key: MODK + 'C', fn: () => copyList([{ i, c }]) },
-    { label: 'Duplicate', key: MODK + 'D', fn: () => { checkpoint(); P.duplicateClip(i, c.id); invalidate(); } },
-    { label: 'Delete', key: 'Del', fn: () => { checkpoint(); P.removeClip(i, c.id); } },
+    { label: 'Cut', fn: () => { copyList([{ i, c }]); checkpoint(); P.removeClip(i, c.id); } },
+    { label: 'Copy', fn: () => copyList([{ i, c }]) },
+    { label: 'Duplicate', fn: () => { checkpoint(); P.duplicateClip(i, c.id); invalidate(); } },
+    { label: 'Delete', fn: () => { checkpoint(); P.removeClip(i, c.id); } },
     { sep: true },
-    { label: 'Rename', key: MODK + 'R', fn: () => renameClip(i, c) },
-    { label: 'Split', key: MODK + 'E', fn: () => { checkpoint(); P.splitClip(i, c.id, snapT(tick)); } },
+    { label: 'Rename', fn: () => renameClip(i, c) },
+    { label: 'Split', fn: () => { checkpoint(); P.splitClip(i, c.id, snapT(tick)); } },
     { label: 'Snap Edges to Grid', fn: () => snapClip(i, c) },
-    { label: c.muted ? 'Activate Clip' : 'Deactivate Clip', key: '0', fn: () => { checkpoint(); P.setClipsMuted([{ i, c }], !c.muted); invalidate(); } },
+    { label: c.muted ? 'Activate Clip' : 'Deactivate Clip', fn: () => { checkpoint(); P.setClipsMuted([{ i, c }], !c.muted); invalidate(); } },
     ...(c.notes && P.loopOf(c) ? [{ label: 'Unlink Loop', fn: () => { checkpoint(); P.bakeLoop(c, i); P.emit('clips'); invalidate(); toast('Pengulangan jadi not biasa.', 1600); } }] : []),
     ...(t.kind === 'audio' ? [{ label: 'Stretch Mode', check: stretchMode, fn: () => { stretchMode = !stretchMode; toast(stretchMode ? 'Mode stretch: tarik ujung kanan klip audio untuk meregangkan (pitch tetap).' : 'Mode stretch mati: tarik ujung kanan untuk memotong.', 3200); invalidate(); } }] : []),
     { sep: true },
@@ -716,30 +715,18 @@ function snapClip(i, c) {
   if (e - a < 1) return toast('Klip terlalu pendek untuk di-snap.');
   checkpoint(); c.len = e - a; c.start = a; P.syncClips(i); P.touchClips(i); invalidate();
 }
-// keyboard commands on the selected clip (desktop / hardware keyboard): Ctrl+C / X / V / D / R / E, 0 = (de)activate
-export function clipKey(code, mod) {
-  const s = P.selectedClip(); if (!s) return false; const i = s.track, c = s.clip;
-  if (mod && code === 'KeyC') { copyList([{ i, c }]); return true; }
-  if (mod && code === 'KeyX') { copyList([{ i, c }]); checkpoint(); P.removeClip(i, c.id); return true; }
-  if (mod && code === 'KeyV') { pasteClips(i, P.beatRound(state.pos)); return true; }
-  if (mod && code === 'KeyD') { checkpoint(); P.duplicateClip(i, c.id); invalidate(); return true; }
-  if (mod && code === 'KeyR') { renameClip(i, c); return true; }
-  if (mod && code === 'KeyE') { checkpoint(); P.splitClip(i, c.id, snapT(state.pos)); return true; }
-  if (!mod && (code === 'Digit0' || code === 'Numpad0')) { checkpoint(); P.setClipsMuted([{ i, c }], !c.muted); invalidate(); return true; }
-  return false;
-}
 
 function selMenu() {
   const r = canvasOrigin();
   const a = sel.a, b = sel.b, len = b - a;
-  bar([
-    { label: 'Deselect', fn: () => { sel = null; invalidate(); } },
+  menu([
+    { label: 'Deselect', fn: () => { sel = null; invalidate(); } }, { sep: true },
     { label: 'Insert space', fn: () => { checkpoint(); cutAll(a); shift(a, len); sel = null; } },
     { label: 'Duplicate', fn: () => { checkpoint(); cutAll(a); cutAll(b); dupRange(a, b); sel = null; } },
     { label: 'Delete', fn: () => { checkpoint(); cutAll(a); cutAll(b); delRange(a, b); sel = null; } },
     { label: 'Delete space', fn: () => { checkpoint(); cutAll(a); cutAll(b); delRange(a, b); shift(b, -len); sel = null; } },
     { label: 'Trim', fn: () => { checkpoint(); cutAll(a); cutAll(b); delRange(0, a); delRange(b, 1e9); shift(a, -a); sel = null; } },
-  ], r.left + clamp(tx(a), 0, Math.max(0, CW - 330)), r.top + RULER + 4);
+  ], r.left + clamp(tx(a), 0, Math.max(0, CW - 200)), r.top + RULER + 4);
 }
 function cutAll(tick) {
   state.tracks.forEach((t, i) => { if (t.kind !== 'audio') for (const c of [...t.clips]) if (tick > c.start && tick < c.start + c.len) P.splitClip(i, c.id, tick); });
@@ -848,7 +835,6 @@ function updateBar() {
   const L = selList(), n = L.length;
   selbar.classList.toggle('open', n > 0);
   selbar.querySelector('.cnt').textContent = n + ' klip';
-  const mb = selbar.querySelector('[data-a="mute"]'); if (mb) mb.textContent = n && L.every(({ c }) => c.muted) ? 'Unmute' : 'Mute';
   for (const b of selbar.querySelectorAll('[data-need]')) b.disabled = b.dataset.need === 'sel' ? !n : b.dataset.need === 'one' ? n !== 1 : !clipM;
   selW = n ? selbar.offsetWidth : 0;
   if (n) placeBar();
@@ -909,6 +895,14 @@ function selMute() {
   const m = !L.every(({ c }) => c.muted);               // all muted -> unmute, otherwise mute everything picked
   checkpoint(); P.setClipsMuted(L, m); updateBar(); invalidate();
 }
+function groupMenu(btn) {                                            // the commands for the picked clips (one place, as the single-clip menu)
+  const r = btn.getBoundingClientRect(), L = selList(), allMuted = L.length && L.every(({ c }) => c.muted);
+  menu([
+    { label: 'Copy', fn: selCopy }, { label: 'Duplicate', fn: selDup }, { label: 'Combine', fn: selCombine }, { label: 'Delete', fn: selDelete },
+    { sep: true },
+    { label: allMuted ? 'Activate Clips' : 'Deactivate Clips', fn: selMute }, { label: 'Select All', fn: selAll }, { label: 'Deselect', fn: clearSel },
+  ], r.left, r.bottom + 2);
+}
 function selCombine() {                                                     // v66: FL Studio Mobile "Combine"
   const L = selList(); if (!L.length) return;
   const ti = L[0].i;
@@ -922,7 +916,8 @@ function buildSelBar(host) {
   selbar = document.createElement('div'); selbar.className = 'selbar bar';
   const mk = (a, label, fn, need) => { const b = document.createElement('button'); b.type = 'button'; b.className = 'b'; b.dataset.a = a; if (need) b.dataset.need = need; b.textContent = label; b.addEventListener('click', (e) => { e.stopPropagation(); fn(); }); b.addEventListener('pointerdown', (e) => e.stopPropagation()); return b; };
   const cnt = document.createElement('span'); cnt.className = 'cnt'; cnt.hidden = true;
-  selbar.append(cnt, mk('copy', 'Copy', selCopy, 'sel'), mk('dup', 'Duplicate', selDup, 'sel'), mk('comb', 'Gabung', selCombine, 'sel'), mk('del', 'Hapus', selDelete, 'sel'), mk('mute', 'Mute', selMute, 'sel'));
+  const more = mk('menu', '\u22EF', () => groupMenu(more), 'sel'); cnt.hidden = false;
+  selbar.append(cnt, more);                                          // only the count + ⋯: every group command lives in one menu
   host.append(selbar); updateBar();
 }
 // long-press on an empty spot (no drag): new clip / paste exactly where the finger was

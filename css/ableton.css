@@ -886,5 +886,6 @@
 .lk-pcs { align-items: stretch !important; gap: var(--sp-3) !important; }
 /* context menus: the keyboard shortcut right-aligned in a dim column (Live) */
 .menu .mi { display: flex; align-items: center; gap: 24px; }
-.menu .mi .mk { margin-left: auto; color: var(--lv-dim); font: 500 11px/1 var(--font); letter-spacing: .02em; }
-.menu .mi:hover .mk, .menu .mi:active .mk { color: rgba(255, 255, 255, .8); }
+.selbar { align-items: center; background: var(--lv-ctl); border: 1px solid var(--lv-edge); border-radius: var(--r-1); box-shadow: 0 6px 18px rgba(0, 0, 0, .4); }
+.selbar .cnt { padding: 0 12px; color: var(--lv-ink); font: 600 11.5px/1 var(--font); }
+.selbar .b[data-a="menu"] { min-width: 38px; font-size: 16px; border-left: 1px solid var(--lv-edge); }
