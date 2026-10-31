@@ -526,7 +526,7 @@ export function toggleMonitor(i) {
 export function toggleReturnMute(k) { const r = state.returns[k]; if (HK.on) HK.add({ t: 'tog', k: 'mute', s: 'ret' + k }); r.mute = !r.mute; eng.trackMute(RET0 + k, r.mute); emit('mix'); }
 export function toggleMute(i) { const t = state.tracks[i]; if (HK.on) HK.add({ t: 'tog', k: 'mute', s: t.id }); t.mute = !t.mute; eng.trackMute(i, t.mute); if (t.kind === 'auto') syncAutomation(); emit('mix'); }
 export function toggleSolo(i) { const t = state.tracks[i]; if (HK.on) HK.add({ t: 'tog', k: 'solo', s: t.id }); t.solo = !t.solo; eng.trackSolo(i, t.solo); emit('mix'); }
-export const isSampler = (type) => type === INST.DIRECTWAVE || type === INST.KEYSTONE || type === INST.SAMPLER || type === INST.SIMPLER || type === INST.IMPULSE;
+export const isSampler = (type) => type === INST.DIRECTWAVE || type === INST.KEYSTONE || type === INST.SAMPLER || type === INST.SIMPLER || type === INST.IMPULSE || type === INST.GRANULATOR;
 export function setInstrument(i, type) {
   const t = state.tracks[i];
   if (HK.on) HK.add({ t: 'inst', s: t.id, v: t.inst });
@@ -554,7 +554,7 @@ export const presetsFor = (type) => PRESETS[type] || [];
 export const ZONE_FIELDS = { sample: 0, root: 1, lo: 2, hi: 3, vlo: 4, vhi: 5, tune: 6, loop: 7, sus: 7, s0: 8, s1: 9, l0: 10, l1: 11, xf: 12, rev: 13, vol: 14, pan: 15 };
 export const MAX_ZONES = 16;
 export const newZone = () => ({ sample: null, root: 60, lo: 0, hi: 127, vlo: 1, vhi: 127, tune: 0, loop: false, sus: 0, s0: 0, s1: 1, l0: 0, l1: 1, xf: 0, rev: false, vol: 0, pan: 0 });
-const bigZ = (type) => type === INST.SAMPLER || type === INST.SIMPLER || type === INST.IMPULSE;   // Sampler / Simpler: 200 + zone * 16 + field (start / end / loop / ...)
+const bigZ = (type) => type === INST.SAMPLER || type === INST.SIMPLER || type === INST.IMPULSE || type === INST.GRANULATOR;   // Sampler / Simpler: 200 + zone * 16 + field (start / end / loop / ...)
 const zIdx = (i, k, f) => (bigZ(state.tracks[i].inst.type) ? 200 + k * 16 + ZONE_FIELDS[f] : 100 + k * 8 + ZONE_FIELDS[f]);
 const zNum = (v) => (v === true ? 1 : v === false ? 0 : v);
 function sendZone(i, k) {
@@ -569,7 +569,7 @@ export function syncZones(i) {
   if (!t || !t.inst || !isSampler(t.inst.type)) return;
   const zs = t.inst.zones = t.inst.zones || [newZone()];
   for (let k = 0; k < zs.length; k++) zs[k] = { ...newZone(), ...zs[k] };
-  for (let k = 0; k < (t.inst.type === INST.SIMPLER ? 1 : MAX_ZONES); k++) {
+  for (let k = 0; k < (t.inst.type === INST.SIMPLER || t.inst.type === INST.GRANULATOR ? 1 : MAX_ZONES); k++) {
     if (k < zs.length) sendZone(i, k); else eng.instParam(i, zIdx(i, k, 'sample'), -1);
   }
 }

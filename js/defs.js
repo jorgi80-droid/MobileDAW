@@ -2,9 +2,9 @@ import { factoryPresets } from './presetlib.js';
 import { wtName, WT_COUNT } from './engine/live.js';
 // Instrument + device definitions. Parameter ORDER must match the C++ side
 // (app/src/main/cpp/instruments.h and devices.h).
-export const INST = { MINISYNTH: 1, SUPERSAW: 2, DRUM: 3, DIRECTWAVE: 4, GMS: 5, SOUNDFONT: 6, MOISTURE: 7, OSPHERE: 8, KEYSTONE: 9, SAMPLER: 10, WAVETABLE: 11, SIMPLER: 18, IMPULSE: 28 };
+export const INST = { MINISYNTH: 1, SUPERSAW: 2, DRUM: 3, DIRECTWAVE: 4, GMS: 5, SOUNDFONT: 6, MOISTURE: 7, OSPHERE: 8, KEYSTONE: 9, SAMPLER: 10, WAVETABLE: 11, SIMPLER: 18, IMPULSE: 28, GRANULATOR: 29 };
 // Instruments a synth/sampler track can switch between (drums have their own track type).
-export const INST_LIST = [18, 17, 16, 15, 14, 13, 11, 10, 28, 25, 26, 27, 19, 20, 21, 22, 23, 24, 1, 2, 4, 5, 6, 7, 8, 9, 12];
+export const INST_LIST = [18, 17, 16, 15, 14, 13, 11, 10, 28, 29, 25, 26, 27, 19, 20, 21, 22, 23, 24, 1, 2, 4, 5, 6, 7, 8, 9, 12];
 
 export const INSTRUMENTS = {
   1: { name: 'Mini Synth', params: [
@@ -678,6 +678,12 @@ export const IRACK_DEF = { name: 'Instrument Rack', rack: true, params: [] };   
   INSTRUMENTS[28] = { name: 'Impulse', view: 'kit', full: true, sampler: true, slots: 8, params: [q('Volume', -60, 6, 0, { fmt: 'dbinf' }), q('Time', -1, 1, 0, { unit: '%' }), q('Transp', -48, 48, 0, { step: 1, fmt: 'st' }), ...ph,
     ...[0, 1, 2, 3, 4, 5, 6, 7].flatMap(slot)] };
 }
+
+// ---- Granulator III (engine js/engine/granulator.js): one sample (zone 0), Classic / Loop / Cloud
+INSTRUMENTS[29] = { name: 'Granulator III', view: 'kit', full: true, sampler: true, params: [list('Mode', ['Classic', 'Loop', 'Cloud'], 2), q('Position', 0, 1, 0.3, { unit: '%' }), q('Scan', -4, 4, 1, { unit: 'x' }),
+  q('Grain Size', 5, 1000, 250, { curve: 'log', unit: 'ms' }), q('Shape', 0, 1, 0.5, { unit: '%' }), q('Spray', 0, 1, 0.2, { unit: '%' }), q('Density', 1, 100, 12, { curve: 'log', unit: 'Hz' }), q('Loop Length', 0, 1, 0.2, { unit: '%' }),
+  q('Pitch Spread', 0, 12, 0, { unit: 'st' }), q('Transpose', -48, 48, 0, { step: 1, fmt: 'st' }), q('Attack', 1, 5000, 20, { curve: 'log', unit: 'ms' }), q('Release', 5, 10000, 600, { curve: 'log', unit: 'ms' }),
+  q('Vol < Vel', 0, 1, 0.5, { unit: '%' }), q('Volume', -60, 6, -6, { fmt: 'dbinf' })] };
 
 // ---- Audio Effect Rack (engine: js/engine/fx7.js; project: d.chains, d.macroMap)
 {

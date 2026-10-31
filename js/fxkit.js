@@ -1208,6 +1208,25 @@ VI[28] = (k) => {
   build();
   return h('div', { class: 'lk-row lk-imp' }, h('div', { class: 'lk-col lk-imm' }, pads, page), h('div', { class: 'lk-col lk-imglob' }, k.K(0, { n: 'Volume' }), k.K(1, { n: 'Time' }), k.K(2, { n: 'Transp' })));
 };
+// Granulator III: the sample (yellow) with the Position line and the grain window (drag = Position), mode menu, file; then one row of
+// knobs: Position, Scan / Density (by mode), Grain Size, Shape, Spray, Loop Length (Loop mode), Pitch Spread, Transpose | Attack, Release |
+// Vol < Vel, Volume
+VI[29] = (k) => {
+  const { i } = k.ctx, t = P.state.tracks[i], Z = () => (t.inst.zones && t.inst.zones[0]) || {}, pick = () => BR.openBrowser('file', { track: i, zone: 0 });
+  const W = 640, H = 110;
+  const wave = k.D(W, H, (g, w, hh) => {
+    const s = Z().sample; if (!s) { label(g, 'Drop Sample Here', w / 2, hh / 2 + 4, '#bbb', 12, 'center'); return; }
+    const pk = s.peaks || [], n = pk.length, mid = hh / 2;
+    g.fillStyle = '#f5b324'; for (let x = 0; x < w; x += 2) { const a = pk[Math.min(n - 1, Math.floor(x / w * n))] || 0; g.fillRect(x, mid - a * (mid - 8), 2, Math.max(1, a * (mid - 8) * 2)); }
+    const px = k.get(1) * w, gw = Math.max(2, k.get(3) / 1000 / Math.max(0.05, s.duration || 1) * w), sp = k.get(5) * 0.25 * w;
+    g.fillStyle = 'rgba(255,255,255,.10)'; g.fillRect(px - sp, 0, sp * 2 + gw, hh);
+    if (Math.round(k.get(0)) === 1) { g.fillStyle = 'rgba(79,195,240,.18)'; g.fillRect(px, 0, (0.02 + k.get(7) * 0.5) * w, hh); }
+    g.fillStyle = '#e5484d'; g.fillRect(Math.round(px), 0, 2, hh);
+  }, { onDown: (x) => { if (!Z().sample) { pick(); return false; } return { p: k.get(1) }; }, onMove: (x, y, dx, dy, s) => k.set(1, Math.max(0, Math.min(1, s.p + dx / W))) });
+  const head = h('div', { class: 'lk-row lk-shead' }, k.S(0, { w: 86, cls: 'dk or' }), h('span', { class: 'lk-grow' }), h('span', { class: 'lk-st' }, (Z().sample && Z().sample.name) || ''), lvBtn('Sample…', pick, { cls: 'lk-t' }));
+  return h('div', { class: 'lk-col lk-ds' }, k.dk(head, wave),
+    h('div', { class: 'lk-row lk-dsk' }, k.K(1), k.swapN(0, (m) => (m === 2 ? k.K(6) : k.K(2))), k.K(3), k.K(4), k.K(5), k.swapN(0, (m) => (m === 1 ? k.K(7, { n: 'Loop' }) : k.K(8, { n: 'Pitch' }))), k.K(9), k.sep(), k.K(10), k.K(11), k.sep(), k.K(12), k.K(13, { big: true })));
+};
 export function instKitView(i, t, every) {
   const def = INSTRUMENTS[t.inst.type]; if (!VI[t.inst.type]) return null;
   const d = { id: 'in' + t.id, type: t.inst.type, params: new Proxy({}, { get: (_, kk) => t.inst.params[kk] ?? (def.params[kk] ? def.params[kk].def : undefined) }) };

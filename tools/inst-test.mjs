@@ -47,6 +47,8 @@ PRE[27] = { 10: { 7: 0 }, 14: { 13: 0.5, 7: 0 } };
 // Impulse: a slot is heard on its own key (C3 + slot); Drive needs Sat, Freq / Res need the filter
 PRE[28] = { 0: { n: [60, 64, 67] }, 1: { n: [60, 64, 67] }, 2: { n: [60, 64, 67] } };
 for (let k = 0; k < 8; k++) { const b = 92 + k * 13, n = [60 + k]; for (let f = 0; f < 13; f++) PRE[28][b + f] = { n }; PRE[28][b + 3] = { n, [b + 4]: 1 }; PRE[28][b + 6] = { n, [b + 5]: 1 }; PRE[28][b + 7] = { n, [b + 5]: 1, [b + 6]: 1500 }; }
+// Granulator III: Scan moves the playhead in Classic / Loop, Loop Length only in Loop mode, Density only in Cloud
+PRE[29] = { 2: { 0: 0 }, 7: { 0: 1, 2: 1 } };
 const NO_AUDIO = { 18: [5, 38], 13: [58, 53], 14: [82], 15: [88, 84, 73, 78], 16: [13, 61, 62], 17: [75, 29, 37, 120, 128] };    // PB Range: only heard with the pitch wheel, Legato: only with overlapping notes (both tested below)
 const want = process.argv.slice(2).map(Number), types = Object.keys(INSTRUMENTS).map(Number).filter((t) => INSTRUMENTS[t].full && (!want.length || want.includes(t)));
 let bad = 0;
