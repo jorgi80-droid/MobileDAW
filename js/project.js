@@ -8,7 +8,8 @@ export const PPQ = 960, MAX_TRACKS = 64;
 export let BEAT = PPQ, BAR = PPQ * 4;   // live bindings: they change with the time signature (setSig), so always read them at use time
 import { TempoMap } from './engine/tmap.js';
 import { MeterMap } from './engine/meter.js';
-export const COLORS = ['#5cffe8', '#f7f47c', '#ffa529', '#ff94a6', '#8bc5ff', '#d86ce4', '#bffb00', '#ff3636'];   // Ableton Live's bright track colours
+export const COLORS = ['#1fbccf', '#e3c000', '#f07200', '#f02ec8', '#0b9fdb', '#8d5de0', '#a3df00', '#b8573c'];   // Ableton Live's saturated clip colours (new tracks)
+export const SWATCHES = [...COLORS, '#5cffe8', '#f7f47c', '#ffa529', '#ff94a6', '#8bc5ff', '#d86ce4', '#bffb00', '#ff3636'];   // the colour picker: saturated row + bright row
 const OLD_COLORS = ['#6fe0e6', '#f5e05a', '#ff9d63', '#f38fb8', '#8fa0f7', '#b98ae8', '#86dc7e', '#ef7a6a'];        // pastel set of older projects: mapped to the same slot of the new set
 export const AUTO_COLOR = '#9fb4d8';
 

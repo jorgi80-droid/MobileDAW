@@ -12,7 +12,7 @@ import { BAR, BEAT } from './project.js';   // live bindings (they follow the ti
 import { pickColor } from './colorpick.js';
 import { MASTER, RET0 } from './engine.js';
 import { INSTRUMENTS, DEVICES } from './defs.js';
-const { state, PPQ, COLORS } = P;
+const { state, PPQ, SWATCHES } = P;
 
 // Live 12 layout: locator strip + beat ruler on top, time ruler at the bottom (with the grid / zoom fields at its right end), track
 // headers on the RIGHT: a title bar in the track colour, the mixer buttons under it, volume / pan sliders when the row is tall enough
@@ -151,14 +151,16 @@ function drawClip(t, c, y, hh) {
   ctx.save();
   const cy0 = Math.max(RULER, y0), cy1 = Math.min(LANE_B(), y0 + h0);              // clipped to the clip itself and the lane area: notes never spill while it glides
   ctx.beginPath(); ctx.rect(xs, cy0, Math.max(0, xe - xs), Math.max(0, cy1 - cy0)); ctx.clip();
-  ctx.fillStyle = c.muted ? C('#a2a2a7') : tall ? tint(t.color, isSel ? 0.56 : 0.42) : t.color; ctx.fillRect(x, y0, w, h0);   // pale body under a saturated title strip, like Live
-  if (tall) { ctx.fillStyle = col; ctx.fillRect(x, y0, w, hd); ctx.fillStyle = 'rgba(0,0,0,.16)'; ctx.fillRect(x, y0 + hd - 1, w, 1); }
-  ctx.strokeStyle = shade(c.muted ? '#7c7c82' : t.color, 0.55); ctx.lineWidth = 1; ctx.strokeRect(Math.round(x) + 0.5, y0 + 0.5, Math.max(0, Math.round(w) - 1), h0 - 1);
+  // Live 12: the whole clip in the track colour (title strip + body), content in a deep tone of it; a selected clip turns lighter
+  const body = c.muted ? C('#8e8e94') : isSel ? tint(t.color, 0.42) : t.color;
+  ctx.fillStyle = body; ctx.fillRect(x, y0, w, h0);
+  if (tall) { ctx.fillStyle = isSel ? tint(col, 0.25) : col; ctx.fillRect(x, y0, w, hd); ctx.fillStyle = shade(c.muted ? '#7c7c82' : t.color, 0.35); ctx.fillRect(x, y0 + hd, w, 1); }
+  ctx.strokeStyle = shade(c.muted ? '#7c7c82' : t.color, 0.5); ctx.lineWidth = 1; ctx.strokeRect(Math.round(x) + 0.5, y0 + 0.5, Math.max(0, Math.round(w) - 1), h0 - 1);
   if (tall && w > 18) {
     ctx.fillStyle = ink(col); ctx.font = FONT(600, 10); ctx.textBaseline = 'middle';
     ctx.fillText(c.name || (c.sample ? c.sample.name : t.name), xs + 5, y0 + hd / 2 + 0.5, Math.max(0, xe - xs - 10));
   }
-  const by = y0 + hd + 2, bh = h0 - hd - 4, INK = c.muted ? 'rgba(20,20,24,.45)' : shade(t.color, 0.74);
+  const by = y0 + hd + 2, bh = h0 - hd - 4, INK = c.muted ? 'rgba(20,20,24,.55)' : shade(t.color, 0.82);
   if (t.kind === 'auto' && c.pts && bh > 8) {
     const pts = [...c.pts].sort((a, b) => a.t - b.t), yy = (v) => by + bh - v * bh;
     ctx.fillStyle = washRgba(t.color, 0.35); ctx.strokeStyle = INK; ctx.lineWidth = 1.5; ctx.beginPath();
@@ -198,6 +200,17 @@ function drawClip(t, c, y, hh) {
       }
     }
   }
+  if (t.kind === 'audio' && bh > 8) {                             // fades (Live): the faded part is shaded above the fade line; handles on the selected clip
+    const spt = 60 / state.bpm / PPQ, fiw = Math.min(w / 2, (c.fadeIn || 0) / spt * view.ppt), fow = Math.min(w / 2, (c.fadeOut || 0) / spt * view.ppt), top = y0 + hd + 1, bot = y0 + h0 - 1;
+    ctx.fillStyle = 'rgba(0,0,0,.24)'; ctx.strokeStyle = shade(t.color, 0.6); ctx.lineWidth = 1.2;
+    if (fiw > 1) { ctx.beginPath(); ctx.moveTo(x, top); ctx.lineTo(x + fiw, top); ctx.lineTo(x, bot); ctx.closePath(); ctx.fill(); ctx.beginPath(); ctx.moveTo(x, bot); ctx.lineTo(x + fiw, top); ctx.stroke(); }
+    if (fow > 1) { ctx.beginPath(); ctx.moveTo(x + w, top); ctx.lineTo(x + w - fow, top); ctx.lineTo(x + w, bot); ctx.closePath(); ctx.fill(); ctx.beginPath(); ctx.moveTo(x + w - fow, top); ctx.lineTo(x + w, bot); ctx.stroke(); }
+    if (isSel && w > 30) {
+      const sq = (hx, hy, on) => { ctx.fillStyle = on ? C('#bfe3f5') : tint(t.color, 0.6); ctx.fillRect(Math.round(hx) - 4, Math.round(hy) - 4, 8, 8); ctx.strokeStyle = shade(t.color, 0.7); ctx.lineWidth = 1; ctx.strokeRect(Math.round(hx) - 3.5, Math.round(hy) - 3.5, 7, 7); };
+      sq(x + Math.max(5, fiw), top + 4, fiw > 1); sq(x + w - Math.max(5, fow), top + 4, fow > 1);
+      ctx.fillStyle = shade(t.color, 0.7); ctx.fillRect(Math.round(x) + 1, bot - 7, 7, 7); ctx.fillRect(Math.round(x + w) - 8, bot - 7, 7, 7);   // Live's clip corner marks
+    }
+  }
   if (c.ll > 0 && c.len > c.ll && w > 0) {                       // loop restarts: a notch in the title strip and a hairline through the body (Live's loop marks)
     for (const g of P.loopSegs(c)) {
       if (!g.o) continue; const gx = Math.round(x + g.o * view.ppt); if (gx < xs || gx > xe) continue;
@@ -206,12 +219,11 @@ function drawClip(t, c, y, hh) {
     }
   }
   if (isSel) {
-    ctx.strokeStyle = C('#ffffff'); ctx.lineWidth = 2; ctx.strokeRect(x + 1, y0 + 1, w - 2, h0 - 2);
+    ctx.strokeStyle = shade(t.color, 0.65); ctx.lineWidth = 1.5; ctx.strokeRect(x + 0.75, y0 + 0.75, w - 1.5, h0 - 1.5);
     const hl = Math.min(26, h0 - hd - 10), hy = y0 + hd + (h0 - hd - hl) / 2, st = stretchMode && t.kind === 'audio';   // edge grips for touch: pills on both ends
     if (hl > 6 && w > 26) {
-      ctx.fillStyle = 'rgba(12,12,16,.55)'; ctx.fillRect(x + 3, hy - 1, 6, hl + 2); ctx.fillRect(x + w - 9, hy - 1, 6, hl + 2);
-      ctx.fillStyle = C('#ffffff'); ctx.fillRect(x + 4, hy, 4, hl);
-      ctx.fillStyle = st ? C('#ffa722') : C('#ffffff'); ctx.fillRect(x + w - 8, hy, 4, hl);
+      ctx.fillStyle = shade(t.color, 0.7); ctx.fillRect(x + 3, hy, 3, hl);                              // edge grips: slim bars in the clip's ink
+      ctx.fillStyle = st ? C('#ffa722') : shade(t.color, 0.7); ctx.fillRect(x + w - 6, hy, 3, hl);
     }
   }
   ctx.restore();
@@ -225,8 +237,8 @@ function draw() {
   // lanes: one flat grey per track, the selected track a step lighter (as Live highlights the selected track's lane)
   for (let i = Math.max(0, rowAt(RULER)); i <= Math.min(n - 1, rowAt(LB)); i++) {
     const y = rowY(i), h = rh(i);
-    ctx.fillStyle = state.sel.track === i ? C('#2f2f33') : C('#272729'); ctx.fillRect(0, y, CW, h);
-    ctx.fillStyle = C('#141415'); ctx.fillRect(0, y + h - 1, CW, 1);
+    ctx.fillStyle = state.sel.track === i ? C('#333337') : C('#2a2a2c'); ctx.fillRect(0, y, CW, h);
+    ctx.fillStyle = C('#141415'); ctx.fillRect(0, y + h - 2, CW, 2);                     // Live: a heavy line between tracks
   }
   const xl = [];                                                                       // captions of the Master / effect lanes, drawn after the grid
   for (let i = Math.max(n, rowAt(RULER)); i < nn && i <= rowAt(LB); i++) {             // Master / effect track rows: no clips, they only mix
@@ -250,7 +262,7 @@ function draw() {
   ctx.fillStyle = C('#404045');
   for (let b = Math.max(0, P.barAt(view.x0)); tx(P.barStart(b)) < CW; b++) { const x = Math.round(tx(P.barStart(b))); if (x >= 0) ctx.fillRect(x, RULER, 1, gy1 - RULER); }
   if (P.state.sigs.length) { ctx.fillStyle = 'rgba(255,167,34,.3)'; for (const c of P.state.sigs) { const x = Math.round(tx(P.barStart(c.bar))); if (x >= 0 && x <= CW) ctx.fillRect(x, RULER, 1, gy1 - RULER); } }
-  for (const m of state.markers) { const x = Math.round(tx(m.t)); if (x < 0 || x > CW) continue; ctx.globalAlpha = 0.4; ctx.fillStyle = m.color; ctx.fillRect(x, RULER, 1, gy1 - RULER); ctx.globalAlpha = 1; }
+  for (const m of state.markers) { const x = Math.round(tx(m.t)); if (x < 0 || x > CW) continue; ctx.fillStyle = C('#0e0e10'); ctx.fillRect(x, RULER, 1, gy1 - RULER); }   // Live: a dark line down from every locator
   const PU = state.punch;
   if (PU.on && PU.end > PU.start) { const a0 = Math.max(0, tx(PU.start)); ctx.fillStyle = 'rgba(255,54,54,.07)'; ctx.fillRect(a0, RULER, Math.max(0, Math.min(CW, tx(PU.end)) - a0), gy1 - RULER); ctx.fillStyle = 'rgba(255,54,54,.55)'; for (const e of [PU.start, PU.end]) { const lx = Math.round(tx(e)); if (lx >= 0 && lx <= CW) ctx.fillRect(lx, RULER, 1, gy1 - RULER); } }
   if (xl.length) {                                                                        // caption on a small pill, so the grid never cuts through the letters
@@ -327,8 +339,8 @@ function drawRuler(g) {
     if (x > CW + 4) break;
     const nx = k2 + 1 < ml.length ? Math.round(tx(ml[k2 + 1].t)) : CW + 200, w = Math.min(nx - x - 3, ctx.measureText(m.name).width + 16);
     if (x + Math.max(8, w) < 0) continue;
-    ctx.fillStyle = m.color; ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x + 8, MROW / 2 - 0.5); ctx.lineTo(x, MROW - 1); ctx.closePath(); ctx.fill();
-    if (w > 18) { ctx.save(); ctx.beginPath(); ctx.rect(x + 1, 0, w, MROW); ctx.clip(); ctx.fillText(m.name, x + 11, MROW / 2); ctx.restore(); }
+    ctx.fillStyle = C('#3a3a3e'); ctx.strokeStyle = C('#d6d6da'); ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x + 0.5, 0.5); ctx.lineTo(x + 9, MROW / 2); ctx.lineTo(x + 0.5, MROW - 1); ctx.closePath(); ctx.fill(); ctx.stroke();   // Live: outlined flag
+    if (w > 18) { ctx.save(); ctx.beginPath(); ctx.rect(x + 1, 0, w, MROW); ctx.clip(); ctx.fillStyle = C('#d6d6da'); ctx.fillText(m.name, x + 12, MROW / 2); ctx.restore(); }
   }
   ctx.textBaseline = 'top';
   ctx.restore();
@@ -662,6 +674,10 @@ function hit(x, y) {
     const c = clips[k];
     if (tick >= c.start && tick <= c.start + c.len) {
       const wpx = tx(c.start + c.len) - tx(c.start), hz = Math.min(HANDLE, wpx / 2.5);   // handles never take more than 40% of a narrow clip, so it stays movable
+      if (state.sel.clip === c.id && state.tracks[i].kind === 'audio' && wpx > 30) {   // fade handles (top corners of the body): drag = fade length
+        const spt = 60 / state.bpm / PPQ, y0 = rowY(i) + 1, top = y0 + (rh(i) >= 40 ? 14 : 0) + 5, fx = tx(c.start) + Math.max(5, Math.min(wpx / 2, (c.fadeIn || 0) / spt * view.ppt)), gx = tx(c.start + c.len) - Math.max(5, Math.min(wpx / 2, (c.fadeOut || 0) / spt * view.ppt));
+        if (Math.abs(y - top) < 11) { if (Math.abs(x - fx) < 12) return { type: 'clip', i, c, tick, zone: 'fadeIn' }; if (Math.abs(x - gx) < 12) return { type: 'clip', i, c, tick, zone: 'fadeOut' }; }
+      }
       const edgeR = tx(c.start + c.len) - x < hz, edgeL = !edgeR && x - tx(c.start) < hz;
       return { type: 'clip', i, c, tick, zone: edgeR ? 'right' : edgeL ? 'left' : 'body' };
     }
@@ -727,7 +743,7 @@ function dupRange(a, b) {
 
 function xheadMenu(xi, x, y) {
   const r = canvasOrigin();
-  const recolor = () => { const before = xi.obj.color; pickColor({ title: 'Warna ' + xi.name, name: xi.name, color: xi.color, swatches: COLORS, onChange: (c) => { xi.obj.color = c; invalidate(); }, onDone: (c) => { if (c !== before) { P.noteColor(xi.master ? 'master' : 'ret' + xi.k, before); P.emit('tracks'); } } }); };
+  const recolor = () => { const before = xi.obj.color; pickColor({ title: 'Warna ' + xi.name, name: xi.name, color: xi.color, swatches: SWATCHES, onChange: (c) => { xi.obj.color = c; invalidate(); }, onDone: (c) => { if (c !== before) { P.noteColor(xi.master ? 'master' : 'ret' + xi.k, before); P.emit('tracks'); } } }); };
   if (xi.master) return menu([{ label: 'Pilih Master (modul efek)', fn: () => P.selectTrack(MASTER) }, { label: 'Warna', fn: recolor }, { label: 'Buat FX track', dim: state.returns.length >= P.MAX_FX, fn: () => addFx() }], r.left + x, r.top + y);
   menu([
     { label: 'Pilih (modul efek)', fn: () => P.selectTrack(xi.strip) },
@@ -746,7 +762,7 @@ function headMenu(i, x, y) {
     ...(t.kind === 'midi' || t.kind === 'drum' ? [{ label: 'Monitor input: ' + (t.mon === false ? 'mati' : 'nyala'), fn: () => P.toggleMonitor(i) }] : []),
     ...(t.kind !== 'auto' ? [{ label: 'Lane otomasi\u2026', fn: () => laneMenu(i, x, y) }] : []),
     { label: 'Ganti nama', fn: () => ask('Nama track', t.name, (v) => v && P.renameTrack(i, v.trim())) },
-    { label: 'Warna', fn: () => { const before = t.color; pickColor({ title: 'Warna track', name: t.name, color: t.color, swatches: COLORS, onChange: (c) => { t.color = c; invalidate(); }, onDone: (c) => { if (c !== before) { P.noteColor(t.id, before); P.emit('tracks'); } } }); } },
+    { label: 'Warna', fn: () => { const before = t.color; pickColor({ title: 'Warna track', name: t.name, color: t.color, swatches: SWATCHES, onChange: (c) => { t.color = c; invalidate(); }, onDone: (c) => { if (c !== before) { P.noteColor(t.id, before); P.emit('tracks'); } } }); } },
     { label: t.fold ? 'Buka track' : 'Lipat track', fn: () => toggleFold(i) },
     { label: 'Pindah ke atas', fn: () => swapTrack(i, i - 1) },
     { label: 'Pindah ke bawah', fn: () => swapTrack(i, i + 1) },
@@ -1022,6 +1038,7 @@ function setup() {
       }
       if (t.type === 'empty' && fromLong) return !!marq;
       if (t.type === 'clip' && msel.size) { msel.clear(); updateBar(); }   // dragging a clip outside the selection drops the selection
+      if (t.type === 'clip' && (t.zone === 'fadeIn' || t.zone === 'fadeOut')) { checkpoint(); drag = { k: t.zone, c: t.c, i: t.i }; return true; }
       if (t.type === 'clip') {
         checkpoint(); P.selectClip(t.i, t.c.id);
         if (t.zone === 'left' && t.c.notes) P.bakeLoop(t.c, t.i);          // trimming the left edge of a looped clip: turn the repeats into real notes first
@@ -1084,6 +1101,11 @@ function setup() {
         for (const it of drag.items) { if (it.c.len !== Math.max(s, it.len + d)) glideClip(it.c); it.c.len = Math.max(s, it.len + d); applyLoop(it.c, it.ll0, it.len, it.had); tr.add(it.i); }
         for (const i of tr) P.touchClips(i);
         P.emit('notes');
+      }
+      else if (drag.k === 'fadeIn' || drag.k === 'fadeOut') {          // fade length in seconds, at most half the clip
+        const c = drag.c, spt = 60 / state.bpm / PPQ, half = c.len / 2 * spt, sec = drag.k === 'fadeIn' ? (tick - c.start) * spt : (c.start + c.len - tick) * spt;
+        c[drag.k] = Math.round(clamp(sec, 0, half) * 1000) / 1000;
+        P.touchClips(drag.i); P.emit('notes');
       }
       else if (drag.k === 'move') {
         const ns = Math.max(0, snapT(drag.start + (tick - drag.t0)));

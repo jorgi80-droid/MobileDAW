@@ -54,6 +54,10 @@ if (go('arr')) {
   await sel(2, 1); await shot('arr');
   await ev(async () => { const P = await import('./js/project.js'); P.setLoop({ on: true, start: P.BAR, end: P.BAR * 3 }); P.state.tracks[1].hx = 1.6; P.emit('tracks'); });   // loop brace on + one taller row
   await shot('arr-loop'); await ev(async () => { const P = await import('./js/project.js'); P.setLoop({ on: false }); delete P.state.tracks[1].hx; P.emit('tracks'); }); await btn('btn-shut'); await shot('arr-full'); await btn('btn-shut'); }
+if (go('fade')) {                                        // audio clip with fades, selected (fade handles)
+  await ev(async () => { const P = await import('./js/project.js'); const i = P.state.tracks.findIndex((t) => t.kind === 'audio'), c = P.state.tracks[i].clips[0]; c.fadeIn = 0.25; c.fadeOut = 0.5; P.selectTrack(i); P.selectClip(i, c.id); P.emit('all'); });
+  await shot('arr-fade');
+}
 if (go('clip')) {
   await sel(1); await tab('clip'); await shot('clip'); await btn('btn-max');
   await sel(2); await ev(async () => (await import('./js/editor.js')).setTheory(0, 'Minor')); await shot('clip-midi');
