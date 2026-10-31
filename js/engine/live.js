@@ -1,6 +1,6 @@
 // Ableton-style Sampler (type 10) and Wavetable (type 11) for the web engine.
 // Interface like every instrument: noteOn(p, vel), noteOff(p), allOff(), setParam(i, v), render(L, R, from, to) (adds into the buffers), active(), setTempo().
-import { TWO_PI, clamp, midiToHz, lcg, Biquad, Adsr, adsrParams, fastTanh, JOBS, runJobNow } from './dsp.js';
+import { TWO_PI, clamp, midiToHz, lcg, Biquad, Adsr, adsrParams, fastTanh, JOBS, runJobNow, polyBlep } from './dsp.js';
 
 const PI = Math.PI;
 const dbLin = (db) => Math.pow(10, db / 20);
@@ -10,7 +10,7 @@ class VoiceBase {
   setTempo() {}
   active() { for (const v of this.v) if (v.on) return true; return false; }
 }
-const blep = (t, dt) => { if (t < dt) { t /= dt; return t + t - t * t - 1; } if (t > 1 - dt) { t = (t - 1) / dt; return t * t + t + t + 1; } return 0; };   // polyBLEP residual (band-limited saw / square edges)
+const blep = (t, dt) => polyBlep(t, dt);   // polyBLEP residual (band-limited saw / square edges)
 // 0 sine, 1 triangle, 2 saw (rising), 3 square, 4 sample & hold
 function lfoShape(shape, ph, hold) {
   switch (shape) {

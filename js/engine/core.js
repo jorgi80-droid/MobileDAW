@@ -1,6 +1,6 @@
 // The audio engine of the web version. Plain JS with preallocated typed arrays: the same class runs inside the
 // AudioWorklet (realtime), in the main thread (WAV export) and in node (tests). No allocation while rendering.
-import { TWO_PI, clamp, BLOCK, JOBS, pumpJobs } from './dsp.js';
+import { TWO_PI, clamp, BLOCK, JOBS, pumpJobs, blepInit } from './dsp.js';
 import { InstrumentRack } from './fx7.js';
 import { makeInstrument } from './instruments.js';
 import { makeDevice } from './fx.js';
@@ -12,7 +12,7 @@ const TAIL_SECONDS = 2;
 
 function newStrip() {
   return {
-    inst: null, ev: null, clips: [], dev: [], vol: 0.85, pan: 0, gl: 0, gr: 0, send: [0, 0], out: -1, mute: false, solo: false,
+    inst: null, ev: null, clips: [], dev: [], vol: 0.85, pan: 0, gl: 0, gr: 0, send: [0, 0], out: -1, mute: false, solo: false, mg: 1, sg0: 0, sg1: 0,   // mg: mute / solo fade, sg0/sg1: smoothed send levels
     silent: 0, wasAudible: true, pitch: 0, bend: 0, ccl: null, ccG: 1, ccP: 0, tpMap: Uint8Array.from({ length: 128 }, (_, i) => i), active: false, pre: [], bufL: new Float32Array(BLOCK), bufR: new Float32Array(BLOCK), peakL: 0, peakR: 0,
     sevT: new Int32Array(512), sevP: new Uint8Array(512), sevV: new Float32Array(512), sevOn: new Uint8Array(512), sevPn: new Float32Array(512), nPan: 0,
   };
@@ -20,7 +20,7 @@ function newStrip() {
 
 export class Engine {
   constructor(sr = 48000) {
-    this.sr = sr; this.bank = new Array(256).fill(null); this.sfs = new Array(8).fill(null);
+    this.sr = sr; blepInit(sr); this.bank = new Array(256).fill(null); this.sfs = new Array(8).fill(null);
     this.sc = new Float32Array(NSTRIPS);
     this.s = Array.from({ length: NSTRIPS }, newStrip);
     this.s[MASTER].vol = 1;
@@ -36,6 +36,7 @@ export class Engine {
     // master safety limiter (output stage, after the master fader): the Limiter device (1.5 ms look-ahead brickwall, ceiling -0.3 dBFS,
     // 80 ms release). Below the ceiling it only delays (1.5 ms); above it, it ducks smoothly instead of the hard clip at 0 dBFS.
     this.lim = makeDevice(5, sr, this.sc); this.limOn = true;
+    this.mgK = 1 - Math.exp(-1 / (0.0015 * sr));   // mute / solo ramp: 1.5 ms time constant (silent after ~14 ms) instead of an instant cut
   }
 
   // ---------------------------------------------------------------- commands (called between render calls)
@@ -292,7 +293,8 @@ export class Engine {
   track(s, idx, pos, n, spt, anySolo) {
     const audible = !s.mute && (!anySolo || s.solo);
     s.active = false;
-    if (!audible) {
+    if (!audible && s.mg < 1e-4) {                                // muted / soloed away and the fade-out is over: silent
+      s.mg = 0;
       if (s.wasAudible) { if (s.inst) s.inst.allOff(); s.wasAudible = false; s.silent = this.tailFrames + 1; }
       this.sc[idx] = 0; s.peakL *= 0.99; s.peakR *= 0.99; s.pre.length = 0; this.runMods(s, n); return;
     }
@@ -361,7 +363,8 @@ export class Engine {
     if (!active && s.silent > this.tailFrames) { this.sc[idx] = 0; s.peakL *= 0.99; s.peakR *= 0.99; this.runMods(s, n); return; }
     this.runChain(s, idx, L, R, n);
     const pn = s.ccP ? clamp(s.pan + s.ccP, -1, 1) : s.pan, vg = s.vol * s.ccG, a = (pn + 1) * Math.PI * 0.25, tl = vg * Math.cos(a) * 1.41421356, tr = vg * Math.sin(a) * 1.41421356, s0 = s.send[0], s1 = s.send[1];
-    if (s0 > 0) this.retActive[0] = true; if (s1 > 0) this.retActive[1] = true;
+    const mt = audible ? 1 : 0, mk = this.mgK;                     // mute / solo: ramp instead of a cut (click-free in and out)
+    if (s0 > 0 || s.sg0 > 0) this.retActive[0] = true; if (s1 > 0 || s.sg1 > 0) this.retActive[1] = true;
     const ot = s.out >= 0 && s.out < NFX ? s.out : -1;          // group routing: the track feeds an effect track instead of the master
     if (ot >= 0) this.retActive[ot] = true;
     const mL = ot >= 0 ? this.retL[ot] : (this.noDirect ? this.scrL : this.mixL), mR = ot >= 0 ? this.retR[ot] : (this.noDirect ? this.scrR : this.mixR), r0L = this.retL[0], r0R = this.retR[0], r1L = this.retL[1], r1R = this.retR[1];
@@ -369,13 +372,15 @@ export class Engine {
     for (let i = 0; i < n; i++) {
       const x = L[i], y = R[i], ax = Math.abs(x), ay = Math.abs(y);
       if (ax > sc) sc = ax; if (ay > sc) sc = ay;
-      s.gl += (tl - s.gl) * 0.0021; s.gr += (tr - s.gr) * 0.0021;
-      const l = x * s.gl, r = y * s.gr;
+      s.gl += (tl - s.gl) * 0.0021; s.gr += (tr - s.gr) * 0.0021; s.mg += (mt - s.mg) * mk;
+      s.sg0 += (s0 - s.sg0) * 0.0021; s.sg1 += (s1 - s.sg1) * 0.0021;   // send levels glide like the fader (no zipper / click when moved or automated)
+      const l = x * s.gl * s.mg, r = y * s.gr * s.mg;
       if (Math.abs(l) > pl) pl = Math.abs(l); if (Math.abs(r) > pr) pr = Math.abs(r);
       mL[i] += l; mR[i] += r;
-      if (s0 > 0) { r0L[i] += l * s0; r0R[i] += r * s0; }
-      if (s1 > 0) { r1L[i] += l * s1; r1R[i] += r * s1; }
+      if (s.sg0 > 0) { r0L[i] += l * s.sg0; r0R[i] += r * s.sg0; }
+      if (s.sg1 > 0) { r1L[i] += l * s.sg1; r1R[i] += r * s.sg1; }
     }
+    if (s0 === 0 && s.sg0 < 1e-7) s.sg0 = 0; if (s1 === 0 && s.sg1 < 1e-7) s.sg1 = 0;
     this.sc[idx] = sc; s.active = true;
     s.peakL = Math.max(pl, s.peakL * 0.995); s.peakR = Math.max(pr, s.peakR * 0.995);
   }

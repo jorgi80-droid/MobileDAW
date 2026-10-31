@@ -26,6 +26,8 @@ console.log(`${miss.length || gone.length ? 'FAIL' : 'ok  '} sw.js ASSETS lists 
 // 3. the tests
 for (const t of ['browser-test', 'clipview-test', 'pattern-test', 'header-test', 'combine-test', 'dsp-quality-test', 'presets-test', 'drumrack-test']) run(t, ['tools/' + t + '.mjs']);
 run('drum-punch (drum kit + DirectWave: level, transient, punch on small speakers)', ['tools/drum-punch.mjs', '--check']);
+run('click-test (mute / solo / send / voice steal: no clicks)', ['tools/click-test.mjs', '--check']);
+run('alias-test (synth oscillators: aliasing below -80 dB)', ['tools/alias-test.mjs', '--check']);
 run('fx-test (every effect: no dummy parameters, no NaN)', ['tools/fx-test.mjs']);
 run('inst-test (every Live 12 instrument: no dummy parameters, no NaN)', ['tools/inst-test.mjs']);
 // 4. wavetable tables: sliced build must equal the all-at-once build

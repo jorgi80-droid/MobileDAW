@@ -98,7 +98,7 @@ export class SuperSaw extends Base {
         for (let k = 0; k < 7; k++) {
           const dt = dts[k]; let p = ph[k] + dt; if (p >= 1) p -= 1; ph[k] = p;
           let x = 2 * p - 1;
-          if (p < dt) { const t = p / dt; x -= t + t - t * t - 1; } else if (p > 1 - dt) { const t = (p - 1) / dt; x -= t * t + t + t + 1; }
+          x -= polyBlep(p, dt);
           x *= lev[k]; l += x * (1 - pl[k]); r += x * pl[k];
         }
         L[i] += v.fl.process(l) * e * g; R[i] += v.fr.process(r) * e * g;

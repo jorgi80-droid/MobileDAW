@@ -77,6 +77,13 @@ export const SCENARIOS = [
       e.masterLimit(false); play(e, 1); e.masterLimit(true); play(e, 1.5, [128, 77]);
       e.stop(); play(e, 0.5);
     } },
+  { name: 'core-mute-fade', info: 'mute / unmute / solo / send jumps while notes sound: the mute ramp and the smoothed send levels',
+    run(e) {
+      e.tempo(120); for (let t = 0; t < 3; t++) { e.trackInst(t, t === 1 ? 2 : 1); e.trackNotes(t, [0, PPQ * 32, 52 + t * 5, 0.8, 0, PPQ * 2, PPQ * 8, 64 + t, 0.7, 0], 2); }
+      e.insertDevice(65, 0, 7); e.trackSend(0, 0, 0.2); e.play(); play(e, 0.4, [128, 50]);
+      e.trackMute(0, true); play(e, 0.3, [128, 33]); e.trackMute(0, false); play(e, 0.3); e.trackSolo(2, true); play(e, 0.4, [77]); e.trackSolo(2, false);
+      e.trackSend(0, 0, 1.2); e.trackSend(1, 1, 0.8); play(e, 0.4); e.trackSend(0, 0, 0); play(e, 0.6, [128, 200]); e.trackMute(1, true); play(e, 0.2); e.stop(); play(e, 0.5);
+    } },
   { name: 'core-retrigger', info: 'the same pitch retriggered while it still sounds (long release) and voices stolen: the envelope restarts from its current level',
     run(e) {
       e.tempo(140); e.trackInst(0, 1); e.trackInst(1, 2); e.instParam(0, 6, 0.8);

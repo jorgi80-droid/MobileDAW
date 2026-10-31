@@ -51,6 +51,7 @@ struct Strip {
   ClipData* clips = nullptr;
   Device* dev[MAX_DEV] = {}; int ndev = 0;
   double vol = 0.85, pan = 0, gl = 0, gr = 0, send[2] = { 0, 0 }; int out = -1; bool mute = false, solo = false;
+  double mg = 1, sg0 = 0, sg1 = 0;   // core.js: mute / solo fade, smoothed send levels
   double silent = 0; bool wasAudible = true; double pitch = 0, bend = 0;
   CCData* ccl = nullptr; double ccG = 1, ccP = 0;
   uint8_t tpMap[128]; bool active = false;
@@ -80,7 +81,7 @@ class Engine {
   LaneData* lanes = nullptr;
   double tailFrames;
   bool tl = false;
-  Device* lim = nullptr; bool limOn = true;   // core.js: master safety limiter (the Limiter device) at the output stage
+  Device* lim = nullptr; bool limOn = true; double mgK = 0;   // core.js: master safety limiter (the Limiter device) at the output stage
   // set by the owner to see engine faults (instrument / device switched off): kind 0 = engine, 1 = instrument, 2 = device
   void (*onError)(void* ctx, int kind, int strip, int dev, const char* msg) = nullptr; void* errCtx = nullptr;
 

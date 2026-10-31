@@ -32,10 +32,32 @@ struct Biquad {
   }
 };
 
+// dsp.js polyBlep v2: 16-sample Blackman-windowed sinc step (same table, same maths)
+constexpr int BLEP_W = 8, BLEP_M = 1024;
+inline double* blepTab() { static double T[2 * BLEP_W * BLEP_M + 1]; return T; }
+inline double& blepRate() { static double r = 0; return r; }
+inline void blepInit(double sr) {
+  if (blepRate() == sr) return;
+  const int W = BLEP_W, M = BLEP_M, n = 2 * W * M; double fc = jsMin(0.86, 19500 / (sr * 0.5)); double* S = blepTab();
+  static double k[2 * BLEP_W * BLEP_M + 1];
+  for (int i = 0; i <= n; i++) { double x = -W + (double)i / M, a = PI * fc * x; k[i] = (i == W * M ? 1.0 : std::sin(a) / a) * (0.42 + 0.5 * std::cos(PI * x / W) + 0.08 * std::cos(2 * PI * x / W)); }
+  double acc = 0; S[0] = 0; for (int i = 1; i <= n; i++) { acc += (k[i - 1] + k[i]) * 0.5; S[i] = acc; }
+  for (int i = 0; i <= n; i++) S[i] /= acc;
+  blepRate() = sr;
+}
 inline double polyBlep(double t, double dt) {
-  if (t < dt) { t /= dt; return t + t - t * t - 1; }
-  if (t > 1 - dt) { t = (t - 1) / dt; return t * t + t + t + 1; }
-  return 0;
+  const double W = BLEP_W, wd = W * dt;
+  if (t >= wd && t <= 1 - wd) return 0;
+  if (blepRate() == 0) blepInit(48000);
+  const double* T = blepTab(); double s = 0, k1 = std::floor(t + wd);
+  for (double k = std::ceil(t - wd); k <= k1; k++) {
+    double x = (t - k) / dt;
+    if (x <= -W || x >= W) continue;
+    double f = (x + W) * BLEP_M, i = std::floor(f), fr = f - i; int ii = (int)i;
+    if (ii >= 2 * BLEP_W * BLEP_M) continue;
+    s += T[ii] + (T[ii + 1] - T[ii]) * fr - (x >= 0 ? 1 : 0);
+  }
+  return 2 * s;
 }
 inline double sawBl(double ph, double dt) { return 2 * ph - 1 - polyBlep(ph, dt); }
 inline double squareBl(double ph, double dt) { double p2 = ph + 0.5; if (p2 >= 1) p2 -= 1; return (ph < 0.5 ? 1 : -1) + polyBlep(ph, dt) - polyBlep(p2, dt); }

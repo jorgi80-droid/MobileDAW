@@ -131,6 +131,11 @@ Baca juga `README-ANDROID.md` (build, install, status fase 2).
   80 ms) pada `mixL/mixR` setelah fader master, sebelum output (dulu hard clip di +-1). Perintah engine `masterLimit(on)` (worklet, web.js,
   OfflineTarget, commands.cpp, engine.js lama); pref `masterLimit` (default on) di Pengaturan -> Audio -> Master. Ekspor mix memakai status
   yang sama, stem selalu tanpa limiter. Golden `core-limiter` (mix +10 dB di atas 0 dBFS, on/off/on).
+- **Mute / solo tanpa klik**: strip punya `mg` (fade mute/solo, konstanta 1,5 ms, `mgK`); strip baru benar-benar diam (allOff) setelah
+  `mg < 1e-4`. **Send di-smooth** (`sg0/sg1`, koefisien sama dengan fader). JS + C++ identik; golden `core-mute-fade`; `tools/click-test.mjs`.
+- **Osilator band-limited v2** (`polyBlep` di dsp.js + dsp.h, dipakai Mini Synth, SuperSaw, Analog, Drift, Meld, Poli, Wavetable lama):
+  step sinc 16 sampel berjendela Blackman (cutoff 19,5 kHz, tabel `blepInit(sr)` dibuat di konstruktor Engine). Aliasing saw/square
+  -30 dB -> -94..-100 dB, high-end rata. Biaya: SuperSaw 12 voice 1,9 -> 3,3 % real time (desktop). `tools/alias-test.mjs`.
 - **Retrigger tanpa klik**: `Adsr.start()` (dsp.js + dsp.h) tidak lagi mengembalikan level ke 0; voice yang di-retrigger / dicuri naik dari
   level saat ini. Golden `core-retrigger`.
 

@@ -1,5 +1,6 @@
 // Port of js/engine/core.js. Function by function in the same order as the JS file; keep them in step when either side changes.
 #include "engine.h"
+#include "dsp.h"
 #include <cmath>
 #include <cstring>
 
@@ -21,7 +22,7 @@ void Retire::drain() {
 
 void Strip::init(double v) {
   inst = nullptr; ev = nullptr; clips = nullptr; ndev = 0; for (auto& d : dev) d = nullptr;
-  vol = v; pan = 0; gl = 0; gr = 0; send[0] = send[1] = 0; out = -1; mute = false; solo = false;
+  vol = v; pan = 0; gl = 0; gr = 0; send[0] = send[1] = 0; out = -1; mute = false; solo = false; mg = 1; sg0 = 0; sg1 = 0;
   silent = 0; wasAudible = true; pitch = 0; bend = 0; ccl = nullptr; ccG = 1; ccP = 0;
   for (int i = 0; i < 128; i++) tpMap[i] = (uint8_t)i;
   active = false; npre = 0; std::memset(bufL, 0, sizeof bufL); std::memset(bufR, 0, sizeof bufR); peakL = 0; peakR = 0; nPan = 0;
@@ -29,6 +30,7 @@ void Strip::init(double v) {
 
 // ---------------------------------------------------------------- construction
 Engine::Engine(double rate) : sr(rate) {
+  blepInit(sr);
   tm = new TempoMap(); mm = new MeterMap();
   for (int i = 0; i < NSTRIPS; i++) s[i].init(0.85);
   s[MASTER].vol = 1;
@@ -37,6 +39,7 @@ Engine::Engine(double rate) : sr(rate) {
   tailFrames = TAIL_SECONDS * sr;
   for (int k = 0; k < NFX; k++) s[RET0 + k].vol = 0.85;
   lim = makeDevice(5, sr, sc);
+  mgK = 1 - std::exp(-1 / (0.0015 * sr));
 }
 Engine::~Engine() {
   retire.immediate = true;
@@ -256,7 +259,8 @@ void Engine::track(Strip& st, int idx, double p0, int n, double sp, bool anySolo
   (void)sp;
   bool audible = !st.mute && (!anySolo || st.solo);
   st.active = false;
-  if (!audible) {
+  if (!audible && st.mg < 1e-4) {
+    st.mg = 0;
     if (st.wasAudible) { if (st.inst) st.inst->allOff(); st.wasAudible = false; st.silent = tailFrames + 1; }
     sc[idx] = 0; st.peakL *= 0.99; st.peakR *= 0.99; st.npre = 0; return;
   }
@@ -330,7 +334,8 @@ void Engine::track(Strip& st, int idx, double p0, int n, double sp, bool anySolo
   runChain(st, idx, L, R, n);
   double pn = st.ccP ? clamp(st.pan + st.ccP, -1, 1) : st.pan, vg = st.vol * st.ccG, a = (pn + 1) * PI * 0.25;
   double tl = vg * std::cos(a) * 1.41421356, tr = vg * std::sin(a) * 1.41421356, s0 = st.send[0], s1 = st.send[1];
-  if (s0 > 0) retActive[0] = true; if (s1 > 0) retActive[1] = true;
+  double mt = audible ? 1 : 0, mk = mgK;
+  if (s0 > 0 || st.sg0 > 0) retActive[0] = true; if (s1 > 0 || st.sg1 > 0) retActive[1] = true;
   int ot = st.out >= 0 && st.out < NFX ? st.out : -1;
   if (ot >= 0) retActive[ot] = true;
   float* mL = ot >= 0 ? retL[ot] : (noDirect ? scrL : mixL); float* mR = ot >= 0 ? retR[ot] : (noDirect ? scrR : mixR);
@@ -339,13 +344,15 @@ void Engine::track(Strip& st, int idx, double p0, int n, double sp, bool anySolo
   for (int i = 0; i < n; i++) {
     double x = L[i], y = R[i], ax = std::fabs(x), ay = std::fabs(y);
     if (ax > scv) scv = ax; if (ay > scv) scv = ay;
-    st.gl += (tl - st.gl) * 0.0021; st.gr += (tr - st.gr) * 0.0021;
-    double l = x * st.gl, r = y * st.gr;
+    st.gl += (tl - st.gl) * 0.0021; st.gr += (tr - st.gr) * 0.0021; st.mg += (mt - st.mg) * mk;
+    st.sg0 += (s0 - st.sg0) * 0.0021; st.sg1 += (s1 - st.sg1) * 0.0021;
+    double l = x * st.gl * st.mg, r = y * st.gr * st.mg;
     if (std::fabs(l) > pl) pl = std::fabs(l); if (std::fabs(r) > pr) pr = std::fabs(r);
     mL[i] = (float)(mL[i] + l); mR[i] = (float)(mR[i] + r);
-    if (s0 > 0) { r0L[i] = (float)(r0L[i] + l * s0); r0R[i] = (float)(r0R[i] + r * s0); }
-    if (s1 > 0) { r1L[i] = (float)(r1L[i] + l * s1); r1R[i] = (float)(r1R[i] + r * s1); }
+    if (st.sg0 > 0) { r0L[i] = (float)(r0L[i] + l * st.sg0); r0R[i] = (float)(r0R[i] + r * st.sg0); }
+    if (st.sg1 > 0) { r1L[i] = (float)(r1L[i] + l * st.sg1); r1R[i] = (float)(r1R[i] + r * st.sg1); }
   }
+  if (s0 == 0 && st.sg0 < 1e-7) st.sg0 = 0; if (s1 == 0 && st.sg1 < 1e-7) st.sg1 = 0;
   sc[idx] = (float)scv; st.active = true;
   st.peakL = jsMax(pl, st.peakL * 0.995); st.peakR = jsMax(pr, st.peakR * 0.995);
 }

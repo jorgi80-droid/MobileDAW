@@ -55,7 +55,7 @@ void SuperSaw::render(float* L, float* R, int from, int to) {
       for (int k = 0; k < 7; k++) {
         double dt = dts[k], p = ph[k] + dt; if (p >= 1) p -= 1; ph[k] = p;
         double s0 = 2 * p - 1;
-        if (p < dt) { double t = p / dt; s0 -= t + t - t * t - 1; } else if (p > 1 - dt) { double t = (p - 1) / dt; s0 -= t * t + t + t + 1; }
+        s0 -= polyBlep(p, dt);
         s0 *= lev[k]; l += s0 * (1 - pl[k]); r0 += s0 * pl[k];
       }
       L[i] = (float)(L[i] + x.fl.process(l) * e * g); R[i] = (float)(R[i] + x.fr.process(r0) * e * g);
