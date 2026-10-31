@@ -90,13 +90,18 @@ function mount(w) {
     win: w,
     every(ms, fn) { const t = setInterval(() => { if (w.el.isConnected && !w.s.min && !w.s.shade && !document.hidden) fn(); }, ms); w.timers.push(t); return t; },
     close: () => closeFloat(w.id), refresh: () => mount(w),
-    setTitle(t) { w.titleEl.textContent = t; w.chipTitle = t; if (w.chip) w.chip.textContent = t; },
+    setTitle(t, sub) { w.titleEl.textContent = t; w.chipTitle = t; if (w.chip) w.chip.textContent = t; if (sub != null) w.subEl.textContent = sub; },
   };
   let out = null;
   try { out = w.opts.build(api); } catch (e) { console.error('floatwin build', e); out = null; }
   if (!out) { closeFloat(w.id); return false; }
   w.inst = out.nodeType ? { el: out } : out;
   w.host.append(w.inst.el);
+  // device windows: the card's own title bar (power, name, preset, menu) becomes the window's title bar, so the name is shown once
+  w.headSlot.replaceChildren();
+  const hd = w.opts.mergeHead && w.inst.el.matches && w.inst.el.matches('.card') ? w.inst.el.querySelector(':scope > h4') : null;
+  if (hd) { w.headSlot.append(hd); hd.addEventListener('pointerdown', (e) => { if (e.target.closest('button')) e.stopPropagation(); }); }
+  w.el.classList.toggle('merged', !!hd);
   if (w.fit && typeof ResizeObserver !== 'undefined') { w.ro = new ResizeObserver(() => applyFit(w)); w.ro.observe(w.fitEl); }
   requestAnimationFrame(() => { if (wins.get(w.id) === w) { applyFit(w); if (w.inst && w.inst.onResize) w.inst.onResize(w.body.clientWidth, w.body.clientHeight); } });
   return true;
@@ -193,11 +198,14 @@ export function openFloat(opts) {
   w.s.shade = !!(g && g.shade);
   w.titleEl = h('span', { class: 'fw-title' }, opts.title || '');
   w.chipTitle = opts.title || '';
-  w.bar = h('div', { class: 'fw-bar' }, h('i', { class: 'fw-dot', style: opts.color ? `background:${opts.color}` : '' }), w.titleEl,
-    btn('fw-sh', 'Gulung / buka jendela', 'sh', () => toggleShade(w)),
-    btn('fw-mn', 'Kecilkan ke bar bawah', 'mn', () => setMin(w, true)),
-    btn('fw-mx', 'Perbesar / kembalikan', 'mx', () => toggleMax(w)),
-    btn('fw-x', 'Tutup jendela', 'x', () => closeFloat(w.id)));
+  w.headSlot = h('div', { class: 'fw-head' });
+  w.subEl = h('span', { class: 'fw-sub' }, opts.sub || '');
+  w.bar = h('div', { class: 'fw-bar' }, h('i', { class: 'fw-dot', style: opts.color ? `background:${opts.color}` : '' }), w.titleEl, w.headSlot, w.subEl,
+    h('div', { class: 'fw-bs' },
+      btn('fw-sh', 'Gulung / buka jendela', 'sh', () => toggleShade(w)),
+      btn('fw-mn', 'Kecilkan ke bar bawah', 'mn', () => setMin(w, true)),
+      btn('fw-mx', 'Perbesar / kembalikan', 'mx', () => toggleMax(w)),
+      btn('fw-x', 'Tutup jendela', 'x', () => closeFloat(w.id))));
   w.bar.addEventListener('pointerdown', (e) => { if (e.target.closest('button')) return; raise(w); drag(w, e); });
   let lastTap = 0;
   w.bar.addEventListener('pointerup', (e) => { if (e.target.closest('button')) return; const t = performance.now(); if (w.moving) { w.moving = false; lastTap = 0; return; } if (t - lastTap < 320) { toggleShade(w); lastTap = 0; } else lastTap = t; });

@@ -1,6 +1,6 @@
 // UI screenshots of the main views with a fixed test project (drums, bass, lead, pad, audio loop, automation lane, effects), for
 // before / after comparisons of UI work. Serves the repo itself, drives the app with the preinstalled Playwright Chromium.
-// Usage: node tools/ui-shots.mjs <out-dir> [arr] [clip] [dev] [mix] [win] [keys] [devs] [rack] [irack]      env: THEME=light|dark|..., VW / VH = viewport (default 1180 x 560), FX=33,34 = only these effects in devs, INST=13 = only these instruments
+// Usage: node tools/ui-shots.mjs <out-dir> [arr] [clip] [dev] [mix] [win] [keys] [devs] [rack] [irack] [float]      env: THEME=light|dark|..., VW / VH = viewport (default 1180 x 560), FX=33,34 = only these effects in devs, INST=13 = only these instruments
 // Compare two runs (e.g. one on the previous commit, one on the working tree) side by side.
 import http from 'node:http'; import fs from 'node:fs'; import path from 'node:path'; import { fileURLToPath } from 'node:url'; import { createRequire } from 'node:module';
 const { chromium } = createRequire(import.meta.url)('playwright');
@@ -108,6 +108,12 @@ if (want.includes('irack')) {                            // Instrument Rack: cha
   await ev(() => { const b = [...document.querySelectorAll('.lk-rkh .lv-btn')].find((x) => x.textContent === 'Key'); if (b) b.click(); });
   await ev(() => { const b = [...document.querySelectorAll('.lk-cname')][1]; if (b) b.click(); });
   await shot('irack-key'); await btn('btn-max');
+}
+if (go('float')) {                                       // floating device + instrument windows (title bar = device header)
+  await sel(1); await tab('dev');
+  await ev(async () => { const P = await import('./js/project.js'), D = await import('./js/devices.js'); P.addDevice(0, 36); P.emit('all'); D.openDeviceWindow(P.state.tracks[0].devices.at(-1).id); D.openInstWindow(P.state.tracks[2].id); });
+  await shot('float');
+  await ev(async () => (await import('./js/floatwin.js')).closeAllFloats());
 }
 if (go('devs')) {                                        // every instrument and every effect, normal and maximised panel
   const list = await ev(async () => { const D = await import('./js/defs.js'); return { inst: [...D.INST_LIST], fx: Object.keys(D.DEVICES).map(Number) }; });

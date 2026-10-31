@@ -28,7 +28,8 @@ const isFolded = (k) => folded.has(k);
 function setFolded(k, on) { if (on) folded.add(k); else folded.delete(k); try { localStorage.setItem(FOLD_KEY, JSON.stringify([...folded].slice(-400))); } catch (_) { /* storage unavailable */ } render(); }
 function titleFold(head, k) {                 // Live: double-click a device's title bar folds it; here a double tap on the bar (not on its buttons)
   let last = 0;
-  head.addEventListener('pointerup', (e) => { if (e.target.closest && e.target.closest('button')) return; const now = performance.now(); if (now - last < 320) { last = 0; setFolded(k, !isFolded(k)); } else last = now; });
+  head.addEventListener('pointerup', (e) => { if (e.target.closest && e.target.closest('button') || head.closest('.fw')) return;   // in a floating window a double tap rolls the window up instead
+    const now = performance.now(); if (now - last < 320) { last = 0; setFolded(k, !isFolded(k)); } else last = now; });
   return head;
 }
 const foldBtn = (k, on) => { const b = h('button', { class: 'fold-b', 'aria-label': on ? 'Buka lipatan' : 'Lipat modul', onclick: () => setFolded(k, !on) }, on ? '\u25B8' : '\u25C2'); return b; };
@@ -107,10 +108,10 @@ function locateDev(devId) {
 export function openDeviceWindow(devId) {
   const L0 = locateDev(devId); if (!L0) return;
   const mm = L0.d.type === 16, name = DEVICES[L0.d.type].name;
-  FW.openFloat({ id: 'd:' + devId, title: name + ' \u2022 ' + stripName(L0.i), color: '#7ac5ff', fit: !mm, frameless: mm, w: 560, h: 330, minW: mm ? 240 : undefined, minH: mm ? 120 : undefined,
+  FW.openFloat({ id: 'd:' + devId, title: name + ' \u2022 ' + stripName(L0.i), sub: stripName(L0.i), mergeHead: !mm, color: '#7ac5ff', fit: !mm, frameless: mm, w: 560, h: 330, minW: mm ? 240 : undefined, minH: mm ? 120 : undefined,
     build(api) {
       const L = locateDev(devId); if (!L) return null;
-      api.setTitle(name + ' \u2022 ' + stripName(L.i));
+      api.setTitle(name + ' \u2022 ' + stripName(L.i), stripName(L.i));
       if (mm) return buildSuite({ i: L.i, di: L.di, d: L.d, set: (k, v) => P.setDeviceParam(L.i, L.di, k, v) }, api.every);
       return fxCard(L.i, L.d, L.di, L.n, { every: api.every, floating: true });
     } });
@@ -118,10 +119,10 @@ export function openDeviceWindow(devId) {
 export function openInstWindow(trackId) {
   const idx = () => state.tracks.findIndex((x) => x.id === trackId);
   const i0 = idx(); if (i0 < 0 || !state.tracks[i0].inst) return;
-  FW.openFloat({ id: 'i:' + trackId, title: INSTRUMENTS[state.tracks[i0].inst.type].name + ' \u2022 ' + state.tracks[i0].name, color: '#ffa722', fit: true,
+  FW.openFloat({ id: 'i:' + trackId, title: INSTRUMENTS[state.tracks[i0].inst.type].name + ' \u2022 ' + state.tracks[i0].name, sub: state.tracks[i0].name, mergeHead: true, color: '#ffa722', fit: true,
     build(api) {
       const i = idx(); if (i < 0 || !state.tracks[i].inst) return null;
-      const t = state.tracks[i]; api.setTitle(INSTRUMENTS[t.inst.type].name + ' \u2022 ' + t.name);
+      const t = state.tracks[i]; api.setTitle(INSTRUMENTS[t.inst.type].name + ' \u2022 ' + t.name, t.name);
       return instCard(i, t, { floating: true });
     } });
 }
@@ -154,7 +155,7 @@ function instCard(i, t, o = {}) {
     } }, 'Preset'));
   }
   if (!o.floating) head.append(popBtn(() => openInstWindow(t.id)));
-  head.append(foldBtn(fk, false));
+  if (!o.floating) head.append(foldBtn(fk, false));
   if (def.view === 'kit') { const kv = instKitView(i, t, o.every || every); if (kv) return h('div', { class: 'card lkcard lvcard' }, head, kv.el); }   // Live 12 instruments (fxkit.js VI)
   if (def.view === 'irack') { const rv = irackView(i, t, o.every || every); return h('div', { class: 'card lkcard lvcard' }, head, rv.el); }   // Instrument Rack (fxkit.js rackPanel)
   if (def.view === 'lsampler' || def.view === 'lwavetable') {
