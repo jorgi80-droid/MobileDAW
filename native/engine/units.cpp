@@ -10,7 +10,7 @@
 #include "simpler.h"
 #include "fx.h"
 #include "fx2.h"
-#include "fx3b.h"
+#include "fx4.h"
 
 namespace mdaw {
 
@@ -34,10 +34,11 @@ Device* makeDevice(int type, double sr, float* sidechain) {
     case 17: return new Delay3(sr); case 18: return new FilterDelay(sr); case 19: return new BeatRepeat(sr); case 20: return new ChorusEnsemble(sr);
     case 21: return new PhaserFlanger(sr); case 22: return new AutoPan(sr); case 23: return new Gate(sr); case 24: return new GlueComp(sr); case 25: return new ChannelEq(sr);
     case 26: return new Erosion(sr); case 27: return new Redux(sr); case 28: return new VinylDist(sr); case 29: return new DrumBuss(sr); case 30: return new Tuner(sr); case 31: return new EqEight(sr); case 32: return new Spectrum(sr);
+    case 33: return new Amp(sr); case 34: return new Cabinet(sr); case 35: return new Overdrive(sr); case 36: return new Pedal(sr); case 37: return new DynTube(sr);
     default: return nullptr;
   }
 }
 bool instPorted(int type) { return type == 1 || type == 2 || type == 13 || type == 14 || type == 15 || type == 17 || type == 18 || type == 16 || (type >= 19 && type <= 29); }
-bool devPorted(int type) { return (type >= 17 && type <= 32) || type == 1 || type == 6 || type == 9 || type == 0 || type == 2 || type == 3 || type == 4 || type == 5 || type == 7 || type == 8; }
+bool devPorted(int type) { return (type >= 17 && type <= 37) || type == 1 || type == 6 || type == 9 || type == 0 || type == 2 || type == 3 || type == 4 || type == 5 || type == 7 || type == 8; }
 
 }  // namespace mdaw
