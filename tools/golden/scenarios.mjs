@@ -4,7 +4,7 @@ import fs from 'node:fs'; import path from 'node:path'; import { fileURLToPath }
 const D = await import(path.join(path.dirname(fileURLToPath(import.meta.url)), '../../js/defs.js'));
 
 const PPQ = 960, BAR = PPQ * 4;
-const PARAM_SYNTHS = [13, 14, 15, 17, 16, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29];   // Live 12 instruments with a min / max sweep of every parameter
+const PARAM_SYNTHS = [13, 14, 15, 17, 18, 16, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29];   // Live 12 instruments with a min / max sweep of every parameter
 const FX_PORTED = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32];   // effects with a min / max sweep scenario (fx-<name>)
 const SYNTHS = [1, 2, 5, 7, 8, 11, 13, 14, 15, 17, 16, 19, 20, 21, 22, 23, 24, 25, 26, 27];   // instruments with golden scenarios (presets + playing)
 function lcg(seed) { let s = seed >>> 0; return () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 4294967296 * 2 - 1; }; }
