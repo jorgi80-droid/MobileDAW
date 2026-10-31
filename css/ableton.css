@@ -768,3 +768,25 @@
 .lk .lk-ch.lk-smode { background: none; border: 0; gap: 6px; } .lk .lk-ch.lk-smode .lv-btn { min-width: 64px; background: transparent; color: #bbb; border: 0; } .lk .lk-ch.lk-smode .lv-btn.on { color: #f5e03a; background: transparent; box-shadow: inset 0 -2px #f5e03a; }
 .lk .lv-btn.lk-warp.on { background: #f5e03a !important; color: #1b1b1d !important; }
 .lk .lk-ch.lk-smode .lv-btn.on { color: #f5e03a !important; background: transparent !important; box-shadow: inset 0 -2px #f5e03a; }
+/* Simpler: both tabs share one width and height; Controls = 3 x 2 grid (displays on top, their control strips below, all aligned) */
+.lk-simp { align-items: stretch !important; width: 900px; }
+.lk-simp > .lk-tabs { align-self: flex-start; }
+.lk-spage { flex-direction: column; min-height: 252px; }
+.lk-spage > .lk-dk { flex: 1; align-items: stretch; justify-content: space-between; }
+.lk-shead { align-items: center !important; }
+.lk-sbar { align-items: flex-end !important; }
+.lk-sbar .lk-row { align-items: flex-end; }
+.lk-sbar .lk-sep { align-self: stretch; }
+.lk-swarp { align-items: center; }
+.lk-sgrid { flex: 1; display: grid; grid-template-columns: 262px 204px 1fr; grid-template-rows: 1fr auto; gap: var(--sp-3); }
+.lk-sgrid > .lk-dk { align-items: stretch; justify-content: space-between; }
+.lk-sgrid > .lk-dk > .lk-d { align-self: center; }
+.lk-sev { justify-content: space-between; align-items: flex-end !important; }
+.lk-sadsr { flex: 1; align-items: stretch !important; gap: 2px !important; }
+.lk-sadsr .lk-ln { justify-content: space-between; }
+.lk-s7 { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px var(--sp-1); align-items: end; }
+.lk-s7 .lk-dkh.s3 { grid-column: span 3; } .lk-s7 .lk-dkh.s4 { grid-column: span 4; }
+.lk-s7 .lv-fld { width: 100% !important; min-width: 0 !important; }
+.lk-s7 .lk-tl { min-width: 0; }
+.lk-scell { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); padding: 0 2px; }
+.lk-scell > .lk-row { align-items: flex-start; }

@@ -971,7 +971,7 @@ VI[18] = (k) => {
   const Z = () => (t.inst.zones && t.inst.zones[0]) || P.newZone(), zset = (f, v, quiet = true) => P.setZoneField(i, 0, f, v, quiet);
   const pick = () => BR.openBrowser('file', { track: i, zone: 0 });
   const zNum = (n, get, set, o = {}) => k.TL(n, lvNum({ n, min: o.min ?? 0, max: o.max ?? 1, def: o.def ?? 0 }, get, (v) => { set(v); wave.paint(); }, (pp, v) => (o.fmt ? o.fmt(v) : (v * 100).toFixed(1) + ' %'), { w: 62, cls: 'lk-nt or' }));
-  const W = 720, H = 120, X = (f) => 6 + f * (W - 12), Fx = (x) => Math.max(0, Math.min(1, (x - 6) / (W - 12)));
+  const W = 884, H = 150, X = (f) => 6 + f * (W - 12), Fx = (x) => Math.max(0, Math.min(1, (x - 6) / (W - 12)));
   const slicesUI = () => {                                                    // the same rules as the engine (transients approximated on the peaks)
     const z = Z(), s = z.sample; if (!s) return []; const a = Math.min(z.s0, z.s1), b = Math.max(z.s0, z.s1), by = Math.round(k.get(9)), out = [a];
     if (by === 0) { const pk = s.peaks || [], n = pk.length, thr = 1.5 + (1 - k.get(10)) * 6; let prev = 1e-6, last = -1; for (let j = Math.floor(a * n); j < Math.floor(b * n); j++) { const e = (pk[j] || 0) ** 2; if (e > prev * thr && e > 1e-5 && (last < 0 || (j - last) / n * (s.duration || 1) > 0.05)) { out.push(j / n); last = j; } prev = prev * 0.6 + e * 0.4; if (out.length >= 64) break; } }
@@ -1003,34 +1003,40 @@ VI[18] = (k) => {
   }, onUp: () => P.emit('devices') });
   const modeBtns = k.CH(0, ['Classic', '1-Shot', 'Slice'], { cls: 'lk-smode' });
   const classic = () => k.row(zNum('Start', () => Z().s0, (v) => zset('s0', Math.min(v, Z().s1 - 0.001))), zNum('Length', () => Math.max(Z().s0, Z().s1) - Math.min(Z().s0, Z().s1), (v) => zset('s1', Math.min(1, Z().s0 + Math.max(0.001, v)))),
-    zNum('Loop', () => 1 - Math.min(Z().l0, Z().l1), (v) => { zset('l0', 1 - v); zset('l1', 1); }), zNum('Fade', () => Z().xf, (v) => zset('xf', v)), k.col(k.T(2, 'Loop', { w: 52 }), k.T(3, 'Snap', { w: 52 })), k.TL('Voices', k.NT(4, { w: 40, cls: 'or' })), k.TL('Retrig', k.T(5, 'R', { cls: 'lk-r', w: 22 })));
-  const oneshot = () => k.row(k.TL('', k.CH(6, ['Trigger', 'Gate'], { v: true, cls: 'lk-orb' })), k.TL('Fade In', k.NT(7, { w: 60, cls: 'or' })), k.TL('Fade Out', k.NT(8, { w: 60, cls: 'or' })));
-  const slice = () => k.row(k.TL('Slice By', k.S(9, { w: 96, cls: 'dk or' })), k.swapN(9, (by) => (by === 0 ? k.TL('Sensitivity', k.NT(10, { w: 56, cls: 'or' })) : by === 1 ? k.TL('Division', k.S(11, { w: 70, cls: 'dk or' })) : k.TL('Regions', k.NT(12, { w: 50, cls: 'or' })))), k.TL('Playback', k.S(13, { w: 70, cls: 'dk or' })));
-  const warp = k.row(k.T(14, 'WARP', { cls: 'lk-warp', w: 60 }), h('span', { class: 'lk-lb' }, 'as'), k.NT(15, { w: 66, cls: 'or' }), lvBtn(':2', () => k.set(15, Math.max(1, Math.round(k.get(15) / 2))), { cls: 'lk-t', w: 30 }), lvBtn('×2', () => k.set(15, Math.min(64, k.get(15) * 2)), { cls: 'lk-t', w: 30 }), k.TL('Mode', k.S(16, { w: 80, cls: 'dk or' })));
-  const sampleTab = () => k.dk(k.row(h('span', { class: 'lk-st' }, (Z().sample && Z().sample.name) || 'Simpler'), h('span', { class: 'lk-grow' }), lvBtn('Sample…', pick, { cls: 'lk-t' })), wave,
-    k.row(modeBtns, k.TL('Gain', k.NT(1, { w: 56, cls: 'or' })), k.sep(), k.swapN(0, (m) => (m === 0 ? classic() : m === 1 ? oneshot() : slice())), h('span', { class: 'lk-grow' }), warp));
-  // ---- Controls
-  const O = (n, j, w = 56) => k.TL(n, k.NT(j, { w, cls: 'or' }));
-  const fdisp = k.D(240, 100, (g, w, hh) => {
+    zNum('Loop', () => 1 - Math.min(Z().l0, Z().l1), (v) => { zset('l0', 1 - v); zset('l1', 1); }), zNum('Fade', () => Z().xf, (v) => zset('xf', v)), k.sep(), k.T(2, 'Loop', { w: 48 }), k.T(3, 'Snap', { w: 48 }), k.sep(), k.TL('Voices', k.NT(4, { w: 44, cls: 'or' })), k.TL('Retrig', k.T(5, 'R', { cls: 'lk-r', w: 22 })));
+  const oneshot = () => k.row(k.TL('Mode', k.CH(6, ['Trigger', 'Gate'], { cls: 'lk-orb' })), k.sep(), k.TL('Fade In', k.NT(7, { w: 62, cls: 'or' })), k.TL('Fade Out', k.NT(8, { w: 62, cls: 'or' })));
+  const slice = () => k.row(k.TL('Slice By', k.S(9, { w: 96, cls: 'dk or' })), k.swapN(9, (by) => (by === 0 ? k.TL('Sensitivity', k.NT(10, { w: 62, cls: 'or' })) : by === 1 ? k.TL('Division', k.S(11, { w: 70, cls: 'dk or' })) : k.TL('Regions', k.NT(12, { w: 62, cls: 'or' })))), k.sep(), k.TL('Playback', k.S(13, { w: 70, cls: 'dk or' })));
+  const warp = h('div', { class: 'lk-row lk-swarp' }, k.T(14, 'WARP', { cls: 'lk-warp', w: 60 }), h('span', { class: 'lk-lb' }, 'as'), k.NT(15, { w: 66, cls: 'or' }), lvBtn(':2', () => k.set(15, Math.max(1, Math.round(k.get(15) / 2))), { cls: 'lk-t', w: 30 }), lvBtn('×2', () => k.set(15, Math.min(64, k.get(15) * 2)), { cls: 'lk-t', w: 30 }), k.S(16, { w: 80, cls: 'dk or' }));
+  // header: sample name + chooser left, Warp right; waveform; one bar: mode switch, Gain, the mode's controls (all on one baseline)
+  const sampleTab = () => k.dk(h('div', { class: 'lk-row lk-shead' }, h('span', { class: 'lk-st' }, (Z().sample && Z().sample.name) || 'Simpler'), lvBtn('Sample…', pick, { cls: 'lk-t' }), h('span', { class: 'lk-grow' }), warp), wave,
+    h('div', { class: 'lk-row lk-sbar' }, modeBtns, k.sep(), k.TL('Gain', k.NT(1, { w: 56, cls: 'or' })), k.sep(), k.swapN(0, (m) => (m === 0 ? classic() : m === 1 ? oneshot() : slice()))));
+  // ---- Controls: three columns as in Live (Filter | LFO | Pitch Envelope + Amplitude / Pitch), each display above its control strip
+  const O = (n, j, w = 50) => k.TL(n, k.NT(j, { w, cls: 'or' }));
+  const fdisp = k.D(256, 96, (g, w, hh) => {
     grid(g, w, hh); const b = new Biquad(), ty = Math.round(k.get(18)), f = k.get(21), q = 0.6 + k.get(22) * 8;
     if (ty === 1) b.highpass(SR, f, q); else if (ty === 2) b.bandpass(SR, f, q); else if (ty === 3) b.notch(SR, f, q); else b.lowpass(SR, f, q);
     const pts = []; for (let x = 0; x <= w; x += 2) { let m = mag(b, xl(x, w)); if (Math.round(k.get(19)) === 1) m *= m; pts.push([x, hh - 6 - Math.min(2, m) / 2 * (hh - 12)]); }
-    lvPath(g, pts, k.get(17) > 0.5 ? '#ff9a2e' : DISPC.grid2, null, 1.8); lvRing(g, lx(f, w), hh * 0.45, 5);
+    lvPath(g, pts, k.get(17) > 0.5 ? '#ff9a2e' : DISPC.grid2, null, 1.8); lvRing(g, Math.max(6, Math.min(w - 6, lx(f, w))), hh * 0.45, 5);
   }, { onDown: () => ({ f: k.get(21), r: k.get(22) }), onMove: (x, y, dx, dy, s) => { k.set(21, Math.max(20, Math.min(22000, s.f * Math.pow(2, dx / 24)))); k.set(22, Math.max(0, Math.min(1, s.r - dy / 80))); } });
-  const ldisp = k.D(150, 50, (g, w, hh) => { const wf = Math.round(k.get(31)), pts = []; for (let x = 0; x <= w; x++) { const a = (x / w * 3 + k.get(37) / 360) % 1; const y = wf === 1 ? (a < 0.5 ? 1 : -1) : wf === 2 ? 1 - 4 * Math.abs(a - 0.5) : wf === 3 ? 1 - 2 * a : wf === 4 ? 2 * a - 1 : wf === 5 ? Math.sin(Math.floor(x / w * 12) * 7.3) : Math.sin(2 * Math.PI * a); pts.push([x, hh / 2 - y * (hh / 2 - 5)]); } lvPath(g, pts, '#ff9a2e', null, 1.6); });
-  const pdisp = k.D(210, 60, (g, w, hh) => lvPath(g, lvEnvPts(w, hh, k.get(45) / 1000, k.get(46) / 1000, k.get(47), k.get(48) / 1000, 6), '#ff9a2e', null, 1.6));
-  const controlsTab = () => k.col(
-    k.row(k.dk(fdisp, k.row(h('span', { class: 'lk-lb' }, 'Frequency'), h('span', { class: 'lk-grow' }), k.LN('Vel', k.NT(23, { w: 50, cls: 'or' })), k.LN('Key', k.NT(24, { w: 50, cls: 'or' })), k.LN('Env', k.NT(25, { w: 50, cls: 'or' })))),
-      k.dk(k.row(O('Attack', 35), O('Key', 36), O('Offset', 37, 50), k.T(38, 'R', { cls: 'lk-r', w: 20 })), ldisp, k.row(O('Vol', 39, 50), O('Pitch', 40, 50)), k.row(O('Pan', 41, 50), O('Filter', 42, 50))),
-      k.dk(k.row(k.T(43, '', { cls: 'lk-chkbox' }), h('span', { class: 'lk-st' }, 'Pitch Envelope'), h('span', { class: 'lk-grow' }), O('Amount', 44)), k.row(pdisp, k.col(O('Attack', 45), O('Decay', 46), O('Sustain', 47), O('Release', 48))),
-        k.row(k.col(h('span', { class: 'lk-lb' }, 'Amplitude'), k.row(O('Pan', 49, 44), O('Ran>Pan', 50, 50), O('Spread', 51, 50))), k.col(h('span', { class: 'lk-lb' }, 'Pitch'), k.row(O('Transp', 52, 50), O('Detune', 53, 50), k.TL('Glide', k.S(54, { w: 70, cls: 'dk or' })), O('Time', 55, 56)))))),
-    k.row(k.row(k.T(17, 'Filter', { w: 60 }), k.col(k.S(18, { w: 80 }), k.row(k.CH(19, ['12', '24']), k.S(20, { w: 64 }))), k.K(21), k.K(22)), k.sep(),
-      k.row(k.T(30, 'LFO', { w: 50 }), k.col(k.S(31, { w: 80 }), k.row(k.CH(32, ['Hz', '♪'], { cls: 'sm' }), k.swap(32, () => k.N(34, { w: 60 }), () => k.N(33, { w: 60 }))))), k.sep(),
-      k.swapN(0, (m) => (m === 1 ? k.row(k.K(7), k.K(8)) : k.row(k.K(56, { n: 'Attack' }), k.K(57, { n: 'Decay' }), k.K(58, { n: 'Sustain' }), k.K(59, { n: 'Release' })))), k.K(52), k.K(60), k.K(61)));
-  const page = h('div', { class: 'lk-page' });
+  const ldisp = k.D(166, 56, (g, w, hh) => { const wf = Math.round(k.get(31)), pts = []; for (let x = 0; x <= w; x++) { const a = (x / w * 3 + k.get(37) / 360) % 1; const y = wf === 1 ? (a < 0.5 ? 1 : -1) : wf === 2 ? 1 - 4 * Math.abs(a - 0.5) : wf === 3 ? 1 - 2 * a : wf === 4 ? 2 * a - 1 : wf === 5 ? Math.sin(Math.floor(x / w * 12) * 7.3) : Math.sin(2 * Math.PI * a); pts.push([x, hh / 2 - y * (hh / 2 - 5)]); } lvPath(g, pts, '#ff9a2e', null, 1.6); });
+  const pdisp = k.D(250, 80, (g, w, hh) => lvPath(g, lvEnvPts(w, hh, k.get(45) / 1000, k.get(46) / 1000, k.get(47), k.get(48) / 1000, 6), '#ff9a2e', null, 1.6));
+  const R = (n, j) => k.LN(n, k.NT(j, { w: 64, cls: 'or' }));
+  const cell = (cls, ...kids) => h('div', { class: 'lk-scell ' + cls }, ...kids.filter(Boolean));
+  const controlsTab = () => h('div', { class: 'lk-sgrid' },
+    k.dk(fdisp, h('div', { class: 'lk-row lk-sev' }, O('Vel', 23), O('Key', 24), O('Env', 25))),
+    k.dk(h('div', { class: 'lk-row lk-sev' }, O('Attack', 35, 46), O('Key', 36, 40), O('Offset', 37, 40), k.TL('Retrig', k.T(38, 'R', { cls: 'lk-r', w: 22 }))), ldisp,
+      h('div', { class: 'lk-row lk-sev' }, O('Vol', 39, 38), O('Pitch', 40, 38), O('Pan', 41, 38), O('Filter', 42, 38))),
+    k.dk(h('div', { class: 'lk-row lk-shead' }, k.T(43, '', { cls: 'lk-chkbox' }), h('span', { class: 'lk-st' }, 'Pitch Envelope'), h('span', { class: 'lk-grow' }), R('Amount', 44)),
+      h('div', { class: 'lk-row lk-shead' }, pdisp, h('div', { class: 'lk-col lk-sadsr' }, R('Attack', 45), R('Decay', 46), R('Sustain', 47), R('Release', 48))),
+      h('div', { class: 'lk-s7' }, h('span', { class: 'lk-dkh s3' }, 'Amplitude'), h('span', { class: 'lk-dkh s4' }, 'Pitch'),
+        O('Pan', 49, 0), O('Ran>Pan', 50, 0), O('Spread', 51, 0), O('Transp', 52, 0), O('Detune', 53, 0), k.TL('Glide', k.S(54, { w: 54, cls: 'dk or' })), O('Time', 55, 0))),
+    cell('', k.col(k.row(k.T(17, 'Filter', { w: 52 }), k.S(18, { w: 76 })), k.row(k.CH(19, ['12', '24']), k.S(20, { w: 64 }))), k.K(21), k.K(22)),
+    cell('', k.col(k.row(k.T(30, 'LFO', { w: 52 }), k.S(31, { w: 76 })), k.row(k.CH(32, ['Hz', '♪'], { cls: 'sm' }), k.swap(32, () => k.N(34, { w: 64 }), () => k.N(33, { w: 64 }))))),
+    cell('', k.swapN(0, (m) => (m === 1 ? k.row(k.K(7), k.K(8)) : k.row(k.K(56, { n: 'Attack' }), k.K(57, { n: 'Decay' }), k.K(58, { n: 'Sustain' }), k.K(59, { n: 'Release' })))), k.sep(), k.K(52), k.K(60), k.K(61)));
+  const page = h('div', { class: 'lk-page lk-spage' });
   const tb = lvTabs([{ label: 'Sample' }, { label: 'Controls' }], st.tab, (j) => { st.tab = j; page.replaceChildren(j ? controlsTab() : sampleTab()); }, { cls: 'lk-tabs' });
   page.replaceChildren(st.tab ? controlsTab() : sampleTab());
-  return k.col(tb, page);
+  return h('div', { class: 'lk-col lk-simp' }, tb, page);
 };
 export function instKitView(i, t, every) {
   const def = INSTRUMENTS[t.inst.type]; if (!VI[t.inst.type]) return null;
