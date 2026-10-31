@@ -14,7 +14,7 @@ export class Impulse {
     this.v = Array.from({ length: 8 }, () => ({ on: false, held: false }));
   }
   setTempo() {}
-  setParam(i, x) { if (i >= IMP_Z0) { const k = (i - IMP_Z0) >> 4, f = (i - IMP_Z0) & 15; if (k < 8 && f === 0) this.ids[k] = x | 0; return; } this.p[i] = x; }
+  setParam(i, x) { if (i >= IMP_Z0) { const k = (i - IMP_Z0) >> 4, f = (i - IMP_Z0) & 15; if (k < 8 && f === 0) this.ids[k] = x | 0; return; } if (i >= 0 && i < this.p.length) this.p[i] = x; }
   q(k, f) { return this.p[IMP_S0 + k * IMP_N + f]; }
   smp(k) { const s = this.ids[k] >= 0 ? this.bank[this.ids[k]] : null; return s && s.frames > 4 ? s : null; }
   active() { return this.v.some((v) => v.on); }

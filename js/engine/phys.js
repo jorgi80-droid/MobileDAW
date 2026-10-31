@@ -9,15 +9,15 @@ const nz = (o) => lcg(o) / 2147483648 - 1;
 const t60 = (sec, sr) => Math.exp(-6.91 / Math.max(1, sec * sr));          // per-sample gain for a 60 dB decay in sec
 
 class Poly {
-  constructor(sr, n, nv = 8) { this.sr = sr; this.p = new Array(n).fill(0); this.v = []; this.nv = nv; this.rng = { seed: 777 + n }; }
-  setParam(i, x) { this.p[i] = x; }
+  constructor(sr, n, nv = 8) { this.sr = sr; this.n = n; this.p = new Array(n).fill(0); this.v = []; this.nv = nv; this.rng = { seed: 777 + n }; }
+  setParam(i, x) { if (i >= 0 && i < this.n) this.p[i] = x; }
   setTempo() {}
   active() { return this.v.length > 0; }
   noteOn(pitch, vel) { if (this.v.length >= this.nv) this.v.shift(); const v = this.voice(pitch, vel); v.pitch = pitch; v.vel = vel; v.on = true; v.t = 0; v.amp = 1; this.v.push(v); }
   noteOff(pitch) { for (const v of this.v) if (v.pitch === pitch && v.on) v.on = false; }
   allOff() { for (const v of this.v) v.on = false; }
   render(L, R, from, to) {
-    const vol = dbl(this.p[this.p.length - 1]), dt = 1 / this.sr, rel = this.relGain();
+    const vol = dbl(this.p[this.n - 1]), dt = 1 / this.sr, rel = this.relGain();
     for (let j = this.v.length - 1; j >= 0; j--) {
       const v = this.v[j]; let peak = 0;
       for (let i = from; i < to; i++) { const x = this.tick(v, dt) * v.amp * vol; if (!v.on) v.amp *= rel; L[i] += x * (v.pl ?? 1); R[i] += x * (v.pr ?? 1); v.t += dt; const a = Math.abs(x); if (a > peak) peak = a; }

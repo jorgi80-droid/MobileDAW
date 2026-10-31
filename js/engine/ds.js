@@ -14,15 +14,15 @@ class Svf {
 const pick = (f, type) => (type === 1 ? f.hp : type === 2 ? f.bp : null);
 
 class DrumBase {
-  constructor(sr, n) { this.sr = sr; this.p = new Array(n).fill(0); this.v = []; this.rng = { seed: 1234 + n }; }
-  setParam(i, x) { this.p[i] = x; }
+  constructor(sr, n) { this.sr = sr; this.n = n; this.p = new Array(n).fill(0); this.v = []; this.rng = { seed: 1234 + n }; }
+  setParam(i, x) { if (i >= 0 && i < this.n) this.p[i] = x; }   // other indices (e.g. 90 = track pitch) are not ours
   setTempo() {}
   active() { return this.v.length > 0; }
   noteOn(pitch, vel) { if (this.v.length >= 6) this.v.shift(); const v = this.voice(vel); v.t = 0; v.vel = vel; this.v.push(v); }
   noteOff() {}                                                     // one-shot: the hit decays by itself
   allOff() {}                                                      // (stop / panic: the hits still ring out, as in Live)
   render(L, R, from, to) {
-    const vol = dbl(this.p[this.p.length - 1]), dt = 1 / this.sr;
+    const vol = dbl(this.p[this.n - 1]), dt = 1 / this.sr;
     for (let j = this.v.length - 1; j >= 0; j--) {
       const v = this.v[j];
       for (let i = from; i < to; i++) { const s = this.tick(v, dt); L[i] += s[0] * vol * v.vel; R[i] += s[1] * vol * v.vel; v.t += dt; }
@@ -104,10 +104,10 @@ export class DsClap extends DrumBase {
 // DS FM: 0 Tune, 1 Decay, 2 Amount (index), 3 Ratio, 4 Feedback, 5 Tone (low-pass), 6 Volume
 export class DsFm extends DrumBase {
   constructor(sr) { super(sr, 7); }
-  voice() { return { pc: 0, pm: 0, fb: 0, lp: 0, life: this.p[1] * 6 + 0.05 }; }
+  voice() { return { pc: 0, pm: 0, fb: 0, fm: 0, lp: 0, life: this.p[1] * 6 + 0.05 }; }
   tick(v, dt) {
     const p = this.p, e = Math.exp(-v.t * 4.6 / p[1]), em = Math.exp(-v.t * 4.6 / (p[1] * 0.5));
-    v.pm += p[0] * p[3] * dt; const m = Math.sin(TWO_PI * v.pm + v.fb * p[4] * 3); v.fb = m;
+    v.pm += p[0] * p[3] * dt; const m = Math.sin(TWO_PI * v.pm + v.fb * p[4] * 1.5); v.fb = (m + v.fm) * 0.5; v.fm = m;   // feedback of the average of two outputs: stable, no chaos
     v.pc += p[0] * dt; const x = Math.sin(TWO_PI * v.pc + m * p[2] * 8 * em) * e;
     const a = 1 - Math.exp(-TWO_PI * (200 + p[5] * p[5] * 18000) * dt); v.lp += (x - v.lp) * a;
     return mono(v.lp);

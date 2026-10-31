@@ -4,7 +4,8 @@ import fs from 'node:fs'; import path from 'node:path'; import { fileURLToPath }
 const D = await import(path.join(path.dirname(fileURLToPath(import.meta.url)), '../../js/defs.js'));
 
 const PPQ = 960, BAR = PPQ * 4;
-const SYNTHS = [1, 2, 5, 7, 8, 11];   // instruments with golden scenarios (presets + playing)
+const PARAM_SYNTHS = [19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29];   // Live 12 instruments with a min / max sweep of every parameter
+const SYNTHS = [1, 2, 5, 7, 8, 11, 19, 20, 21, 22, 23, 24, 25, 26, 27];   // instruments with golden scenarios (presets + playing)
 function lcg(seed) { let s = seed >>> 0; return () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 4294967296 * 2 - 1; }; }
 function tone(sec, hz, sr = 48000, amp = 0.5) { const n = Math.round(sec * sr), a = new Float32Array(n); for (let i = 0; i < n; i++) a[i] = Math.sin(2 * Math.PI * hz * i / sr) * amp * Math.min(1, (n - i) / 2000); return a; }
 function noise(sec, seed, sr = 48000, amp = 0.3) { const r = lcg(seed), n = Math.round(sec * sr), a = new Float32Array(n); for (let i = 0; i < n; i++) a[i] = r() * amp; return a; }
@@ -66,6 +67,7 @@ export const SCENARIOS = [
       e.seek(BAR); play(e, 2); e.trackCC(0, [], 0); e.automation([], 0); play(e, 2);
     } },
   ...instScenarios(),
+  ...paramScenarios(),
   { name: 'demo-ghibli', info: 'demo song Ghibli Sky (SoundFont + Osphere)', run: (e, o) => demo(e, o, 'ghibli-sky.mdaw', 30) },
   { name: 'demo-meadow', info: 'demo song Meadow Wind (SoundFont + Osphere)', run: (e, o) => demo(e, o, 'meadow-wind.mdaw', 30) },
 ];
@@ -126,4 +128,25 @@ function instScenarios() {
     } });
   }
   return out;
+}
+
+// Live 12 instruments: every parameter in turn at its minimum and maximum (all modes / switches / branches), a chord + low and high notes,
+// released; sample-based ones get a test sample in every slot (Impulse: zones 0..7 on C3..G3, Granulator III: zone 0).
+function testSample(e) {
+  const n = 48000, l = new Float32Array(n), r = new Float32Array(n); let ph = 0, seed = 9;
+  for (let i = 0; i < n; i++) { const t = (i % 12000) / 48000, a = [0.5, 0.15, 0.4, 0.1][Math.floor(i / 12000)], env = Math.exp(-t * 6) * a; ph += 220 / 48000; seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; const x = ((ph % 1) * 2 - 1) * env + (seed / 4294967296 - 0.5) * Math.exp(-t * 60) * a * 2; l[i] = x; r[i] = x * 0.9; }
+  e.loadSample(3, l, r);
+}
+function paramScenarios() {
+  return PARAM_SYNTHS.filter((t) => D.INSTRUMENTS[t]).map((t) => {
+    const def = D.INSTRUMENTS[t], key = def.name.toLowerCase().replace(/[^a-z0-9]+/g, '');
+    return { name: 'params-' + key, info: `${def.name}: every parameter at min and max`, run(e) {
+      e.tempo(120); const smp = def.sampler; if (smp) testSample(e);
+      const notes = smp && def.slots ? [60, 61, 62, 63, 64, 65, 66, 67] : [36, 48, 55, 64, 84];
+      const base = () => { def.params.forEach((q, k) => e.instParam(0, k, q.def)); if (smp) for (let z = 0; z < (def.slots || 1); z++) { e.instParam(0, 200 + z * 16, 3); e.instParam(0, 201 + z * 16, 60); } };
+      const hit = () => { const f = []; notes.forEach((nn, j) => f.push(j * 60, PPQ * 0.8, nn, 0.3 + (j % 4) * 0.2, 0)); e.trackNotes(0, f, f.length / 5); e.seek(0); e.play(); play(e, 0.9, [128, 64, 200]); e.stop(); play(e, 0.15); };
+      e.resetTrack(0); e.trackInst(0, t); base(); hit();
+      def.params.forEach((q, k) => { if (q.hidden) return; for (const v of [q.min, q.max]) { base(); e.instParam(0, k, v); hit(); } });
+    } };
+  });
 }

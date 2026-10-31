@@ -13,7 +13,7 @@ const G_MAX = 16;
 export class Granulator {
   constructor(sr, bank) { this.sr = sr; this.bank = bank; this.p = new Array(14).fill(0); this.id = -1; this.rng = { seed: 3303 }; this.v = []; }
   setTempo() {}
-  setParam(i, x) { if (i >= 200) { if (i === 200) this.id = x | 0; return; } this.p[i] = x; }
+  setParam(i, x) { if (i >= 200) { if (i === 200) this.id = x | 0; return; } if (i >= 0 && i < 14) this.p[i] = x; }
   smp() { const s = this.id >= 0 ? this.bank[this.id] : null; return s && s.frames > 64 ? s : null; }
   active() { return this.v.length > 0; }
   noteOn(pitch, vel) {
