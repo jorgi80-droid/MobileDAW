@@ -177,3 +177,156 @@ void Corpus::process(float* L, float* R, int n) {
 }
 
 }  // namespace mdaw
+
+namespace mdaw {
+
+static inline double rndU(uint32_t& s) { return lcg(s) / 4294967296.0; }
+
+// ---------------------------------------------------------------------------------------------- Vocoder
+void Vocoder::upd() {
+  static const int VB[8] = { 4, 8, 12, 16, 20, 24, 32, 40 };
+  nb = VB[(int)clamp(jsRound(p[5]), 0, 7)]; double lo = clamp(p[6], 20, 2000), hi = jsMax(lo * 2, clamp(p[7], 500, 18000)), q = (p[11] > 0.5 ? 9 : 4) / jsMax(0.1, p[8]) * nb / 20;
+  for (int b = 0; b < nb; b++) { double f = lo * std::pow(hi / lo, (b + 0.5) / nb), fc = clamp(f * std::pow(2, p[16]), 20, 20000); B[b] = VBand(); B[b].m.bandpass(sr, f, q); B[b].c[0].bandpass(sr, fc, q); B[b].c[1].bandpass(sr, fc, q); }
+}
+void Vocoder::process(float* L, float* R, int n) {
+  int car = (int)jsRound(p[0]); bool enh = p[1] > 0.5; double unv = p[2] <= -60 ? 0 : dbToLin(p[2]), gate = dbToLin(p[9]), lvl = dbToLin(p[10]) * 3, dep = p[12], at = 1 - coefMs(p[13], sr), rl = 1 - coefMs(p[14], sr); int mode = (int)jsRound(p[15]); double mix = p[17];
+  for (int i = 0; i < n; i++) {
+    double mod = ((double)L[i] + R[i]) * 0.5;
+    if ((mod >= 0) != (last >= 0) && mod >= 0) { if (cntZ > 20) period += (cntZ - period) * 0.2; cntZ = 0; } cntZ++; last = mod;
+    double carrier;
+    if (car == 0) {
+      if (--hold <= 0) { hold = 1 + jsRound(std::pow(1 - p[18], 2) * 63); nz = rndU(seed) * 2 - 1; if (p[19] > 0 && rndU(seed) < p[19] * 0.97) nz = 0; else if (p[19] > 0) nz /= std::sqrt(1 - p[19] * 0.97); }
+      carrier = nz;
+    } else if (car == 1) carrier = mod;
+    else { ph += 1 / jsMax(8, period); if (ph >= 1) ph -= 1; carrier = 2 * ph - 1; }
+    double noise = rndU(seed) * 2 - 1;
+    zr += (((mod >= 0) != (last2 >= 0) ? 1 : 0) - zr) * 0.002; last2 = mod;
+    double uT = clamp((zr - (1 - p[3]) * 0.35) / 0.08, 0, 1); uv += (uT - uv) * (p[4] > 0.5 ? 0.02 : 0.0015);
+    double ol = 0, orr = 0;
+    for (int b = 0; b < nb; b++) {
+      VBand& Bb = B[b]; double m = std::fabs(Bb.m.process(mod)); Bb.e += (m - Bb.e) * (m > Bb.e ? at : rl);
+      double e = Bb.e < gate * 0.1 ? 0 : Bb.e;
+      e = dep * e + (1 - dep) * 0.05;
+      double c = Bb.c[0].process(carrier), cn = Bb.c[1].process(noise) * unv * uv * (b > nb * 0.6 ? 1 : 0.3);
+      double y = (c + cn) * e * (enh ? 1 / jsMax(0.02, std::sqrt(Bb.e + 1e-4)) * 0.2 : 1) * lvl * 30;
+      if (mode == 2) { if (b % 2) orr += y; else ol += y; } else { ol += y; orr += y * (mode == 1 ? (b % 2 ? 0.8 : 1.2) : 1); }
+      if ((i & 63) == 0) lv[b] = (float)jsMax(Bb.e, lv[b] * 0.97);
+    }
+    L[i] = (float)(L[i] * (1 - mix) + clamp(ol, -4, 4) * mix); R[i] = (float)(R[i] * (1 - mix) + clamp(orr, -4, 4) * mix);
+  }
+}
+
+// ---------------------------------------------------------------------------------------------- Shifter
+Shifter::Shifter(double r) : FxBase(r, { 0, 7, 0, 100, 60, 0, 0, 20000, 1 }) { int N = pow2Size(sr * 0.5); b[0] = new float[N](); b[1] = new float[N](); M = N - 1; upd(); }
+void Shifter::process(float* L, float* R, int n) {
+  int mode = (int)jsRound(p[0]); double mix = p[8], fbk = clamp(p[6], 0, 0.9), win = clamp(p[4], 10, 300) * 0.001 * sr, sp = p[5];
+  for (int i = 0; i < n; i++) {
+    double out[2];
+    for (int c = 0; c < 2; c++) {
+      double x = (c ? R[i] : L[i]) + fb[c] * fbk, sgn = c ? 1 : -1, y;
+      if (mode == 0) {
+        double ratio = std::pow(2, (p[1] + p[2] / 100 + sgn * sp * 0.25) / 12), step = (1 - ratio) / win;
+        b[c][toInt32(w) & M] = (float)x; ph[c] += step; ph[c] -= std::floor(ph[c]);
+        double d1 = ph[c] * win + 2, d2 = std::fmod(ph[c] + 0.5, 1) * win + 2, g1 = std::sin(PI * ph[c]), g2 = std::sin(PI * std::fmod(ph[c] + 0.5, 1));
+        y = rdJ(b[c], M, w, d1) * g1 + rdJ(b[c], M, w, d2) * g2;
+      } else {
+        double f = p[3] + sgn * sp * 20, re, im; h[c].run(x, re, im); double a = oph * 1 + (c ? sp * 1.5 : 0);
+        y = mode == 1 ? re * std::cos(a) - im * std::sin(a) : x * std::cos(a);
+        if (c == 1) { oph += TWO_PI * (mode == 1 ? f : std::fabs(f)) / sr; if (oph > 1e4) oph -= TWO_PI * std::floor(oph / TWO_PI); }
+      }
+      y = t[c].process(y); fb[c] = y; out[c] = y;
+    }
+    w++;
+    L[i] = (float)(L[i] * (1 - mix) + out[0] * mix); R[i] = (float)(R[i] * (1 - mix) + out[1] * mix);
+  }
+}
+
+// ---------------------------------------------------------------------------------------------- Grain Delay
+GrainDelay::GrainDelay(double r) : FxBase(r, { 0, 3, 100, 15, 4, 0, 0, 0, 0.5 }) { int N = pow2Size(sr * 2.5); b[0] = new float[N](); b[1] = new float[N](); M = N - 1; g[0].age = 0; g[0].len = 1; g[1] = g[0]; }
+void GrainDelay::process(float* L, float* R, int n) {
+  static const double SIXT[8] = { 1, 2, 3, 4, 5, 6, 8, 16 };
+  double s16 = 60 / bpm / 4, base = (p[0] > 0.5 ? SIXT[(int)clamp(jsRound(p[1]), 0, 7)] * s16 : p[2] / 1000) * sr, hz = clamp(p[4], 1, 150), period = sr / hz, mix = p[8], fbk = clamp(p[7], 0, 0.95);
+  for (int i = 0; i < n; i++) {
+    if (--cnt <= 0) {
+      cnt = period / 2; G& gr = g[0].age >= g[0].len ? g[0] : g[1];
+      double rp = (rndU(seed) * 2 - 1) * p[6] * 12; gr.rate = std::pow(2, (p[5] + rp) / 12); gr.len = period; gr.age = 0;
+      gr.pos = clamp(base + rndU(seed) * p[3] / 1000 * sr, 2, M - period * 4);
+    }
+    double out[2] = { 0, 0 };
+    for (auto& gr : g) {
+      if (gr.age >= gr.len) continue; double wv = std::sin(PI * gr.age / gr.len), d = gr.pos - gr.age * (gr.rate - 1);
+      for (int c = 0; c < 2; c++) out[c] += rdJ(b[c], M, w, clamp(d, 2, M - 2)) * wv;
+      gr.age++;
+    }
+    for (int c = 0; c < 2; c++) b[c][toInt32(w) & M] = (float)((c ? R[i] : L[i]) + out[c] * fbk);
+    w++;
+    L[i] = (float)(L[i] * (1 - mix) + out[0] * mix); R[i] = (float)(R[i] * (1 - mix) + out[1] * mix);
+  }
+}
+
+// ---------------------------------------------------------------------------------------------- Hybrid Reverb
+static const int ER[5][12] = { { 7, 11, 17, 23, 31, 41, 53, 67, 79, 97, 113, 131 }, { 3, 5, 8, 11, 13, 17, 19, 23, 29, 31, 37, 41 }, { 1, 2, 3, 5, 7, 9, 12, 15, 18, 22, 26, 31 }, { 11, 22, 33, 44, 55, 66, 77, 88, 99, 110, 121, 132 }, { 5, 9, 14, 20, 27, 35, 44, 54, 65, 77, 90, 104 } };
+HybridReverb::HybridReverb(double r) : FxBase(r, { 0, 10, 0, 0, 0.6, 0, 0.6, 0.6, 0, 3.5, 0.5, 0.5, 0.7, 0.5, 0, 0, 20, 20000, 1, 0, 0, 0.3 }) {
+  int N = pow2Size(sr * 1.2); pre = new float[N](); pm = N - 1; er[0] = new float[1 << 15](); er[1] = new float[1 << 15]();
+  static const int LN[8] = { 1031, 1327, 1523, 1801, 2053, 2311, 2633, 2969 };
+  for (int k = 0; k < 8; k++) { len[k] = (int)jsRound(LN[k] * sr / 44100); int sz = pow2Size(len[k] * 2.2 + 64); fd[k] = new float[sz](); fdm[k] = sz - 1; }
+  upd();
+}
+void HybridReverb::process(float* L, float* R, int n) {
+  static const double DMP[5] = { 1.35, 0.5, 1, 1, 0.3 }, DIF[5] = { 0, 0.12, 0, 0, -0.12 }; static const int APD[4] = { 142, 107, 379, 277 }, VI[5] = { 1, 2, 3, 4, 6 };
+  double send = p[0] <= -60 ? 0 : dbToLin(p[0]), pd = clamp(p[1], 0, 1000) * 0.001 * sr, pfb = clamp(p[2], 0, 0.9); int route = (int)jsRound(p[3]); double blend = p[4]; const int* ir = ER[(int)clamp(jsRound(p[5]), 0, 4)];
+  double irD = p[6], irS = 0.3 + p[7] * 1.7; int alg = (int)jsRound(p[8]); bool frz = p[14] > 0.5; double mix = p[21], stw = p[18]; int vint = (int)jsRound(p[19]); bool eqOn = p[15] > 0.5;
+  int ac = (int)clamp(alg, 0, 4); double sizeK = 0.5 + p[10] * 1.5, g = frz ? 1 : std::pow(10, -3 * (len[4] * sizeK / sr) / jsMax(0.2, p[9])), damp = frz ? 0 : clamp((0.05 + p[11] * 0.7) * DMP[ac], 0, 0.95), dif = clamp(0.3 + p[12] * 0.45 + DIF[ac], 0.1, 0.85), md = p[13] * (alg == 3 ? 30 : 8); int nm = alg == 4 ? 8 : 2;
+  for (int i = 0; i < n; i++) {
+    double xin = frz ? 0 : ((double)L[i] + R[i]) * 0.5 * send;
+    double pdo = pd > 1 ? rdJ(pre, pm, pw, pd) : xin; pre[toInt32(pw) & pm] = (float)(xin + pdo * pfb); pw++;
+    int ewi = toInt32(ew); er[0][ewi & em] = (float)pdo; er[1][ewi & em] = (float)pdo;
+    double el = 0, erv = 0; for (int k = 0; k < 12; k++) { int d = (int)jsRound(ir[k] * irS * sr / 1000) + 1; double a = std::pow(0.35 + irD * 0.6, k / 3.0); double v = er[0][(ewi - d) & em] * a * (k % 3 == 0 ? -1 : 1); if (k % 2) erv += v; else el += v; }
+    ew++;
+    double x = route == 0 ? (el + erv) * 0.5 : pdo;
+    for (int k = 0; k < 4; k++) { int aw = toInt32(apw[k]); double y = ap[k][(aw - APD[k]) & 1023]; double u = x + y * dif; ap[k][aw & 1023] = (float)u; apw[k]++; x = y - u * dif; }
+    ph += TWO_PI * (alg == 3 ? 0.3 : 0.8) / sr; if (ph > TWO_PI) ph -= TWO_PI;
+    double sum = 0;
+    for (int k = 0; k < 8; k++) { int M = fdm[k]; double d = len[k] * sizeK + (k < nm ? std::sin(ph + k) * md : 0); o[k] = rdJ(fd[k], M, fw, clamp(d, 2, M - 2)); lp[k] += (o[k] - lp[k]) * (1 - damp); o[k] = lp[k]; sum += o[k]; }
+    double hh = sum * 0.25;
+    if (alg == 2) { shB[toInt32(sh) & 8191] = (float)hh; sh++; }
+    double shim = alg == 2 ? (shB[(toInt32(sh) - 1 - toInt32(std::fmod(sh * 0.5, 2048))) & 8191] * 0.25) : 0;
+    int fwi = toInt32(fw);
+    for (int k = 0; k < 8; k++) fd[k][fwi & fdm[k]] = (float)((o[k] - hh) * g + x * (k % 2 ? 0.35 : -0.35) + shim * (alg == 4 ? (k % 2 ? 1 : -1) : 1));
+    fw++;
+    double al = o[0] + o[2] + o[4] + o[6], ar = o[1] + o[3] + o[5] + o[7]; al *= 0.5; ar *= 0.5;
+    double wl, wr;
+    if (route == 2) { wl = al; wr = ar; } else if (route == 3) { wl = el; wr = erv; } else { wl = el * (1 - blend) + al * blend; wr = erv * (1 - blend) + ar * blend; }
+    if (vint > 0) { if (++vc >= VI[vint > 4 ? 4 : vint]) { vc = 0; vh[0] = wl; vh[1] = wr; } wl = vh[0]; wr = vh[1]; }
+    if (eqOn) { wl = eq[0][1].process(eq[0][0].process(wl)); wr = eq[1][1].process(eq[1][0].process(wr)); }
+    double m = (wl + wr) * 0.5, s = (wl - wr) * 0.5 * stw; if (p[20] > 0.5) s = bm[0].process(s);
+    wl = m + s; wr = m - s;
+    L[i] = (float)(L[i] * (1 - mix) + wl * mix * 1.2); R[i] = (float)(R[i] * (1 - mix) + wr * mix * 1.2);
+  }
+}
+
+// ---------------------------------------------------------------------------------------------- Looper
+static const double LBARS[6] = { 0, 1, 2, 4, 8, 16 };
+Looper::Looper(double r) : FxBase(r, { 0, 0, 0, 0, 1, 0, 0, 0 }) { N = (int)(sr * 32); bl = new float[N](); br = new float[N](); }
+void Looper::close() { double bars = LBARS[(int)clamp(jsRound(p[1]), 0, 5)]; len = bars ? jsMin(N, jsRound(bars * 4 * 60 / bpm * sr)) : jsMax(64, rec); pos = 0; }
+void Looper::setParam(int i, double v) {
+  FxBase::setParam(i, v);
+  if (i == 0) { int s = (int)jsRound(v); if (s == 1 && st != 1) { len = 0; rec = 0; pos = 0; } if (s != 1 && st == 1) close(); st = s; }
+  if (i == 6 && v != clr) { clr = v; len = 0; rec = 0; for (int k = 0; k < N; k++) { bl[k] = 0; br[k] = 0; } }
+}
+void Looper::process(float* L, float* R, int n) {
+  int s0 = st; double rate = std::pow(2, p[2] / 12) * (p[3] > 0.5 ? -1 : 1), fb = p[4], vol = dbToLin(p[7]); int mon = (int)jsRound(p[5]);
+  double dry = mon == 0 || ((mon == 2 || mon == 3) && (s0 == 1 || s0 == 3)) || (mon == 3 && s0 == 0) ? 1 : 0;
+  for (int i = 0; i < n; i++) {
+    double ol = 0, orr = 0;
+    if (s0 == 1) { if (rec < N) { bl[(int)rec] = L[i]; br[(int)rec] = R[i]; rec++; } if (p[1] > 0.5 && len == 0) { double bars = LBARS[(int)jsRound(p[1])]; if (rec >= bars * 4 * 60 / bpm * sr) { close(); st = 3; } } }
+    else if ((s0 == 2 || s0 == 3) && len > 0) {
+      double j = std::floor(pos), k = std::fmod(std::fmod(j, len) + len, len); int ki = (int)k; ol = bl[ki] * vol; orr = br[ki] * vol;
+      if (s0 == 3) { bl[ki] = (float)(bl[ki] * fb + L[i]); br[ki] = (float)(br[ki] * fb + R[i]); }
+      pos += rate; if (pos >= len) pos -= len; if (pos < 0) pos += len;
+    }
+    L[i] = (float)(L[i] * dry + ol); R[i] = (float)(R[i] * dry + orr);
+  }
+}
+
+}  // namespace mdaw
