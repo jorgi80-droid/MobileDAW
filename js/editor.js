@@ -402,8 +402,12 @@ function notePreview(p, vel = 0.8) {
   clearTimeout(previewOff);
   previewOff = setTimeout(() => { eng.preview(c.track, p, 0, false); previewHeld = null; invalidate(); }, 220);
 }
-function changed() { const c = cur(); if (c) P.clipChanged(c.track); invalidate(); }
-function grew(c, end) { if (!growTo(c, end)) return false; setTimeout(() => { P.emit('clips'); buildProps(); }, 0); return true; }   // after the edit's own changed(): arrangement + panel show the new length
+function changed() {
+  const c = cur(); if (!c) { invalidate(); return; }
+  if (fitPattern(c.clip, P.state.tracks[c.track].kind)) setTimeout(() => { P.emit('clips'); buildProps(); }, 0);   // arrangement + panel show the new length
+  P.clipChanged(c.track); invalidate();
+}
+function grew() { return false; }   // the pattern length now follows every edit (fitPattern in changed()); kept so old call sites stay valid
 
 // pitch-class histogram -> best matching scales (FL Studio Mobile "Guess Scale?": the best three guesses, with an option to see more)
 function guessScales(notes) {
@@ -432,19 +436,12 @@ function guessMenu(notes, x, y) {
 // reaches the clip's own length).
 const MAX_BARS = 256;
 const contentEnd = (c) => (c.ll > 0 ? c.ll : c.len);   // the pattern: a looped clip repeats it, a trimmed clip shows only its start - the editor always edits all of it
-// Every DAW (Live, FL Studio, Logic, Cubase, Bitwig): a pattern is a whole number of bars - content reaching into bar 9 makes it 9 bars, and a
-// clip dragged longer than its pattern repeats it every 9 bars (bar 10, 19, ...).
-const wholeBars = (c, end) => { const b0 = P.barAt(c.start), nb = Math.max(1, P.barAt(c.start + Math.max(1, end) - 1) - b0 + 1); return Math.max(P.beatLenAt(c.start), P.barStart(b0 + nb) - c.start); };
+// Pattern sizes: P.patternFor / P.patternBars (piano roll 1, 4, 8, 16 ... bars; drum step any whole number of bars).
 const maxEnd = () => MAX_BARS * BAR;
-function growTo(c, end) {
-  const ll = c.ll > 0 ? c.ll : 0, L = ll || c.len;
-  if (!(end > L)) return false;
-  const nl = Math.min(maxEnd(), wholeBars(c, end));
-  if (!ll) c.len = nl;                                                            // the clip shows exactly the pattern: both grow together
-  else if (c.len > ll && nl >= c.len) { c.len = nl; delete c.ll; delete c.lp; }   // looped clip whose pattern outgrows it: the clip grows, the loop ends
-  else c.ll = nl;                                                                 // trimmed or looped clip: only the pattern grows, the clip keeps its length
-  return true;
-}
+// After every edit the pattern is measured again from the notes (it grows AND shrinks): a 4-bar pattern with a note added in bar 5 becomes
+// 8 bars, and 4 again when that note is deleted. A clip showing exactly its pattern follows it; a looped clip keeps its length and repeats
+// the new pattern (it grows when the pattern outgrows it); a trimmed clip keeps showing its start.
+const fitPattern = (c, kind) => P.fitPattern(c, kind, maxEnd());
 const notesEnd = (list) => { let e = 0; for (const n of list) if (n.t + n.d > e) e = n.t + n.d; return e; };
 
 function ops() {
@@ -621,14 +618,14 @@ function rollHandlers() {
         const minT = Math.min(...drag.base.map((b) => b.t)), maxT = Math.max(...drag.base.map((b) => b.t)), minP = Math.min(...drag.base.map((b) => rI(b.p))), maxP = Math.max(...drag.base.map((b) => rI(b.p)));
         dt = clamp(dt, -minT, maxEnd() - BAR - maxT); dp = clamp(dp, -minP, NROWS() - 1 - maxP);   // rows: pitches, or folded rows
         for (const b of drag.base) { const np = foldRows ? rP(rI(b.p) + dp) : b.p + dp; b.n.t = b.t + dt; b.n.p = cfg.lock && !foldRows ? clamp(toScale(np), 0, 127) : np; }
-        if (growTo(c, notesEnd(drag.base.map((b) => b.n)))) drag.grew = true;
+        if (fitPattern(c, P.state.tracks[cur().track].kind)) drag.grew = true;
         if (drag.lead.p !== drag.lastP) { drag.lastP = drag.lead.p; notePreview(drag.lead.p, drag.lead.v); }
         P.touchClips(cur().track); P.emit('notes');
       } else if (drag.k === 'resize') {
         const s = snapUnit() || 1, lead = drag.base.find((b) => b.n === drag.lead) || drag.base[0];
         const dd = Math.max(s, snapT(lead.t + lead.d + dx / v.ppt) - lead.t) - lead.d;
         for (const b of drag.base) { b.n.d = clamp(b.d + dd, Math.min(s, 30), Math.max(1, maxEnd() - b.t)); }
-        if (growTo(c, notesEnd(drag.base.map((b) => b.n)))) drag.grew = true;
+        if (fitPattern(c, P.state.tracks[cur().track].kind)) drag.grew = true;
         cfg.lastLen = drag.lead.d; P.touchClips(cur().track); P.emit('notes');
       } else if (drag.k === 'keys') {
         const p = clamp(pAt(y), 0, 127); if (p !== drag.p) { drag.p = p; notePreview(p); }
@@ -701,9 +698,10 @@ function paintStep(r, s, add) {                     // set one cell of the step 
   const c = cur().clip, p = padList()[r].pitch;
   if (s < 0 || s * STEP >= maxEnd()) return;
   const n = c.notes.find((q) => q.p === p && Math.abs(q.t - s * STEP) < STEP / 2);
-  if (add && !n) { c.notes.push({ t: s * STEP, d: 200, p, v: 0.85 }); notePreview(p, 0.6); if (growTo(c, s * STEP + 200) && drag) drag.grew = true; }
+  if (add && !n) { c.notes.push({ t: s * STEP, d: 200, p, v: 0.85 }); notePreview(p, 0.6); }
   else if (!add && n) c.notes = c.notes.filter((q) => q !== n);
   else return;
+  if (fitPattern(c, P.state.tracks[cur().track].kind) && drag) drag.grew = true;
   P.touchClips(cur().track); P.emit('notes'); invalidate();
 }
 function stepHandlers() {

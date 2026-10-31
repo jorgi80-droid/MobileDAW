@@ -29,4 +29,22 @@ P.state.tracks[a].clips.push({ id: 'ac1', start: 0, len: P.BAR, gain: 1, offset:
 ok(P.setAudioLoop(a, 'ac1', 4).ok && P.state.tracks[a].clips[0].len === P.BAR * 4 && P.state.tracks[a].clips[0].ll === P.BAR, 'audio loop x4');
 ok(P.loopOf(P.state.tracks[a].clips[0]) === P.BAR, 'loopOf active');
 P.setAudioLoop(a, 'ac1', 1); ok(P.state.tracks[a].clips[0].len === P.BAR && !P.state.tracks[a].clips[0].ll, 'audio loop off restores length');
+// pattern sizes (FL Studio Mobile): piano roll 1, 4, 8, 16 ... bars; drum step any whole number of bars; the pattern grows AND shrinks
+{
+  const B = P.BAR, n = (bar) => ({ t: bar * B + 10, d: 100, p: 60, v: 0.8 });
+  const mk = (notes, len = B) => ({ id: 'pt', start: 0, len, notes });
+  let q = mk([n(0)]); P.fitPattern(q, 'midi'); ok(q.len === B && !q.ll, 'piano roll: 1 bar of notes = 1-bar pattern');
+  q = mk([n(0), n(1)]); P.fitPattern(q, 'midi'); ok(q.len === 4 * B, 'piano roll: 2 bars of notes = 4-bar pattern (bars 3-4 silent)');
+  q = mk([n(0), n(2)]); P.fitPattern(q, 'midi'); ok(q.len === 4 * B, 'piano roll: 3 bars of notes = 4-bar pattern');
+  q = mk([n(0), n(3)], 4 * B); q.notes.push(n(4)); P.fitPattern(q, 'midi'); ok(q.len === 8 * B, 'piano roll: 4-bar pattern + a note in bar 5 = 8 bars');
+  q.notes.pop(); P.fitPattern(q, 'midi'); ok(q.len === 4 * B, 'piano roll: that note deleted = back to 4 bars');
+  q.notes = [n(0), n(8)]; P.fitPattern(q, 'midi'); ok(q.len === 16 * B, 'piano roll: a note in bar 9 = 16 bars');
+  q = mk([n(0), n(2)], 4 * B); q.len = 8 * B; q.ll = 4 * B;                                     // 4-bar pattern dragged to 8 bars: repeats bar 1-4 at bar 5
+  ok(P.loopOf(q) === 4 * B && P.loopSegs(q).length === 2 && P.loopSegs(q)[1].o === 4 * B, 'piano roll: 3 bars of notes dragged to 8 repeat at bar 5');
+  q.notes.push(n(4)); P.fitPattern(q, 'midi'); ok(q.len === 8 * B && !q.ll, 'looped clip: pattern grows to the clip length = the loop ends');
+  q = mk([n(0)], 4 * B); q.ll = B; q.len = 16 * B; q.notes.push(n(5)); P.fitPattern(q, 'midi'); ok(q.len === 16 * B && q.ll === 8 * B, '8-bar pattern in a 16-bar clip repeats from bar 9');
+  q = mk([n(0), n(2)]); P.fitPattern(q, 'drum'); ok(q.len === 3 * B, 'drum step: 3 bars of steps = 3-bar pattern');
+  q = mk([n(0)], B); q.len = 6 * B; ok(P.patternLen(q, 'drum') === 6 * B && P.patternLen({ id: 'x', start: 0, len: 3 * B, notes: [n(0)] }, 'midi') === 4 * B, 'drag loop length: drum = whole bars, piano roll = 4 for 3 bars');
+  q = mk([], B); P.fitPattern(q, 'midi'); ok(q.len === B, 'empty clip stays 1 bar');
+}
 console.log(bad ? bad + ' FAILED' : 'ALL OK'); process.exit(bad ? 1 : 0);

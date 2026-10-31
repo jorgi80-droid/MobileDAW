@@ -62,9 +62,8 @@ Baca juga `README-ANDROID.md` (build, install, status fase 2).
   fader drag relatif, tutup fader meluncur (`st.fpos`).
 - Device (`js/devices.js`): menu `⋯` per device, ketuk-ganda title bar = lipat, nama instrumen = pemilih instrumen; `render()` menjaga posisi
   scroll dan memakai FLIP (`flip()`) untuk geser/lipat/hapus/tambah.
-- Logika bar/loop (`js/editor.js`, blok "Pattern length"): `contentEnd(c)` = panjang isi (loop source bila klip di-loop), `growTo(c, end)`
-  memperpanjang isi per bar penuh (klip loop: `c.ll` bertambah; bila mencapai `c.len`, loop hilang dan klip memanjang), `grew()` = sesudah
-  edit diskrit (panel + arrangement ikut). Editor TIDAK lagi memanggil `bakeLoop` saat dibuka; pengulangan digambar sebagai ghost.
+- Logika bar/loop (`js/editor.js`, blok "Pattern length"): `contentEnd(c)` = panjang isi (loop source bila klip di-loop), `P.fitPattern(c, kind)`
+  mengukur ulang pattern setelah tiap edit (lihat "Panjang pattern & loop"); `grew()` tinggal stub untuk pemanggil lama. Editor TIDAK lagi memanggil `bakeLoop` saat dibuka; pengulangan digambar sebagai ghost.
   "Lepas loop" = `P.bakeLoop` (panel Clip + action bar klip). Step grid: `clampSteps()`, `fitSteps()` (isi + 1 bar terbuka).
 - Fold (`cfg.fold`): baris diindeks `rI(p)` / `rP(i)`; `foldRows` dihitung saat menggambar (tidak saat drag).
 - Audio: `AE.panel(ui)` membangun kotak panel kiri; `AE.onPanel()` memberi tahu editor saat kontrol audio dibangun ulang.
@@ -127,12 +126,16 @@ Baca juga `README-ANDROID.md` (build, install, status fase 2).
 - Toolbar hanya: Browser, Tempo, Undo/Redo | Play/Pause, Rekam, Metronom | FPS+CPU, Arrange/Mixer, menu.
 - Klip yang dipilih tidak boleh ikut buram saat ada popup aksi klip.
 
-## Panjang pattern & loop (sama di semua DAW)
-- Pattern MIDI / drum = bilangan bar penuh: not yang masuk ke bar 9 membuat pattern 9 bar (`wholeBars()` di `js/editor.js`).
-- Klip yang ditarik lebih panjang dari pattern mengulang pattern itu (`P.patternLen(c)`): pola 9 bar berulang di bar 10, 19, 28 ...;
-  pola 8 bar di bar 9, 17 ... Klip yang dipotong lebih pendek menyimpan panjang pattern (`c.ll`), jadi saat ditarik lagi yang diulang
-  tetap seluruh pattern. Memotong klip tidak menghapus not. Editor selalu membuka seluruh pattern (`contentEnd()` = `c.ll` bila ada),
-  jadi edit berlaku ke semua pengulangan; pattern yang tumbuh di klip terpotong hanya menambah `c.ll`, panjang klip tetap (`growTo()`).
+## Panjang pattern & loop (aturan pemilik, gaya FL Studio Mobile)
+- Ukuran pattern **piano roll** = 1, 4, 8, 16, 32 ... 1024 bar (`P.PATTERN_BARS`): not di bar 1 saja = 1 bar; isi 2 atau 3 bar = pattern 4 bar
+  (sisa bar diam); not di bar 5 = 8 bar; bar 9 = 16 bar. Pattern **drum step** = jumlah bar isi apa saja (1, 2, 3 ...). `P.patternBars()` / `P.patternFor()`.
+- Setelah SETIAP edit not (tambah, hapus, geser, ubah panjang, step) pattern diukur ulang: `P.fitPattern(c, kind)` (dipanggil dari `changed()`
+  dan drag di `js/editor.js`). Pattern bisa tumbuh DAN menyusut (4 -> not di bar 5 -> 8 -> not dihapus -> 4). Klip yang tepat sepanjang
+  pattern ikut berubah; klip ber-loop (ditarik lebih panjang) tetap panjangnya dan mengulang pattern baru (`c.ll`), kecuali pattern melewati
+  panjang klip (loop selesai, klip memanjang); klip terpotong tetap menampilkan awalnya.
+- Klip yang ditarik lebih panjang di arrangement mengulang pattern itu (`P.patternLen(c)` = ukuran pattern dari panjang klip + isi):
+  pattern 4 bar ditarik ke 8 = bar 5-8 mengulang bar 1-4; pattern 8 ke 16 = mengulang dari bar 9. Klip yang dipotong menyimpan `c.ll`.
+  Tes: bagian "pattern sizes" di `tools/clipview-test.mjs`.
 
 ## Perangkat Live 12 (efek + instrumen) - status pekerjaan
 Permintaan pemilik: SEMUA efek dan instrumen diganti dengan set stok Ableton Live 12, tampilan harus sama dengan gambar referensi
@@ -228,7 +231,6 @@ Permintaan pemilik: SEMUA efek dan instrumen diganti dengan set stok Ableton Liv
 ## Menunggu keputusan pemilik
 - **Instrument / Effect Rack dengan macro**: usulan desain ada di laporan sesi ini (rantai paralel = node "rack" berisi beberapa chain,
   mixer per chain, 8 macro yang memetakan ke parameter device di dalamnya; butuh engine JS + C++ + golden). Belum dikerjakan.
-- **Isi klip menyusut otomatis** saat not terakhir dihapus (seperti FL Studio Mobile): sekarang hanya memanjang (`growTo`). Belum dikerjakan.
 
 ## Port C++ (sesi ini) - catatan
 - Semua instrumen sesi lalu dan 10 efek inti sudah di C++; tiap port lulus golden identik bit. Skenario baru: `params-<instrumen>` (setiap parameter

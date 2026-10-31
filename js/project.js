@@ -174,12 +174,32 @@ export function contentLen(c, kind) {
 }
 // Loop length used when a clip is dragged longer in the arrangement (same in every DAW): the pattern length in whole bars. A clip trimmed
 // shorter keeps its pattern length (c.ll), so dragging it out again repeats the whole pattern, not the trimmed part.
+// Pattern sizes (FL Studio Mobile): a piano-roll pattern is 1, 4, 8, 16, 32 ... bars - 2 or 3 bars of notes make a 4-bar pattern (the
+// rest of it is silent), a note in bar 5 makes it 8 bars. A drum-step pattern is any whole number of bars (1, 2, 3 ...).
+export const PATTERN_BARS = [1, 4, 8, 16, 32, 64, 128, 256, 512, 1024];
+export function patternBars(nb, kind) { nb = Math.max(1, Math.ceil(nb)); return kind === 'drum' ? nb : (PATTERN_BARS.find((k) => k >= nb) || nb); }
+// length in ticks of the pattern that holds content up to `end` ticks into clip c
+export function patternFor(c, kind, end) {
+  const b0 = barAt(c.start), nb = end > 0 ? barAt(c.start + end - 1) - b0 + 1 : 1;
+  return barStart(b0 + patternBars(nb, kind)) - c.start;
+}
+export const notesEnd = (notes) => { let e = 0; for (const n of notes) if (n.t + n.d > e) e = n.t + n.d; return e; };
+// After every note edit the pattern is measured again from the notes (it grows AND shrinks): a 4-bar pattern with a note added in bar 5
+// becomes 8 bars, and 4 again when that note is deleted. A clip showing exactly its pattern follows it; a looped clip keeps its length and
+// repeats the new pattern (it grows when the pattern outgrows it); a trimmed clip keeps showing its start. Returns true when anything changed.
+export function fitPattern(c, kind, max = Infinity) {
+  if (!c.notes || (kind !== 'midi' && kind !== 'drum')) return false;
+  const ll = c.ll > 0 ? c.ll : 0, old = ll || c.len, nl = Math.min(max, patternFor(c, kind, notesEnd(c.notes)));
+  if (nl === old) return false;
+  if (!ll) c.len = nl;                                                            // the clip shows exactly the pattern: both change together
+  else if (c.len > ll && nl >= c.len) { c.len = nl; delete c.ll; delete c.lp; }   // looped clip whose pattern outgrows it: the clip grows, the loop ends
+  else { c.ll = nl; if (c.ll === c.len) { delete c.ll; delete c.lp; } }           // looped / trimmed clip: only the pattern changes, the clip keeps its length
+  return true;
+}
+// Loop length used when a clip is dragged longer (patternLen): a clip that is not looped yet is its own pattern, rounded up to a pattern size.
 export function patternLen(c, kind) {
   if (c.ll > 0 || !c.notes) return contentLen(c, kind);
-  let e = 0; for (const n of c.notes) if (n.t + n.d > e) e = n.t + n.d;
-  if (!(e > c.len)) return c.len;
-  const b0 = barAt(c.start), nb = Math.max(1, barAt(c.start + e - 1) - b0 + 1);
-  return barStart(b0 + nb) - c.start;
+  return patternFor(c, kind, Math.max(c.len, notesEnd(c.notes)));
 }
 // Turn the repeats of a looped MIDI clip into real notes (needed before anything edits the clip's inside: split, left-trim, piano roll).
 export function bakeLoop(c, i) {
