@@ -1,5 +1,5 @@
 // Auto Filter, Echo and Roar (replace Filter, Delay and Distortion). Same Fx interface as fx.js: setParam(i, v), process(L, R, n), readOut(out).
-import { TWO_PI, clamp, dbToLin, linToDb, Biquad, fastTanh } from './dsp.js';
+import { TWO_PI, clamp, dbToLin, linToDb, Biquad, fastTanh, lcg } from './dsp.js';
 
 const tanh = fastTanh;
 class Fx { constructor(sr, sc) { this.sr = sr; this.sc = sc; this.bypass = false; } readOut() { return 0; } }
@@ -12,7 +12,7 @@ export class AutoFilter extends Fx {
   constructor(sr) {
     super(sr); this.type = 0; this.f = 20000; this.q = 0.707; this.slope = 0; this.envAmt = 0; this.atk = 6; this.rel = 200; this.lfoAmt = 0; this.rate = 1; this.shape = 0; this.drive = 1; this.mix = 1; this.phs = 0; this.curR = -99;
     this.b = [[new Biquad(), new Biquad()], [new Biquad(), new Biquad()]];     // [stage][channel]
-    this.env = 0; this.ph = 0; this.sh = 0; this.lfo = 0; this.cur = -99; this.fc = 20000; this.dirty = true; this.cnt = 0; this.envN = 0; this.upA(); this.upR();
+    this.rng = { seed: 4242 }; this.env = 0; this.ph = 0; this.sh = 0; this.lfo = 0; this.cur = -99; this.fc = 20000; this.dirty = true; this.cnt = 0; this.envN = 0; this.upA(); this.upR();
   }
   upA() { this.aC = Math.exp(-1 / (Math.max(0.1, this.atk) * 0.001 * this.sr)); }
   upR() { this.rC = Math.exp(-1 / (Math.max(1, this.rel) * 0.001 * this.sr)); }
@@ -38,7 +38,7 @@ export class AutoFilter extends Fx {
       const a = L[i] < 0 ? -L[i] : L[i], b = R[i] < 0 ? -R[i] : R[i], x = a > b ? a : b;
       env = x > env ? aC * env + (1 - aC) * x : rC * env + (1 - rC) * x;
       if ((this.cnt++ & 15) === 0 && (moving || this.dirty)) {
-        this.ph += inc * 16; if (this.ph >= 1) { this.ph -= 1; this.sh = Math.random() * 2 - 1; }
+        this.ph += inc * 16; if (this.ph >= 1) { this.ph -= 1; this.sh = lcg(this.rng) / 4294967296 * 2 - 1; }   // seeded: the same render on every engine (JS / C++)
         const p = this.ph; let l;
         switch (this.shape) { case 0: l = Math.sin(TWO_PI * p); break; case 1: l = 4 * Math.abs(p - Math.floor(p + 0.5)) - 1; l = -l; break; case 2: l = 1 - 2 * p; break; case 3: l = p < 0.5 ? 1 : -1; break; default: l = this.sh; }
         this.lfo = l;
@@ -124,7 +124,7 @@ export class Roar extends Fx {
   constructor(sr) {
     super(sr); this.shape = 0; this.drive = dbToLin(12); this.tone = 12000; this.mix = 1; this.out = dbToLin(-6); this.bias = 0; this.amt = 1; this.fbA = 0; this.fbT = 10; this.fbF = 20000; this.comp = 0;
     this.tl = [new Biquad(), new Biquad()]; this.fl = [new Biquad(), new Biquad()]; this.dc = [0, 0, 0, 0]; this.fbuf = [new Float32Array(Math.floor(sr * 0.12)), new Float32Array(Math.floor(sr * 0.12))]; this.fw = 0; this.env = 0; this.fy = [0, 0];
-    this.nz = 0; this.nc = 0; this.upT(); this.upF();
+    this.nz = 0; this.nc = 0; this.rng = { seed: 5151 }; this.upT(); this.upF();
   }
   upT() { this.tl[0].lowpass(this.sr, clamp(this.tone, 200, this.sr * 0.45), 0.707); this.tl[1].copy(this.tl[0]); }
   upF() { this.fl[0].lowpass(this.sr, clamp(this.fbF, 100, this.sr * 0.45), 0.9); this.fl[1].copy(this.fl[0]); }
@@ -141,7 +141,7 @@ export class Roar extends Fx {
       case 2: { let u = (x + 1) * 0.25; u -= Math.floor(u); return 1 - Math.abs(u * 4 - 2); }
       case 3: return Math.sin(clamp(x, -3, 3) * 1.5708 * 0.6);
       case 4: { const c = x > 1 ? 1 : x < -1 ? -1 : x; return Math.round(c * 6) / 6; }
-      default: { if (++this.nc >= 24) { this.nc = 0; this.nz = Math.random() * 2 - 1; } return tanh(x * (1 + this.nz * 0.35)); }
+      default: { if (++this.nc >= 24) { this.nc = 0; this.nz = lcg(this.rng) / 4294967296 * 2 - 1; } return tanh(x * (1 + this.nz * 0.35)); }
     }
   }
   process(L, R, n) {
