@@ -279,6 +279,7 @@ function leaveHalf() {
 }
 function setMax(on) {
   const v = $('#view-arr'), d = $('#detail');
+  if (!on && v.classList.contains('edfull')) { closeEditor(); return; }   // the editor is always full screen: "un-maximise" = close it
   if (on) { setShut(false); leaveHalf(); }
   v.classList.toggle('max', on);
   if (on) { if (tab === 'dev') d.style.height = ''; }   // maximised: the panel takes the whole area (CSS), the fixed height returns afterwards
@@ -296,7 +297,31 @@ function setShut(on) {
   if (!on) applyDevHeight();
   TL.fitNow(); ED.fitNow();
 }
+// Clip editor (piano roll / drum step / audio editor / automation): no tab button any more. It opens with a double tap on a clip
+// (or "Edit" in the clip menu), always full screen, and closes with its ✕, the back button, or the Device / Keys tab.
+let edBack = 'dev', edWasShut = false;
+function openEditor() {
+  if (!P.selectedClip()) return;
+  const v = $('#view-arr');
+  if (!v.classList.contains('edfull')) { edBack = tab === 'clip' ? 'dev' : tab; edWasShut = v.classList.contains('shut'); }
+  showTab('clip');
+  v.classList.add('edfull'); $('#btn-edclose').hidden = false;
+  setMax(true);
+}
+function leaveEditor() {
+  const v = $('#view-arr');
+  if (!v.classList.contains('edfull')) return false;
+  v.classList.remove('edfull', 'max'); $('#btn-edclose').hidden = true; setIcon($('#btn-max'), 'expand');
+  return true;
+}
+function closeEditor() {
+  if (!$('#view-arr').classList.contains('edfull')) return false;
+  showTab(edBack);                                       // showTab leaves the full-screen editor
+  if (edWasShut) setShut(true);
+  return true;
+}
 function showTab(t) {
+  if (t !== 'clip') leaveEditor();
   setShut(false);
   { const d = $('#detail'); if (tab !== 'dev' && t === 'dev') otherH = d.style.height; }    // remember the editor height while Device is open
   const wasDev = tab === 'dev';
@@ -324,6 +349,7 @@ function wireSplit() {
   // (the thin grip, the tall invisible zone around it, or the empty part of the tab bar next to Device / Clip / Keys).
   const down = (e) => {
     if (e.target.closest && e.target.closest('#dtabs .b')) return;      // real buttons keep their own tap
+    if (body.classList.contains('edfull')) return;                     // the full-screen editor has no height to drag
     onPill = e.target === split; try { tabs.setPointerCapture(e.pointerId); } catch (_) { /* pointer already gone */ }
     on = true; moved = false; y0 = e.clientY; h0 = detail.getBoundingClientRect().height; shut = body.classList.contains('shut'); if (shut) h0 = 0;
     split.classList.add('grab');
@@ -408,9 +434,10 @@ function keys() {
   window.onBack = () => {
     if (closeAll()) return true;
     if (BR.isOpen()) { BR.closeBrowser(); return true; }
+    if (closeEditor()) return true;
     if ($('#view-arr').classList.contains('max')) { setMax(false); return true; }
     if (view === 'mix') { showView('arr'); return true; }
-    if (tab !== 'dev') { showTab('dev'); return true; }
+    if (tab === 'keys') { showTab('dev'); return true; }
     return false;
   };
 }
@@ -434,12 +461,13 @@ function boot() {
   BR.initBrowser($('#browser'));
   initTopbar({ tap: tapTempo });
   TL.initTimeline($('#arr'), {
-    openEditor: () => { showTab('clip'); if (window.innerHeight < 700) setMax(true); },
+    openEditor,
     pickAudio: (at) => BR.openBrowser('file', { track: state.sel.track, at }),
   });
   $('#btn-max').onclick = () => { const c = $('#view-arr').classList; setMax(!(c.contains('max') || c.contains('half'))); };
   window.addEventListener('applayout', () => { applyDevHeight(); });
-  setIcon($('#btn-max'), 'expand'); setIcon($('#btn-shut'), 'down');
+  setIcon($('#btn-max'), 'expand'); setIcon($('#btn-shut'), 'down'); setIcon($('#btn-edclose'), 'close');
+  $('#btn-edclose').onclick = () => closeEditor();
   $('#btn-shut').onclick = () => setShut(!$('#view-arr').classList.contains('shut'));
   for (const b of document.querySelectorAll('.seg .b')) b.onclick = () => showView(b.dataset.view);
   for (const b of document.querySelectorAll('#dtabs .b[data-tab]')) b.onclick = () => { if (b.dataset.tab === tab && !$('#view-arr').classList.contains('shut') && !$('#view-arr').classList.contains('max') && !$('#view-arr').classList.contains('half')) setShut(true); else showTab(b.dataset.tab); };   // tapping the open tab folds the panel away
@@ -448,6 +476,7 @@ function boot() {
   P.onChange((w) => {
     if (w === 'recend' && P.rec.last) toast(recMsg(P.rec.last), P.rec.last.error ? 5000 : 3000);
     if (w === 'all') clearHistory();   // track edits are undoable now, so only loading a project starts a fresh history
+    if ((w === 'sel' || w === 'all' || w === 'clips') && tab === 'clip' && !P.selectedClip()) closeEditor();   // the edited clip is gone (deleted, undo, new project)
     if (w === 'sel' || w === 'all' || w === 'clips') { if (tab === 'clip') { ED.refresh(); const c = P.selectedClip(); $('#dtitle').textContent = c ? (c.clip.name || state.tracks[c.track].name) : ''; } else if (tab === 'dev') DV.render(); else if (tab === 'keys') KB.render(); }
     if (w === 'sel') MX.update();
   });

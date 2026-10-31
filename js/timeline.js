@@ -693,6 +693,8 @@ const canvasOrigin = () => canvas.getBoundingClientRect();
 function clipMenu(i, c, tick, sx, sy) {
   const t = state.tracks[i], r = canvasOrigin();
   menu([
+    { label: 'Edit', fn: () => { P.selectClip(i, c.id); if (hooks.openEditor) hooks.openEditor(); } },   // piano roll / drum step / audio editor, full screen
+    { sep: true },
     { label: 'Cut', fn: () => { copyList([{ i, c }]); checkpoint(); P.removeClip(i, c.id); } },
     { label: 'Copy', fn: () => copyList([{ i, c }]) },
     { label: 'Duplicate', fn: () => { checkpoint(); P.duplicateClip(i, c.id); invalidate(); } },
@@ -704,8 +706,6 @@ function clipMenu(i, c, tick, sx, sy) {
     { label: c.muted ? 'Activate Clip' : 'Deactivate Clip', fn: () => { checkpoint(); P.setClipsMuted([{ i, c }], !c.muted); invalidate(); } },
     ...(c.notes && P.loopOf(c) ? [{ label: 'Unlink Loop', fn: () => { checkpoint(); P.bakeLoop(c, i); P.emit('clips'); invalidate(); toast('Pengulangan jadi not biasa.', 1600); } }] : []),
     ...(t.kind === 'audio' ? [{ label: 'Stretch Mode', check: stretchMode, fn: () => { stretchMode = !stretchMode; toast(stretchMode ? 'Mode stretch: tarik ujung kanan klip audio untuk meregangkan (pitch tetap).' : 'Mode stretch mati: tarik ujung kanan untuk memotong.', 3200); invalidate(); } }] : []),
-    { sep: true },
-    { label: 'Show in Clip View', fn: () => hooks.openEditor && hooks.openEditor() },
   ], sx != null ? sx : r.left + clamp(tx(c.start), 0, Math.max(0, CW - 220)), sy != null ? sy : r.top + Math.max(RULER, rowY(i)) + 20);
 }
 function renameClip(i, c) { ask('Nama klip', c.name || '', (v) => { checkpoint(); c.name = String(v || '').trim().slice(0, 40); P.emit('clips'); invalidate(); }); }
@@ -853,6 +853,7 @@ function placeBar() {
   selbar.classList.toggle('hide', !!drag);
 }
 function clearSel() { if (!msel.size) return; msel.clear(); marq = null; updateBar(); invalidate(); }
+export function openEditor() { if (hooks.openEditor) hooks.openEditor(); }   // the selected clip's editor (full screen)
 export function clearSelection() { const had = msel.size > 0; clearSel(); return had; }
 function selAll() {
   const all = []; for (const t of state.tracks) for (const c of t.clips) all.push(c.id);
@@ -919,6 +920,19 @@ function buildSelBar(host) {
   const more = mk('menu', '\u22EF', () => groupMenu(more), 'sel'); cnt.hidden = false;
   selbar.append(cnt, more);                                          // only the count + ⋯: every group command lives in one menu
   host.append(selbar); updateBar();
+}
+// double tap on empty space (FL Studio Mobile): a 1-bar clip starting at the bar under the finger, shortened so it never runs into the
+// next clip. Audio tracks open the sample picker at that bar instead (an audio clip needs a file).
+const DTAP_MS = 330;                                             // a little longer than the recogniser's double-tap window (320 ms)
+let menuWait = 0;
+function newClipAt(i, tick) {
+  const tk = state.tracks[i]; if (!tk) return;
+  const at = Math.max(0, P.barFloor(Math.max(0, tick)));
+  if (tk.kind === 'audio') { if (hooks.pickAudio) hooks.pickAudio(at); return; }
+  if (tk.clips.some((c) => at >= c.start && at < c.start + c.len)) return;
+  const next = tk.clips.reduce((m, c) => (c.start > at && c.start < m ? c.start : m), Infinity), len = Math.min(P.barLenAt(at), next - at);
+  if (!(len > 0)) return;
+  checkpoint(); P.addClip(i, at, len); invalidate();
 }
 // long-press on an empty spot (no drag): new clip / paste exactly where the finger was
 function emptyMenu(i, tick, sx, sy) {
@@ -1007,14 +1021,21 @@ function setup() {
           return invalidate();
         case 'clip':
           if (msel.size) { if (msel.has(t.c.id)) msel.delete(t.c.id); else msel.add(t.c.id); P.selectClip(t.i, t.c.id); updateBar(); return invalidate(); }   // a selection exists: taps add / remove clips
-          if (state.sel.clip === t.c.id || t.zone === 'menu') { const r = canvasOrigin(); clipMenu(t.i, t.c, t.tick, r.left + x, r.top + y); return invalidate(); }   // tap the selected clip (or its ⋯) = its one context menu
+          if (t.zone === 'menu') { const r = canvasOrigin(); clipMenu(t.i, t.c, t.tick, r.left + x, r.top + y); return invalidate(); }   // its ⋯ = the context menu at once
+          if (state.sel.clip === t.c.id) {                 // tap the selected clip = its context menu, held back for the double-tap window (a double tap opens the editor instead)
+            const r = canvasOrigin(), sx = r.left + x, sy = r.top + y, { i, c, tick } = t;
+            clearTimeout(menuWait); menuWait = setTimeout(() => { menuWait = 0; if (state.sel.clip === c.id) clipMenu(i, c, tick, sx, sy); }, DTAP_MS);
+            return invalidate();
+          }
           P.selectClip(t.i, t.c.id); return invalidate();                                  // first tap only selects, as in Live
         case 'empty': if (msel.size) { msel.clear(); updateBar(); } sel = null; if (t.i >= 0 && t.i < state.tracks.length) { state.sel.clip = null; P.selectTrack(t.i); } return invalidate();
       }
     },
     dtap(x, y, t) {
       if (t.type === 'rowh') { const tr = state.tracks[t.i]; if (tr && tr.hx) { animRow(tr); delete tr.hx; invalidate(); } return; }   // double-tap the grip: back to the normal height
-      if (t.type === 'clip' && hooks.openEditor) { if (msel.size) { msel.clear(); updateBar(); } hooks.openEditor(); }
+      clearTimeout(menuWait); menuWait = 0;
+      if (t.type === 'clip' && hooks.openEditor) { if (msel.size) { msel.clear(); updateBar(); } P.selectClip(t.i, t.c.id); hooks.openEditor(); return; }   // double tap a clip = its editor, full screen
+      if (t.type === 'empty' && t.i >= 0 && t.i < state.tracks.length && !msel.size) newClipAt(t.i, t.tick);            // double tap empty space = a new 1-bar clip there
     },
     long(x, y, t) {
       touchedAt = performance.now();

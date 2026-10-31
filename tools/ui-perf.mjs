@@ -44,7 +44,7 @@ async function measure(name, setup) {
 }
 const rows = [];
 rows.push(await measure('arrangement', () => document.querySelector('.seg .b[data-view="arr"]').click()));
-rows.push(await measure('pianoroll', async () => { const P = await import('./js/project.js'); P.selectTrack(1); P.selectClip(1, P.state.tracks[1].clips[0].id); document.querySelector('#dtabs .b[data-tab="clip"]').click(); }));
+rows.push(await measure('pianoroll', async () => { const P = await import('./js/project.js'); P.selectTrack(1); P.selectClip(1, P.state.tracks[1].clips[0].id); (await import('./js/timeline.js')).openEditor(); }));
 rows.push(await measure('device', () => document.querySelector('#dtabs .b[data-tab="dev"]').click()));
 rows.push(await measure('mixer', () => document.querySelector('.seg .b[data-view="mix"]').click()));
 if (process.env.OUT) fs.writeFileSync(process.env.OUT, JSON.stringify(rows, null, 1));

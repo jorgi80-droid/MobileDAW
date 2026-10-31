@@ -355,7 +355,7 @@ export function render() {
   lastStrip = i;
   if (!t) { scroll.append(h('div', { class: 'hint' }, 'Tambahkan track lewat tombol + di arrangement.')); root.replaceChildren(scroll); return; }
   if (t.kind === 'auto') {
-    scroll.append(h('div', { class: 'hint' }, 'Ini track otomasi untuk ', h('b', {}, P.autoLabel(t)), '. Pilih klipnya lalu buka tab Clip untuk mengedit titik.'));
+    scroll.append(h('div', { class: 'hint' }, 'Ini track otomasi untuk ', h('b', {}, P.autoLabel(t)), '. Ketuk-ganda klipnya untuk mengedit titik.'));
     root.replaceChildren(scroll); return;
   }
   if (i < MASTER && t.inst) put(instCard(i, t), 'i' + t.id);

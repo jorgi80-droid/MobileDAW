@@ -65,7 +65,7 @@ export function openTempo() {
   // tempo lane (automation of the tempo, drawn in Arrange) + global swing
   const laneBtn = btn('Lane tempo', () => {
     const t = P.addAutoTrack({ kind: 6, strip: 'master', param: 0, def: P.TEMPO_DEF }, 'Tempo');
-    if (t) { toast('Lane Tempo siap. Ketuk klipnya lalu edit titik di tab Clip.', 3200); done(); } else toast('Jumlah track sudah maksimum.');
+    if (t) { toast('Lane Tempo siap. Ketuk-ganda klipnya untuk mengedit titik.', 3200); done(); } else toast('Jumlah track sudah maksimum.');
   }, 'tp-lane');
   const swLbl = h('span', { class: 'tp-swl' }), swGrid = btn('1/16', () => { const g = state.groove.grid === 240 ? 480 : state.groove.grid === 480 ? 120 : 240; P.setGroove({ grid: g }); paintSw(); }, 'tp-swg');
   const sw = h('input', { type: 'range', min: '0', max: '100', step: '1', class: 'tp-sw sl', 'aria-label': 'Swing global' });

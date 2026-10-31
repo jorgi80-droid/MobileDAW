@@ -59,12 +59,12 @@ if (go('fade')) {                                        // audio clip with fade
   await shot('arr-fade');
 }
 if (go('clip')) {
-  await sel(1); await tab('clip'); await shot('clip'); await btn('btn-max');
+  await sel(1); await ev(async () => (await import('./js/timeline.js')).openEditor()); await shot('clip');
   await sel(2); await ev(async () => (await import('./js/editor.js')).setTheory(0, 'Minor')); await shot('clip-midi');
   await sel(0); await shot('clip-drum');
   await ev(async () => { const P = await import('./js/project.js'); const i = P.state.tracks.findIndex((t) => t.kind === 'auto'); P.selectTrack(i); P.selectClip(i, P.state.tracks[i].clips[0].id); }); await shot('clip-auto');
   await ev(async () => { const P = await import('./js/project.js'); const i = P.state.tracks.findIndex((t) => t.kind === 'audio'); P.selectTrack(i); P.selectClip(i, P.state.tracks[i].clips[0].id); }); await shot('clip-audio');
-  await btn('btn-max');
+  await btn('btn-edclose');
 }
 if (go('dev')) {
   await sel(1); await tab('dev'); await btn('btn-max'); await shot('dev');

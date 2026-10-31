@@ -889,3 +889,10 @@
 .selbar { align-items: center; background: var(--lv-ctl); border: 1px solid var(--lv-edge); border-radius: var(--r-1); box-shadow: 0 6px 18px rgba(0, 0, 0, .4); }
 .selbar .cnt { padding: 0 12px; color: var(--lv-ink); font: 600 11.5px/1 var(--font); }
 .selbar .b[data-a="menu"] { min-width: 38px; font-size: 16px; border-left: 1px solid var(--lv-edge); }
+/* Device / Keys bar: the Clip tab is gone (the clip editor opens with a double tap on a clip, always full screen).
+   Folded bar is 12 px taller than before (36 instead of 24), the same height as the open bar in the owner's reference. */
+#view-arr.shut #detail { height: calc(36px + 10px + env(safe-area-inset-bottom, 0px)) !important; }
+#view-arr.shut #dtabs { height: 36px; }
+#dtabs #btn-edclose { width: 30px; min-width: 30px; height: 26px; padding: 0; background: transparent; border-color: transparent; }
+#view-arr.edfull #btn-max, #view-arr.edfull #btn-shut, #view-arr.edfull #split { display: none; }
+#view-arr.edfull #dtitle { color: var(--text); }

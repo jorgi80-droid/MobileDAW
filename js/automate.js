@@ -8,7 +8,7 @@ export function offerAutomation(rect, target, label) {
     label: 'Otomatisasi: ' + label,
     fn: () => {
       const t = P.addAutoTrack(target, label);
-      toast(t ? 'Track otomasi siap. Buka tab Clip untuk mengedit titiknya.' : 'Jumlah track sudah maksimum.', 3200);
+      toast(t ? 'Track otomasi siap. Ketuk-ganda klipnya untuk mengedit titik.' : 'Jumlah track sudah maksimum.', 3200);
     },
   }, {
     label: 'Hubungkan ke MIDI CC',
