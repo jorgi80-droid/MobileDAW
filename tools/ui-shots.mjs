@@ -120,7 +120,9 @@ if (go('devs')) {                                        // every instrument and
   }
   for (const k of list.fx) {
     await ev(async (k) => { const P = await import('./js/project.js'); P.state.tracks[2].devices = []; P.addDevice(2, k); P.syncAll(); P.emit('all'); }, k);
-    await shot('fx-' + k); await btn('btn-max'); await shot('fx-' + k + '-max'); await btn('btn-max');
+    await shot('fx-' + k); await btn('btn-max'); await shot('fx-' + k + '-max');
+    if (process.env.CARD) { const c = page.locator('.dev-scroll > .card').filter({ hasText: (await ev(async (k) => (await import('./js/defs.js')).DEVICES[k].name, k)) }).last(); if (await c.count()) await c.screenshot({ path: path.join(out, 'card-' + k + '.png') }); }
+    await btn('btn-max');
   }
 }
 console.log(errs.length ? 'page errors:\n' + errs.join('\n') : 'no page errors');

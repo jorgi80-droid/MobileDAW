@@ -736,3 +736,16 @@
 .lk-pgh { font: var(--fw-sb) var(--fs-2)/16px var(--font); color: #9a9aa2; text-align: center; } .lk-pgh.u { color: #4fc3f0; border-bottom: 1px solid #4fc3f0; }
 .lk-pgt { font: var(--fw-sb) var(--fs-2)/16px var(--font); color: #9a9aa2; } .lk-pgx { text-align: center; color: #666; }
 .lk .lk-ptabs { align-self: stretch; } .lk .lk-ptabs .lv-tab.on { color: #f5a623; }
+/* Live 12 layout pieces */
+.lk .lv-btn.lk-sync { min-width: 56px; }
+.lk .lv-btn.lk-sync.tm { background: #8fe3f5 !important; color: #1b1b1d !important; }
+.lk-dkh { align-self: stretch; text-align: center; color: #9a9aa2; font: var(--fw-sb) var(--fs-2)/14px var(--font); border-top: 1px solid #444; padding-top: 2px; }
+.lk .lk-ch.lk-orb { background: none; border: 0; gap: 4px; } .lk .lk-ch.lk-orb .lv-btn { border: 1px solid #ffad32; background: transparent; color: #ffad32; min-width: 64px; }
+.lk .lk-ch.lk-orb.sm .lv-btn { min-width: 20px; } .lk .lk-ch.lk-orb .lv-btn.on { background: #ffad32; color: #1b1b1d; }
+.lk .lv-btn.lk-plain.on { background: var(--lv-ctl2) !important; color: var(--lv-ink) !important; }
+.lk-dk .lv-btn.lk-chkbox { border-color: #bbb; }
+/* panel body: columns of equal height (bottom controls line up, as in Live), the whole body centred in a tall card */
+.lkcard > .lk, .lvcard > .lk { align-items: stretch; margin-block: auto; }
+.lkcard { display: flex; flex-direction: column; }
+.lk > .lk-col, .lk > .lk-sec { justify-content: flex-start; }
+.lk .lk-ch.g2c { display: grid; grid-template-rows: repeat(4, auto); grid-auto-flow: column; } .lk .lk-ch.g2c .lv-btn { min-width: 24px; }

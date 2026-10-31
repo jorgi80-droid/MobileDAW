@@ -178,6 +178,12 @@ Permintaan pemilik: SEMUA efek dan instrumen diganti dengan set stok Ableton Liv
 - Aturan: parameter baru selalu DITAMBAHKAN di akhir (indeks lama tetap), `migrate()` bila arti berubah; efek tanpa padanan Live 12 masuk
   'Lainnya (lama)'; native engine otomatis kembali ke engine web untuk device yang belum di-port.
 
+## Kerapian panel efek (sesi ini)
+- Beat Repeat, Delay, Echo, Auto Filter, Auto Pan, Chorus-Ensemble, Phaser-Flanger, Drum Buss ditata ulang mengikuti gambar referensi
+  (nilai di dalam display gelap, tombol Sync/Time gaya Live `syncBtn`, ikon bentuk gelombang `icoChoice`, grid 16th urut kolom `g2c`);
+  `docs/redesign/31-fx-rapi-*.jpg`. Badan panel: kolom sama tinggi dan isi dipusatkan vertikal (`.lkcard > .lk`), jadi kontrol bawah
+  (Dry/Wet, Feedback) sejajar seperti di Live. Screenshot per kartu: `CARD=1 FX=17 node tools/ui-shots.mjs <folder> devs` (file `card-<tipe>.png`).
+
 ## Menunggu keputusan pemilik
 - **Instrument / Effect Rack dengan macro**: usulan desain ada di laporan sesi ini (rantai paralel = node "rack" berisi beberapa chain,
   mixer per chain, 8 macro yang memetakan ke parameter device di dalamnya; butuh engine JS + C++ + golden). Belum dikerjakan.
