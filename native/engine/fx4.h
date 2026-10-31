@@ -46,3 +46,36 @@ class DynTube : public FxBase {
 };
 
 }  // namespace mdaw
+
+namespace mdaw {
+
+class MultibandDyn : public FxBase {
+ public:
+  explicit MultibandDyn(double r);
+  Biquad x[2][4][2]; double env[3] = {}, gr[3] = {}, lv[3] = {};
+  void upd();
+  void setParam(int i, double v) override { FxBase::setParam(i, v); if (i < 2) upd(); }
+  void process(float* L, float* R, int n) override;
+  int readOut(float* o) override { for (int b = 0; b < 3; b++) { o[b * 2] = (float)lv[b]; o[b * 2 + 1] = (float)gr[b]; } return 6; }
+};
+class Resonators : public FxBase {
+ public:
+  explicit Resonators(double r);
+  ~Resonators() override { for (auto* q : b) delete[] q; }
+  int N; float* b[5]; double lp[5] = {}, w = 0; Biquad in[2];
+  void upd();
+  void setParam(int i, double v) override { FxBase::setParam(i, v); if (i <= 2) upd(); }
+  void process(float* L, float* R, int n) override;
+};
+struct CMode { double f, rr, amp, aL, aR, s1[2], s2[2], fs, c[2]; };
+class Corpus : public FxBase {
+ public:
+  explicit Corpus(double r);
+  CMode m[12]; int nm = 0; double ph = 0, sh[2] = {}; uint32_t seed = 7; Biquad in[2]; bool dirty = true;
+  void upd();
+  void coefs(double l0, double l1);
+  void setParam(int i, double v) override { FxBase::setParam(i, v); upd(); }
+  void process(float* L, float* R, int n) override;
+};
+
+}  // namespace mdaw
