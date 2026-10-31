@@ -126,6 +126,14 @@ Baca juga `README-ANDROID.md` (build, install, status fase 2).
 - Toolbar hanya: Browser, Tempo, Undo/Redo | Play/Pause, Rekam, Metronom | FPS+CPU, Arrange/Mixer, menu.
 - Klip yang dipilih tidak boleh ikut buram saat ada popup aksi klip.
 
+## Tahap output engine (sesi ini)
+- **Limiter pengaman master**: `core.js` / `engine.cpp` menjalankan device Limiter (tipe 5: look-ahead 1,5 ms, ceiling -0,3 dBFS, release
+  80 ms) pada `mixL/mixR` setelah fader master, sebelum output (dulu hard clip di +-1). Perintah engine `masterLimit(on)` (worklet, web.js,
+  OfflineTarget, commands.cpp, engine.js lama); pref `masterLimit` (default on) di Pengaturan -> Audio -> Master. Ekspor mix memakai status
+  yang sama, stem selalu tanpa limiter. Golden `core-limiter` (mix +10 dB di atas 0 dBFS, on/off/on).
+- **Retrigger tanpa klik**: `Adsr.start()` (dsp.js + dsp.h) tidak lagi mengembalikan level ke 0; voice yang di-retrigger / dicuri naik dari
+  level saat ini. Golden `core-retrigger`.
+
 ## Suara drum step + DirectWave (sesi ini)
 - Kit bawaan Drum Sampler (`DrumSynth`, `js/engine/instruments.js`, pad 36 kick / 38 snare / 39 clap / 42 closed hat / 46 open hat / 41 tom)
   ditulis ulang gaya 909/808: transien (klik beater, senar snare, stick), badan dengan sapuan pitch, saturasi lembut `satN()` (harmonik

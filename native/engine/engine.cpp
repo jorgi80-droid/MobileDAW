@@ -36,9 +36,11 @@ Engine::Engine(double rate) : sr(rate) {
   std::memset(retL, 0, sizeof retL); std::memset(retR, 0, sizeof retR);
   tailFrames = TAIL_SECONDS * sr;
   for (int k = 0; k < NFX; k++) s[RET0 + k].vol = 0.85;
+  lim = makeDevice(5, sr, sc);
 }
 Engine::~Engine() {
   retire.immediate = true;
+  delete lim; lim = nullptr;
   for (int i = 0; i < NSTRIPS; i++) clearStrip(s[i]);
   for (auto* p : bank.s) delete p;
   delete lanes; delete tm; delete mm;
@@ -179,6 +181,7 @@ void Engine::render(float* oL, float* oR, int frames) {
     if (playing && cin > 0) {
       n = (int)jsMin(n, jsMax(1, std::ceil(cin)));
       cinChunk(n);
+      if (limOn && lim) lim->process(mixL, mixR, n);
       for (int i = 0; i < n; i++) { oL[done + i] = mixL[i]; oR[done + i] = mixR[i]; }
       cin -= n; done += n; continue;
     }
@@ -188,6 +191,7 @@ void Engine::render(float* oL, float* oR, int frames) {
       if (left > 0) n = (int)jsMin(n, jsMax(1, std::ceil(left)));
     }
     chunk(n, sp);
+    if (limOn && lim) { for (int i = 0; i < n; i++) { if (!(mixL[i] == mixL[i])) mixL[i] = 0; if (!(mixR[i] == mixR[i])) mixR[i] = 0; } lim->process(mixL, mixR, n); }
     for (int i = 0; i < n; i++) {
       float l = mixL[i], r = mixR[i]; if (!(l == l)) l = 0; if (!(r == r)) r = 0;
       oL[done + i] = l > 1 ? 1 : l < -1 ? -1 : l; oR[done + i] = r > 1 ? 1 : r < -1 ? -1 : r;

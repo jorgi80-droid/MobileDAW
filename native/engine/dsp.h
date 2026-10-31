@@ -49,7 +49,7 @@ inline AdsrP adsrParams(double a, double d, double s, double r, double sr) {
 // linear attack, exponential decay / release. st: 0 idle, 1 attack, 2 decay, 3 sustain, 4 release
 struct Adsr {
   int st = 0; double v = 0;
-  void start() { st = 1; v = 0; }
+  void start() { st = 1; }   // dsp.js: retrigger from the current level (no click)
   void release() { if (st != 0) st = 4; }
   double next(const AdsrP& p) {
     switch (st) {

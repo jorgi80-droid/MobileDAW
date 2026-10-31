@@ -203,6 +203,8 @@ export function openSettings() {
         choice('Sample rate', 'sampleRate', [[0, 'Otomatis'], [44100, '44.1 kHz'], [48000, '48 kHz']]),
         h('div', { class: 'sv' }, 'Rendah = respons cepat, Stabil = buffer besar (cocok jika audio terputus-putus). Berlaku setelah aplikasi dimuat ulang.'),
         btn('Terapkan & muat ulang', () => { savePrefs(); location.reload(); })),
+      section('Master', toggle('Limiter pengaman master', 'masterLimit', () => eng.masterLimit(prefs.masterLimit !== false)),
+        h('div', { class: 'sv' }, 'Brickwall look-ahead 1,5 ms dengan ceiling -0,3 dBFS di tahap output (juga untuk ekspor mix, tidak untuk stem). Mix yang melewati 0 dBFS diredam halus, tidak terpotong kasar. Matikan untuk output tanpa proses apa pun.')),
       section('Metronom', h('div', { class: 'sv' }, 'Level metronom (juga untuk count-in)'),
         h('div', { class: 'scalebox' }, h('div', { class: 'srow' }, stepMetro(-5, '\u2212', 'Pelankan'), mSlider, stepMetro(5, '+', 'Keraskan'), mVal), h('div', { class: 'marks' }, h('span', {}, 'Pelan'), h('span', {}, 'Keras')))),
       section('Rekaman', h('div', { class: 'sline' }, h('span', {}, 'Kompensasi latensi (ms)'), lat), h('div', { class: 'sv' }, 'Dipotong dari awal setiap rekaman audio agar sejajar dengan ketukan. Naikkan jika rekaman terdengar terlambat.')),

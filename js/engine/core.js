@@ -33,6 +33,9 @@ export class Engine {
     this.lanes = []; this.tailFrames = TAIL_SECONDS * sr; this.onError = null;
     this.tl = false; this.tlc = new Float64Array(MAX_TRACKS); this.tlp = new Float64Array(MAX_TRACKS);   // per-track load read-out (only measured while the mixer is open): ms spent in the window, smoothed share of the block budget
     for (let k = 0; k < NFX; k++) this.s[RET0 + k].vol = 0.85;
+    // master safety limiter (output stage, after the master fader): the Limiter device (1.5 ms look-ahead brickwall, ceiling -0.3 dBFS,
+    // 80 ms release). Below the ceiling it only delays (1.5 ms); above it, it ducks smoothly instead of the hard clip at 0 dBFS.
+    this.lim = makeDevice(5, sr, this.sc); this.limOn = true;
   }
 
   // ---------------------------------------------------------------- commands (called between render calls)
@@ -68,6 +71,7 @@ export class Engine {
   f2t(f) { return this.tmOn ? this.tm.secToTick(f / this.sr) : f * this.bpm * PPQ / (this.sr * 60); }
   loop(on, s, e) { this.loopOn = !!on; this.loopS = s; this.loopE = e; }
   setMetro(on) { this.metro = !!on; }
+  masterLimit(on) { this.limOn = !!on; }   // the output-stage limiter on / off (off = hard clip at 0 dBFS, as before)
   setMetroVol(v) { this.metroVol = Math.max(0, Math.min(2, +v || 0)); }   // click level (1 = original loudness); also scales the count-in clicks
   trackLoad(on) { this.tl = !!on; this.tlc.fill(0); this.tlp.fill(0); }
   // called by the worklet every ~0.5 s with the window length in ms: Date.now() has 1 ms steps, so the per-track sum is a statistical estimate (unbiased, smoothed over a few seconds)
@@ -224,6 +228,7 @@ export class Engine {
       if (this.playing && this.cin > 0) {          // count-in: only the click is heard, the song position does not move
         n = Math.min(n, Math.max(1, Math.ceil(this.cin)));
         this.cinChunk(n);
+        if (this.limOn) this.lim.process(this.mixL, this.mixR, n);
         for (let i = 0; i < n; i++) { const l = this.mixL[i], r = this.mixR[i]; oL[done + i] = l; oR[done + i] = r; }
         this.cin -= n; done += n; continue;
       }
@@ -233,6 +238,7 @@ export class Engine {
         if (left > 0) n = Math.min(n, Math.max(1, Math.ceil(left)));
       }
       this.chunk(n, spt);
+      if (this.limOn) { const mL = this.mixL, mR = this.mixR; for (let i = 0; i < n; i++) { if (!(mL[i] === mL[i])) mL[i] = 0; if (!(mR[i] === mR[i])) mR[i] = 0; } this.lim.process(mL, mR, n); }   // NaN never enters the limiter's state
       for (let i = 0; i < n; i++) { let l = this.mixL[i], r = this.mixR[i]; if (!(l === l)) l = 0; if (!(r === r)) r = 0; oL[done + i] = l > 1 ? 1 : l < -1 ? -1 : l; oR[done + i] = r > 1 ? 1 : r < -1 ? -1 : r; }
       if (this.playing) {
         if (this.pos % 1) this.pos = Math.round(this.pos);

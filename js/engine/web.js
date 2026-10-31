@@ -160,7 +160,7 @@ const safeName = (n) => n.replace(/[\\/:*?"<>|]+/g, '_').trim() || 'file';
 class OfflineTarget {
   constructor(sr, bank, sfs) { this.e = new Engine(sr); for (let i = 0; i < bank.length; i++) if (bank[i]) this.e.bank[i] = { l: bank[i].l, r: bank[i].r, frames: bank[i].l.length, rate: sr }; for (let i = 0; i < sfs.length; i++) this.e.sfs[i] = sfs[i]; }
   play() { this.e.play(); } playCountIn() { this.e.play(); } stop() { this.e.stop(); } seek(t) { this.e.seek(t); } tempo(b) { this.e.tempo(b); } tempoMap(on, f) { this.e.tempoMap(on, f); } sig(bt, n) { this.e.setSig(bt, n); } meter(f) { this.e.setMeter(f); }
-  loop(on, s, e) { this.e.loop(on, s, e); } metro(on) { this.e.setMetro(on); } metroVol(v) { this.e.setMetroVol(v); }
+  loop(on, s, e) { this.e.loop(on, s, e); } metro(on) { this.e.setMetro(on); } metroVol(v) { this.e.setMetroVol(v); } masterLimit(on) { this.e.masterLimit(on); }
   trackVol(t, v) { this.e.trackVol(t, v); } trackPan(t, v) { this.e.trackPan(t, v); } trackMute(t, m) { this.e.trackMute(t, m); } trackSolo(t, m) { this.e.trackSolo(t, m); }
   trackInst(t, ty) { this.e.trackInst(t, ty); } instParam(t, i, v) { this.e.instParam(t, i, v); }
   trackNotes(t, f, n) { this.e.trackNotes(t, f, n); } trackClips(t, f, n) { this.e.trackClips(t, f, n); } trackCC(t, f, n) { this.e.trackCC(t, f, n); } resetTrack(t) { this.e.resetTrack(t); }
@@ -305,6 +305,7 @@ export function createWebBackend() {
     trackVol: cmd('trackVol'), trackPan: cmd('trackPan'), trackMute: cmd('trackMute'), trackSolo: cmd('trackSolo'), trackInst: cmd('trackInst'), instParam: cmd('instParam'),
     trackNotes: cmd('trackNotes'), trackCC: cmd('trackCC'), trackClips: cmd('trackClips'), resetTrack: cmd('resetTrack'), insertDevice: cmd('insertDevice'), removeDevice: cmd('removeDevice'),
     devParam: cmd('devParam'), devBypass: cmd('devBypass'), rackCmd: cmd('rackCmd'), preview: cmd('preview'), bend: cmd('bend'), send: cmd('trackSend'), trackOut: cmd('trackOut'), trackLoad: cmd('trackLoad'), automation: cmd('automation'),
+    masterLimit: (on) => { st.limOn = !!on; post('masterLimit', !!on); },   // output-stage safety limiter (also used by the mix export)
     poll: () => st.poll,
     devOut: (t, d) => { st.wanted.set(t + ',' + d, Date.now()); return st.dev[t + ',' + d] || []; },
   });
@@ -589,7 +590,7 @@ export function createWebBackend() {
       try {
         await me.start();
         const sr = st.ctx.sampleRate, off = new OfflineTarget(sr, st.bank, st.sfs);
-        replay(off);
+        replay(off); off.masterLimit(st.limOn !== false);   // the export sounds like playback
         off.loop(false, 0, 0); off.metro(false); off.seek(0); off.play();
         const total = Math.floor(((globalThis.__exportSecs > 0 ? globalThis.__exportSecs : endTick / 960 * 60 / bpm) + 3) * sr), chunk = 4096, L = [], R = [];
         let done = 0, lastYield = Date.now();
@@ -629,7 +630,7 @@ export function createWebBackend() {
         for (let n = 0; n < items.length && !st.cancel; n++) {
           const it = items[n], base = n / items.length, span = 1 / items.length, label = items.length > 1 ? `${it.name} (${n + 1}/${items.length})` : it.name;
           const off = new OfflineTarget(sr, st.bank, st.sfs);
-          replay(off);
+          replay(off); off.masterLimit(it.kind === 'mix' && st.limOn !== false);   // stems stay raw (no master limiter), the mix sounds like playback
           if (it.kind === 'track') off.stemTrack(it.idx); else if (it.kind === 'return') off.stemReturn(it.idx);
           off.loop(false, 0, 0); off.metro(false); off.seek(job.startTick); off.play();
           let L = [], R = [], done = 0, peak = 0, lastYield = Date.now();

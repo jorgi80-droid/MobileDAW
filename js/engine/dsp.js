@@ -47,7 +47,7 @@ export function wave4(w, ph, dt) { return w === 0 ? sawBl(ph, dt) : w === 1 ? sq
 // ADSR: linear attack, exponential decay/release. stage: 0 idle, 1 attack, 2 decay, 3 sustain, 4 release
 export class Adsr {
   constructor() { this.st = 0; this.v = 0; }
-  start() { this.st = 1; this.v = 0; }
+  start() { this.st = 1; }   // a retriggered / stolen voice attacks from where it is (no jump to 0 = no click); a free voice is already at 0
   release() { if (this.st !== 0) this.st = 4; }
   next(p) {
     switch (this.st) {

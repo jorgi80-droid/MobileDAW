@@ -49,7 +49,7 @@ function call(name, ...args) {
 const nativeEng = {
   start: () => call('start'),
   play: () => call('play'), playCountIn: () => call('play'), stop: () => call('stop'), seek: (t) => call('seek', t),
-  tempo: (b) => call('tempo', b), tempoMap: (on, f) => call('tempoMap', on, f), sig: (bt, n) => call('setSig', bt, n), meter: (f) => call('setMeter', f), loop: (on, s, e) => call('loop', on, s, e), metro: (on) => call('metro', on), metroVol: (v) => call('metroVol', v),
+  tempo: (b) => call('tempo', b), tempoMap: (on, f) => call('tempoMap', on, f), sig: (bt, n) => call('setSig', bt, n), meter: (f) => call('setMeter', f), loop: (on, s, e) => call('loop', on, s, e), metro: (on) => call('metro', on), metroVol: (v) => call('metroVol', v), masterLimit: (on) => call('masterLimit', on),
   trackVol: (t, v) => call('trackVol', t, v), trackPan: (t, v) => call('trackPan', t, v),
   trackMute: (t, m) => call('trackMute', t, m), trackSolo: (t, s) => call('trackSolo', t, s),
   trackInst: (t, type) => call('trackInst', t, type), instParam: (t, i, v) => call('instParam', t, i, v),

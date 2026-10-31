@@ -69,6 +69,21 @@ export const SCENARIOS = [
     } },
   ...instScenarios(),
   ...paramScenarios(),
+  { name: 'core-limiter', info: 'master safety limiter: three loud SuperSaw tracks drive the master ~ +10 dB over 0 dBFS (limiter on), then off (hard clip), then on again',
+    run(e) {
+      e.tempo(128);
+      for (let t = 0; t < 3; t++) { e.trackInst(t, 2); e.trackVol(t, 1.4); const f = []; for (let k = 0; k < 24; k++) f.push(k * PPQ / 2 + t * 40, PPQ * 0.45, 40 + t * 7 + ((k * 5) % 12), 1, 0); e.trackNotes(t, f, f.length / 5); }
+      e.trackVol(64, 2.2); e.play(); play(e, 2, [128, 96, 256]);
+      e.masterLimit(false); play(e, 1); e.masterLimit(true); play(e, 1.5, [128, 77]);
+      e.stop(); play(e, 0.5);
+    } },
+  { name: 'core-retrigger', info: 'the same pitch retriggered while it still sounds (long release) and voices stolen: the envelope restarts from its current level',
+    run(e) {
+      e.tempo(140); e.trackInst(0, 1); e.trackInst(1, 2); e.instParam(0, 6, 0.8);
+      const f = []; for (let k = 0; k < 48; k++) f.push(k * PPQ / 4, PPQ * 0.6, 60 + (k % 3 === 0 ? 0 : 7), 0.9, 0); e.trackNotes(0, f, f.length / 5);
+      const g = []; for (let k = 0; k < 40; k++) g.push(k * PPQ / 8, PPQ * 2, 48 + (k % 20), 0.8, 0); e.trackNotes(1, g, g.length / 5);
+      e.play(); play(e, 3, [128, 64, 200]); e.stop(); play(e, 0.5);
+    } },
   ...fxScenarios(),
   { name: 'fx-autoduck-sc', info: 'Autoduck: track 2 (short bass notes) ducks the pad on track 1; source / threshold / amount / attack / release changes while playing',
     run(e) {

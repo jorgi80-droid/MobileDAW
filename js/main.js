@@ -483,7 +483,7 @@ function boot() {
   Promise.resolve(eng.start()).catch((e) => showFatal(e));
   if (backendError()) showFatal(backendError());
   Promise.resolve(eng.init ? eng.init() : null).catch(() => {}).then(() => {
-    eng.setLatencyMs(prefs.latencyMs); eng.metroVol(prefs.metroVol ?? 1);
+    eng.setLatencyMs(prefs.latencyMs); eng.metroVol(prefs.metroVol ?? 1); eng.masterLimit(prefs.masterLimit !== false);
     restore().then((ok) => { if (!ok) P.newProject(true); }).catch(() => P.newProject(true)).then(() => { showTab('dev'); startAutosave(); });
     if (prefs.midiOn && !isNativeApp()) enableMidi(true);   // no Web MIDI in the Android WebView
     if (isNativeApp() && eng.setEngine) {                 // Android: C++ engine when chosen in Pengaturan -> Audio (falls back to Web by itself)

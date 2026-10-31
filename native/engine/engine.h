@@ -80,6 +80,7 @@ class Engine {
   LaneData* lanes = nullptr;
   double tailFrames;
   bool tl = false;
+  Device* lim = nullptr; bool limOn = true;   // core.js: master safety limiter (the Limiter device) at the output stage
   // set by the owner to see engine faults (instrument / device switched off): kind 0 = engine, 1 = instrument, 2 = device
   void (*onError)(void* ctx, int kind, int strip, int dev, const char* msg) = nullptr; void* errCtx = nullptr;
 
@@ -95,6 +96,7 @@ class Engine {
   void loop(bool on, double s0, double e0) { loopOn = on; loopS = s0; loopE = e0; }
   void setMetro(bool on) { metro = on; }
   void setMetroVol(double v);
+  void masterLimit(bool on) { limOn = on; }
   void trackLoad(bool on) { tl = on; }
   void trackVol(int t, double v) { if (ok(t)) s[t].vol = jsMax(0, v); }
   void trackPan(int t, double v) { if (ok(t)) s[t].pan = clamp(v, -1, 1); }
