@@ -22,7 +22,10 @@ for (let k = 63; k < 70; k++) PRE[15][k] = { 62: 1, 2: 1 };
 for (let k = 70; k < 75; k++) PRE[15][k] = { 10: 1 };
 for (let k = 75; k < 80; k++) PRE[15][k] = { 22: 1 };
 PRE[15][73] = { 10: 1, 74: 0.5 }; PRE[15][78] = { 22: 1, 79: 0.5 };   // Retrig: heard as the phase the LFO restarts at
-const NO_AUDIO = { 13: [58, 53], 14: [82], 15: [88, 84, 73, 78] };    // PB Range: only heard with the pitch wheel, Legato: only with overlapping notes (both tested below)
+// Poli: the ring modulator is quiet by default, Rate counts with Sync off, glide needs Mono, spread needs Unison
+PRE[16] = { 4: { 9: 1 }, 10: { 9: 1 }, 14: { 12: 0 }, 63: { 65: 1 }, 64: { 65: 1, 63: 1 }, 66: { 65: 2 } };
+for (let k = 26; k < 58; k++) if (/^RM Freq/.test(INSTRUMENTS[16].params[k].n)) PRE[16][k] = { 9: 1 };
+const NO_AUDIO = { 13: [58, 53], 14: [82], 15: [88, 84, 73, 78], 16: [13, 61, 62] };    // PB Range: only heard with the pitch wheel, Legato: only with overlapping notes (both tested below)
 const want = process.argv.slice(2).map(Number), types = Object.keys(INSTRUMENTS).map(Number).filter((t) => INSTRUMENTS[t].full && (!want.length || want.includes(t)));
 let bad = 0;
 function render(t, set, notes = [48, 55, 64]) {
@@ -54,11 +57,21 @@ for (const t of types) {
 if (types.includes(15)) {
   const a = render(15, (d) => { d.setBend(2); d.setParam(88, 0); }), b = render(15, (d) => { d.setBend(2); d.setParam(88, 12); }); if (diff(a, b) < 1e-6) { bad++; console.log('FAIL 15 Analog: PB Range'); } else console.log('ok   15 Analog pitch bend range');
   const leg = (on) => { const d = makeInstrument(15, SR); INSTRUMENTS[15].params.forEach((p, k) => d.setParam(k, p.def)); d.setParam(80, 0); d.setParam(84, on); d.setParam(57, 300);
-    const L = new Float32Array(N), R = new Float32Array(N); let e = 0; d.noteOn(48, 0.9); for (let b = 0; b < 200; b++) { if (b === 100) d.noteOn(55, 0.9); L.fill(0); d.render(L, R, 0, N); if (b >= 100 && b < 110) for (const x of L) e += x * x; } return e; };
+    const L = new Float32Array(N), R = new Float32Array(N); let e = 0; d.noteOn(48, 0.9); for (let b = 0; b < 200; b++) { if (b === 100) d.noteOn(55, 0.9); L.fill(0); R.fill(0); d.render(L, R, 0, N); if (b >= 100 && b < 110) for (const x of L) e += x * x; } return e; };
   const rt = (on) => { const d = makeInstrument(15, SR); INSTRUMENTS[15].params.forEach((p, k) => d.setParam(k, p.def)); d.setParam(10, 1); d.setParam(73, on); const L = new Float32Array(N), R = new Float32Array(N), o = [];
-    for (let b = 0; b < 160; b++) { if (b === 37) d.noteOn(48, 0.9); L.fill(0); d.render(L, R, 0, N); o.push(...L); } return { out: Float32Array.from(o), e: o.reduce((a, x) => a + x * x, 0) }; };
+    for (let b = 0; b < 160; b++) { if (b === 37) d.noteOn(48, 0.9); L.fill(0); R.fill(0); d.render(L, R, 0, N); o.push(...L); } return { out: Float32Array.from(o), e: o.reduce((a, x) => a + x * x, 0) }; };
   if (diff(rt(0), rt(1)) < 1e-6) { bad++; console.log('FAIL 15 Analog: LFO Retrig'); } else console.log('ok   15 Analog LFO retrigger');
   const x = leg(0), y = leg(1); if (!(y > x * 1.5)) { bad++; console.log(`FAIL 15 Analog: Legato (${x.toFixed(3)} vs ${y.toFixed(3)})`); } else console.log('ok   15 Analog legato');
+}
+// Poli pitch bend (range, All = also the released notes) and LFO retrigger
+if (types.includes(16)) {
+  const a = render(16, (d) => { d.setBend(2); d.setParam(61, 0); }), b = render(16, (d) => { d.setBend(2); d.setParam(61, 12); }); if (diff(a, b) < 1e-6) { bad++; console.log('FAIL 16 Poli: PB Range'); } else console.log('ok   16 Poli pitch bend range');
+  const pa = (all) => { const d = makeInstrument(16, SR); INSTRUMENTS[16].params.forEach((p, k) => d.setParam(k, p.def)); d.setParam(62, all); const L = new Float32Array(N), R = new Float32Array(N), o = [];
+    d.noteOn(48, 0.9); for (let b = 0; b < 160; b++) { if (b === 40) d.noteOff(48); if (b === 50) d.setBend(2); L.fill(0); R.fill(0); d.render(L, R, 0, N); o.push(...L); } return { out: Float32Array.from(o), e: o.reduce((x, y) => x + y * y, 0) }; };
+  if (diff(pa(0), pa(1)) < 1e-6) { bad++; console.log('FAIL 16 Poli: PB All'); } else console.log('ok   16 Poli PB All');
+  const rt = (on) => { const d = makeInstrument(16, SR); INSTRUMENTS[16].params.forEach((p, k) => d.setParam(k, p.def)); d.setParam(13, on); d.setParam(16, 0); const L = new Float32Array(N), R = new Float32Array(N), o = [];
+    d.noteOn(48, 0.9); for (let b = 0; b < 160; b++) { if (b === 37) d.noteOn(52, 0.9); L.fill(0); R.fill(0); d.render(L, R, 0, N); o.push(...L); } return { out: Float32Array.from(o), e: o.reduce((x, y) => x + y * y, 0) }; };
+  if (diff(rt(0), rt(1)) < 1e-6) { bad++; console.log('FAIL 16 Poli: LFO Retrig'); } else console.log('ok   16 Poli LFO retrigger');
 }
 // Operator PB Range
 if (types.includes(14)) { const a = render(14, (d) => { d.setBend(2); d.setParam(82, 0); }), b = render(14, (d) => { d.setBend(2); d.setParam(82, 12); }); if (diff(a, b) < 1e-6) { bad++; console.log('FAIL 14 Operator: PB Range'); } else console.log('ok   14 Operator pitch bend range'); }
@@ -70,7 +83,7 @@ if (types.includes(13)) {
 // Drift Legato (Mono): a second note while the first is held does not restart the envelopes
 if (types.includes(13)) {
   const leg = (on) => { const d = makeInstrument(13, SR); INSTRUMENTS[13].params.forEach((p, k) => d.setParam(k, p.def)); d.setParam(50, 1); d.setParam(53, on); d.setParam(31, 300);
-    const L = new Float32Array(N), R = new Float32Array(N); let e = 0; d.noteOn(48, 0.9); for (let b = 0; b < 200; b++) { if (b === 100) d.noteOn(55, 0.9); L.fill(0); d.render(L, R, 0, N); if (b >= 100 && b < 110) for (const x of L) e += x * x; } return e; };
+    const L = new Float32Array(N), R = new Float32Array(N); let e = 0; d.noteOn(48, 0.9); for (let b = 0; b < 200; b++) { if (b === 100) d.noteOn(55, 0.9); L.fill(0); R.fill(0); d.render(L, R, 0, N); if (b >= 100 && b < 110) for (const x of L) e += x * x; } return e; };
   const a = leg(0), b = leg(1); if (!(b > a * 1.5)) { bad++; console.log(`FAIL 13 Drift: Legato (retrigger ${a.toFixed(3)} vs legato ${b.toFixed(3)})`); } else console.log('ok   13 Drift legato');
 }
 console.log(bad ? `\n${bad} instrument(s) FAILED` : '\nALL INSTRUMENTS OK');

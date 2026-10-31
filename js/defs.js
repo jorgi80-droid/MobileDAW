@@ -4,7 +4,7 @@ import { wtName, WT_COUNT } from './engine/live.js';
 // (app/src/main/cpp/instruments.h and devices.h).
 export const INST = { MINISYNTH: 1, SUPERSAW: 2, DRUM: 3, DIRECTWAVE: 4, GMS: 5, SOUNDFONT: 6, MOISTURE: 7, OSPHERE: 8, KEYSTONE: 9, SAMPLER: 10, WAVETABLE: 11 };
 // Instruments a synth/sampler track can switch between (drums have their own track type).
-export const INST_LIST = [15, 14, 13, 11, 10, 1, 2, 4, 5, 6, 7, 8, 9, 12];
+export const INST_LIST = [16, 15, 14, 13, 11, 10, 1, 2, 4, 5, 6, 7, 8, 9, 12];
 
 export const INSTRUMENTS = {
   1: { name: 'Mini Synth', params: [
@@ -594,6 +594,22 @@ export const IRACK_DEF = { name: 'Instrument Rack', rack: true, params: [] };   
     list('Voices', ['Mono', '2', '4', '6', '8', '12', '16', '24', '32'], 4), list('Unison', ['Off', '2', '3', '4'], 0), q('Uni Detune', 0, 1, 0.2, { unit: '' }), q('Glide', 0, 2000, 0, { unit: 'ms' }), onoff('Legato'),
     q('Vibrato', 0, 1, 0, { unit: '%' }), q('Vib Rate', 0.1, 12, 5, { curve: 'log', unit: 'Hz' }), q('Volume', -60, 6, -6, { fmt: 'dbinf' }), q('PB Range', 0, 48, 2, { step: 1, fmt: 'st' }), list('Env Slope', ['LIN', 'EXP'], 1),
     { n: '-', min: 0, max: 1, def: 0, hidden: true }, onoff('Free')] };
+}
+
+// Poli (instrument 16, engine js/engine/poli.js): see the index list at the top of poli.js
+{
+  const ms = (n, d) => q(n, 0.5, 20000, d, { curve: 'log', unit: 'ms' }), pct = (n, d) => q(n, 0, 1, d, { unit: '%' }), bi = (n, d = 0) => q(n, -1, 1, d, { unit: '%' });
+  const TGT = ['LPF', 'HPF', 'Vol', 'Pitch', 'PWM', 'RM Freq', 'LFO Freq'], GD = { 'LPF,0': 0.11, 'LPF,1': 0.72, 'LPF,2': 0.39, 'HPF,0': 0.09, 'HPF,1': -0.54, 'Vol,0': 0.02, 'Vol,1': 0.7, 'PWM,1': -0.15, 'PWM,2': 0.4, 'RM Freq,1': 0.08 };
+  const grid = []; for (let t = 0; t < 7; t++) for (let sI = 0; sI < 3; sI++) { if ((t === 2 && sI === 2) || (t === 6 && sI !== 1)) continue; grid.push(bi(`${TGT[t]} < ${['LFO', 'Filter Env', 'Amp Env'][sI]}`, GD[TGT[t] + ',' + sI] || 0)); }
+  const midi = []; for (let t = 0; t < 7; t++) for (let sI = 0; sI < 2; sI++) midi.push(bi(`${TGT[t]} < ${['Velocity', 'Key'][sI]}`, 0));
+  INSTRUMENTS[16] = { name: 'Poli', view: 'kit', full: true, params: [pct('XMod', 0), q('PW', 0, 1, 0.59, { unit: '%' }), list('Sub Wave', ['Square', 'Saw'], 1), q('Color', 0, 1, 0.84, { unit: '' }), list('RM Source', ['Saw', 'Pulse'], 0),
+    pct('Saw', 0.646), pct('Pulse', 0.795), pct('Sub', 0.693), pct('Noise', 0.0866), pct('Ring', 0.0157), q('Freq', 0, 2000, 0, { unit: 'Hz' }),
+    list('LFO Shape', ['Sine', 'Triangle', 'Saw Up', 'Saw Down', 'Square', 'S&H', 'Noise'], 0), onoff('Sync', 1), onoff('LFO Retrig', 1), q('Rate', 0.01, 30, 2, { curve: 'log', unit: 'Hz' }), list('Sync Rate', ['1/16', '1/8', '1/4', '1/2', '1 Bar', '2 Bars', '4 Bars'], 0),
+    q('Fade-In', 0, 10, 1.49, { unit: 's' }), onoff('Sub Boost', 1), q('HPF', 10, 2000, 9.45, { curve: 'log', unit: 'Hz' }), q('LPF', 20, 20000, 35.4 * 100, { curve: 'log', unit: 'Hz' }), q('Res', 0, 1, 0.31, { unit: '%' }), onoff('Loop'),
+    ms('Filter Attack', 72.6), ms('Filter Decay', 672), pct('Filter Sustain', 0.803), ms('Filter Release', 131), ...grid, ...midi,
+    list('Chorus', ['-', 'A', 'B', 'C'], 2), pct('Random Pan', 0.2), q('Volume', -60, 6, -8.2, { fmt: 'dbinf' }), q('PB Range', 0, 24, 2, { step: 1, fmt: 'st' }), onoff('PB All', 1),
+    list('Glide', ['Off', 'On', 'Legato'], 0), q('Glide Time', 0, 2000, 11.5, { unit: 'ms' }), list('Voices', ['Poly', 'Mono', 'Unison'], 0), pct('Spread', 0),
+    ms('Attack', 128), ms('Decay', 1960), pct('Sustain', 0.921), ms('Release', 1740)] };
 }
 
 // ---- Audio Effect Rack (engine: js/engine/fx7.js; project: d.chains, d.macroMap)

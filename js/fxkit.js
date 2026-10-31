@@ -6,6 +6,7 @@ import { C } from './theme.js';
 import { fmtParam, normOf, valOf, MOD_MAP, DEVICES, INSTRUMENTS, FX_GROUPS, IRACK_DEF } from './defs.js';
 import { buildSynth } from './devviz.js';
 import { OP_ALGOS } from './engine/operator.js';
+import { POLI_TGT, POLI_GRID, POLI_MIDI } from './engine/poli.js';
 import { lvNum, lvTog, lvBtn, lvChoice, lvSel, lvDisp, lvDrag, lvRing, lvPath, lvTabs, lvEnvPts, DISPC } from './liveui.js';
 import { eq8Stages } from './engine/fx3.js';
 import { offerAutomation } from './automate.js';
@@ -972,6 +973,36 @@ VI[15] = (k) => {
   }
   fill();
   return k.row(h('div', { class: 'lk-ancol' }, osc(0), noise, osc(1)), disp, h('div', { class: 'lk-ancol' }, fil(0), fil(1), k.row(amp(0), amp(1))), h('div', { class: 'lk-ancol' }, lfo(0), lfo(1), glob));
+};
+// Poli: oscilloscope display (XMod, PW, Sub Wave, Color, RM Source), mixer (Saw, Pulse, Sub, Noise | Ring, Freq), LFO (shape, Sync, R, Rate,
+// Fade-In), filter (Sub boost, Loop, HPF, LPF, Res, envelope), modulation grid (Modulators / MIDI tabs), Chorus, Random Pan, Volume, PBend + All,
+// Glide, Voices / Spread, amp envelope
+const ICO_SAW = 'M1 10L12 2V10', ICO_SQ = 'M1 10V2H7V10H13';
+function icoTog(k, j, icons) { const b = h('button', { class: 'lk-icot' }); const draw = () => { b.innerHTML = `<svg viewBox="0 0 14 12" width="22" height="16"><path d="${icons[Math.round(k.get(j))]}" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>`; };
+  b.onclick = () => { k.set(j, Math.round(k.get(j)) ? 0 : 1); draw(); }; b.update = draw; draw(); return k.reg(b, j); }
+VI[16] = (k) => {
+  const scope = k.D(300, 78, (g, w, hh) => {
+    const saw = k.get(5) ** 2, pul = k.get(6) ** 2, sub = k.get(7) ** 2, pw = 0.5 - k.get(1) * 0.45, sw = Math.round(k.get(2)), nz = k.get(8) ** 2, pts = [];
+    let seed = 7; const r = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff) * 2 - 1;
+    for (let x = 0; x <= w; x++) { const t = x / w * 4, a = t - Math.floor(t), s2 = (t / 2) - Math.floor(t / 2), y = (saw * (2 * a - 1) + pul * (a < pw ? 1 : -1) + sub * (sw ? 2 * s2 - 1 : (s2 < 0.5 ? 1 : -1)) + nz * r() * 1.5) / Math.max(0.4, saw + pul + sub); pts.push([x, hh / 2 - y * (hh / 2 - 8)]); }
+    lvPath(g, pts, '#f5a623', null, 1.5);
+  });
+  const O = (n, j) => k.TL(n, k.NT(j, { w: 54, cls: 'or' }));
+  const osc = k.col(k.dk(scope, k.row(O('XMod', 0), O('PW', 1), k.TL('Sub Wave', icoTog(k, 2, [ICO_SQ, ICO_SAW])), O('Color', 3), k.TL('RM Source', icoTog(k, 4, [ICO_SAW, ICO_SQ])))),
+    k.row(k.K(5), k.K(6), k.K(7), k.K(8), k.sep(), k.K(9), k.K(10)));
+  const lfo = k.col(k.row(k.col(k.TL('LFO Shape', k.S(11, { w: 100 })), k.row(k.T(12, 'Sync', { cls: 'cyt', w: 70 }), k.T(13, 'R', { cls: 'lk-r', w: 22 }))), k.swap(12, () => k.K(15, { n: 'Rate' }), () => k.K(14)), k.K(16)),
+    k.row(k.col(k.T(17, 'Sub', { w: 50 }), k.T(21, 'Loop', { w: 50 })), k.K(18), k.K(19), k.K(20, { n: 'Res' })),
+    k.row(k.K(22, { n: 'Attack' }), k.K(23, { n: 'Decay' }), k.K(24, { n: 'Sustain' }), k.K(25, { n: 'Release' })));
+  const page = h('div', { class: 'lk-page' }), cellsOf = (map, cols) => h('div', { class: 'lk-pgrid', style: `grid-template-columns: 70px repeat(${cols.length}, 64px)` },
+    h('span', { class: 'lk-pgh' }, 'Target'), ...cols.map((c) => h('span', { class: 'lk-pgh u' }, c)),
+    ...POLI_TGT.flatMap((tn, t) => [h('span', { class: 'lk-pgt' }, tn), ...cols.map((_, s2) => { const j = map[t + ',' + s2]; return j === undefined ? h('span', { class: 'lk-pgx' }, '-') : k.NT(j, { w: 60 }); })]));
+  const tabs = [() => cellsOf(POLI_GRID, ['LFO', 'Filter Env', 'Amp Env']), () => cellsOf(POLI_MIDI, ['Velocity', 'Key'])];
+  const tb = lvTabs([{ label: 'Modulators' }, { label: 'MIDI' }], 0, (j) => page.replaceChildren(tabs[j]()), { cls: 'lk-tabs lk-ptabs' }); page.replaceChildren(tabs[0]());
+  const mods = k.dk(tb, page);
+  const glob = k.col(k.row(k.TL('Chorus', k.CH(58, ['-', 'A', 'B', 'C'], { cls: 'g2 sm' })), k.TL('Random Pan', k.N(59, { w: 70 })), k.K(60)),
+    k.row(k.col(h('span', { class: 'lk-lb' }, 'PBend'), k.N(61, { w: 62 }), k.T(62, 'All', { w: 62 })), k.col(h('span', { class: 'lk-lb' }, 'Glide'), k.S(63, { w: 70 }), k.N(64, { w: 70, fill: false })), k.col(h('span', { class: 'lk-lb' }, 'Voices/Spread'), k.S(65, { w: 76 }), k.N(66, { w: 76, fill: false }))),
+    k.row(k.K(67, { n: 'Attack' }), k.K(68, { n: 'Decay' }), k.K(69, { n: 'Sustain' }), k.K(70, { n: 'Release' })));
+  return k.row(osc, k.sep(), lfo, k.sep(), mods, k.sep(), glob);
 };
 export function instKitView(i, t, every) {
   const def = INSTRUMENTS[t.inst.type]; if (!VI[t.inst.type]) return null;
