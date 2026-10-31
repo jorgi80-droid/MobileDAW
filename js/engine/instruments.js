@@ -13,6 +13,15 @@ import { Meld } from './meld.js';
 import { Simpler } from './simpler.js';
 import { TWO_PI, clamp, midiToHz, lcg, Biquad, Adsr, adsrParams, polyBlep, sawBl, squareBl, triNaive, wave4, JOBS, runJobNow, adsrInto } from './dsp.js';
 
+// 4-point Hermite interpolation of sample data at position pos (frames), indices clamped to [0, last]: keeps the highs of pitched samples
+// (linear interpolation dulls them and smears transients)
+function herm(a, pos, last) {
+  const i = pos | 0, t = pos - i, i0 = i > 0 ? i - 1 : 0, i2 = i + 1 < last ? i + 1 : last, i3 = i + 2 < last ? i + 2 : last;
+  const x0 = a[i0], x1 = a[i > last ? last : i], x2 = a[i2], x3 = a[i3];
+  return x1 + 0.5 * t * (x2 - x0 + t * (2 * x0 - 5 * x1 + 4 * x2 - x3 + t * (3 * (x1 - x2) + x3 - x0)));
+}
+const satN = (x, k) => Math.tanh(k * x) / Math.tanh(k);   // saturation normalised so +-1 stays +-1: adds harmonics, keeps the peak
+
 const N_ZONES = 16;
 
 class Base {
@@ -105,6 +114,9 @@ export class SuperSaw extends Base {
 //   200 + pad*16 + f: 0 sample id (-1 none), 1 synth kind (-1 silent), 2 pan, 3 start 0..1, 4 end 0..1, 5 reverse, 6 attack s,
 //                     7 decay s, 8 sustain 0..1, 9 release s (0 = ignore note-off, play the sample through), 10 mute, 11 midi pitch (-1 = pad unused)
 const N_PADS = 16, DEF_PITCH = [36, 38, 39, 42, 46, 41];
+// level of each built-in sound (kick, snare, clap, closed hat, open hat, tom) as in a mixed drum machine: kick -5.6 dBFS peak, snare / clap /
+// tom a little under it, hats about 8 dB under the kick, so kick + clap + hat hitting together still leave headroom
+const KIT_MIX = [0.56, 0.39, 0.32, 0.19, 0.2, 0.42];
 // Drum Rack chains (Live 12): a pad can hold a chain = an instrument + effects instead of its built-in sound / sample. The pad's note plays
 // the chain's instrument at C3 + the pad's Pitch (Live's "Receive"); the chain renders into its own buffer, runs its effects and is mixed with
 // the pad's Level / Pan, muted when the pad is muted (or another pad soloed). rackCmd (core.js, d = -1): op 0 = clear all chains,
@@ -116,8 +128,9 @@ export class DrumSynth extends Base {
     this.bank = bank || []; this.mkInst = mkInst; this.rack = true; this.pst = 0;
     this.ch = Array.from({ length: N_PADS }, () => ({ inst: null, dev: [], L: new Float32Array(128), R: new Float32Array(128), note: -1 }));
     this.v = Array.from({ length: 24 }, () => ({ on: false, held: false, kind: 0, t: 0, vel: 0, ph: 0, age: 0, env: new Adsr(), n: { seed: 1 }, bp: new Biquad(), hp: 0,
-      smp: false, pad: 0, sid: -1, pos: 0, dir: 1, lo: 0, hi: 0, ratio: 1, lv: 0, st: 0, ea: 0, ed: 0, es: 1, er: 0, rel: 0, g: 1, pl: 1, pr: 1 }));
-    this.gain = 0.8; this.rate = 1; this.pitchNative = true;
+      smp: false, pad: 0, sid: -1, pos: 0, dir: 1, lo: 0, hi: 0, ratio: 1, lv: 0, st: 0, ea: 0, ed: 0, es: 1, er: 0, rel: 0, g: 1, pl: 1, pr: 1,
+      f2: new Biquad(), f3: new Biquad(), ph2: 0, mp: new Float64Array(6) }));
+    this.gain = 1; this.rate = 1; this.pitchNative = true;   // gain 1: velocity 1 = the pad sample at unity, the built-in kit peaks about -1 dBFS
     this.pads = Array.from({ length: N_PADS }, (_, k) => ({ pitch: k < 6 ? DEF_PITCH[k] : -1, kind: k < 6 ? k : -1, sid: -1, lvl: 1, pit: 0, dec: 1, pan: 0, start: 0, end: 1, rev: false, a: 0, d: 0, s: 1, r: 0, mute: false }));
   }
   setParam(i, x) {
@@ -175,12 +188,18 @@ export class DrumSynth extends Base {
       const f0 = Math.min(s.frames - 3, Math.floor(q.start * s.frames)), f1 = Math.max(f0 + 2, Math.min(s.frames - 1, Math.floor(q.end * s.frames)));
       v.lo = f0; v.hi = f1; v.dir = q.rev ? -1 : 1; v.pos = q.rev ? f1 - 1 : f0;
       v.ratio = (s.rate / this.sr) * v.rt;
-      v.ea = Math.max(0.0008, q.a); v.ed = q.d; v.es = q.s; v.er = q.r;
+      v.ea = Math.max(0.00012, q.a);                       // attack 0 = ~6 samples (no click, the transient stays) v.ed = q.d; v.es = q.s; v.er = q.r;
       v.lv = 0; v.st = 0; v.g = this.gain * v.lvl * vel;
     } else {
-      v.smp = false; v.held = false; v.kind = q.kind; v.n.seed = 777 + this.counter * 31; v.hp = 0;
+      v.smp = false; v.held = false; v.kind = q.kind; v.n.seed = 777 + this.counter * 31; v.hp = 0; v.ph2 = 0; v.mp.fill(0);
+      for (const f of [v.bp, v.f2, v.f3]) f.z1 = f.z2 = 0;
       if (v.kind === 3) for (const o of this.v) if (o !== v && o.on && !o.smp && o.kind === 4) o.on = false;   // closed hat chokes the open hat
-      if (v.kind === 2) v.bp.bandpass(this.sr, 1500, 1.2);
+      const sr = this.sr, rt = v.rt;
+      if (v.kind === 0) v.bp.bandpass(sr, 3200, 0.9);                                         // kick: beater click
+      else if (v.kind === 1) { v.bp.highpass(sr, 1400, 0.7); v.f2.peaking(sr, 5200, 1.1, 5); }   // snare: wires
+      else if (v.kind === 2) { v.bp.bandpass(sr, 1150 * rt, 1.5); v.f2.highpass(sr, 600, 0.7); }  // clap
+      else if (v.kind === 3 || v.kind === 4) { v.bp.bandpass(sr, Math.min(sr * 0.4, 8600 * rt), 1.1); v.f2.highpass(sr, Math.min(sr * 0.4, 6800 * rt), 0.7); v.f3.highShelf(sr, 11000, 0.7, 4); }   // hats: metal
+      else v.bp.bandpass(sr, 2400, 0.9);                                                       // tom: stick
     }
   }
   noteOff(p) {
@@ -205,9 +224,8 @@ export class DrumSynth extends Base {
       }
       const pos = v.pos;
       if (dir > 0 ? pos >= hi : pos <= lo) { v.on = false; return; }
-      const ip = pos | 0, fr = pos - ip, e = v.lv * g;
-      const xl = sl[ip] + (sl[ip + 1] - sl[ip]) * fr, xr = sr_[ip] + (sr_[ip + 1] - sr_[ip]) * fr;
-      L[i] += xl * e * pl; R[i] += xr * e * pr;
+      const e = v.lv * g, last = s.frames - 1;
+      L[i] += herm(sl, pos, last) * e * pl; R[i] += herm(sr_, pos, last) * e * pr;
       v.pos = pos + dir * ratio;
     }
   }
@@ -230,20 +248,47 @@ export class DrumSynth extends Base {
     for (const v of this.v) {
       if (!v.on) continue;
       if (v.smp) { this.renderSample(v, L, R, from, to); continue; }
+      // Built-in kit, modelled on the classic drum machines (909 / 808) and tuned to cut through on small speakers: every drum has a
+      // transient (click / snap / stick), a pitched body that sweeps down, and soft saturation that adds the upper harmonics a phone
+      // speaker can play (a pure 50 Hz sine is inaudible there). ts = time in seconds scaled by the pad's Decay; rt = pad pitch.
       for (let i = from; i < to; i++) {
-        const t = v.t++, ts = t * v.rt / (sr * v.dec), rt = v.rt;
+        const t = v.t++, ts = t * v.rt / (sr * v.dec), tr = t / sr, rt = v.rt;
         const nz = (lcg(v.n) / 2147483648) - 1;
         let y = 0, len = 0.5;
         switch (v.kind) {
-          case 0: { const f = 45 + 110 * Math.exp(-ts / 0.03); v.ph += f * rt / sr; y = Math.sin(TWO_PI * v.ph) * Math.exp(-ts / 0.18) + nz * Math.exp(-ts / 0.002) * 0.25; len = 0.6; break; }
-          case 1: { v.ph += 190 * rt / sr; y = Math.sin(TWO_PI * v.ph) * Math.exp(-ts / 0.06) * 0.55 + nz * Math.exp(-ts / 0.11) * 0.6; len = 0.4; break; }
-          case 2: { const burst = ts < 0.03 ? Math.exp(-(ts % 0.01) / 0.003) : Math.exp(-(ts - 0.03) / 0.09); y = v.bp.process(nz) * burst * 2.2; len = 0.45; break; }
-          case 3: { const hp = nz - v.hp; v.hp += hp * 0.35; y = hp * Math.exp(-ts / 0.025) * 0.6; len = 0.2; break; }
-          case 4: { const hp = nz - v.hp; v.hp += hp * 0.35; y = hp * Math.exp(-ts / 0.16) * 0.5; len = 0.8; break; }
-          default: { const f = 90 + 90 * Math.exp(-ts / 0.05); v.ph += f * rt / sr; y = Math.sin(TWO_PI * v.ph) * Math.exp(-ts / 0.16) * 0.9; len = 0.6; }
+          case 0: {   // kick: 230 -> 50 Hz sweep, short hold, 300 ms body, beater click, drive
+            const f = (50 + 180 * Math.exp(-tr / 0.024) + 34 * Math.exp(-tr / 0.11)) * rt; v.ph += f / sr;
+            const env = ts < 0.012 ? 1 : Math.exp(-(ts - 0.012) / 0.3);
+            const click = v.bp.process(nz) * Math.exp(-tr / 0.0028) * 2.2 + Math.sin(TWO_PI * v.ph * 4) * Math.exp(-tr / 0.004) * 0.35;
+            y = satN(Math.sin(TWO_PI * v.ph) * env + click, 2.0) * 0.9; len = 2.1; break;
+          }
+          case 1: {   // snare: two drum-head modes with a pitch drop + bright wires
+            const d = 1 + 0.35 * Math.exp(-tr / 0.012);
+            v.ph += 182 * rt * d / sr; v.ph2 += 331 * rt * d / sr;
+            const tone = (Math.sin(TWO_PI * v.ph) * 0.62 + Math.sin(TWO_PI * v.ph2) * 0.34) * Math.exp(-ts / 0.075);
+            const wires = v.f2.process(v.bp.process(nz)) * (Math.exp(-ts / 0.16) * 0.75 + Math.exp(-tr / 0.004) * 0.55);
+            y = satN(tone + wires, 1.8) * 0.88; len = 1.3; break;
+          }
+          case 2: {   // clap: four hand hits 9-11 ms apart, then the room
+            let e = 0; for (const o of [0, 0.0095, 0.0195, 0.031]) if (tr >= o) e = Math.max(e, Math.exp(-(tr - o) / 0.0042));
+            if (tr > 0.031) e = Math.max(e, 0.55 * Math.exp(-(ts - 0.031) / 0.13));
+            y = satN(v.f2.process(v.bp.process(nz)) * e * 3.2, 1.6) * 0.9; len = 1.0; break;
+          }
+          case 3: case 4: {   // hats: six square oscillators at the 808 ratios through band-pass + high-pass, plus a little noise
+            const F = [205.3, 304.4, 369.6, 522.7, 540, 800]; let m = 0;
+            for (let k = 0; k < 6; k++) { v.mp[k] += F[k] * 1.7 * rt / sr; if (v.mp[k] >= 1) v.mp[k] -= 1; m += v.mp[k] < 0.5 ? 1 : -1; }
+            const metal = v.f3.process(v.f2.process(v.bp.process(m / 6 + nz * 0.45)));
+            const env = v.kind === 3 ? Math.exp(-ts / 0.032) : (Math.exp(-ts / 0.32) * 0.85 + Math.exp(-ts / 0.02) * 0.15);
+            y = satN(metal * env * 2.8, 1.3) * 0.88; len = v.kind === 3 ? 0.3 : 2.4; break;
+          }
+          default: {  // tom: 160 -> 98 Hz, stick, drive
+            const f = (98 + 70 * Math.exp(-tr / 0.045)) * rt; v.ph += f / sr;
+            const body = (Math.sin(TWO_PI * v.ph) + 0.18 * Math.sin(TWO_PI * v.ph * 2.01)) * Math.exp(-ts / 0.24);
+            y = satN(body + v.bp.process(nz) * Math.exp(-tr / 0.003) * 0.7, 1.9) * 0.9; len = 1.7;
+          }
         }
         if (ts > len) { v.on = false; break; }
-        y *= v.vel * this.gain * v.lvl;
+        y *= v.vel * this.gain * v.lvl * KIT_MIX[v.kind];   // mix balance of the kit (headroom: a full beat stays below 0 dBFS)
         L[i] += y * v.pl; R[i] += y * v.pr;
       }
     }
@@ -251,18 +296,24 @@ export class DrumSynth extends Base {
 }
 
 // ------------------------------------------------------------------------------- Sampler (DirectWave / Keystone)
-// 0 gain, 1 attack, 2 release, 3 cutoff, 4 tune (semitones), 5 velocity sensitivity;
+// 0 gain, 1 attack, 2 release, 3 cutoff, 4 tune (semitones), 5 velocity sensitivity, 6 mode (0 gate: the release starts at note-off,
+// 1 one-shot: the sample plays to its end, as drums are usually played);
 // zone z field k: parameter 100 + z*8 + k  (0 sample id, 1 root, 2 low key, 3 high key, 4 low vel, 5 high vel, 6 tune cents, 7 loop)
+// Playback like a professional sampler: Gain 80 % (the default) = the sample at unity at full velocity, Attack up to 2 ms (the old default) = instant
+// (the transient is kept; a 0.12 ms ramp only removes the click), 4-point Hermite interpolation, Cutoff fully open = no filter at all,
+// below that a 12 dB/oct resonance-free low-pass. A voice that is stolen fades out over 1.5 ms instead of being cut.
+const SMP_UNITY = 0.8, SMP_OPEN = 17999;
 export class Sampler extends Base {
   constructor(sr, bank) {
     super(sr);
-    this.bank = bank; this.gain = 0.8; this.a = 0.002; this.r = 0.2; this.cutoff = 18000; this.tune = 0; this.pitch = 0; this.pitchNative = true; this.velSens = 0.7;
+    this.bank = bank; this.gain = 0.8; this.a = 0.001; this.r = 0.2; this.cutoff = 18000; this.tune = 0; this.pitch = 0; this.pitchNative = true; this.velSens = 0.7; this.oneShot = false;
     this.z = Array.from({ length: N_ZONES }, () => ({ id: -1, root: 60, lo: 0, hi: 127, vlo: 1, vhi: 127, tune: 0, loop: false }));
-    this.v = mkVoices(24, () => ({ pos: 0, ratio: 1, id: -1, loop: false, lpL: 0, lpR: 0 }));
+    this.v = mkVoices(24, () => ({ pos: 0, ratio: 1, id: -1, loop: false, fL: new Biquad(), fR: new Biquad(), fade: 0, fd: 0 }));
+    this.lp = new Biquad();
     this.upEnv(); this.upFilter();
   }
-  upEnv() { this.ap = adsrParams(this.a, 0.1, 1, this.r, this.sr); }
-  upFilter() { this.lpG = 1 - Math.exp(-TWO_PI * clamp(this.cutoff, 20, this.sr * 0.45) / this.sr); }
+  upEnv() { this.ap = adsrParams(this.a <= 0.00201 ? 0.00012 : this.a, 0.1, 1, this.r, this.sr); }
+  upFilter() { this.open = this.cutoff >= SMP_OPEN; if (!this.open) this.lp.lowpass(this.sr, clamp(this.cutoff, 20, this.sr * 0.45), 0.707); for (const v of this.v) { v.fL.copy(this.lp); v.fR.copy(this.lp); } }
   setParam(i, x) {
     if (i === 90) { this.pitch = clamp(x, -24, 24); return; }
     if (i >= 100) {
@@ -272,7 +323,12 @@ export class Sampler extends Base {
       switch (k) { case 0: q.id = x | 0; break; case 1: q.root = clamp(x | 0, 0, 127); break; case 2: q.lo = clamp(x | 0, 0, 127); break; case 3: q.hi = clamp(x | 0, 0, 127); break; case 4: q.vlo = clamp(x | 0, 1, 127); break; case 5: q.vhi = clamp(x | 0, 1, 127); break; case 6: q.tune = clamp(x, -100, 100); break; case 7: q.loop = x > 0.5; break; }
       return;
     }
-    switch (i) { case 0: this.gain = x; break; case 1: this.a = x; this.upEnv(); break; case 2: this.r = x; this.upEnv(); break; case 3: this.cutoff = x; this.upFilter(); break; case 4: this.tune = x; break; case 5: this.velSens = clamp(x, 0, 1); break; }
+    switch (i) { case 0: this.gain = x; break; case 1: this.a = x; this.upEnv(); break; case 2: this.r = x; this.upEnv(); break; case 3: this.cutoff = x; this.upFilter(); break; case 4: this.tune = x; break; case 5: this.velSens = clamp(x, 0, 1); break; case 6: this.oneShot = x > 0.5; break; }
+  }
+  alloc(voices) {                       // free voice, or steal the oldest; a stolen voice that is still sounding gets a 1.5 ms fade on a spare voice
+    const v = super.alloc(voices);
+    if (v.on && v.fade === 0) { const sp = voices.find((o) => !o.on && o !== v); if (sp) { Object.assign(sp, { on: true, held: false, pitch: v.pitch, vel: v.vel, age: v.age, pos: v.pos, ratio: v.ratio, id: v.id, loop: v.loop, fade: 1, fd: 1 / (0.0015 * this.sr) }); sp.env.st = v.env.st; sp.env.v = v.env.v; sp.fL.copy(v.fL); sp.fL.z1 = v.fL.z1; sp.fL.z2 = v.fL.z2; sp.fR.copy(v.fR); sp.fR.z1 = v.fR.z1; sp.fR.z2 = v.fR.z2; } }
+    return v;
   }
   noteOn(p, vel) {
     const vi = Math.round(vel * 127);
@@ -280,27 +336,29 @@ export class Sampler extends Base {
       const s = q.id >= 0 ? this.bank[q.id] : null;
       if (!s || p < q.lo || p > q.hi || vi < q.vlo || vi > q.vhi) continue;
       const v = this.alloc(this.v);
-      v.on = v.held = true; v.pitch = p; v.vel = vel; v.age = ++this.counter; v.pos = 0; v.id = q.id; v.loop = q.loop; v.lpL = v.lpR = 0;
+      v.on = v.held = true; v.pitch = p; v.vel = vel; v.age = ++this.counter; v.pos = 0; v.id = q.id; v.loop = q.loop; v.fade = 0;
+      v.fL.copy(this.lp); v.fR.copy(this.lp); v.fL.z1 = v.fL.z2 = v.fR.z1 = v.fR.z2 = 0;
       v.ratio = (s.rate / this.sr) * Math.pow(2, ((p - q.root) + this.tune + this.pitch) / 12 + q.tune / 1200);
       v.env.start();
     }
   }
+  noteOff(p) { if (this.oneShot) { for (const v of this.v) if (v.on && v.held && v.pitch === p) v.held = false; return; } super.noteOff(p); }
+  allOff() { for (const v of this.v) if (v.on) { v.held = false; v.env.release(); } }
   render(L, R, from, to) {
-    const ap = this.ap, lpG = this.lpG;
+    const ap = this.ap, open = this.open;
     for (const v of this.v) {
       if (!v.on) continue;
       const s = this.bank[v.id];
       if (!s || s.frames < 2) { v.on = false; continue; }
-      const g = this.gain * ((1 - this.velSens) + this.velSens * v.vel), last = s.frames - 1, sl = s.l, sr_ = s.r;
+      const g = (this.gain / SMP_UNITY) * ((1 - this.velSens) + this.velSens * v.vel), last = s.frames - 1, sl = s.l, sr_ = s.r || s.l, fL = v.fL, fR = v.fR;
       for (let i = from; i < to; i++) {
-        const e = v.env.next(ap);
+        let e = v.env.next(ap);
         if (v.env.st === 0) { v.on = false; break; }
-        let ip = v.pos | 0;
-        if (ip >= last) { if (!v.loop) { v.on = false; break; } v.pos -= last; ip = v.pos | 0; }
-        const fr = v.pos - ip;
-        const xl = sl[ip] + (sl[ip + 1] - sl[ip]) * fr, xr = sr_[ip] + (sr_[ip + 1] - sr_[ip]) * fr;
-        v.lpL += lpG * (xl - v.lpL); v.lpR += lpG * (xr - v.lpR);
-        L[i] += v.lpL * e * g; R[i] += v.lpR * e * g;
+        if (v.fade > 0) { v.fade -= v.fd; if (v.fade <= 0) { v.on = false; v.fade = 0; break; } e *= v.fade; }
+        if (v.pos >= last) { if (!v.loop) { v.on = false; break; } v.pos -= last; }
+        let xl = herm(sl, v.pos, last), xr = herm(sr_, v.pos, last);
+        if (!open) { xl = fL.process(xl); xr = fR.process(xr); }
+        L[i] += xl * e * g; R[i] += xr * e * g;
         v.pos += v.ratio;
       }
     }

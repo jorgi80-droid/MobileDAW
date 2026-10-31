@@ -24,12 +24,13 @@ export const INSTRUMENTS = {
     { n: 'Gain', min: 0, max: 1, def: 0.3, unit: '%' } ] },
   3: { name: 'Drum Sampler', params: [] },
   4: { name: 'DirectWave', view: 'sampler1', params: [
-    { n: 'Gain', min: 0, max: 1, def: 0.8, unit: '%' },
-    { n: 'Attack', min: 0.001, max: 2, def: 0.002, curve: 'log', unit: 's' },
+    { n: 'Gain', min: 0, max: 1, def: 0.8, unit: '%' },                                  // 80 % = the sample at unity
+    { n: 'Attack', min: 0.001, max: 2, def: 0.001, curve: 'log', unit: 's' },            // up to 2 ms = instant (transient kept)
     { n: 'Release', min: 0.01, max: 5, def: 0.2, curve: 'log', unit: 's' },
     { n: 'Cutoff', min: 100, max: 20000, def: 18000, curve: 'log', unit: 'Hz' },
     { n: 'Tune', min: -12, max: 12, def: 0, step: 1, fmt: 'int' },
-    { n: 'Vel Sens', min: 0, max: 1, def: 0.7, unit: '%' } ] },
+    { n: 'Vel Sens', min: 0, max: 1, def: 0.7, unit: '%' },
+    { n: 'Mode', min: 0, max: 1, def: 0, step: 1, fmt: 'list', items: ['Gate', 'One-shot'] } ] },   // one-shot: the sample plays to its end (drums)
   5: { name: 'GMS', params: [
     { n: 'Mode', min: 0, max: 1, def: 0, step: 1, fmt: 'mono' },
     { n: 'Glide', min: 1, max: 1000, def: 60, curve: 'log', unit: 'ms' },
@@ -795,6 +796,7 @@ export const PRESETS = {
     { cat: 'Sampler', name: 'Tight Pluck', p: { 1: 0.001, 2: 0.1, 5: 0.9 } },
     { cat: 'Sampler', name: 'Lo-Fi Tape', p: { 3: 3500, 4: -1, 5: 0.5 } },
     { cat: 'Sampler', name: 'Octave Down', p: { 2: 0.3, 4: -12 } },
+    { cat: 'Drums', name: 'One-Shot Drum', p: { 1: 0.001, 2: 0.05, 5: 0.6, 6: 1 } },
   ],
   9: [   // Keystone: same parameter set as DirectWave
     { cat: 'Sampler', name: 'Natural', p: {} },

@@ -126,6 +126,17 @@ Baca juga `README-ANDROID.md` (build, install, status fase 2).
 - Toolbar hanya: Browser, Tempo, Undo/Redo | Play/Pause, Rekam, Metronom | FPS+CPU, Arrange/Mixer, menu.
 - Klip yang dipilih tidak boleh ikut buram saat ada popup aksi klip.
 
+## Suara drum step + DirectWave (sesi ini)
+- Kit bawaan Drum Sampler (`DrumSynth`, `js/engine/instruments.js`, pad 36 kick / 38 snare / 39 clap / 42 closed hat / 46 open hat / 41 tom)
+  ditulis ulang gaya 909/808: transien (klik beater, senar snare, stick), badan dengan sapuan pitch, saturasi lembut `satN()` (harmonik
+  yang bisa dimainkan speaker HP), hat = 6 osilator kotak rasio 808 lewat band-pass + high-pass. Balance mix `KIT_MIX` (kick -5,6 dBFS
+  puncak, hat ~9 dB di bawahnya; satu beat penuh tetap di bawah 0 dBFS). Semua deterministik (lcg).
+- Sampel (pad Drum Sampler dan DirectWave / Keystone): interpolasi Hermite 4 titik `herm()`, velocity 1 = unity (pad gain 1; DirectWave
+  Gain 80 % = unity, `SMP_UNITY`), attack <= 2 ms = instan (0,12 ms anti-klik), Cutoff >= 18 kHz = tanpa filter, di bawahnya LP 12 dB
+  (biquad, dulu 1-pole yang selalu aktif), voice yang dicuri fade 1,5 ms. DirectWave parameter baru 6 **Mode** Gate / One-shot (+ preset
+  "One-Shot Drum"). Keduanya tetap engine Web (belum di-port C++).
+- Ukur / tes: `node tools/drum-punch.mjs [--check]` (level, transien, pita 150-500 Hz, ekor, beat penuh tanpa clipping; di run-tests).
+
 ## Pattern clip (MIDI / drum): model data, panjang, pengulangan (audit + perbaikan sesi ini)
 Empat hal terpisah (project.js, blok "pattern clips"):
 - **Data pattern** `c.notes` / `c.cc` = sumber; pengulangan TIDAK pernah menyalinnya. Hanya "Lepas loop" / "Unlink Loop" / "Ulangi" (atas
