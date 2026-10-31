@@ -160,14 +160,17 @@ Permintaan pemilik: SEMUA efek dan instrumen diganti dengan set stok Ableton Liv
   2000 + chain * 16 + j = efek di dalam. UI: `rackPanel()` di fxkit.js dipakai kedua rack (`irackView()` dari devices.js instCard).
   `node tools/ui-shots.mjs <folder> irack`.
 - Belum ada: instrumen bersampel di dalam Instrument Rack, Drum Rack versi rack (pad = chain), External Audio Effect (tidak mungkin di HP).
-- Instrumen Live 12: **Operator jadi** (tipe 14, engine `js/engine/operator.js`: 4 operator FM, 11 algoritma `OP_ALGOS`, envelope per operator
+- Instrumen Live 12: **Analog jadi** (tipe 15, engine `js/engine/analog.js`: Osc1/Osc2/Noise -> Fil1/Fil2 (F1/F2, To F2, Follow) -> Amp1/Amp2,
+  envelope LIN/EXP + Free, LFO1/LFO2 global, unison, glide, legato, vibrato; panel `VI[15]` dengan display kontekstual (ketuk baris = detail
+  bagian itu); `docs/redesign/29-analog.jpg`). Parameter instrumen 90 sengaja dibiarkan kosong (Pitch engine).
+  **Operator jadi** (tipe 14, engine `js/engine/operator.js`: 4 operator FM, 11 algoritma `OP_ALGOS`, envelope per operator
   dengan Initial / Peak / Loop, filter, Tone, Spread; panel `VI[14]`; `docs/redesign/28-operator.jpg`).
   **Drift jadi** (tipe 13, engine `js/engine/drift.js`, panel `VI[13]` di fxkit.js lewat `instKitView()`; `docs/redesign/27-drift.jpg`).
   Pola instrumen baru: `INSTRUMENTS[n] = { view: 'kit', full: true, params }` (full = project mengirim SEMUA parameter, tersimpan atau default,
   jadi default engine tidak penting); panel `VI[n](k)` memakai kit yang sama dengan efek (`k.get/set/K/S/N/...`, otomasi kind 5);
   `setBend(st)` opsional (core.bend memanggilnya; Drift menskalakan dengan PB Range). Tes: `tools/inst-test.mjs` (setiap parameter harus
   terdengar, `PRE` / `NO_AUDIO` per instrumen, plus tes khusus PB Range / Legato), ikut `run-tests`. "Note PB" Drift tidak dibuat (butuh MPE).
-  Belum: Analog, Wavetable (redesign), Meld, Simpler, Sampler (redesign), Drum Rack (redesign), Impulse, Electric, Collision,
+  Belum: Wavetable (redesign), Meld, Simpler, Sampler (redesign), Drum Rack (redesign), Impulse, Electric, Collision,
   Tension, Poli, Granulator III, DS Kick / Snare / Tom / HH / Clap / FM. Tipe instrumen lama tetap bisa dimuat (proyek lama).
 - Aturan: parameter baru selalu DITAMBAHKAN di akhir (indeks lama tetap), `migrate()` bila arti berubah; efek tanpa padanan Live 12 masuk
   'Lainnya (lama)'; native engine otomatis kembali ke engine web untuk device yang belum di-port.

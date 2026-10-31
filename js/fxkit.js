@@ -934,6 +934,45 @@ VI[14] = (k) => {
   const g2 = k.col(k.row(k.K(77), k.K(78), k.K(79)), k.row(k.K(76), k.K(81)), k.row(k.TL('Transpose', k.N(80, { w: 60, fill: false })), k.TL('PB Range', k.N(82, { w: 56 })), k.TL('Voices', k.N(83, { w: 50 }))));
   return k.row(h('div', { class: 'lk-ops' }, ...rows), right, k.sep(), glob, k.sep(), g2);
 };
+// Analog: section rows (Osc1 / Noise / Osc2 left, Fil1 / Fil2 / Amp1 / Amp2 / LFO1 / LFO2 right, Global); tapping a row shows its details in
+// the dark display between them (Live: the display follows the selected section): Slope LIN / EXP, Legato, Free, the section's envelope
+// (drag the points) and its extra parameters
+const ANST = new Map();
+VI[15] = (k) => {
+  const st = ANST.get(k.d.id) || { sec: 'fil0' }; ANST.set(k.d.id, st);
+  const disp = h('div', { class: 'lk-andisp' }), rowsEls = [];
+  const sel = (key, row) => { st.sec = key; for (const r of rowsEls) r.classList.toggle('sel', r === row); fill(); };
+  const box = (key, ...kids) => { const r = h('div', { class: 'lk-anrow' + (st.sec === key ? ' sel' : '') }, ...kids.filter(Boolean)); r.addEventListener('pointerdown', (e) => { if (e.target.closest('.knob, button, .lv-fld')) return; sel(key, r); }); rowsEls.push(r); return r; };
+  const tg = (j, t) => k.T(j, t, { cls: 'lk-antg' });
+  const f12 = (j) => k.TL('F1/F2', k.N(j, { w: 64 }));
+  const osc = (o) => { const b = o * 12; return box('osc' + o, k.col(k.row(tg(b, 'Osc' + (o + 1)), k.N(b + 1, { w: 66 })), k.LN('F1/F2', k.N(b + 2, { w: 66 }))), k.TL('Shape', waveSel(k, b + 3, '#ddd')), k.K(b + 4, { n: 'Octave' }), k.K(b + 5, { n: 'Semi' }), k.K(b + 6, { n: 'Detune' })); };
+  const noise = box('noise', k.col(k.row(tg(24, 'Noise'), k.N(25, { w: 66 })), k.LN('F1/F2', k.N(26, { w: 66 }))), k.K(27, { n: 'Color' })); void f12;
+  const fil = (f) => { const b = 28 + f * 12; return box('fil' + f, k.col(k.row(tg(b, 'Fil' + (f + 1)), k.S(b + 1, { w: 66 })), f ? k.T(53, 'Follow', { w: 70 }) : k.LN('To F2', k.N(52, { w: 66 }))), k.K(b + 2, { n: 'Freq' }), k.K(b + 3, { n: 'Res' })); };
+  const amp = (a) => { const b = 54 + a * 8; return box('amp' + a, k.col(tg(b, 'Amp' + (a + 1)), k.N(b + 1, { w: 66 })), k.K(b + 2, { n: 'Pan' })); };
+  const lfo = (l) => { const b = 70 + l * 5; return box('lfo' + l, k.col(tg(b, 'LFO' + (l + 1)), waveSel(k, b + 1, '#ddd')), k.K(b + 2, { n: 'Rate' })); };
+  const glob = box('glob', k.col(h('span', { class: 'lk-st' }, 'Global'), k.S(80, { w: 66 })), k.K(87, { n: 'Volume' }));
+  function envDisp(a, d, s2, r) {
+    const W = 200, H = 96;
+    return k.D(W, H, (g, w, hh) => { const pts = lvEnvPts(w, hh, k.get(a) / 1000, k.get(d) / 1000, k.get(s2), k.get(r) / 1000, 8), lin = k.get(89) < 0.5;
+      const curve = lin ? pts : [pts[0], ...[1, 2, 3, 4].flatMap((n) => { const [x0, y0] = pts[n - 1], [x1, y1] = pts[n]; return Array.from({ length: 12 }, (_, j) => { const t = (j + 1) / 12, e = n === 1 ? t : 1 - Math.exp(-4 * t); return [x0 + (x1 - x0) * t, y0 + (y1 - y0) * (n === 3 ? t : e / (1 - Math.exp(-4)))]; }); })];
+      lvPath(g, curve, DISPC.bl, null, 1.6); g.strokeStyle = DISPC.or; g.lineWidth = 1.3; for (const n of [1, 2, 4]) g.strokeRect(pts[n][0] - 3.5, pts[n][1] - 3.5, 7, 7); },
+    { onDown: (x) => ({ j: x < W * 0.3 ? a : x < W * 0.6 ? s2 : r, v0: 0 }), onMove: (x, y, dx, dy, s) => { const p = k.def.params[s.j]; if (s.j === s2) k.set(s2, Math.max(0, Math.min(1, 1 - (y - 8) / (H - 16)))); else k.set(s.j, Math.max(p.min, Math.min(p.max, (s.v0 || (s.v0 = k.get(s.j))) * Math.pow(2, dx / 40)))); } });
+  }
+  const T = (n, j, o2 = {}) => k.TL(n, k.NT(j, { w: o2.w || 62, cls: o2.or ? 'or' : '' }));
+  function fill() {
+    const sec = st.sec, n = +sec.slice(-1), head = k.row(h('span', { class: 'lk-lb' }, 'Slope'), k.CH(89, ['LIN', 'EXP'], { cls: 'cy' }), k.T(84, 'Legato', { cls: 'lk-chk' }), k.T(91, 'Free', { cls: 'lk-chk' }));
+    let body;
+    if (sec.startsWith('fil')) { const b = 28 + n * 12; body = k.row(envDisp(b + 7, b + 8, b + 9, b + 10), k.col(k.row(T('Attack', b + 7), T('Decay', b + 8)), k.row(T('Sustain', b + 9), T('Release', b + 10)), k.row(T('Env', b + 4), T('Key', b + 5)), k.row(k.TL('Drive', k.S(b + 6, { w: 70, cls: 'dk or' })), T('LFO' + (n + 1), b + 11, { or: true })))); }
+    else if (sec.startsWith('amp')) { const b = 54 + n * 8; body = k.row(envDisp(b + 3, b + 4, b + 5, b + 6), k.col(k.row(T('Attack', b + 3), T('Decay', b + 4)), k.row(T('Sustain', b + 5), T('Release', b + 6)), k.row(T('LFO' + (n + 1), b + 7, { or: true })))); }
+    else if (sec.startsWith('osc')) { const b = n * 12; body = k.row(k.col(k.row(T('PW', b + 7), T('Sub', b + 8)), k.row(T('PEG (Fil' + (n + 1) + ' Env)', b + 9, { w: 70 }), T('LFO' + (n + 1), b + 10, { or: true })), k.row(k.TL('Key', k.T(b + 11, 'On', { w: 40 }))))); }
+    else if (sec === 'noise') body = k.row(T('Color', 27), T('F1/F2', 26));
+    else if (sec.startsWith('lfo')) { const b = 70 + n * 5; body = k.row(T('Rate', b + 2), k.TL('Retrig', k.T(b + 3, 'On', { w: 40 })), T('Phase', b + 4)); }
+    else body = k.col(k.row(k.TL('Unison', k.S(81, { w: 64, cls: 'dk' })), T('Detune', 82), T('Glide', 83)), k.row(T('Vibrato', 85), T('Vib Rate', 86), T('PB Range', 88)));
+    disp.replaceChildren(k.dk(head, body));
+  }
+  fill();
+  return k.row(h('div', { class: 'lk-ancol' }, osc(0), noise, osc(1)), disp, h('div', { class: 'lk-ancol' }, fil(0), fil(1), k.row(amp(0), amp(1))), h('div', { class: 'lk-ancol' }, lfo(0), lfo(1), glob));
+};
 export function instKitView(i, t, every) {
   const def = INSTRUMENTS[t.inst.type]; if (!VI[t.inst.type]) return null;
   const d = { id: 'in' + t.id, type: t.inst.type, params: new Proxy({}, { get: (_, kk) => t.inst.params[kk] ?? (def.params[kk] ? def.params[kk].def : undefined) }) };

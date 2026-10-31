@@ -4,7 +4,7 @@ import { wtName, WT_COUNT } from './engine/live.js';
 // (app/src/main/cpp/instruments.h and devices.h).
 export const INST = { MINISYNTH: 1, SUPERSAW: 2, DRUM: 3, DIRECTWAVE: 4, GMS: 5, SOUNDFONT: 6, MOISTURE: 7, OSPHERE: 8, KEYSTONE: 9, SAMPLER: 10, WAVETABLE: 11 };
 // Instruments a synth/sampler track can switch between (drums have their own track type).
-export const INST_LIST = [14, 13, 11, 10, 1, 2, 4, 5, 6, 7, 8, 9, 12];
+export const INST_LIST = [15, 14, 13, 11, 10, 1, 2, 4, 5, 6, 7, 8, 9, 12];
 
 export const INSTRUMENTS = {
   1: { name: 'Mini Synth', params: [
@@ -577,6 +577,25 @@ export const IRACK_DEF = { name: 'Instrument Rack', rack: true, params: [] };   
     q('Volume', -60, 6, -6, { fmt: 'dbinf' }), q('Transpose', -48, 48, 0, { step: 1, fmt: 'st' }), q('Spread', 0, 1, 0, { unit: '%' }), q('PB Range', 0, 48, 5, { step: 1, fmt: 'st' }), q('Voices', 1, 16, 6, { step: 1, fmt: 'num' })] };
 }
 
+// Analog (instrument 15, engine js/engine/analog.js): Osc o at 12 * o, Noise 24.., Fil f at 28 + 12 * f, 52 To F2, 53 Follow, Amp a at 54 + 8 * a,
+// LFO l at 70 + 5 * l, global 80..89, 90 = engine Pitch (unused here), 91 Free
+{
+  const ms = (n, d) => q(n, 0.5, 20000, d, { curve: 'log', unit: 'ms' }), dB = (n, d) => q(n, -60, 0, d, { fmt: 'dbinf' }), pct = (n, d) => q(n, 0, 1, d, { unit: '%' });
+  const osc = (o) => { const L = `Osc${o + 1}`; return [onoff(`${L} On`, o ? 1 : 1), dB(`${L} Level`, o ? -3.5 : 0), q(`${L} F1/F2`, 0, 1, 0, { fmt: 'f1f2' }), list(`${L} Shape`, ['Sine', 'Saw', 'Rectangle', 'Noise'], 1),
+    q(`${L} Octave`, -3, 3, o ? 1 : 0, { step: 1, fmt: 'num' }), q(`${L} Semi`, -12, 12, o ? 7 : 0, { step: 1, fmt: 'st' }), q(`${L} Detune`, -1, 1, o ? -0.04 : 0, { unit: '' }), pct(`${L} PW`, 0),
+    q(`${L} Sub`, 0, 1, 0, { unit: '%' }), q(`${L} PEG`, -1, 1, 0, { fmt: 'pct1' }), q(`${L} LFO`, 0, 1, 0, { unit: '%' }), onoff(`${L} Key`, 1)]; };
+  const fil = (f) => { const L = `Fil${f + 1}`; return [onoff(`${L} On`, 1), list(`${L} Type`, ['LP12', 'LP24', 'BP6', 'BP12', 'Notch', 'HP12', 'HP24'], f ? 0 : 1), q(`${L} Freq`, 20, 20000, f ? 1000 : 1200, { curve: 'log', unit: 'Hz' }),
+    q(`${L} Res`, 0, 1, 0.2, { unit: '' }), q(`${L} Env`, -1, 1, 0.3, { fmt: 'pct1' }), q(`${L} Key`, 0, 1, 0, { unit: '' }), list(`${L} Drive`, ['Off', 'Sym1', 'Sym2', 'Sym3', 'Asym1', 'Asym2', 'Asym3'], f ? 0 : 1),
+    ms(`${L} Attack`, 16), ms(`${L} Decay`, 600), pct(`${L} Sustain`, 0.3), ms(`${L} Release`, 400), q(`${L} LFO`, 0, 1, 0, { unit: '%' })]; };
+  const amp = (a) => { const L = `Amp${a + 1}`; return [onoff(`${L} On`, a ? 0 : 1), dB(`${L} Level`, 0), q(`${L} Pan`, -1, 1, 0, { fmt: 'pan' }), ms(`${L} Attack`, 2), ms(`${L} Decay`, 600), pct(`${L} Sustain`, 0.7), ms(`${L} Release`, 300), q(`${L} LFO`, 0, 1, 0, { unit: '%' })]; };
+  const lfo = (l) => { const L = `LFO${l + 1}`; return [onoff(`${L} On`, 1), list(`${L} Wave`, ['Sine', 'Triangle', 'Rectangle', 'S&H', 'Noise'], 0), q(`${L} Rate`, 0.01, 30, 2, { curve: 'log', unit: 'Hz' }), onoff(`${L} Retrig`), q(`${L} Phase`, 0, 1, 0, { unit: '%' })]; };
+  INSTRUMENTS[15] = { name: 'Analog', view: 'kit', full: true, params: [...osc(0), ...osc(1), onoff('Noise On', 0), dB('Noise Level', 0), q('Noise F1/F2', 0, 1, 0, { fmt: 'f1f2' }), q('Noise Color', 20, 20000, 682, { curve: 'log', unit: 'Hz' }),
+    ...fil(0), ...fil(1), pct('To F2', 1), onoff('Follow'), ...amp(0), ...amp(1), ...lfo(0), ...lfo(1),
+    list('Voices', ['Mono', '2', '4', '6', '8', '12', '16', '24', '32'], 4), list('Unison', ['Off', '2', '3', '4'], 0), q('Uni Detune', 0, 1, 0.2, { unit: '' }), q('Glide', 0, 2000, 0, { unit: 'ms' }), onoff('Legato'),
+    q('Vibrato', 0, 1, 0, { unit: '%' }), q('Vib Rate', 0.1, 12, 5, { curve: 'log', unit: 'Hz' }), q('Volume', -60, 6, -6, { fmt: 'dbinf' }), q('PB Range', 0, 48, 2, { step: 1, fmt: 'st' }), list('Env Slope', ['LIN', 'EXP'], 1),
+    { n: '-', min: 0, max: 1, def: 0, hidden: true }, onoff('Free')] };
+}
+
 // ---- Audio Effect Rack (engine: js/engine/fx7.js; project: d.chains, d.macroMap)
 {
   const H = { hidden: true }, P = [];
@@ -768,6 +787,7 @@ export function fmtParam(p, v) {
     case 'st': return (v > 0 ? '+' : '') + Math.round(v) + ' st';
     case 'num': return String(Math.round(v));
     case 'macro': return String(Math.round(v * 127));
+    case 'f1f2': return v < 0.02 ? 'F1' : v > 0.98 ? 'F2' : Math.round((1 - v) * 100) + '/' + Math.round(v * 100);
     case 'coarse': return v < 0.5 ? '0.5' : String(Math.round(v));
     case 'algo': return String(Math.round(v) + 1);
     case 'ratio': return (v / 100).toFixed(2);

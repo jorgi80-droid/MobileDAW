@@ -720,3 +720,12 @@
 .lk-opr .lk-dk { height: 100%; }
 .lk-opeh { align-self: flex-start; display: flex; align-items: center; gap: 4px; color: #e4e4e6; font: var(--fw-sb) var(--fs-3)/16px var(--font); }
 .lk-opeh i { width: 10px; height: 10px; background: var(--opc); }
+/* Analog */
+.lk-ancol { display: flex; flex-direction: column; gap: 4px; }
+.lk-anrow { display: flex; align-items: center; gap: var(--sp-3); padding: 3px 6px; border-radius: 6px; background: color-mix(in srgb, var(--lv-ink) 6%, transparent); border: 1px solid transparent; }
+.lk-anrow.sel { border-color: color-mix(in srgb, var(--lv-ink) 45%, transparent); }
+.lk-anrow > .lk-col { align-items: flex-start; }
+.lk .lv-btn.lk-antg { min-width: 52px; padding: 0 4px; }
+.lk-andisp { display: flex; } .lk-andisp > .lk-dk { align-items: flex-start; min-width: 330px; }
+.lk-dk .lv-btn.lk-chk { color: #e4e4e6 !important; }
+.lk-dk .lk-ch.cy .lv-btn { background: transparent; color: #4fc3f0; border: 1px solid #4fc3f0; } .lk-dk .lk-ch.cy .lv-btn.on { background: #4fc3f0; color: #1b1b1d; }
