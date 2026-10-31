@@ -194,25 +194,45 @@ function instCard(i, t, o = {}) {
     (rect) => offerAutomation(rect, { kind: 5, strip: P.stripOf(i), param: k, def: p }, `${t.name} \u2022 ${p.n}`))));
   if (!syn) body.append(pitchKnob(i, t));
   if (t.inst.type === INST.DRUM) {
-    // Drum Rack style: tap a pad to play it and select it, the knobs on the right belong to the selected pad
+    // Live 12 Drum Rack: 4 x 4 pads (first pad bottom left), each with its name and M / ▶ / S (mute, play, solo); tap = play + select.
+    // Right: the selected pad (Level, Pan, Pitch, Decay, sample, start / end, reverse) and the rack's Pitch.
     const PD = P.padsOf(i);
     let cur = Math.min(padSel.get(t.id) ?? 0, PD.length - 1);
-    const pads = h('div', { class: 'pads' }), kn = h('div', { class: 'knobs dk' }), title = h('div', { class: 'fv-ro dt' });
+    const pads = h('div', { class: 'drk-pads' }), side = h('div', { class: 'drk-side' });
     const PK = [{ n: 'Level', min: -24, max: 6, def: 0, unit: 'dB' }, { n: 'Pitch', min: -12, max: 12, def: 0, unit: 'st' }, { n: 'Decay', min: 0.25, max: 3, def: 1, curve: 'log', unit: 'x' }];
-    const showKnobs = () => {
-      title.textContent = `Pad: ${PD[cur].name} \u2022 ${noteName(PD[cur].pitch)}`;
-      kn.replaceChildren(...PK.map((p, j) => { const idx = cur * 3 + j; return knob(p, () => t.inst.params[idx] ?? p.def, (v) => P.setInstParam(i, idx, v), fmtParam, C('#ffa722'), (rect) => offerAutomation(rect, { kind: 5, strip: P.stripOf(i), param: idx, def: p }, `${t.name} \u2022 ${PD[cur].name} ${p.n}`)); }), pitchKnob(i, t));
+    const PAN = { n: 'Pan', min: -1, max: 1, def: 0, fmt: 'pan' }, ST = { n: 'Start', min: 0, max: 0.95, def: 0, unit: '%' }, EN = { n: 'End', min: 0.05, max: 1, def: 1, unit: '%' };
+    const col = C('#ffa722');
+    const sbtn = (label, on, fn, cls = '') => { const b = h('button', { class: 'lv-btn drk-b ' + cls + (on ? ' on' : ''), onclick: (e) => { e.stopPropagation(); fn(b); } }, label); b.addEventListener('pointerdown', (e) => e.stopPropagation()); return b; };
+    const showSide = () => {
+      const q = PD[cur], pk = (j) => { const idx = cur * 3 + j, p = PK[j]; return knob(p, () => t.inst.params[idx] ?? p.def, (v) => P.setInstParam(i, idx, v), fmtParam, col, (rect) => offerAutomation(rect, { kind: 5, strip: P.stripOf(i), param: idx, def: p }, `${t.name} • ${q.name} ${p.n}`)); };
+      const pf = (f, p) => knob(p, () => q[f], (v) => P.setPad(i, cur, f, v), fmtParam, col);
+      const pick = () => BR.openBrowser('file', { track: i, pad: cur, done: () => render() });
+      side.replaceChildren(
+        h('div', { class: 'drk-st' }, h('b', {}, q.name), h('span', {}, noteName(q.pitch))),
+        h('div', { class: 'drk-kn' }, pk(0), pf('pan', PAN), pk(1), pk(2)),
+        h('div', { class: 'drk-smp' }, h('button', { class: 'lv-btn drk-file', onclick: pick }, q.sample ? q.sample.name : 'Sintetis bawaan • pilih sample…'),
+          q.sample ? sbtn('Rev', q.rev, (b) => { P.setPad(i, cur, 'rev', !q.rev); b.classList.toggle('on', q.rev); }) : null),
+        q.sample ? h('div', { class: 'drk-kn' }, pf('start', ST), pf('end', EN)) : h('div', { class: 'drk-kn drk-note' }, 'Pad sintetis: suara diatur dengan Level, Pitch dan Decay.'),
+        h('div', { class: 'drk-rack' }, h('span', {}, 'Rack'), pitchKnob(i, t)));
     };
-    const btns = PD.map((d, k) => {
-      const b = h('button', { class: 'pad' + (k === cur ? ' sel' : '') }, h('span', {}, d.name), h('small', {}, noteName(d.pitch)));
-      b.addEventListener('pointerdown', (e) => { b.setPointerCapture(e.pointerId); b.classList.add('hit'); cur = k; padSel.set(t.id, k); btns.forEach((x, m) => x.classList.toggle('sel', m === k)); showKnobs(); P.noteEvent(i, d.pitch, 0.9, true); });
+    const cells = [];
+    for (let k = 0; k < P.MAX_PADS; k++) {
+      const d = PD[k];
+      if (!d) { cells.push(h('button', { class: 'drk-pad empty', 'aria-label': 'Tambah pad', onclick: () => DP.addPad(i) }, h('span', { class: 'drk-n' }, '+'), h('small', {}, 'Drop Sample'))); continue; }
+      const play = sbtn('▶', false, () => {}, 'pl');
+      play.addEventListener('pointerdown', () => P.noteEvent(i, d.pitch, 0.9, true)); ['pointerup', 'pointercancel', 'pointerleave'].forEach((ev) => play.addEventListener(ev, () => P.noteEvent(i, d.pitch, 0, false)));
+      const b = h('div', { class: 'drk-pad' + (k === cur ? ' sel' : '') + (d.mute ? ' mut' : ''), role: 'button', 'aria-label': d.name },
+        h('div', { class: 'drk-top' }, h('span', { class: 'drk-n' }, d.name), h('small', {}, noteName(d.pitch))),
+        h('div', { class: 'drk-ms' }, sbtn('M', d.mute, (x) => { P.setPad(i, k, 'mute', !d.mute); x.classList.toggle('on', d.mute); b.classList.toggle('mut', d.mute); }), play, sbtn('S', d.solo, (x) => { P.setPad(i, k, 'solo', !d.solo); x.classList.toggle('on', d.solo); }, 'so')));
+      const top = b.firstChild;
+      top.addEventListener('pointerdown', (e) => { top.setPointerCapture(e.pointerId); b.classList.add('hit'); cur = k; padSel.set(t.id, k); cells.forEach((x, m) => x.classList.toggle('sel', m === k)); showSide(); P.noteEvent(i, d.pitch, 0.9, true); });
       const off = () => { b.classList.remove('hit'); P.noteEvent(i, d.pitch, 0, false); };
-      b.addEventListener('pointerup', off); b.addEventListener('pointercancel', off);
-      pads.append(b); return b;
-    });
-    for (let k = PD.length; k < P.MAX_PADS; k++) pads.append(h('button', { class: 'pad empty', 'aria-label': 'Tambah pad', onclick: () => DP.addPad(i) }, h('span', {}, '+'), h('small', {}, 'Sample')));   // Live's empty Drum Rack pads: drop / pick a sample
-    showKnobs();
-    return h('div', { class: 'card drack', style: 'min-width:420px' }, head, h('div', { class: 'drumrow' }, h('div', { class: 'dp' }, pads), h('div', { class: 'dr' }, title, kn)));
+      top.addEventListener('pointerup', off); top.addEventListener('pointercancel', off);
+      cells.push(b);
+    }
+    for (let r = 3; r >= 0; r--) for (let c = 0; c < 4; c++) pads.append(cells[r * 4 + c]);   // Live: the first pad is bottom left
+    showSide();
+    return h('div', { class: 'card drack drk' }, head, h('div', { class: 'drk-body' }, pads, side));
   }
   if (def.view === 'soundfont') {
     const sf = t.inst.sf;

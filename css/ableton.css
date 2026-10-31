@@ -822,3 +822,31 @@
 .smp-grid .lv-btn.wide { max-width: none; justify-content: flex-start; }
 .card.lvcard { display: flex; flex-direction: column; } .card.lvcard > .lv-dev.smp { margin-block: auto; }
 .lv-dev.smp .lv-krow .knob { width: 54px; }
+/* Drum Rack (Live 12): 4 x 4 pads with name + M / play / S strip, the selected pad's controls in a dark box on the right */
+.card.drk { min-width: 0; display: flex; flex-direction: column; }
+.drk-body { display: flex; gap: var(--sp-3); padding: 8px; margin-block: auto; align-items: stretch; }
+.drk-pads { display: grid; grid-template-columns: repeat(4, 84px); grid-auto-rows: 58px; gap: 4px; padding: 4px; background: var(--lv-well); border: 1px solid var(--lv-edge); }
+.drk-pad { display: flex; flex-direction: column; min-width: 0; border: 1px solid var(--lv-edge); border-radius: var(--r-2); background: var(--lv-ctl); color: var(--lv-ink); overflow: hidden; }
+.drk-top { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; padding: 2px 4px; touch-action: none; }
+.drk-n { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--fw-sb) var(--fs-3)/1.15 var(--font); }
+.drk-pad small { font: var(--fw-m) var(--fs-1)/1 var(--font); color: var(--lv-dim); }
+.drk-ms { flex: none; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1px; background: var(--lv-edge); border-top: 1px solid var(--lv-edge); }
+.lv-btn.drk-b { min-width: 0; height: 18px; padding: 0; border: 0; border-radius: 0; background: var(--lv-ctl); color: var(--lv-ink); font: var(--fw-sb) var(--fs-2)/18px var(--font); }
+.lv-btn.drk-b.pl { color: var(--lv-dim); font-size: 8px; } .lv-btn.drk-b.pl:active { color: var(--accent); }
+.lv-btn.drk-b.on { background: #ffad32; color: #1b1b1d; } .lv-btn.drk-b.so.on { background: #4fa3e0; color: #1b1b1d; }
+.drk-pad.sel { border-color: var(--lv-ink); box-shadow: inset 0 0 0 1px var(--lv-ink); } .drk-pad.sel .drk-top { background: var(--lv-sel); }
+.drk-pad.hit .drk-top { background: var(--accent); color: var(--accent-ink); } .drk-pad.hit small { color: var(--accent-ink); }
+.drk-pad.mut .drk-top { opacity: .5; }
+.drk-pad.empty { align-items: center; justify-content: center; gap: 2px; background: transparent; border-style: dashed; border-color: var(--lv-trk); color: var(--lv-dim); padding: 0; }
+.drk-pad.empty .drk-n { font-weight: 300; font-size: 16px; }
+.drk-side { width: 248px; display: flex; flex-direction: column; justify-content: space-between; gap: var(--sp-2); padding: 6px 8px; background: #262628; border: 1px solid var(--lv-edge); color: #9a9aa2; }
+.drk-st { display: flex; align-items: baseline; justify-content: space-between; padding-bottom: 4px; border-bottom: 1px solid #444; }
+.drk-st b { font: var(--fw-b) var(--fs-4)/1.2 var(--font); color: #e4e4e6; } .drk-st span { font: var(--fw-sb) var(--fs-2)/1 var(--font); color: #ffad32; }
+.drk-kn { display: flex; justify-content: space-around; align-items: flex-start; }
+.drk-kn .knob { width: 54px; }
+.drk-note { font-size: var(--fs-2); line-height: 1.35; text-align: center; padding: 6px 4px; }
+.drk-smp { display: flex; gap: var(--sp-2); }
+.lv-btn.drk-file { flex: 1; min-width: 0; justify-content: flex-start; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.drk-smp .drk-b { width: 40px; height: var(--ctl-s); border-radius: var(--r-1); border: 1px solid var(--lv-edge); }
+.drk-rack { display: flex; align-items: center; justify-content: space-between; padding-top: 4px; border-top: 1px solid #444; font: var(--fw-sb) var(--fs-2)/1 var(--font); }
+.drk-rack .knob { width: 54px; }
