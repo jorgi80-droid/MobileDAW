@@ -1,5 +1,6 @@
 // Web backend of the `eng` interface: AudioWorklet engine + offline file library (IndexedDB) + recording + MIDI + WAV export.
 import { Engine, NSTRIPS, MASTER, RET0, NFX } from './core.js';
+import { sabAvailable, makeShared, RingWriter, PollReader } from './sabio.js';
 import { parseSf2 } from './sf2.js';
 import { encodeWav, finishRender } from './wav.js';
 import { Mp3Encoder, Resampler, mp3Rate, concatBytes } from './mp3.js';
@@ -174,14 +175,15 @@ class OfflineTarget {
 }
 
 export function createWebBackend() {
-  const st = { ctx: null, node: null, ready: false, queue: [], poll: { pos: 0, playing: false, cpu: 0, m: new Array(NSTRIPS * 2).fill(0) }, dev: {}, wanted: new Map(), watchKey: '', bank: new Array(256).fill(null), sfs: [], sfPaths: new Map(), exporting: false, cancel: false, rec: null, midi: null, midiNames: [], latencyMs: 0, starting: null };
+  const st = { ctx: null, node: null, ready: false, queue: [], poll: { pos: 0, playing: false, cpu: 0, m: new Array(NSTRIPS * 2).fill(0) }, dev: {}, wanted: new Map(), watchKey: '', bank: new Array(256).fill(null), sfs: [], sfPaths: new Map(), exporting: false, cancel: false, rec: null, midi: null, midiNames: [], latencyMs: 0, starting: null, seq: 0, ring: null, pr: null, sab: false };
   const me = {};
 
   function post(c, ...a) {
     note(c, a);
     if (nat.mirror) { if (!(TRANSPORT.has(c) && !nat.on)) nat.sink.send(c, a); }        // native engine: every command; play / preview only while it is the one sounding
     if (nat.only || (nat.on && TRANSPORT.has(c))) return;                               // the worklet stays stopped (and silent) while the native engine plays
-    if (st.ready) st.node.port.postMessage({ c, a }); else st.queue.push({ c, a });
+    const seq = ++st.seq;                                                               // global order of the ring and the message commands
+    if (st.ready) { if (!(st.ring && st.ring.push(seq, c, a))) st.node.port.postMessage({ c, a, seq }); } else st.queue.push({ c, a, seq });
     if (c === 'stop' && nat.pending) setTimeout(evaluate, 0);
   }
 
@@ -279,7 +281,12 @@ export function createWebBackend() {
     const latLog = () => log('info', `latensi audio: base ${((st.ctx.baseLatency || 0) * 1000).toFixed(1)} ms, output ${((st.ctx.outputLatency || 0) * 1000).toFixed(1)} ms, status ${st.ctx.state}`);
     latLog(); st.ctx.addEventListener('statechange', () => { if (st.ctx.state === 'running') latLog(); });
     await st.ctx.audioWorklet.addModule(new URL('./worklet.js', import.meta.url));
-    st.node = new AudioWorkletNode(st.ctx, 'daw', { numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [2] });
+    // SharedArrayBuffer channels (sabio.js) only when the page is cross-origin isolated (COOP / COEP headers); otherwise postMessage only
+    let shared = null;
+    if (sabAvailable()) { try { shared = makeShared(NSTRIPS, 64); } catch (e) { shared = null; log('warn', 'SharedArrayBuffer tidak bisa dibuat', e); } }
+    st.node = new AudioWorkletNode(st.ctx, 'daw', { numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [2], processorOptions: shared ? { shared } : {} });
+    if (shared) { st.ring = new RingWriter(shared); st.pr = new PollReader(shared); st.sab = true; setInterval(sabPoll, 100); }
+    log('info', 'kanal engine: ' + (shared ? 'SharedArrayBuffer (ring buffer perintah + blok poll)' : 'postMessage (halaman tidak cross-origin isolated)'));
     st.node.connect(st.ctx.destination);
     st.node.port.onmessage = (ev) => {
       const d = ev.data;
@@ -295,6 +302,16 @@ export function createWebBackend() {
     for (const ev of ['pointerdown', 'keydown', 'touchend']) addEventListener(ev, resume, true);
     setInterval(pruneWatch, 250);
     return st.ctx.sampleRate;
+  }
+  // shared poll block -> st.poll (the playhead clock gets the time the block was written, from the audio clock)
+  function sabPoll() {
+    if (!st.pr || nat.on) return st.poll;
+    const d = st.pr.read();
+    if (d && d !== st.sabLast) {
+      st.sabLast = d; d.rx = performance.now() - Math.max(0, (st.ctx.currentTime - d.t) * 1000);
+      st.poll = d; st.dev = d.dev; if (nat.pending && !d.playing) evaluate();
+    }
+    return st.poll;
   }
   function pruneWatch() {
     const now = Date.now(), list = [];
@@ -315,7 +332,8 @@ export function createWebBackend() {
     masterLimit: (on) => { st.limOn = !!on; post('masterLimit', !!on); },   // output-stage safety limiter (also used by the mix export)
     pdc: (on) => { st.pdcOn = !!on; post('setPdc', !!on); },              // plugin delay compensation (also used by every export)
     pdcMs: () => { const sr = nat.on && nat.sink && nat.sink.sr ? nat.sink.sr : st.ctx ? st.ctx.sampleRate : 0; return sr && st.poll && st.poll.lat ? st.poll.lat / sr * 1000 : 0; },   // how far the heard output trails the song position
-    poll: () => st.poll,
+    poll: () => (st.pr && !nat.on ? sabPoll() : st.poll),
+    channel: () => (st.sab ? 'sab' : 'message'),
     devOut: (t, d) => { st.wanted.set(t + ',' + d, Date.now()); return st.dev[t + ',' + d] || []; },
   });
 
