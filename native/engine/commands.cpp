@@ -3,21 +3,25 @@
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
+#include <map>
+#include <mutex>
 #include <unordered_map>
+#include "inst_classic.h"
+#include "live.h"
 
 namespace mdaw {
 
 enum Op {
   PLAY, STOP, PLAYCOUNTIN, SEEK, TEMPO, TEMPOMAP, SETSIG, SETMETER, LOOP, SETMETRO, SETMETROVOL, MASTERLIMIT, SETPDC, TRACKLOAD,
   TRACKVOL, TRACKPAN, TRACKMUTE, TRACKSOLO, TRACKSEND, TRACKOUT, TRACKINST, INSTPARAM, RESETTRACK,
-  INSERTDEVICE, REMOVEDEVICE, DEVPARAM, DEVBYPASS, RACKCMD, PREVIEW, BEND, TRACKNOTES, TRACKCLIPS, TRACKCC, AUTOMATION, SAMPLE, PANIC
+  INSERTDEVICE, REMOVEDEVICE, DEVPARAM, DEVBYPASS, RACKCMD, SOUNDFONT, PREVIEW, BEND, TRACKNOTES, TRACKCLIPS, TRACKCC, AUTOMATION, SAMPLE, PANIC
 };
 static const std::unordered_map<std::string, int> OPS = {
   { "play", PLAY }, { "stop", STOP }, { "playCountIn", PLAYCOUNTIN }, { "seek", SEEK }, { "tempo", TEMPO }, { "tempoMap", TEMPOMAP },
   { "setSig", SETSIG }, { "setMeter", SETMETER }, { "loop", LOOP }, { "setMetro", SETMETRO }, { "setMetroVol", SETMETROVOL }, { "masterLimit", MASTERLIMIT }, { "setPdc", SETPDC }, { "trackLoad", TRACKLOAD },
   { "trackVol", TRACKVOL }, { "trackPan", TRACKPAN }, { "trackMute", TRACKMUTE }, { "trackSolo", TRACKSOLO }, { "trackSend", TRACKSEND },
   { "trackOut", TRACKOUT }, { "trackInst", TRACKINST }, { "instParam", INSTPARAM }, { "resetTrack", RESETTRACK }, { "insertDevice", INSERTDEVICE },
-  { "removeDevice", REMOVEDEVICE }, { "devParam", DEVPARAM }, { "devBypass", DEVBYPASS }, { "rackCmd", RACKCMD }, { "preview", PREVIEW }, { "bend", BEND },
+  { "removeDevice", REMOVEDEVICE }, { "devParam", DEVPARAM }, { "devBypass", DEVBYPASS }, { "rackCmd", RACKCMD }, { "sf", SOUNDFONT }, { "preview", PREVIEW }, { "bend", BEND },
   { "trackNotes", TRACKNOTES }, { "trackClips", TRACKCLIPS }, { "trackCC", TRACKCC }, { "automation", AUTOMATION }, { "sample", SAMPLE }, { "panic", PANIC },
 };
 
@@ -124,30 +128,60 @@ static LaneData* prepLanes(const Arg& flat, const Arg& cnt) {
   return d;
 }
 
+// SoundFont sample data staged by the Android bridge (it arrives through the sample channel, too large for a text command)
+static std::mutex sfMu; static std::map<int, std::vector<float>> sfStaged;
+void stageSoundFont(int id, std::vector<float>&& data) { std::lock_guard<std::mutex> g(sfMu); sfStaged[id] = std::move(data); }
+bool takeStagedSoundFont(int id, std::vector<float>& out) { std::lock_guard<std::mutex> g(sfMu); auto it = sfStaged.find(id); if (it == sfStaged.end()) return false; out = std::move(it->second); sfStaged.erase(it); return true; }
+
 bool supported(const std::string& name, const std::vector<Arg>& a) {
   if (name == "trackInst") { int ty = toInt32(at(a, 1).n()); return instPorted(ty) || at(a, 0).n() >= MASTER; }
   if (name == "insertDevice") return devPorted(toInt32(at(a, 2).n()));
-  if (name == "sf" || name == "loadSoundFont") return false;     // SoundFont: not ported yet
   return true;
 }
 
+// instrument type per track as the command stream set it (prepare runs in command order): lets prepare build Wavetable frame sets
+// (live.cpp wtEnsure) here, off the audio thread, before the instParam that selects them reaches the engine
+static int trackType[NSTRIPS] = {};
 bool prepare(const std::string& name, const std::vector<Arg>& a, const Engine& eng, Cmd& c) {
-  if (name == "loadSoundFont" || name == "sf") { c.error = "unsupported soundfont"; return false; }   // sf2 not ported yet
   auto it = OPS.find(name);
   if (it == OPS.end()) { c.error = "unknown command " + name; return false; }
   c.op = it->second;
   auto N = [&](size_t i) { return at(a, i).n(); };
   auto B = [&](size_t i) { return at(a, i).truthy() ? 1.0 : 0.0; };
   switch (c.op) {
-    case PLAYCOUNTIN: case SEEK: case TEMPO: case SETMETROVOL: case RESETTRACK: c.a[0] = N(0); break;
+    case PLAYCOUNTIN: case SEEK: case TEMPO: case SETMETROVOL: c.a[0] = N(0); break;
+    case RESETTRACK: { c.a[0] = N(0); int t = toInt32(N(0)); if (t >= 0 && t < NSTRIPS) trackType[t] = 0; break; }
     case SETMETRO: case MASTERLIMIT: case SETPDC: case TRACKLOAD: c.a[0] = B(0); break;
     case LOOP: c.a[0] = B(0); c.a[1] = N(1); c.a[2] = N(2); break;
     case TRACKVOL: case TRACKPAN: case TRACKOUT: case BEND: c.a[0] = N(0); c.a[1] = N(1); break;
     case TRACKMUTE: case TRACKSOLO: c.a[0] = N(0); c.a[1] = B(1); break;
-    case TRACKSEND: case INSTPARAM: c.a[0] = N(0); c.a[1] = N(1); c.a[2] = N(2); break;
+    case TRACKSEND: c.a[0] = N(0); c.a[1] = N(1); c.a[2] = N(2); break;
+    case INSTPARAM: {
+      c.a[0] = N(0); c.a[1] = N(1); c.a[2] = N(2);
+      int t = toInt32(N(0)), i = toInt32(N(1)); if (t >= 0 && t < MASTER && trackType[t] == 11 && (i == 0 || i == 9)) wtEnsure((int)clamp(jsRound(N(2)), 0, WT_COUNT - 1));
+      break;
+    }
     case DEVPARAM: c.a[0] = N(0); c.a[1] = N(1); c.a[2] = N(2); c.a[3] = N(3); break;
     case DEVBYPASS: c.a[0] = N(0); c.a[1] = N(1); c.a[2] = B(2); break;
     case REMOVEDEVICE: c.a[0] = N(0); c.a[1] = N(1); break;
+    case SOUNDFONT: {           // sf id data(@f32 | u = staged by the bridge) [rates] [zones: 18 numbers each] [zone count per preset]
+      c.a[0] = N(0); int id = toInt32(N(0));
+      const Arg& d = at(a, 1); const Arg& rt = at(a, 2); const Arg& zs = at(a, 3); const Arg& cnt = at(a, 4);
+      auto* sf = new SoundFont();
+      if (d.kind == Arg::F32) { sf->n = d.len; sf->data = new float[d.len]; std::memcpy(sf->data, d.f32, sizeof(float) * d.len); }
+      else { std::vector<float> st; if (takeStagedSoundFont(id, st)) { sf->n = (int)st.size(); sf->data = new float[st.size()]; std::memcpy(sf->data, st.data(), sizeof(float) * st.size()); } }
+      if (!sf->data) { delete sf; c.error = "soundfont without data"; return false; }
+      if (rt.kind == Arg::Arr) sf->rate = rt.arr;
+      if (zs.kind == Arg::Arr && cnt.kind == Arg::Arr) {
+        size_t z = 0;
+        for (double k : cnt.arr) {
+          std::vector<SfZone> pz;
+          for (int q = 0; q < (int)k && (z + 1) * SF_ZONE_FIELDS <= zs.arr.size(); q++, z++) { SfZone o; double* f = &o.lo; for (int j = 0; j < SF_ZONE_FIELDS; j++) f[j] = zs.arr[z * SF_ZONE_FIELDS + j]; pz.push_back(o); }
+          sf->presets.push_back(std::move(pz));
+        }
+      }
+      take(c, sf); break;
+    }
     case RACKCMD: {             // t, d, op, c, j, a, b; op 1 = insert device type a (built here); op 5 / 6 / 7 = Instrument Rack / Drum Rack chains (not ported)
       for (int k = 0; k < 7; k++) c.a[k] = N(k);
       int op = toInt32(N(2));
@@ -171,6 +205,7 @@ bool prepare(const std::string& name, const std::vector<Arg>& a, const Engine& e
       c.a[0] = N(0); c.a[1] = N(1);
       int t = toInt32(N(0)), ty = toInt32(N(1));
       if (t < 0 || t >= MASTER) break;
+      trackType[t] = ty; if (ty == 11) { wtEnsure(0); wtEnsure(4); }   // the Wavetable's default tables
       if (!instPorted(ty)) { c.error = "unsupported inst " + std::to_string(ty); }
       Instrument* inst = makeInstrument(ty, eng.sr, const_cast<Bank*>(&eng.bank));
       if (inst) take(c, inst);
@@ -235,6 +270,7 @@ void apply(Engine& e, Cmd& c) {
     case REMOVEDEVICE: e.removeDevice(t, toInt32(a[1])); break;
     case DEVPARAM: e.devParam(t, toInt32(a[1]), toInt32(a[2]), a[3]); break;
     case DEVBYPASS: e.devBypass(t, toInt32(a[1]), a[2] != 0); break;
+    case SOUNDFONT: e.loadSoundFont(toInt32(a[0]), give<SoundFont>(c)); break;
     case RACKCMD: e.rackCmd(t, a[1], toInt32(a[2]), a[3], a[4], a[5], a[6], give<Device>(c)); break;
     case PREVIEW: e.preview(t, (int)a[1], a[2], a[3] != 0); break;
     case BEND: e.bend(t, a[1]); break;

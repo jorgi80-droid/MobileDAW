@@ -32,6 +32,9 @@ bool parseLine(const std::string& line, std::string& name, std::vector<Arg>& arg
 // eng is only read (sample rate, bank / sidechain pointers): safe to call while the audio thread renders
 bool prepare(const std::string& name, const std::vector<Arg>& args, const Engine& eng, Cmd& out);
 void apply(Engine& e, Cmd& c);
+// Android bridge: SoundFont sample data sent through the sample channel (id = 1000 + SoundFont slot), picked up by the next `sf id u ...`
+void stageSoundFont(int id, std::vector<float>&& data);
+bool takeStagedSoundFont(int id, std::vector<float>& out);
 // true when every instrument / device type in the line is ported (used to decide Web vs Native for a project)
 bool supported(const std::string& name, const std::vector<Arg>& args);
 

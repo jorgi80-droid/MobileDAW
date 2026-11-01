@@ -184,6 +184,24 @@ export const SCENARIOS = [
       e.instParam(0, 6, 1); e.instParam(1, 90, 7); play(e, 1); e.instParam(0, 6, 0); e.instParam(1, 90, -5); e.instParam(0, 0, 1.2); play(e, 1);
       e.preview(0, 64, 0.8, true); play(e, 0.3); e.preview(0, 64, 0, false); e.stop(); play(e, 1);
     } },
+  { name: 'inst-livesampler', info: 'Sampler (10): zones (key / vel), sustain loop forward + back-and-forth, crossfade, reverse, snap, start / end, HQ interpolation, filter types, envelopes, LFO, pitch envelope, spread, voices, release mode, Osc (all waves, with and without a sample)',
+    run(e) {
+      samples(e); testSample(e); e.tempo(118); e.trackInst(0, 10);
+      const Z = (z, f) => f.forEach((v, k) => e.instParam(0, 200 + z * 16 + k, v));
+      Z(0, [3, 60, 0, 59, 1, 127, 0, 1, 0.05, 0.9, 0.3, 0.6, 0.4, 0, -3, -0.3]);
+      Z(1, [0, 69, 60, 84, 1, 100, 15, 2, 0, 1, 0.2, 0.5, 0, 1, 0, 0.4]);
+      Z(2, [2, 60, 60, 84, 101, 127, -20, 0, 0.1, 0.7, 0, 1, 0, 0, 2, 0]);
+      const f = []; for (let k = 0; k < 28; k++) f.push(k * PPQ / 3, PPQ * (k % 4 === 0 ? 2.5 : 0.4), 40 + ((k * 7) % 44), 0.4 + (k % 3) * 0.3, 0); e.trackNotes(0, f, f.length / 5);
+      e.play(); play(e, 1.5, [128, 77, 256]);
+      const P = (i, v) => e.instParam(0, i, v);
+      P(8, 1); P(9, 1); P(10, 0); P(11, 1800); P(12, 3); P(13, 0.6); play(e, 0.8); P(10, 1); play(e, 0.4); P(10, 2); play(e, 0.4); P(10, 3); play(e, 0.4);
+      P(24, 4); P(25, 7); P(26, 0.2); P(27, 0.5); P(28, 0.6); P(29, 0.5); play(e, 0.6); P(24, 1); play(e, 0.3);
+      P(22, 12); P(23, 0.3); P(4, 0.4); P(5, 4); P(30, 1); P(31, 1); P(32, 1.5); play(e, 1);
+      P(33, 1); for (const w of [0, 1, 2, 3, 4]) { P(34, w); P(35, -6); P(36, 7); P(37, 20); play(e, 0.3); } P(38, -12); play(e, 0.4);
+      e.instParam(0, 90, 5); P(2, -3); P(3, 30); P(6, 0.5); P(7, 0.9); play(e, 0.5);
+      Z(0, [-1]); Z(1, [-1]); Z(2, [-1]); play(e, 0.6);     // no zones: the Osc alone
+      e.stop(); play(e, 1);
+    } },
   ...fxScenarios(),
   { name: 'fx-autoduck-sc', info: 'Autoduck: track 2 (short bass notes) ducks the pad on track 1; source / threshold / amount / attack / release changes while playing',
     run(e) {

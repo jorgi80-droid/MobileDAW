@@ -13,3 +13,11 @@ export function encode(name, args, f32) {
   }
   return s;
 }
+// SoundFont (sf2.js parse result) for the C++ engine: `sf id data rates zones counts`. data = the int16 sample values as Float32Array
+// (exact) or null when it is sent separately (Android: through the sample channel as id 1000 + slot). zones: 18 numbers each, in order.
+export const SF_FIELDS = ['lo', 'hi', 'vlo', 'vhi', 'sample', 'root', 'tune', 'loop', 'atten', 'pan', 'a', 'd', 's', 'r', 'start', 'end', 'ls', 'le'];
+export function sfArgs(id, sf, withData = true) {
+  const zones = [], counts = [];
+  for (const p of sf.presets) { counts.push(p.zones.length); for (const z of p.zones) for (const k of SF_FIELDS) zones.push(+z[k] || 0); }
+  return [id, withData ? Float32Array.from(sf.data) : null, sf.shdr.map((h) => h.rate), zones, counts];
+}

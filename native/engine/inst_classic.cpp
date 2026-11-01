@@ -318,4 +318,40 @@ void Gms::render(float* L, float* R, int from, int to) {
   }
 }
 
+// ================================================================ SoundFont player
+void SfPlayer::setParam(int i, double x) {
+  if (i == 100) { sfId = toInt32(x); allOff(); } else if (i == 0) gain = x; else if (i == 1) { preset = (int)jsMax(0, toInt32(x)); allOff(); }
+}
+void SfPlayer::noteOn(int p, double vel) {
+  const SoundFont* sf = sfId >= 0 && sfId < 8 ? bank->sf[sfId] : nullptr; if (!sf || sf->presets.empty()) return;
+  const std::vector<SfZone>& pr = preset < (int)sf->presets.size() && !sf->presets[preset].empty() ? sf->presets[preset] : sf->presets[0];
+  double vi = jsRound(vel * 127);
+  for (const SfZone& z : pr) {
+    if (p < z.lo || p > z.hi || vi < z.vlo || vi > z.vhi) continue;
+    int si = (int)z.sample; if (si < 0 || si >= (int)sf->rate.size()) continue;
+    SfVoice& x = alloc();
+    x.on = x.held = true; x.pitch = p; x.vel = vel; x.age = ++counter; x.z = &z; x.sf = sf;
+    x.pos = z.start; x.ratio = (sf->rate[si] / sr) * std::pow(2, (p - z.root + z.tune / 100) / 12);
+    x.g = std::pow(10, -z.atten / 20); double pan = clamp(z.pan, -1, 1); x.pl = std::cos((pan + 1) * 0.7853982) * 1.4142; x.pr = std::sin((pan + 1) * 0.7853982) * 1.4142;
+    x.ap = adsrParams(z.a, z.d, z.s, z.r, sr); x.env.start();
+  }
+}
+void SfPlayer::render(float* L, float* R, int from, int to) {
+  for (auto& x : v) {
+    if (!x.on) continue;
+    const SfZone& z = *x.z; const float* d = x.sf->data; bool loop = z.loop != 0 && z.le - z.ls > 8; double end = z.end - 1;
+    double g = gain * x.vel * x.g * 1 / 32768;
+    for (int i = from; i < to; i++) {
+      double e = x.env.next(x.ap);
+      if (x.env.st == 0) { x.on = false; break; }
+      if (loop && x.pos >= z.le) x.pos -= z.le - z.ls;
+      if (x.pos >= end) { x.on = false; break; }
+      int ip = toInt32(x.pos); double fr = x.pos - ip; double s0 = ip >= 0 && ip < x.sf->n ? d[ip] : NAN, s1 = ip + 1 >= 0 && ip + 1 < x.sf->n ? d[ip + 1] : NAN;   // JS: undefined -> NaN
+      double xx = (s0 + (s1 - s0) * fr) * e * g;
+      L[i] = (float)(L[i] + xx * x.pl); R[i] = (float)(R[i] + xx * x.pr);
+      x.pos += x.ratio;
+    }
+  }
+}
+
 }  // namespace mdaw

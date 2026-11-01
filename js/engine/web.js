@@ -242,6 +242,7 @@ export function createWebBackend() {
     nat.only = true; nat.mirror = true;
     try { if (nat.replay) nat.replay(); } finally { nat.only = false; }
     st.bank.forEach((b, id) => { if (b) nat.sink.sample(id, b.l, b.r); });
+    st.sfs.forEach((sf, id) => { if (sf) nat.sink.soundFont(id, sf); });
     nat.ready = true;
     log('info', `engine native siap: ${r.sr} Hz, instrumen ${[...nat.sink.inst].join(',') || '-'}, efek ${[...nat.sink.dev].join(',') || '-'}`);
   }
@@ -401,6 +402,7 @@ export function createWebBackend() {
         st.sfs[id] = sf; st.sfPaths.set(path, id);
         await me.start();
         st.node.port.postMessage({ c: 'sf', id, sf });
+        if (nat.mirror) nat.sink.soundFont(id, sf);
       }
       return { id, presets: st.sfs[id].presets.map((p) => p.name) };
     } catch (e) { return { error: e.message || String(e) }; }

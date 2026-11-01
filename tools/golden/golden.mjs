@@ -8,7 +8,7 @@ import { SCENARIOS } from './scenarios.mjs';
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const { Engine } = await import(path.join(root, 'js/engine/core.js'));
-const { encode } = await import(path.join(root, 'js/engine/cmdtext.js'));
+const { encode, sfArgs } = await import(path.join(root, 'js/engine/cmdtext.js'));
 const SR = 48000, LIMIT_DB = -90, MAX_DB = -70;
 const args = process.argv.slice(2), flags = new Set(args.filter((a) => a.startsWith('--'))), names = args.filter((a) => !a.startsWith('--'));
 if (flags.has('--list')) { for (const s of SCENARIOS) console.log(s.name.padEnd(22), s.info || ''); process.exit(0); }
@@ -22,6 +22,7 @@ function recorder(sr) {
     get(t, k) {
       if (k === 'render') return (n) => { const L = new Float32Array(n), R = new Float32Array(n); t.render(L, R, n); lines.push('render ' + n); out.push([L, R]); };
       if (k === 'loadSample') return (id, l, r) => { lines.push(`sample ${id} ${f32(l)}${r && r !== l ? ' ' + f32(r) : ''}`); t.loadSample(id, l, r); };
+      if (k === 'loadSoundFont') return (id, sf) => { lines.push(encode('sf', sfArgs(id, sf), f32)); t.loadSoundFont(id, sf); };
       if (k === 'engine') return t;
       const v = t[k];
       if (typeof v !== 'function') return v;

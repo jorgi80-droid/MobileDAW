@@ -202,6 +202,7 @@ JNIEXPORT void JNICALL Java_com_mobiledaw_app_NativeEnginePlugin_nSampleData(JNI
 JNIEXPORT jboolean JNICALL Java_com_mobiledaw_app_NativeEnginePlugin_nSampleEnd(JNIEnv*, jclass, jint id) {
   std::lock_guard<std::mutex> g(hostLock);
   auto it = pendingSamples.find(id); if (it == pendingSamples.end() || !host) return false;
+  if (id >= 1000 && id < 1008) { stageSoundFont(id - 1000, std::move(it->second.first)); pendingSamples.erase(it); return true; }   // SoundFont data: the `sf` command takes it
   std::vector<Arg> args(3);
   args[0].kind = Arg::Num; args[0].num = id;
   args[1].kind = Arg::F32; args[1].f32 = it->second.first.data(); args[1].len = (int)it->second.first.size();

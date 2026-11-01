@@ -131,6 +131,7 @@ class Engine {
   void trackClips(int t, ClipData* prepared);
   void automation(LaneData* prepared);
   void loadSample(int id, Sample* prepared);
+  void loadSoundFont(int id, SoundFont* prepared);
   void panic();
 
   // ---- read-outs

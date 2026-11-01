@@ -1,6 +1,7 @@
 // Port of js/engine/core.js. Function by function in the same order as the JS file; keep them in step when either side changes.
 #include "engine.h"
 #include "dsp.h"
+#include "inst_classic.h"
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
@@ -51,6 +52,7 @@ Engine::~Engine() {
   delete lim; lim = nullptr;
   for (int i = 0; i < NSTRIPS; i++) clearStrip(s[i]);
   for (auto* p : bank.s) delete p;
+  for (auto* p : bank.sf) delete p;
   delete lanes; delete tm; delete mm;
   retire.drain();
   std::free(pdcMem); std::free(ckMem);
@@ -189,6 +191,7 @@ void Engine::applyCC(Strip& st, int idx, double tick) {
 }
 void Engine::trackClips(int t, ClipData* d) { if (!ok(t) || t >= MASTER) { retire.put(d); return; } retire.put(s[t].clips); s[t].clips = d; }
 void Engine::automation(LaneData* d) { retire.put(lanes); lanes = d; }
+void Engine::loadSoundFont(int id, SoundFont* sf) { if (id >= 0 && id < 8) { retire.put(bank.sf[id]); bank.sf[id] = sf; } else retire.put(sf); }
 void Engine::loadSample(int id, Sample* smp) { if (id >= 0 && id < 256) { retire.put(bank.s[id]); bank.s[id] = smp; } else retire.put(smp); }
 
 void Engine::runDev(int strip, int di, Device* d, float* L, float* R, int n) {

@@ -1,6 +1,7 @@
 // Ports of the classic instruments in js/engine/instruments.js: Sampler (4 / 9 = DirectWave / Keystone), GMS (5), Moisture (7),
 // Osphere (8), SoundFont player (6). Same names, same order of operations (Float32Array storage = float, JS numbers = double).
 #pragma once
+#include <vector>
 #include "instruments.h"
 
 namespace mdaw {
@@ -84,6 +85,26 @@ class Gms : public PolyBase<GmsVoice, 8> {
   bool canBend() override { return true; }
   void bendSounding(double r0) override { for (auto& x : v) if (x.on) { x.f *= r0; x.ft *= r0; } }
   void bendNewest(double r0) override { for (auto& x : v) if (x.on && x.age == counter) { x.f *= r0; x.ft *= r0; } }
+};
+
+// ---------------------------------------------------------------- SoundFont player (6)
+// sf2.js parse result as the engine needs it: sample data (int16 values as float: exact), sample rates, presets of zones
+struct SfZone { double lo, hi, vlo, vhi, sample, root, tune, loop, atten, pan, a, d, s, r, start, end, ls, le; };
+constexpr int SF_ZONE_FIELDS = 18;
+class SoundFont {
+ public:
+  ~SoundFont() { delete[] data; }
+  float* data = nullptr; int n = 0;
+  std::vector<double> rate; std::vector<std::vector<SfZone>> presets;
+};
+struct SfVoice : VoiceBase { double pos = 0, ratio = 1, g = 0, pl = 1, pr = 1; const SfZone* z = nullptr; const SoundFont* sf = nullptr; AdsrP ap; };
+class SfPlayer : public PolyBase<SfVoice, 40> {
+ public:
+  SfPlayer(double rate, Bank* b) : PolyBase(rate), bank(b) {}
+  Bank* bank; int sfId = -1, preset = 0; double gain = 0.8;
+  void setParam(int i, double x) override;
+  void noteOn(int p, double vel) override;
+  void render(float* L, float* R, int from, int to) override;
 };
 
 }  // namespace mdaw
