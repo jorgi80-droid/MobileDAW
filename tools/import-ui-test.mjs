@@ -40,6 +40,12 @@ ok(where.n > 0 && where.inFlm === where.n && where.listed && where.listed.includ
 ok(st.tracks > 0 && st.decoded === st.audio, 'every audio clip has a decoded sample (' + st.decoded + '/' + st.audio + ')');
 ok(st.warped === 0 || st.rendered === st.warped, 'stretched clips rendered (' + st.rendered + '/' + st.warped + ')');
 ok(st.missingDev > 0, 'placeholder devices in the project: ' + st.missingDev);
+const ins = await ev(async () => { const P = await import('./js/project.js'), { eng } = await import('./js/engine.js'); const T = P.state.tracks;
+  return T.filter((t) => t.inst && (t.inst.type === 4 || t.inst.type === 6 || t.inst.type === 1 || t.inst.type === 2 || t.inst.type === 5) && t.kind === 'midi').map((t) => ({ name: t.name, type: t.inst.type, zones: (t.inst.zones || []).filter((z) => z.sample).length, roots: (t.inst.zones || []).map((z) => z.root).join(), sf: t.inst.sf ? t.inst.sf.preset : null, sfSize: t.inst.sf ? eng.fileSize(t.inst.sf.path) : 0, sub: t.inst.sub ? t.inst.sub.gm : '' })); });
+console.log('     instruments: ' + JSON.stringify(ins));
+ok(/Instrumen/.test(rep) && ins.length > 0, 'report lists the instrument conversions');
+ok(ins.filter((x) => x.type === 4).every((x) => x.zones > 0), 'FLM DirectWave with its samples -> MDAW DirectWave zones (' + ins.filter((x) => x.type === 4).map((x) => x.name + ': ' + x.zones + ' zona, root ' + x.roots).join('; ') + ')');
+ok(ins.filter((x) => x.type === 6).every((x) => x.sfSize > 0 && x.sub), 'DirectWave library program -> General MIDI SoundFont present in the library (' + ins.filter((x) => x.type === 6).map((x) => x.name + ' -> ' + x.sub).join('; ') + ')');
 ok(/diterapkan ke plugin stock MobileDAW/.test(rep) && /Modul efek \/ plugin/.test(rep), 'report: how many modules became stock plugins and which were not applied');
 const before = await ev(async () => { const P = await import('./js/project.js'); const S = P.state; const all = [S.master, ...S.returns, ...S.tracks].flatMap((c) => c.devices); return { stock: all.filter((d) => !d.missing).length, missing: all.filter((d) => d.missing).length, eq8: all.filter((d) => d.type === 31 && d.from).length }; });
 console.log('     after import', JSON.stringify(before));

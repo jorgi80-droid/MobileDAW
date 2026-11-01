@@ -6,8 +6,17 @@
 //   - a DirectWave / sampler instrument whose sample is missing keeps its pattern (notes) and shows the missing program in its card;
 //   - a drum pad whose sample is missing keeps its steps (the pad is muted until a sample is loaded).
 // Model units: beats, linear gain (1 = default level), pan -1..1.
-import { DEVICES } from '../defs.js';
+import { DEVICES, PRESETS, INSTRUMENTS } from '../defs.js';
+import { gmFor, GM_SF } from './gm.js';
 
+// the channel's instrument -> MDAW: DirectWave layers -> zones of MDAW's DirectWave; a library program that is not in the archive -> the
+// closest General MIDI program of the bundled SoundFont; GMS / MiniSynth / SuperSaw -> MDAW's instrument of the same name (preset by name)
+const SYNTH_TYPE = { gms: 5, minisynth: 1, supersaw: 2 };
+function presetFor(type, name) {
+  const L = PRESETS[type] || [], n = String(name || '').toLowerCase().replace(/\.\w+$/, '').replace(/^.*\//, '').trim();
+  if (!n) return null;
+  return L.find((p) => p.name.toLowerCase() === n) || L.find((p) => n.includes(p.name.toLowerCase()) || p.name.toLowerCase().includes(n)) || L.find((p) => n.split(/\s+/).some((w) => w.length > 3 && p.name.toLowerCase().includes(w))) || null;
+}
 const PPQ = 960, VMAX = 1.4, DEF_VOL = 0.85, MAX_FX = 8, MAX_TRACKS = 64, MAX_PADS = 16;
 const PALETTE = ['#1fbccf', '#e3c000', '#f07200', '#f02ec8', '#0b9fdb', '#8d5de0', '#a3df00', '#b8573c'];
 const T = (beats) => Math.round(beats * PPQ);
@@ -36,6 +45,27 @@ export function buildMdaw(M, opts) {
     }
     return files.get(key);
   };
+  const zoneOf = (smp, root) => ({ sample: smp, root: clamp(Math.round(root ?? 60), 0, 127), lo: 0, hi: 127, vlo: 1, vhi: 127, tune: 0, loop: false, sus: 0, s0: 0, s1: 1, l0: 0, l1: 1, xf: 0, rev: false, vol: 0, pan: 0 });
+  report.instruments = [];
+  const instrumentOf = (I, trackName) => {
+    I = I || { kind: 'unknown', name: 'Instrumen' };
+    const note = (to, how) => report.instruments.push({ track: trackName, from: I.name + (I.library ? ' "' + I.library.replace(/^.*?Samples\//, '').replace(/\.\w+$/, '') + '"' : I.preset ? ' "' + I.preset + '"' : ''), to, how });
+    if (SYNTH_TYPE[I.kind]) {
+      const type = SYNTH_TYPE[I.kind], pr = presetFor(type, I.preset);
+      note(INSTRUMENTS[type].name + (pr ? ' (preset ' + pr.name + ')' : ' (setelan awal)'), pr ? 'preset' : 'default');
+      return { type, params: pr ? { ...pr.p } : {}, pitch: 0, from: { app: M.app, name: I.name, preset: I.preset || '', params: I.params || [] } };
+    }
+    const layers = I.layers || (I.sample ? [{ sample: I.sample, root: 60 }] : []);
+    const zones = [];
+    for (const L of layers) { const f = sample(L.sample); if (!f.missing) zones.push(zoneOf({ path: f.path, name: f.path.split('/').pop() }, L.root)); }
+    if (zones.length) { note('DirectWave (' + zones.length + ' zona' + (zones.length < layers.length ? ', ' + (layers.length - zones.length) + ' sample hilang' : '') + ')', 'exact'); return { type: 4, params: {}, pitch: 0, zones, from: { app: M.app, name: I.name, preset: I.preset || '', layers: layers.map((L) => ({ sample: L.sample, root: L.root, params: (L.params || []).map((v) => Math.round(v * 1e5) / 1e5) })) } }; }
+    const gm = I.library ? gmFor(I.library) : null;
+    if (gm) { needSf = true; note('SoundFont GM: ' + gm.name + ' (pengganti program library yang tidak ada di arsip)', 'substitute'); return { type: 6, params: { 0: 0.8 }, pitch: 0, sf: { path: GM_SF, preset: gm.program }, sub: { from: I.name, library: gm.label, gm: gm.name } }; }
+    note('DirectWave tanpa sample (pattern tetap)', 'missing');
+    report.plugins.set((I.name || 'Instrumen') + (I.library ? ' (' + I.library.replace(/^.*\//, '').replace(/\.\w+$/, '') + ')' : ''), 1);
+    return { type: 4, params: {}, pitch: 0, zones: [zoneOf(null, 60)], missing: { name: I.name || 'Instrumen', library: I.library || I.preset || '', sample: layers[0] ? layers[0].sample : '' } };
+  };
+  let needSf = false;
   const vol = (g) => clamp((Number.isFinite(g) ? g : 1) * DEF_VOL, 0, VMAX);
   const util = DEVICES[0].params.map((q) => q.def);
   const placeholder = (m) => {
@@ -74,11 +104,7 @@ export function buildMdaw(M, opts) {
       const t = { id: uid(), name: subs.length > 1 && k > 0 ? `${ch.name} (${k + 1})` : ch.name, color, kind: 'audio', inst: null, clips: [], devices: devices(ch), vol: vol(ch.gain), pan: clamp(ch.pan || 0, -1, 1), mute: !!ch.mute, solo: false, send: [0, 0], out: -1 };
       if (st.kind === 'notes') {
         t.kind = 'midi';
-        const I = ch.instrument || { kind: 'unknown', name: 'Instrumen' };
-        const z = { sample: null, root: 60, lo: 0, hi: 127, vlo: 1, vhi: 127, tune: 0, loop: false, sus: 0, s0: 0, s1: 1, l0: 0, l1: 1, xf: 0, rev: false, vol: 0, pan: 0 };
-        t.inst = { type: 4, params: {}, pitch: 0, zones: [z] };                          // DirectWave (MDAW's DirectWave)
-        if (I.sample) { const f = sample(I.sample); if (!f.missing) z.sample = { path: f.path, name: f.path.split('/').pop() }; else t.inst.missing = { name: I.name, sample: I.sample }; }
-        else { t.inst.missing = { name: I.name || 'Instrumen', library: I.library || I.preset || '' }; report.plugins.set((I.name || 'Instrumen') + (I.library ? ' (' + I.library.replace(/^.*\//, '').replace(/\.\w+$/, '') + ')' : ''), 1); }
+        t.inst = instrumentOf(ch.instrument, t.name);
         for (const cl of st.clips) t.clips.push(patternClip(cl, notesOf(cl)));
       } else if (st.kind === 'drums') {
         t.kind = 'drum';
@@ -120,5 +146,6 @@ export function buildMdaw(M, opts) {
     if (t.clips.length) { out.tracks.push(t); report.tracks++; }
   }
   if (master) for (const at of master.tracks.filter((x) => x.kind === 'automation' && x.clips.length)) report.skipped.push(`Otomasi "${at.label || '?'}" di Master (otomasi volume master belum didukung MDAW)`);
+  if (needSf) out.needsSoundFont = GM_SF;
   return { json: out, files: [...files.values()], report: { ...report, plugins: [...report.plugins.entries()].map(([name, n]) => ({ name, n })) } };
 }

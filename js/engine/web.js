@@ -3,7 +3,7 @@ import { Engine, NSTRIPS, MASTER, RET0, NFX } from './core.js';
 import { sabAvailable, makeShared, RingWriter, PollReader } from './sabio.js';
 import { parseSf2 } from './sf2.js';
 import { encodeWav, finishRender, postRender } from './wav.js';
-import { Mp3Encoder, Resampler, mp3Rate, concatBytes } from './mp3.js';
+import { Mp3Encoder, mp3Rate, MP3_RATES, concatBytes } from './mp3.js';
 import { makeZip } from '../zip.js';
 import { buildPyramid } from '../waveform.js';
 import * as FS from '../storage.js';
@@ -696,13 +696,13 @@ export function createWebBackend() {
           }
           if (st.cancel) break;
           if ((job.tailMode && job.tailMode !== 'leave') || job.trimStart) { ({ L, R } = postRender(L, R, Math.round(job.secs * sr), { tail: job.tailMode || 'leave', trimStart: !!job.trimStart })); peak = -1; }   // Wrap / Cut Remainder, Trim Silence
-          const mono = job.channels === 1, rate = job.format !== 'mp3' && job.rate > 0 ? job.rate : sr;
+          const mono = job.channels === 1, mp3Sr = job.format === 'mp3' ? (MP3_RATES.includes(job.rate) ? job.rate : mp3Rate(sr)) : 0, rate = mp3Sr || (job.rate > 0 ? job.rate : sr);   // MP3: 44.1 / 48 kHz chosen, else the engine rate (high-quality resampler in finishRender)
           ({ L, R, frames: done } = finishRender(L, R, sr, { mono, rate, normalize: job.normalize, peak }));
           let data;
           if (job.format === 'mp3') {
-            const outSr = mp3Rate(sr), rs = outSr !== sr ? [new Resampler(sr, outSr), new Resampler(sr, outSr)] : null, enc = new Mp3Encoder(outSr, mono ? 1 : 2, job.kbps), parts = [];
+            const enc = new Mp3Encoder(mp3Sr, mono ? 1 : 2, job.kbps), parts = [];   // already at mp3Sr (finishRender)
             for (let k = 0; k < L.length && !st.cancel; k++) {
-              let l = L[k], r = R[k]; if (rs) { l = rs[0].process(l); r = rs[1].process(r); }
+              const l = L[k], r = R[k];
               for (const f of enc.encode(l, r, l.length)) parts.push(f);
               L[k] = R[k] = null;
               if (Date.now() - lastYield > 60) { report(base + span * (0.75 + 0.25 * (k + 1) / L.length), label + ' \u2014 MP3'); await tick(); lastYield = Date.now(); }

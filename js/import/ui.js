@@ -32,6 +32,7 @@ export async function importDialog(after) {
       saveBytes: async (path, bytes) => { await eng.saveBytes(path, bytes.buffer.byteLength === bytes.byteLength ? bytes.buffer : bytes.slice().buffer); },
       writeText: async (path, text) => { eng.writeText(path, text); },
       open: async (text, prog) => P.deserialize(text, prog),
+      ensureSoundFont: async (path) => { if (!eng.fileSize(path)) { const r = await fetch('demos/SoundFonts/' + path.split('/').pop()); if (r.ok) await eng.saveBytes(path, await r.arrayBuffer()); } },
     };
     const r = await importProject(f.name, buf, io, onProgress);
     QS.markOpened(r.name);
@@ -96,6 +97,7 @@ function report(r, secs) {
   const left = missingLeft();
   const body = h('div', { class: 'imp-rep' },
     h('div', { class: 'sv' }, `Dari ${r.app}: ${R.tracks} track, ${R.clips} klip, ${R.notes} not, ${R.samplesFound} sample ditemukan, dalam ${secs.toFixed(1)} dtk. Tersimpan sebagai Projects/${r.name}.mdaw.`),
+    sec('Instrumen', (R.instruments || []).map((x) => `${x.track}: ${x.from} \u2192 ${x.to}`)),
     ...fxSections(r.fx),
     sec('Sample tidak ada di arsip (klip / pad tetap ada, tanpa suara)', [...R.samplesMissing, ...r.missingOnOpen.filter((p) => !/\/_missing\//.test(p))], 'warn'),
     sec('Tidak dikonversi', R.skipped, 'warn'),

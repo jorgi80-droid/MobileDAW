@@ -164,9 +164,29 @@ Peta lengkap per layar: **`docs/GESTURES.md`**. Ringkasan teknis:
 - **Opsi ekspor baru** (`exportWav()` di main.js, `finishRender()` di wav.js): Kanal Stereo / Mono ((L + R) / 2), Sample rate Perangkat / 44,1 /
   48 / 88,2 / 96 kHz (WAV; engine tetap merender di rate perangkat lalu `Resampler(from, to, true)` = 64 tap per sisi, jendela Kaiser beta 9,
   pass band 0,91 Nyquist: 18 kHz rata, 23 kHz -> 44,1 kHz teredam habis), Rentang "Area loop". Pref `exportCh`, `exportRate`.
-  MP3 tetap memakai resampler lama (output MP3 tidak berubah).
+  MP3: lihat bagian "Kualitas MP3" di bawah (sekarang ikut memilih 44,1 / 48 kHz lewat resampler HQ yang sama).
 - Tes: `tools/pdc-test.mjs`, `tools/export-test.mjs` (keduanya di run-tests), golden `core-pdc` (identik), `tools/engine-e2e.mjs` (Chromium
   sungguhan: latensi dari worklet + ekspor mono 44,1 kHz 24-bit; butuh Playwright, tidak di CI).
+
+## Kualitas MP3 + instrumen impor FLM (sesi ini)
+- **Encoder MP3** (`js/engine/mp3.js`): dulu satu global_gain per granule tanpa scalefactor dan tanpa bit reservoir (noise putih, kalah dari
+  LAME pada musik asli). Sekarang: `_mask()` = ambang masking per scalefactor band (energi band disebar per Bark, -10 / -27 dB per Bark,
+  offset -12 dB di 128 kbps sampai -24 dB di 320 kbps), `_quant()` = outer loop ISO (perkuat band yang noisenya di atas ambang lewat
+  scalefactor, `scalefac_compress` terkecil, simpan hasil terbaik), lalu bila semua band sudah di bawah ambang, step dikasarkan untuk menabung
+  bit ke **reservoir** (maks. 511 byte, `main_data_begin`) - tetapi tidak melebihi yang bisa ditampung reservoir (CBR: bit tidak dibuang).
+  Main data ditulis ke aliran virtual (`this.ms`) dan frame baru dikeluarkan saat slotnya pasti penuh (`_emit`). Long block saja (belum ada
+  short block: transien tajam di 320 kbps sedikit di bawah LAME).
+- Ukuran (`tools/mp3-quality-test.mjs`, NMR = noise vs ambang masking per band kritis, perkiraan perseptual, bukan tes dengar): pada rekaman
+  vokal dari arsip FLM pemilik 320 kbps: MDAW SNR 52,4 dB / NMR -34,7 dB / 0,0 % sel terdengar, LAME 51,9 / -34,8 / 0,0 %; 192 kbps:
+  MDAW 0,9 %, LAME 0,2 %; 128 kbps: MDAW 4,4 %, LAME 6,7 %. Loop drum 320 kbps: MDAW 3,8 %, LAME 2,9 %. Kecepatan ~10x realtime (Node).
+- **Ekspor**: MP3 memakai Sample rate Otomatis / 44,1 / 48 kHz (resample HQ di `finishRender`), default bitrate 320; preset "WAV 16-bit · 44,1
+  kHz" dan "MP3 320 kbps · 44,1 kHz" di dialog. Tes: `export-test` (struktur aliran MP3, reservoir, CBR), `tools/export-ui-test.mjs`.
+- **Instrumen impor FLM** (`flm.js` `synthOf`, `build.js` `instrumentOf`, `gm.js`): semua modul DirectWave kanal → zona DirectWave MDAW
+  (root key dari ZONE +1024, rentang penuh; lapisan yang berbunyi bersamaan tetap berbunyi bersamaan); parameter DirectWave FLM disimpan
+  mentah di `inst.from.layers[].params` (artinya belum dipetakan). Program library bawaan FLM (`@R@ DirectWave Samples/...`) tidak ada di arsip
+  → SoundFont GM bawaan (`/SoundFonts/TimGM6mb.sf2`, disalin dari `demos/` bila belum ada) preset terdekat dari nama (`gmFor`), chip
+  "pengganti ..." di kartu instrumen. GMS / MiniSynth / SuperSaw dikenali dari type id (`FLM_TYPES[t].synth`, belum diketahui) atau nama /
+  path preset → instrumen MDAW 5 / 1 / 2 dengan preset bernama sama bila ada (`presetFor`), nilai asli di `inst.from`.
 
 ## Gestur klip + editor layar penuh (logika FL Studio Mobile, sesi ini)
 - Tombol tab **Clip dihapus**: bar bawah hanya Device dan Keys. Editor klip (piano roll / drum step / audio editor / titik otomasi) dibuka lewat

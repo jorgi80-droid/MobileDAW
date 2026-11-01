@@ -141,6 +141,7 @@ function instCard(i, t, o = {}) {
   } }, h('span', {}, def.name), h('i', { class: 'tri', 'aria-hidden': 'true' })));
   else head.append(h('span', {}, def.name));
   titleFold(head, fk);
+  if (t.inst.sub) head.append(h('span', { class: 'dv-miss-chip sub', title: 'Program asli tidak ada di arsip: diganti preset SoundFont General MIDI yang paling mirip' }, 'pengganti ' + (t.inst.sub.from || '') + ' "' + (t.inst.sub.library || '') + '" \u2192 ' + (t.inst.sub.gm || '')));
   if (t.inst.missing) {                                  // imported instrument whose program / sample is not available: the pattern is kept, the chip says what is missing
     const x = t.inst.missing, what = x.sample ? 'sample ' + x.sample.split('/').pop() : x.library ? 'program ' + x.library.replace(/^.*\//, '').replace(/\.\w+$/, '') : x.name;
     head.append(h('span', { class: 'dv-miss-chip', title: 'Muat sample di zona untuk membunyikan pattern ini' }, '\u26a0 ' + (x.name || 'Instrumen') + ': ' + what + ' tidak tersedia'));

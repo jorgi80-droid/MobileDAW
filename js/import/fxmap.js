@@ -29,7 +29,7 @@ export const STOCK = {
   'Filter': 1, 'Flanger': 21, 'Gate': 23, 'Graphic EQ': 31, 'Tuned EQ': 31, 'Leveller': 0, 'Limiter': 5, 'Multi FX': null, 'Multiband Compressor': 38,
   'Phaser': 21, 'Reverb': 7, 'Reverb 2': 7, 'Spacer': 0, 'Spreader': 0, 'Stereoizer': 0, 'Tape Delay': 6, 'Tape Stop': null, 'Trance Delay': 17,
   'Tremolo': 22, 'Tuner': 30, 'Waveshaper': 3, 'Wow & Flutter': 20,
-  'DirectWave': null,                                 // an extra DirectWave layer: an MDAW track plays one instrument
+  'DirectWave': null,                                 // FLM DirectWave modules become the track's DirectWave zones (flm.js); never an effect
 };
 const ALIAS = { 'FX Leveller': 'Leveller', 'Param EQ': 'Parametric EQ', 'Equalizer': 'Parametric EQ', 'MultiFX': 'Multi FX', 'Stereorizer': 'Stereoizer', 'Autoduck2': 'Autoduck' };
 export const moduleName = (x) => { const n = String(x || '').replace(/^FX\s+/, '').replace(/\s*\(.*\)$/, '').trim(); return ALIAS[n] || ALIAS['FX ' + n] || n; };

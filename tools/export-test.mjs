@@ -48,5 +48,34 @@ for (const latent of [false, true]) {
   let at = -1, pk = 0; for (let i = 0; i < L.length; i++) if (Math.abs(L[i]) > pk) { pk = Math.abs(L[i]); at = i; }
   ok(at === 2000, `export pre-roll ${latent ? 'with Limiter + master Saturator + output limiter' : 'without latent devices'}: the impulse at song frame 2000 is at file frame ${at}`);
 }
+// MP3 stream structure (js/engine/mp3.js): frame sync / size per bitrate, bit reservoir pointers inside the bytes the previous frames left free,
+// granule lengths inside the main data area, scalefactors in use, exact CBR bitrate. (Sound quality vs LAME: tools/mp3-quality-test.mjs, needs ffmpeg.)
+{
+  const { Mp3Encoder, MP3_BITRATES } = await import(path.join(root, 'js/engine/mp3.js'));
+  const sr = 44100, n = sr * 4, L = new Float32Array(n), R = new Float32Array(n); let seed = 3;
+  for (let i = 0; i < n; i++) { const t = i / sr, env = (t % 0.5) < 0.02 ? 1 : 0.05, nz = ((seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 4294967296 - 0.5); L[i] = 0.3 * Math.sin(2 * Math.PI * 220 * t) + 0.1 * Math.sin(2 * Math.PI * 3300 * t) + nz * env; R[i] = L[i] * 0.8 + 0.05 * Math.sin(2 * Math.PI * 523 * t); }
+  for (const kbps of [128, 320]) {
+    const e = new Mp3Encoder(sr, 2, kbps), parts = []; for (let o = 0; o < n; o += 4096) for (const f of e.encode(L.subarray(o, o + 4096), R.subarray(o, o + 4096), Math.min(4096, n - o))) parts.push(f); for (const f of e.finish()) parts.push(f);
+    const b = new Uint8Array(parts.reduce((s, p) => s + p.length, 0)); let k = 0; for (const p of parts) { b.set(p, k); k += p.length; }
+    let pos = 0, frames = 0, okSync = true, okRes = true, okLen = true, free = 0, usedRes = 0, sfUsed = 0;
+    while (pos + 4 <= b.length) {
+      const h = (b[pos] << 24) | (b[pos + 1] << 16) | (b[pos + 2] << 8) | b[pos + 3];
+      if (((h >>> 21) & 0x7ff) !== 0x7ff || MP3_BITRATES[((h >>> 12) & 15) - 1] !== kbps) { okSync = false; break; }
+      const size = Math.floor(144000 * kbps / sr) + ((h >>> 9) & 1), side = 32, slots = size - 4 - side;
+      let bp = (pos + 4) * 8; const rd = (m) => { let v = 0; for (let q = 0; q < m; q++, bp++) v = (v << 1) | ((b[bp >> 3] >> (7 - (bp & 7))) & 1); return v; };
+      const mdb = rd(9); rd(3); rd(8); let p23 = 0;
+      for (let g = 0; g < 4; g++) { p23 += rd(12); rd(9); rd(8); const sfc = rd(4); if (sfc) sfUsed++; rd(1); rd(15); rd(4); rd(3); rd(3); }
+      if (mdb > Math.min(511, free)) okRes = false;                                 // points only into bytes earlier frames left free
+      if (p23 > (mdb + slots) * 8) okLen = false;                                   // this frame's data fits between the pointer and its own end
+      if (mdb) usedRes++;
+      free = Math.min(511, mdb + slots - Math.ceil(p23 / 8)); if (free < 0) okLen = false;
+      pos += size; frames++;
+    }
+    const secs = frames * 1152 / sr, rate = b.length * 8 / secs / 1000;
+    ok(okSync && pos === b.length && frames > 100, `MP3 ${kbps} kbps: ${frames} frames, every header in sync, stream ends on a frame boundary`);
+    ok(okRes && okLen && usedRes > 0, `MP3 ${kbps} kbps: bit reservoir valid (main_data_begin inside the free bytes of earlier frames, used by ${usedRes} frames; granules fit)`);
+    ok(sfUsed > 0 && Math.abs(rate - kbps) < 0.5, `MP3 ${kbps} kbps: scalefactors in use (${sfUsed} granules), bitrate ${rate.toFixed(2)} kbps`);
+  }
+}
 console.log(bad ? `\n${bad} FAILED` : '\nALL OK');
 process.exit(bad ? 1 : 0);

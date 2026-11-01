@@ -72,6 +72,11 @@ export async function importProject(fileName, buf, io, onProgress = () => {}) {
     await io.saveBytes(f.path, f.missing ? silentWav() : entries.get(f.src));
     if (k % 4 === 3) await yieldUI();
   }
+  if (json.needsSoundFont) {                                    // a library program was replaced by the bundled General MIDI SoundFont
+    onProgress(0.7, 'Menyiapkan SoundFont pengganti\u2026'); await yieldUI();
+    if (io.ensureSoundFont) await io.ensureSoundFont(json.needsSoundFont);
+    delete json.needsSoundFont;
+  }
   // 5. save + open (70 - 100 %)
   const text = JSON.stringify(json), path = (io.home || '') + '/Projects/' + name + '.mdaw';
   onProgress(0.7, 'Menyimpan proyek MDAW…'); await yieldUI();

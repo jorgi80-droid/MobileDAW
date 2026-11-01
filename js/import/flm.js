@@ -57,7 +57,7 @@ export function parseFlm(buf, onProgress) {
       const folder = /Effect Presets\/([^/]+)\//.exec(pr); if (folder && !KNOWN[type]) presetName[type] = folder[1].replace(/\d+$/, '');
       const mod = { type, id, params, enabled: !(params.length && params[0] < 0.5), preset: pr.replace(/^.*\//, '').replace(/\.(flmpst|dwp)$/i, ''), presetPath: pr, names };
       if (cstm) for (const z of kids(cstm)) {                 // DirectWave: the sample of its zone (user folder) or a library program (built-in content)
-        if (z.tag === 'ZONE') mod.sample = clean(raw(z.a, Math.min(z.n, 1024)));
+        if (z.tag === 'ZONE') { mod.sample = clean(raw(z.a, Math.min(z.n, 1024))); if (z.n > 1028) mod.root = u[z.a + 1024]; }   // path[1024], then the zone's root key (MIDI)
         if (z.tag === 'PATh') mod.library = clean(raw(z.a + 4, Math.min(z.n - 4, u32(z.a))));
       }
       if (type === 1 && !mod.sample && !mod.library && names.length > 1 && /\.(wav|mp3|ogg|flac|m4a|aif+)$/i.test(names[names.length - 1])) mod.sample = names[names.length - 1];
@@ -110,6 +110,14 @@ export function parseFlm(buf, onProgress) {
   return P;
 }
 
+// FLM synths: recognised by type id (FLM_TYPES, when known) or by the name / preset path the module stores (e.g. ".../GMS Presets/...")
+const SYNTHS = [['gms', /\bGMS\b|GMSynth|GM Synth/i, 'GMS'], ['minisynth', /mini\s*synth/i, 'MiniSynth'], ['supersaw', /super\s*saw/i, 'SuperSaw']];
+function synthOf(m) {
+  const t = FLM_TYPES[m.type]; if (t) return t.synth ? { kind: t.synth, name: t.name } : null;   // a known effect type is never a synth
+  const txt = [m.presetPath, ...(m.names || []), m.name].join(' ');
+  for (const [kind, re, name] of SYNTHS) if (re.test(txt)) return { kind, name };
+  return null;
+}
 // FLM structures -> the neutral import model (js/import/build.js). Units: beats, linear gain (1 = the app's default level), pan -1..1.
 // FLM levels are 0..1 sliders whose default is 0.853: gains are kept relative to that default (0.853 -> the MDAW default level).
 const LVL0 = 0.853;
@@ -118,14 +126,17 @@ export function flmToModel(P) {
   const hue = (h) => (Number.isFinite(h) && h >= 0 && h <= 1 ? h : null);
   const ordered = P.channels.slice().sort((a, b) => (a.kind === b.kind ? (a.kind === 'track' ? a.order - b.order : 0) : 0));
   for (const ch of ordered) {
-    const inst = ch.modules.find((m) => m.type === 1);                       // DirectWave: the channel's instrument (first one; layers are reported)
+    // the channel's instrument: every DirectWave layer (they all sound together in FLM -> zones of one MDAW DirectWave), else a GMS /
+    // MiniSynth / SuperSaw module (recognised by its type id or by the name / preset path it stores)
+    const dw = ch.modules.filter((m) => m.type === 1), syn = dw.length ? null : ch.modules.find((m) => synthOf(m));
+    const instMods = new Set(dw.length ? dw : syn ? [syn] : []);
     const c = { kind: ch.kind, name: ch.name, hue: hue(ch.hue), gain: ch.vol / LVL0, pan: ch.pan * 2 - 1, tracks: [], pads: [],
-      modules: ch.modules.filter((m) => m !== inst).map((m) => ({ name: m.type === 1 ? 'DirectWave (lapisan tambahan)' : m.name, enabled: m.enabled, preset: m.preset && m.preset !== 'Default' ? m.preset : '', params: m.params, id: m.id, flmType: m.type, ...(FLM_TYPES[m.type] && FLM_TYPES[m.type].sure === false ? { sure: false } : {}), app: 'FL Studio Mobile' })) };
-    if (inst) {
-      c.instrument = { kind: 'directwave', name: 'DirectWave', sample: inst.sample || '', library: inst.library || '', preset: inst.preset, enabled: inst.enabled };
-      const extra = ch.modules.filter((m) => m.type === 1 && m !== inst).length;
-      if (extra) M.warnings.push(`${ch.name}: ${extra + 1} lapisan DirectWave, yang dipakai lapisan pertama.`);
-    }
+      modules: ch.modules.filter((m) => !instMods.has(m)).map((m) => ({ name: m.name, enabled: m.enabled, preset: m.preset && m.preset !== 'Default' ? m.preset : '', params: m.params, id: m.id, flmType: m.type, ...(FLM_TYPES[m.type] && FLM_TYPES[m.type].sure === false ? { sure: false } : {}), app: 'FL Studio Mobile' })) };
+    if (dw.length) {
+      const lib = dw.find((m) => m.library);
+      c.instrument = { kind: 'directwave', name: 'DirectWave', layers: dw.filter((m) => m.enabled && m.sample).map((m) => ({ sample: m.sample, root: m.root ?? 60, params: m.params })), library: lib ? lib.library : '', preset: dw[0].preset, enabled: dw.some((m) => m.enabled) };
+      if (!c.instrument.layers.length && !c.instrument.library && dw[0].sample) c.instrument.layers.push({ sample: dw[0].sample, root: dw[0].root ?? 60 });
+    } else if (syn) { const k = synthOf(syn); c.instrument = { kind: k.kind, name: k.name, preset: syn.preset && syn.preset !== 'Default' ? syn.preset : '', params: syn.params, enabled: syn.enabled, flmType: syn.type }; }
     c.pads = ch.pads.map((q, k) => ({ path: q.path, name: (q.path.split('/').pop() || 'Pad ' + (k + 1)).replace(/\.[^.]+$/, ''), gain: q.vol / LVL0, pan: q.pan * 2 - 1, pitch: Math.round((q.pitch - 0.5) * 48) }));
     for (const t of ch.tracks) {
       if (!t.clips.length && t.kind === 'automation') continue;               // empty automation slots

@@ -26,11 +26,18 @@ Model netral: satuan ketuk (beat), gain linear (1 = level bawaan), pan −1..1; 
 - **Plugin tidak ada di MDAW** → device placeholder: Utility netral (audio diteruskan apa adanya) dengan `d.missing = { name, app, preset,
   params }`; kartunya bertuliskan **[Plugin tidak tersedia] <nama>**, nilai parameter asli disimpan, bisa diganti lewat ⋯ → Ganti dengan.
 - **Sample audio tidak ada** → klip tetap di posisi / panjang / namanya ("⚠ <nama> (sample tidak ada)") dengan file hening pendek.
-- **Sample / program DirectWave tidak ada** → track synth DirectWave tetap dengan pattern (not) utuh; chip di kartu instrumen menyebut
-  program / sample yang hilang (mis. library bawaan FLM "Grand Piano").
+- **DirectWave FLM → DirectWave MDAW**: setiap modul DirectWave di kanal (lapisan) menjadi satu zona dengan sample dan **root key** aslinya
+  (rentang tuts penuh, jadi lapisan berbunyi bersamaan seperti di FLM). Parameter DirectWave FLM (envelope, dll.) disimpan mentah di
+  `inst.from` — artinya belum dipetakan, jadi zona memakai setelan bawaan MDAW.
+- **Program library bawaan FLM** (mis. `DirectWave Samples/Keyboard/Grand Piano.dwp`, tidak ikut di ZIP) → **SoundFont General MIDI** bawaan
+  MobileDAW (`SoundFonts/TimGM6mb.sf2`) dengan preset paling mirip dari namanya (Grand Piano → Acoustic Grand Piano); chip "pengganti …" di
+  kartu instrumen. Suaranya mirip, bukan sample FLM yang sama. Tanpa padanan nama → DirectWave kosong, pattern utuh, chip "hilang".
+- **GMS / MiniSynth / SuperSaw** → synth MDAW yang sama (GMS / Mini Synth / SuperSaw) dengan preset bernama sama bila ada (mis. "Acid Bass");
+  nilai parameter FLM asli disimpan di `inst.from`. Dikenali dari nama / path preset modul — type id synth ini belum terverifikasi dari file
+  FLM asli (arsip pemilik tidak memakainya).
 - **Sample pad drum tidak ada** → pad tetap (nama, step), dibisukan sampai diberi sample.
 - **Otomasi** volume mixer → track otomasi MDAW; otomasi parameter plugin yang tidak tersedia dan otomasi master → dilaporkan.
-- Laporan akhir: plugin tidak tersedia (dengan jumlah), sample hilang, yang tidak dikonversi, catatan (mis. lapisan DirectWave).
+- Laporan akhir: instrumen (asal → hasil), plugin tidak tersedia (dengan jumlah), sample hilang, yang tidak dikonversi, catatan.
 
 ## FL Studio Mobile (.flm) — dipetakan dari proyek asli (FLM 4.6)
 Format tidak terdokumentasi; struktur di bawah dibaca dan diverifikasi pada proyek pemilik (28 kanal, 1041 klip, 33 sample unik).
@@ -60,13 +67,13 @@ Sumber nama / parameter modul: panduan FX FL Studio Mobile dari pemilik (30 modu
 - **"Ganti seluruh modul hilang dengan stock plugin"** (tombol di laporan impor, menu ⋮): modul sisa yang punya padanan (Compressor,
   Autoduck, Multiband Compressor, Tape Delay, Stereoizer, Waveshaper, …) menjadi stock plugin **bypass** — suara tetap seperti sebelumnya,
   tinggal dinyalakan dan diatur; nilai asli tersimpan di `d.from`. Satu langkah Undo. Ada jendela progres dan laporan jumlah.
-- **Tidak diterapkan** (dilaporkan): modul tanpa padanan di MobileDAW (Pitcher 2, Tape Stop, Multi FX, Comb Filter, lapisan DirectWave
-  tambahan) dan tipe yang belum dikenali (`Efek FLM #id`).
+- **Tidak diterapkan** (dilaporkan): modul tanpa padanan di MobileDAW (Pitcher 2, Tape Stop, Multi FX, Comb Filter) dan tipe yang belum dikenali (`Efek FLM #id`).
 - Identitas tipe: pasti = 1 DirectWave, 7 Graphic EQ, 8 Compressor, 20 Leveller, 29 Autoduck, 34 Spacer, 36 Multiband Compressor,
   43 Wow & Flutter; diduga dari tata letak (tidak pernah diaktifkan otomatis) = 11 Tape Delay, 25 Waveshaper, 44 Stereoizer;
   belum dikenali = 4, 9, 16, 30, 35, 45.
-- Arsip pemilik: impor = 30 dari 70 modul diterapkan (3 persis, 25 perkiraan, 2 off); "ganti seluruh" = 50 dari 70 (20 bypass untuk
-  diatur); 20 tetap placeholder.
+- Arsip pemilik: Banjo → DirectWave 2 zona (root C3), DW Sampler 9 ("Keyboard/Grand Piano") → SoundFont GM Acoustic Grand Piano;
+  impor = 30 dari 69 modul efek diterapkan (3 persis, 25 perkiraan, 2 off); "ganti seluruh" = 50 dari 69 (20 bypass untuk
+  diatur); 19 tetap placeholder (lapisan DirectWave kedua kini menjadi zona, bukan modul).
 - Batas yang jujur: kesamaan suara dengan FL Studio Mobile hanya bisa dibuktikan untuk konversi "persis" / bypass. Untuk Graphic EQ yang
   diatur dan Leveller, skala nilai FLM diasumsikan; kalibrasi pasti butuh render referensi dari FLM (ekspor stem per track).
 
