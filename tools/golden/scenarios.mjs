@@ -5,7 +5,7 @@ const D = await import(path.join(path.dirname(fileURLToPath(import.meta.url)), '
 
 const PPQ = 960, BAR = PPQ * 4;
 const PARAM_SYNTHS = [13, 14, 15, 17, 18, 16, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29];   // Live 12 instruments with a min / max sweep of every parameter
-const FX_PORTED = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 14, 15, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45];   // effects with a min / max sweep scenario (fx-<name>)
+const FX_PORTED = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 14, 15, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47];   // effects with a min / max sweep scenario (fx-<name>)
 const SYNTHS = [1, 2, 5, 7, 8, 11, 13, 14, 15, 17, 16, 19, 20, 21, 22, 23, 24, 25, 26, 27];   // instruments with golden scenarios (presets + playing)
 function lcg(seed) { let s = seed >>> 0; return () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 4294967296 * 2 - 1; }; }
 function tone(sec, hz, sr = 48000, amp = 0.5) { const n = Math.round(sec * sr), a = new Float32Array(n); for (let i = 0; i < n; i++) a[i] = Math.sin(2 * Math.PI * hz * i / sr) * amp * Math.min(1, (n - i) / 2000); return a; }
@@ -107,6 +107,82 @@ export const SCENARIOS = [
       e.removeDevice(66, 0); play(e, 0.4); e.insertDevice(3, 0, 5); e.trackClips(3, [0, BAR * 8, 2, 0.6, 0, 0, 0], 1); play(e, 0.4);
       e.loop(true, BAR, BAR * 2); e.seek(BAR); play(e, 4.5, [128, 333]); e.loop(false, 0, 0);
       e.stop(); play(e, 0.6);
+    } },
+  { name: 'fx-modulators', info: 'LFO / Shaper / Envelope Follower (fx6): remap and mod mode, bipolar, log target, synced rates, hold, steps, jitter, retrigger; targets: device on the same strip, the instrument, a device on another (silent) strip',
+    run(e) {
+      e.tempo(118); e.trackInst(0, 2); e.trackInst(1, 1);
+      const f = []; for (let k = 0; k < 24; k++) f.push(k * PPQ / 2, PPQ * 0.45, 48 + ((k * 5) % 17), 0.8, 0); e.trackNotes(0, f, f.length / 5); e.trackNotes(1, f.map((v, i) => (i % 5 === 2 ? v + 12 : v)), f.length / 5);
+      const map = (t, d, o, tgt) => tgt.forEach((v, k) => e.devParam(t, d, o + k, v));
+      // track 0: Auto Filter (cutoff, log) <- LFO (remap); Utility (gain) <- Shaper (mod, bipolar)
+      e.insertDevice(0, 0, 1); e.insertDevice(0, 1, 48); e.insertDevice(0, 2, 0); e.insertDevice(0, 3, 49);
+      map(0, 1, 14, [0, 0, 0.5, 0.1, 0.9, 0, 0, 1, 20, 20000, 1, 20000]); e.devParam(0, 1, 5, 3.5); e.devParam(0, 1, 0, 3);
+      map(0, 3, 35, [1, 1, 0.8, 0, 1, 0, 2, 0, -60, 24, 0, 0]); e.devParam(0, 3, 1, 1); e.devParam(0, 3, 2, 2);
+      // track 1: Envelope Follower (of track 1) -> its instrument cutoff (param 1, d = -1)
+      e.insertDevice(1, 0, 50); map(1, 0, 6, [0, 0, 0.5, 0.2, 1, 1, -1, 1, 60, 18000, 1, 2000]); e.devParam(1, 0, 0, 6);
+      // track 5 (no instrument: skips its chain) carries an LFO that drives Return A's Reverb mix
+      e.insertDevice(65, 0, 7); e.trackSend(0, 0, 0.5); e.insertDevice(5, 0, 48); map(5, 0, 14, [0, 0, 0.5, 0, 1, 65, 0, 2, 0, 1, 0, 0.3]); e.devParam(5, 0, 6, 1); e.devParam(5, 0, 7, 2);
+      e.play(); play(e, 2, [128, 77, 256]);
+      [[0, 1], [0, 2], [0, 4], [0, 5], [0, 6]].forEach(([d], k) => { e.devParam(0, 1, 0, k + 1); play(e, 0.3); });           // every LFO waveform
+      e.devParam(0, 1, 2, 4); e.devParam(0, 1, 3, 0.4); e.devParam(0, 1, 4, 0.6); e.devParam(0, 1, 1, 0.5); play(e, 0.6);    // steps, jitter, smooth, shape
+      e.devParam(0, 1, 12, 1); play(e, 0.3); e.devParam(0, 1, 12, 0); e.devParam(0, 1, 13, 1); play(e, 0.3);                // hold, retrigger
+      e.devParam(0, 1, 6, 1); e.devParam(0, 1, 7, 4); e.devParam(0, 1, 9, 0.6); e.devParam(0, 1, 10, -0.3); play(e, 0.6);  // synced, depth, offset
+      e.devParam(0, 3, 6, 0.5); e.devParam(0, 3, 7, 0.4); e.devParam(0, 3, 10, 6); e.devParam(0, 3, 28, 0.7); play(e, 0.6); // Shaper jitter / smooth / more points
+      e.devParam(1, 0, 4, 1); e.devParam(1, 0, 5, 3); e.devParam(1, 0, 1, 0.6); e.devParam(1, 0, 2, 0.9); play(e, 0.8);    // EnvFollower synced delay, rise / fall
+      e.devBypass(0, 1, true); play(e, 0.3); e.devBypass(0, 1, false); e.devParam(0, 1, 19, -1); play(e, 0.3);              // bypass, unmap
+      e.trackMute(1, true); play(e, 0.5); e.stop(); play(e, 0.5);
+    } },
+  { name: 'fx-rack', info: 'Audio Effect Rack (fx7): 3 parallel chains (Saturator / Compressor 10 ms look-ahead + Auto Filter / Delay), chain volume, pan, activator, solo, selector zones, macros (linear + log), bypass / remove inside, reset; PDC between the chains',
+    run(e) {
+      samples(e); e.tempo(124); e.trackInst(0, 2); e.trackClips(1, clipsA, 3);
+      const f = []; for (let k = 0; k < 24; k++) f.push(k * PPQ / 2, PPQ * 0.4, 50 + ((k * 7) % 15), 0.8, 0); e.trackNotes(0, f, f.length / 5);
+      const R = (t, op, c, j, a, b) => e.rackCmd(t, 0, op, c, j, a, b);
+      for (const t of [0, 1]) {
+        e.insertDevice(t, 0, 51); e.devParam(t, 0, 32, 3);
+        R(t, 0, 0, 0, 0, 0);
+        R(t, 1, 0, 0, 3, 0); R(t, 2, 0, 0, 0, 14);                                   // chain 0: Saturator drive 14 dB
+        R(t, 1, 1, 0, 4, 0); [-20, 6, 2, 60].forEach((v, k) => R(t, 2, 1, 0, k, v)); R(t, 2, 1, 0, 9, 2); R(t, 1, 1, 1, 1, 0); R(t, 2, 1, 1, 1, 1200);   // chain 1: Compressor (10 ms) -> Auto Filter
+        R(t, 1, 2, 0, 17, 0);                                                         // chain 2: Delay
+        e.devParam(t, 0, 0, -6); e.devParam(t, 0, 5, -0.6); e.devParam(t, 0, 9, 0.4);  // chain volume / pan
+        [1, 0, 1, 1, 20000, 1, 0, 1].forEach((v, k) => e.devParam(t, 0, 41 + k, v));    // macro 0 -> chain 1 Auto Filter cutoff (log)
+        [0, 0, 0, 0, 36, 0, 0.2, 0.9].forEach((v, k) => e.devParam(t, 0, 49 + k, v));   // macro 1 -> chain 0 Saturator drive (linear, Min / Max)
+      }
+      e.play(); play(e, 1.5, [128, 77, 256]);
+      for (let k = 0; k <= 4; k++) { e.devParam(0, 0, 33, k / 4); e.devParam(1, 0, 34, 1 - k / 4); play(e, 0.25); }
+      e.devParam(0, 0, 3, 1); play(e, 0.4); e.devParam(0, 0, 3, 0); e.devParam(0, 0, 6, 0); play(e, 0.4); e.devParam(0, 0, 6, 1);   // solo, activator
+      e.devParam(0, 0, 105, 90); e.devParam(0, 0, 108, 64); e.devParam(0, 0, 109, 127); play(e, 0.4); e.devParam(0, 0, 105, 0); // selector zones
+      R(0, 3, 1, 0, 1, 0); play(e, 0.4); R(0, 3, 1, 0, 0, 0); R(1, 4, 2, 0, 0, 0); play(e, 0.4);                                  // bypass the look-ahead Compressor, remove the Delay
+      e.devParam(1, 0, 32, 1); play(e, 0.4); R(0, 0, 0, 0, 0, 0); play(e, 0.4);                                                   // fewer chains, reset (empty chains)
+      e.stop(); play(e, 0.5);
+    } },
+  { name: 'fx-spectral-midi', info: 'Spectral Resonator in MIDI mode: notes of its own track and of another track (MIDI From), mono / poly, unison, all modulation types; Spectral Time freezer retrigger + delay modes',
+    run(e) {
+      e.tempo(122); e.trackInst(0, 2); e.trackInst(1, 1);
+      const f = []; for (let k = 0; k < 20; k++) f.push(k * PPQ / 2, PPQ * 0.6, 48 + ((k * 3) % 14), 0.5 + (k % 3) * 0.2, 0); e.trackNotes(0, f, f.length / 5);
+      const g = []; for (let k = 0; k < 10; k++) g.push(k * PPQ, PPQ * 0.9, 60 + ((k * 5) % 12), 0.9, 0); e.trackNotes(1, g, g.length / 5);
+      e.insertDevice(0, 0, 47); e.devParam(0, 0, 0, 1); e.devParam(0, 0, 1, 0); e.devParam(0, 0, 18, 0.7);   // MIDI mode, own track
+      e.insertDevice(1, 0, 46); e.devParam(1, 0, 3, 1); e.devParam(1, 0, 1, 1); e.devParam(1, 0, 2, 0);       // freezer on, retrigger on onsets
+      e.play(); play(e, 1.5, [128, 77, 256]);
+      e.devParam(0, 0, 1, 2); play(e, 0.8); e.devParam(0, 0, 13, 0); play(e, 0.5); e.devParam(0, 0, 13, 1); e.devParam(0, 0, 14, 3); e.devParam(0, 0, 15, 2); e.devParam(0, 0, 16, 0.6); play(e, 0.6);
+      for (let m = 1; m <= 3; m++) { e.devParam(0, 0, 9, m); e.devParam(0, 0, 11, 2); play(e, 0.5); }
+      e.devParam(1, 0, 2, 1); e.devParam(1, 0, 4, 1); e.devParam(1, 0, 5, 1); play(e, 0.8); e.devParam(1, 0, 8, 1); play(e, 0.5);
+      for (const m of [1, 2, 3, 4]) { e.devParam(1, 0, 14, m); e.devParam(1, 0, 17, 0.5); e.devParam(1, 0, 20, 30); play(e, 0.4); }
+      e.devParam(0, 0, 0, 0); play(e, 0.4); e.stop(); play(e, 0.6);
+    } },
+  { name: 'inst-sampler', info: 'DirectWave / Keystone sampler (4 / 9): key + velocity zones, loop, root / tune, gate and one-shot, filter, release, 24-voice stealing with the 1.5 ms fade, engine Pitch (90)',
+    run(e) {
+      samples(e); testSample(e); e.tempo(126);
+      for (const [t, ty] of [[0, 9], [1, 4]]) {
+        e.trackInst(t, ty);
+        const Z = (z, k, v) => e.instParam(t, 100 + z * 8 + k, v);
+        [[3, 60, 0, 59, 1, 127, 0, 0], [0, 72, 60, 127, 1, 90, -12, 1], [2, 60, 60, 127, 91, 127, 30, 0], [1, 48, 30, 50, 1, 127, 0, 1]].forEach((q, z) => q.forEach((v, k) => Z(z, k, v)));
+        e.instParam(t, 2, 0.35); e.instParam(t, 5, 0.6);
+      }
+      const f = []; for (let k = 0; k < 40; k++) f.push(k * PPQ / 4, PPQ * (k % 5 === 0 ? 2 : 0.3), 36 + ((k * 7) % 48), 0.3 + (k % 4) * 0.22, 0); e.trackNotes(0, f, f.length / 5);
+      const g = []; for (let k = 0; k < 30; k++) g.push(k * 37, PPQ * 3, 50 + (k % 25), 0.95, 0); e.trackNotes(1, g, g.length / 5);   // more notes than voices: stealing
+      e.play(); play(e, 2, [128, 77, 256]);
+      e.instParam(0, 3, 1500); e.instParam(1, 3, 600); play(e, 1); e.instParam(0, 3, 20000); e.instParam(0, 1, 0.08); e.instParam(0, 4, 3.5); play(e, 1);
+      e.instParam(0, 6, 1); e.instParam(1, 90, 7); play(e, 1); e.instParam(0, 6, 0); e.instParam(1, 90, -5); e.instParam(0, 0, 1.2); play(e, 1);
+      e.preview(0, 64, 0.8, true); play(e, 0.3); e.preview(0, 64, 0, false); e.stop(); play(e, 1);
     } },
   ...fxScenarios(),
   { name: 'fx-autoduck-sc', info: 'Autoduck: track 2 (short bass notes) ducks the pad on track 1; source / threshold / amount / attack / release changes while playing',

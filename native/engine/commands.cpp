@@ -10,14 +10,14 @@ namespace mdaw {
 enum Op {
   PLAY, STOP, PLAYCOUNTIN, SEEK, TEMPO, TEMPOMAP, SETSIG, SETMETER, LOOP, SETMETRO, SETMETROVOL, MASTERLIMIT, SETPDC, TRACKLOAD,
   TRACKVOL, TRACKPAN, TRACKMUTE, TRACKSOLO, TRACKSEND, TRACKOUT, TRACKINST, INSTPARAM, RESETTRACK,
-  INSERTDEVICE, REMOVEDEVICE, DEVPARAM, DEVBYPASS, PREVIEW, BEND, TRACKNOTES, TRACKCLIPS, TRACKCC, AUTOMATION, SAMPLE, PANIC
+  INSERTDEVICE, REMOVEDEVICE, DEVPARAM, DEVBYPASS, RACKCMD, PREVIEW, BEND, TRACKNOTES, TRACKCLIPS, TRACKCC, AUTOMATION, SAMPLE, PANIC
 };
 static const std::unordered_map<std::string, int> OPS = {
   { "play", PLAY }, { "stop", STOP }, { "playCountIn", PLAYCOUNTIN }, { "seek", SEEK }, { "tempo", TEMPO }, { "tempoMap", TEMPOMAP },
   { "setSig", SETSIG }, { "setMeter", SETMETER }, { "loop", LOOP }, { "setMetro", SETMETRO }, { "setMetroVol", SETMETROVOL }, { "masterLimit", MASTERLIMIT }, { "setPdc", SETPDC }, { "trackLoad", TRACKLOAD },
   { "trackVol", TRACKVOL }, { "trackPan", TRACKPAN }, { "trackMute", TRACKMUTE }, { "trackSolo", TRACKSOLO }, { "trackSend", TRACKSEND },
   { "trackOut", TRACKOUT }, { "trackInst", TRACKINST }, { "instParam", INSTPARAM }, { "resetTrack", RESETTRACK }, { "insertDevice", INSERTDEVICE },
-  { "removeDevice", REMOVEDEVICE }, { "devParam", DEVPARAM }, { "devBypass", DEVBYPASS }, { "preview", PREVIEW }, { "bend", BEND },
+  { "removeDevice", REMOVEDEVICE }, { "devParam", DEVPARAM }, { "devBypass", DEVBYPASS }, { "rackCmd", RACKCMD }, { "preview", PREVIEW }, { "bend", BEND },
   { "trackNotes", TRACKNOTES }, { "trackClips", TRACKCLIPS }, { "trackCC", TRACKCC }, { "automation", AUTOMATION }, { "sample", SAMPLE }, { "panic", PANIC },
 };
 
@@ -148,6 +148,13 @@ bool prepare(const std::string& name, const std::vector<Arg>& a, const Engine& e
     case DEVPARAM: c.a[0] = N(0); c.a[1] = N(1); c.a[2] = N(2); c.a[3] = N(3); break;
     case DEVBYPASS: c.a[0] = N(0); c.a[1] = N(1); c.a[2] = B(2); break;
     case REMOVEDEVICE: c.a[0] = N(0); c.a[1] = N(1); break;
+    case RACKCMD: {             // t, d, op, c, j, a, b; op 1 = insert device type a (built here); op 5 / 6 / 7 = Instrument Rack / Drum Rack chains (not ported)
+      for (int k = 0; k < 7; k++) c.a[k] = N(k);
+      int op = toInt32(N(2));
+      if (N(1) < 0 || op >= 5) { c.error = "unsupported rack " + std::to_string(op); break; }
+      if (op == 1) { int ty = toInt32(N(5)); Device* d = makeDevice(ty, eng.sr, const_cast<float*>(eng.sc)); if (!d) c.error = "unsupported device " + std::to_string(ty); else take(c, d); }
+      break;
+    }
     case PREVIEW: c.a[0] = N(0); c.a[1] = toInt32(N(1)); c.a[2] = N(2); c.a[3] = B(3); break;
     case TEMPOMAP: {
       c.a[0] = B(0); auto* tm = new TempoMap(); const Arg& f = at(a, 1);
@@ -228,6 +235,7 @@ void apply(Engine& e, Cmd& c) {
     case REMOVEDEVICE: e.removeDevice(t, toInt32(a[1])); break;
     case DEVPARAM: e.devParam(t, toInt32(a[1]), toInt32(a[2]), a[3]); break;
     case DEVBYPASS: e.devBypass(t, toInt32(a[1]), a[2] != 0); break;
+    case RACKCMD: e.rackCmd(t, a[1], toInt32(a[2]), a[3], a[4], a[5], a[6], give<Device>(c)); break;
     case PREVIEW: e.preview(t, (int)a[1], a[2], a[3] != 0); break;
     case BEND: e.bend(t, a[1]); break;
     case TRACKNOTES: e.trackNotes(t, give<NoteData>(c)); break;

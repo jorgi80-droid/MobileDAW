@@ -21,7 +21,7 @@ struct Arg {
 
 struct Cmd {
   int op = -1;
-  double a[4] = { 0, 0, 0, 0 };
+  double a[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
   void* p = nullptr;                  // prepared object (taken over by apply; deleted if the command is dropped)
   void (*del)(void*) = nullptr;
   std::string error;                  // set when the command cannot run here (e.g. "unsupported inst 7")

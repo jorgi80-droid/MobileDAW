@@ -127,20 +127,36 @@ void Engine::setPitch(int t, double v) {
   if (st.inst && st.inst->pitchNative) st.inst->setParam(90, st.pitch);
 }
 void Engine::instParam(int t, int i, double v) { if (i == 90) { setPitch(t, v); return; } if (ok(t) && s[t].inst) s[t].inst->setParam(i, v); }
-void Engine::resetTrack(int t) { if (!ok(t)) return; clearStrip(s[t]); s[t].init(t == MASTER ? 1 : 0.85); }
+void Engine::resetTrack(int t) { if (!ok(t)) return; clearStrip(s[t]); s[t].init(t == MASTER ? 1 : 0.85); midiScan(); }
+void Engine::midiScan() { midiFx = false; for (int t = 0; t < NSTRIPS; t++) for (int i = 0; i < s[t].ndev; i++) if (s[t].dev[i]->midiIn) midiFx = true; }
+void Engine::midiTo(int src, int p, double v) {
+  for (int t = 0; t < NSTRIPS; t++) for (int i = 0; i < s[t].ndev; i++) {
+    Device* d = s[t].dev[i]; if (!d->midiIn) continue; int f = d->midiFrom();
+    if ((f == 0 && t == src) || f - 1 == src) { if (v > 0) d->noteOn(p, v); else d->noteOff(p); }
+  }
+}
 void Engine::insertDevice(int t, double index, Device* d) {
   if (!ok(t) || !d || s[t].ndev >= MAX_DEV) { retire.put(d); return; }
   Strip& st = s[t];
   d->setTempo(bpm);
   int at = (int)std::trunc(clamp(index, 0, st.ndev));
   for (int i = st.ndev; i > at; i--) st.dev[i] = st.dev[i - 1];
-  st.dev[at] = d; st.ndev++;
+  st.dev[at] = d; st.ndev++; midiScan();
 }
 void Engine::removeDevice(int t, int i) {
   if (!ok(t) || i < 0 || i >= s[t].ndev) return;
   Strip& st = s[t]; retire.put(st.dev[i]);
   for (int k = i; k < st.ndev - 1; k++) st.dev[k] = st.dev[k + 1];
-  st.dev[--st.ndev] = nullptr;
+  st.dev[--st.ndev] = nullptr; midiScan();
+}
+// core.js rackCmd: d = device index of the rack (d < 0 = the Instrument Rack, not ported: the command is dropped)
+void Engine::rackCmd(int t, double d, int op, double c, double j, double a, double b, Device* prep) {
+  Device* r = nullptr;
+  if (ok(t) && d >= 0 && d < s[t].ndev && d == std::floor(d)) r = s[t].dev[(int)d];
+  if (!r || !r->isRack) { retire.put(prep); return; }
+  if (prep) prep->setTempo(bpm);
+  Device* removed[RACK_MAX_REMOVED]; int nr = r->rackCmd(op, c, j, a, b, prep, removed);
+  for (int k = 0; k < nr; k++) retire.put(removed[k]);
 }
 void Engine::bend(int t, double st0) {
   if (!ok(t) || t >= MASTER) return;
@@ -181,7 +197,19 @@ void Engine::runDev(int strip, int di, Device* d, float* L, float* R, int n) {
   if (!(x > -1e6 && x < 1e6)) { d->bypass = true; for (int i = 0; i < n; i++) { L[i] = 0; R[i] = 0; } err(2, strip, di, "nilai tidak valid (NaN/tak hingga)"); }
 }
 void Engine::runChain(Strip& st, int strip, float* L, float* R, int n) {
-  for (int i = 0; i < st.ndev; i++) if (!st.dev[i]->bypass) { if (st.dev[i]->hasTr) st.dev[i]->tr(playing, f2t(pos) / PPQ); runDev(strip, i, st.dev[i], L, R, n); }
+  for (int i = 0; i < st.ndev; i++) if (!st.dev[i]->bypass) { if (st.dev[i]->hasTr) st.dev[i]->tr(playing, f2t(pos) / PPQ); runDev(strip, i, st.dev[i], L, R, n); if (st.dev[i]->isMod) applyMod(st.dev[i]); }
+}
+// core.js applyMod: a modulator writes its mapped value into the target device (or the instrument when d = -1)
+void Engine::applyMod(Device* m) {
+  int ts, td, tk; double v; if (!m->modTarget(ts, td, tk, v) || ts < 0 || ts >= NSTRIPS) return;
+  Strip& st = s[ts];
+  if (td < 0) { if (st.inst && v != m->modLast) { st.inst->setParam(tk, v); m->modLast = v; } return; }
+  Device* d = td < st.ndev ? st.dev[td] : nullptr;
+  if (d && d != m && v != m->modLast) { d->setParam(tk, v); m->modLast = v; }
+}
+// core.js runMods: a strip that skips its chain still runs its modulators (on silence)
+void Engine::runMods(Strip& st, int n) {
+  for (int i = 0; i < st.ndev; i++) { Device* d = st.dev[i]; if (d->isMod && !d->bypass) { for (int k = 0; k < n; k++) { zL[k] = 0; zR[k] = 0; } d->process(zL, zR, n); applyMod(d); } }
 }
 void Engine::balance(float* L, float* R, int a, int b, double pan) {
   if (!pan) return;
@@ -287,11 +315,11 @@ void Engine::track(Strip& st, int idx, double p0, int n, double sp, bool anySolo
   if (!audible && st.mg < 1e-4) {
     st.mg = 0;
     if (st.wasAudible) { if (st.inst) st.inst->allOff(); st.wasAudible = false; st.silent = tailFrames + 1; }
-    sc[idx] = 0; st.peakL *= 0.99; st.peakR *= 0.99; st.npre = 0; st.pdl.clear(); return;
+    sc[idx] = 0; st.peakL *= 0.99; st.peakR *= 0.99; st.npre = 0; st.pdl.clear(); runMods(st, n); return;
   }
   st.wasAudible = true;
   bool hasClips = st.clips && !st.clips->c.empty();
-  if (!st.inst && !hasClips) { sc[idx] = 0; st.peakL *= 0.99; st.peakR *= 0.99; st.pdl.clear(); return; }
+  if (!st.inst && !hasClips) { sc[idx] = 0; st.peakL *= 0.99; st.peakR *= 0.99; st.pdl.clear(); runMods(st, n); return; }
   float* L = st.bufL; float* R = st.bufR;
   for (int i = 0; i < n; i++) { L[i] = 0; R[i] = 0; }
   bool active = false;
@@ -327,7 +355,8 @@ void Engine::track(Strip& st, int idx, double p0, int n, double sp, bool anySolo
         double q = clamp(ep[i] + sh, 0, 127); tmap[ep[i] & 127] = toUint8(q); st.inst->noteOn((int)q, ev[i]);
         if (st.bend && st.inst->canBend()) bendNew(st);
         if (epn[i] == epn[i]) st.nPan = epn[i];
-      } else { int q = tmap[ep[i] & 127]; tmap[ep[i] & 127] = ep[i]; st.inst->noteOff(q); }
+        if (midiFx) midiTo(idx, (int)q, ev[i]);
+      } else { int q = tmap[ep[i] & 127]; tmap[ep[i] & 127] = ep[i]; st.inst->noteOff(q); if (midiFx) midiTo(idx, q, 0); }
     }
     if (cur < n) { st.inst->render(L, R, cur, n); balance(L, R, cur, n, st.nPan); }
     if (st.inst->active()) active = true;
@@ -355,7 +384,7 @@ void Engine::track(Strip& st, int idx, double p0, int n, double sp, bool anySolo
     }
   }
   if (active) st.silent = 0; else st.silent += n;
-  if (!active && st.silent > tailFrames) { sc[idx] = 0; st.peakL *= 0.99; st.peakR *= 0.99; st.pdl.clear(); return; }
+  if (!active && st.silent > tailFrames) { sc[idx] = 0; st.peakL *= 0.99; st.peakR *= 0.99; st.pdl.clear(); runMods(st, n); return; }
   runChain(st, idx, L, R, n);
   if (st.pd > 0) st.pdl.run(L, R, n, st.pd); else st.pdl.clear();
   double pn = st.ccP ? clamp(st.pan + st.ccP, -1, 1) : st.pan, vg = st.vol * st.ccG, a = (pn + 1) * PI * 0.25;
@@ -386,7 +415,7 @@ void Engine::track(Strip& st, int idx, double p0, int n, double sp, bool anySolo
 void Engine::ret(int k, int n) {
   Strip& st = s[RET0 + k]; float* L = retL[k]; float* R = retR[k];
   if (retActive[k]) st.silent = 0; else st.silent += n;
-  if (st.silent > tailFrames) { st.peakL *= 0.995; st.peakR *= 0.995; sc[RET0 + k] = 0; st.pdl.clear(); return; }
+  if (st.silent > tailFrames) { st.peakL *= 0.995; st.peakR *= 0.995; sc[RET0 + k] = 0; st.pdl.clear(); runMods(st, n); return; }
   runChain(st, RET0 + k, L, R, n);
   if (st.pd > 0) st.pdl.run(L, R, n, st.pd); else st.pdl.clear();
   double target = st.mute ? 0 : st.vol, a = (st.pan + 1) * PI * 0.25, tl = target * std::cos(a) * 1.41421356, tr = target * std::sin(a) * 1.41421356;

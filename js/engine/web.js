@@ -190,11 +190,12 @@ export function createWebBackend() {
   // It only plays when every instrument and effect of the project is ported; otherwise the Web engine plays (automatic fallback). A switch
   // happens only while the transport is stopped.
   const TRANSPORT = new Set(['play', 'playCountIn', 'preview', 'bend']);
-  const nat = { sink: isNativeApp() ? createNativeSink() : null, want: false, ready: false, mirror: false, on: false, only: false, pending: false, inst: new Array(NSTRIPS).fill(0), dev: Array.from({ length: NSTRIPS }, () => []), replay: null };
+  const nat = { sink: isNativeApp() ? createNativeSink() : null, want: false, ready: false, mirror: false, on: false, only: false, pending: false, inst: new Array(NSTRIPS).fill(0), dev: Array.from({ length: NSTRIPS }, () => []), rk: Array.from({ length: NSTRIPS }, () => new Set()), replay: null };   // rk: device types ever put into a rack on the strip (kept until the strip is reset: a conservative check)
   function note(c, a) {                                    // instrument / effect types per strip, to know whether the native engine can play the project
     const t = a[0] | 0; if (t < 0 || t >= NSTRIPS) return;
     if (c === 'trackInst') nat.inst[t] = a[1] | 0;
-    else if (c === 'resetTrack') { nat.inst[t] = 0; nat.dev[t] = []; }
+    else if (c === 'resetTrack') { nat.inst[t] = 0; nat.dev[t] = []; nat.rk[t].clear(); }
+    else if (c === 'rackCmd') { const op = a[2] | 0; if (op === 1 && a[1] >= 0) nat.rk[t].add(a[5] | 0); else if (op >= 5 || a[1] < 0) { if (nat.rk[t].has(-1)) return; nat.rk[t].add(-1); } else return; }   // -1: an Instrument / Drum Rack chain (not ported)
     else if (c === 'insertDevice') { const d = nat.dev[t]; if (d.length < 16) d.splice(Math.max(0, Math.min(d.length, a[1] | 0)), 0, a[2] | 0); }
     else if (c === 'removeDevice') { const d = nat.dev[t], i = a[1] | 0; if (i >= 0 && i < d.length) d.splice(i, 1); }
     else return;
@@ -206,6 +207,7 @@ export function createWebBackend() {
     for (let t = 0; t < NSTRIPS; t++) {
       if (nat.inst[t] && !nat.sink.inst.has(nat.inst[t])) return { strip: t, inst: nat.inst[t] };
       for (const d of nat.dev[t]) if (!nat.sink.dev.has(d)) return { strip: t, dev: d };
+      for (const d of nat.rk[t]) if (!nat.sink.dev.has(d)) return { strip: t, dev: d };
     }
     return null;
   }

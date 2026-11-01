@@ -1,6 +1,7 @@
 // Interfaces of instruments and audio effects (devices). Each port of a JS instrument / effect implements one of these.
 // makeInstrument / makeDevice return nullptr for a type that is not ported yet: the app then keeps the project on the JS engine.
 #pragma once
+#include <cmath>
 #include <cstdint>
 
 namespace mdaw {
@@ -42,6 +43,18 @@ class Device {
   virtual void process(float* L, float* R, int n) = 0;
   virtual int readOut(float* out) { return 0; }                 // analyzer / meter devices
   virtual int lat() { return 0; }                               // JS d.lat(): frames this device delays the audio (PDC); 0 = none
+  // modulators (fx6): JS d.mod / d.target() / m.last. modTarget fills strip, device (-1 = instrument), parameter, value; false = not mapped
+  bool isMod = false; double modLast = NAN;
+  virtual bool modTarget(int& s, int& d, int& k, double& v) { return false; }
+  // effects that listen to notes (fx5 Spectral Resonator): JS d.midiIn / midiFrom() / noteOn / noteOff
+  // racks (fx7): JS d.rack / cmd() / sub(). rackCmd returns how many devices it put into `removed` (for the retire queue)
+  bool isRack = false;
+  virtual int rackCmd(int op, double c, double j, double a, double b, Device* prep, Device** removed) { if (prep) { removed[0] = prep; return 1; } return 0; }
+  virtual Device* sub(int c, int j) { return nullptr; }
+  bool midiIn = false;
+  virtual int midiFrom() { return -1; }
+  virtual void noteOn(int p, double v) {}
+  virtual void noteOff(int p) {}
 };
 
 struct Bank { Sample* s[256] = {}; SoundFont* sf[8] = {}; };

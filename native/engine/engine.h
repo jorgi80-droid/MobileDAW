@@ -12,37 +12,14 @@
 #include "meter.h"
 #include "tmap.h"
 #include "units.h"
+#include "pdc.h"
 
 namespace mdaw {
 
 constexpr int PPQ = 960, MAX_TRACKS = 64, MASTER = 64, RET0 = 65, NFX = 8, NSTRIPS = RET0 + NFX, MAX_DEV = 16;
 constexpr double TAIL_SECONDS = 2;
-constexpr int PDC_MAX = 16384;        // core.js / dsp.js: longest compensation per path + 1 (frames, power of two)
-inline int pdcCap(int D) { int c = 512; while (c <= D && c < PDC_MAX) c *= 2; return c; }
+constexpr int RACK_MAX_REMOVED = 8 * 16 + 1;
 
-// dsp.js PdcLine: stereo PDC delay ring. The storage (PDC_MAX frames) is handed in by the engine at construction (calloc: untouched pages
-// cost no RAM); n is the ring size JS would have allocated, so growing starts from silence exactly as in JS.
-struct PdcLine {
-  float* L = nullptr; float* R = nullptr; int n = 0, w = 0; bool used = false;
-  void run(float* x, float* y, int cnt, int D) {
-    if (D >= n) { n = pdcCap(D); std::memset(L, 0, sizeof(float) * n); std::memset(R, 0, sizeof(float) * n); w = 0; }
-    int M = n - 1;
-    for (int i = 0; i < cnt; i++) { L[w] = x[i]; R[w] = y[i]; int r = (w - D) & M; x[i] = L[r]; y[i] = R[r]; w = (w + 1) & M; }
-    used = true;
-  }
-  void clear() { if (used) { std::memset(L, 0, sizeof(float) * n); std::memset(R, 0, sizeof(float) * n); used = false; } }
-};
-// dsp.js ClickLine: mono, double precision
-struct ClickLine {
-  double* b = nullptr; int n = 0, w = 0; bool used = false;
-  template <class T> void run(T* x, int cnt, int D) {
-    if (D >= n) { n = pdcCap(D); std::memset(b, 0, sizeof(double) * n); w = 0; }
-    int M = n - 1;
-    for (int i = 0; i < cnt; i++) { b[w] = x[i]; x[i] = (T)b[(w - D) & M]; w = (w + 1) & M; }
-    used = true;
-  }
-  void clear() { if (used) { std::memset(b, 0, sizeof(double) * n); used = false; } }
-};
 
 struct NoteData {                     // trackNotes: events sorted (offs before ons) + note list for catch-up
   int n = 0;
@@ -104,7 +81,7 @@ class Engine {
   TempoMap* tm; bool tmOn = false; double curBpm = 120, beatT = PPQ, barBeats = 4; MeterMap* mm; double cinN = 4;
   bool metro = false; double metroVol = 1, clickIdx = 1e9, clickOff = 0, clickF = 1000;
   double cin = 0, cinBf = 0, cinNext = 0, cinPos = 0, cinBeat = 0;
-  float mixL[BLOCK], mixR[BLOCK], scrL[BLOCK], scrR[BLOCK]; bool noDirect = false;
+  float mixL[BLOCK], mixR[BLOCK], scrL[BLOCK], scrR[BLOCK], zL[BLOCK], zR[BLOCK]; bool noDirect = false;
   float retL[NFX][BLOCK], retR[NFX][BLOCK]; bool retActive[NFX] = {};
   LaneData* lanes = nullptr;
   double tailFrames;
@@ -145,6 +122,7 @@ class Engine {
   void insertDevice(int t, double index, Device* prepared);
   void removeDevice(int t, int i);
   void devParam(int t, int d, int p, double v) { if (ok(t) && d >= 0 && d < s[t].ndev) s[t].dev[d]->setParam(p, v); }
+  void rackCmd(int t, double d, int op, double c, double j, double a, double b, Device* prepared);
   void devBypass(int t, int d, bool b) { if (ok(t) && d >= 0 && d < s[t].ndev) s[t].dev[d]->bypass = b; }
   void bend(int t, double st);
   void preview(int t, int pitch, double vel, bool on);
@@ -159,7 +137,10 @@ class Engine {
   void fillMeters(int32_t* m) const;   // 2 * NSTRIPS peaks * 1000
   void fillLoad(int32_t* out) const;    // 2 * MAX_TRACKS: voices, load per mille (load not measured here: 0)
   double tickPos() const { return f2t(pos); }
-  int devOut(int t, int d, float* out) { return ok(t) && d >= 0 && d < s[t].ndev ? s[t].dev[d]->readOut(out) : 0; }
+  int devOut(int t, int d, float* out) {
+    if (d >= 1000 && d < 2000 && ok(t)) { int q = d - 1000, r = q >> 8; Device* x = r < s[t].ndev && s[t].dev[r]->isRack ? s[t].dev[r]->sub((q >> 4) & 15, q & 15) : nullptr; return x ? x->readOut(out) : 0; }   // a device inside a rack
+    return ok(t) && d >= 0 && d < s[t].ndev ? s[t].dev[d]->readOut(out) : 0;
+  }
 
   // ---- rendering
   void render(float* oL, float* oR, int frames);
@@ -177,6 +158,11 @@ class Engine {
   void bendNew(Strip& st);
   void runDev(int strip, int di, Device* d, float* L, float* R, int n);
   void runChain(Strip& st, int strip, float* L, float* R, int n);
+  bool midiFx = false;                // core.js midiScan: some device listens to notes (Spectral Resonator in MIDI mode)
+  void midiScan();
+  void midiTo(int src, int p, double v);
+  void applyMod(Device* m);
+  void runMods(Strip& st, int n);
   static int chainLat(const Strip& st) { int l = 0; for (int i = 0; i < st.ndev; i++) if (!st.dev[i]->bypass) l += st.dev[i]->lat(); return l; }
   double spt() const { return sr * 60 / (bpm * PPQ); }
   static void balance(float* L, float* R, int a, int b, double pan);
