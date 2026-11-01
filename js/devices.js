@@ -50,7 +50,7 @@ function knobGrid(def, count) {
 
 // ---- sampler zones (DirectWave: one zone, Keystone: up to 16) ----------------------------------
 function zoneEditor(i, k) {
-  const t = state.tracks[i], z = t.inst.zones[k], multi = t.inst.type === INST.KEYSTONE;
+  const t = state.tracks[i], z = t.inst.zones[k], multi = t.inst.type === INST.KEYSTONE || t.inst.type === INST.FLM_DW;
   const num = (v, lo, hi) => h('input', { type: 'number', value: v, min: lo, max: hi, step: 1, inputmode: 'numeric', style: 'width:70px;height:32px;margin-left:8px;background:var(--bg);border:1px solid var(--line);color:var(--text);border-radius:2px;padding:0 6px;user-select:text' });
   const f = { root: num(z.root, 0, 127), lo: num(z.lo, 0, 127), hi: num(z.hi, 0, 127), vlo: num(z.vlo, 1, 127), vhi: num(z.vhi, 1, 127), tune: num(z.tune, -100, 100) };
   const loop = h('input', { type: 'checkbox', style: 'width:22px;height:22px;margin-left:8px' }); loop.checked = z.loop;
@@ -77,7 +77,7 @@ function zoneEditor(i, k) {
 
 function zonePanel(i, t) {
   const zs = t.inst.zones || [];
-  const multi = t.inst.type === INST.KEYSTONE;
+  const multi = t.inst.type === INST.KEYSTONE || t.inst.type === INST.FLM_DW;   // FLM DirectWave: several layers / zones
   const list = h('div', { class: 'zones' });
   zs.forEach((z, k) => list.append(h('button', { class: 'zone b', onclick: () => zoneEditor(i, k) },
     h('b', {}, multi ? `Zona ${k + 1}` : 'Sample'),
@@ -163,7 +163,7 @@ function instCard(i, t, o = {}) {
   }
   if (!o.floating) head.append(popBtn(() => openInstWindow(t.id)));
   if (!o.floating) head.append(foldBtn(fk, false));
-  if (def.view === 'kit') { const kv = instKitView(i, t, o.every || every); if (kv) return h('div', { class: 'card lkcard lvcard' }, head, kv.el); }   // Live 12 instruments (fxkit.js VI)
+  if (def.view === 'kit') { const kv = instKitView(i, t, o.every || every); if (kv) return h('div', { class: 'card lkcard lvcard' }, head, def.zones ? h('div', { class: 'inst-row' }, h('div', { class: 'inst-side' }, zonePanel(i, t)), kv.el) : kv.el); }   // FLM DirectWave: zone list + panel   // Live 12 instruments (fxkit.js VI)
   if (def.view === 'irack') { const rv = irackView(i, t, o.every || every); return h('div', { class: 'card lkcard lvcard' }, head, rv.el); }   // Instrument Rack (fxkit.js rackPanel)
   if (def.view === 'lsampler' || def.view === 'lwavetable') {
     const pn = def.view === 'lsampler' ? samplerPanel(i, t) : wavetablePanel(i, t);

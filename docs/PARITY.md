@@ -108,6 +108,7 @@ Stack dipertahankan: JS modul (tanpa build) + AudioWorklet + engine C++ (Android
 | Save / Save As / **Quick Save (geser)** + cadangan, indikator belum tersimpan, autosave | Selesai | `touch-ui-test` |
 | **Recent**, **Duplikat / Ganti nama / Hapus** proyek (hapus dengan konfirmasi) | Selesai | Browser → Proyek (tekan lama) |
 | Ekspor WAV 16/24/32f, MP3, MIDI, .mdaw, ZIP (proyek + sample), stem, mono, sample rate | Selesai | `export-test` |
+| **Instrumen FLM**: DirectWave, GMS, MiniSynth, SuperSaw dengan tab / kontrol / logika FLM, UI gaya Live | Selesai (kurva suara perkiraan) | `inst-test`, `flm-inst-shots`, `docs/FLM-INSTRUMENTS.md` |
 | Preset ekspor **WAV 16-bit · 44,1 kHz** / **MP3 320 kbps · 44,1 kHz**; MP3 dengan model masking, scalefactor, bit reservoir | Selesai | `export-test` (struktur MP3), `export-ui-test`, `mp3-quality-test` (vs LAME, butuh ffmpeg) |
 | Render **Seleksi**, **Trim Silence**, tail **Leave / Wrap / Cut** | Selesai | `waveops-test` (postRender) |
 | **Impor proyek FL Studio Mobile (.flm / ZIP)**, Ableton (.als), FL Studio (.flp, eksperimental) dengan progres + laporan; DirectWave FLM → DirectWave MDAW (semua lapisan + root key), GMS / MiniSynth / SuperSaw → synth MDAW yang sama | Selesai | `import-test`, `import-ui-test` (arsip FLM pemilik: 26 track, 1032 klip, 42/42 sample); lihat `docs/IMPORT.md` |

@@ -26,13 +26,13 @@ Model netral: satuan ketuk (beat), gain linear (1 = level bawaan), pan −1..1; 
 - **Plugin tidak ada di MDAW** → device placeholder: Utility netral (audio diteruskan apa adanya) dengan `d.missing = { name, app, preset,
   params }`; kartunya bertuliskan **[Plugin tidak tersedia] <nama>**, nilai parameter asli disimpan, bisa diganti lewat ⋯ → Ganti dengan.
 - **Sample audio tidak ada** → klip tetap di posisi / panjang / namanya ("⚠ <nama> (sample tidak ada)") dengan file hening pendek.
-- **DirectWave FLM → DirectWave MDAW**: setiap modul DirectWave di kanal (lapisan) menjadi satu zona dengan sample dan **root key** aslinya
-  (rentang tuts penuh, jadi lapisan berbunyi bersamaan seperti di FLM). Parameter DirectWave FLM (envelope, dll.) disimpan mentah di
-  `inst.from` — artinya belum dipetakan, jadi zona memakai setelan bawaan MDAW.
+- **DirectWave FLM → DirectWave MDAW (mesin FLM, instrumen 30, lihat `docs/FLM-INSTRUMENTS.md`)**: setiap modul DirectWave di kanal
+  (lapisan) menjadi satu zona dengan sample dan **root key** aslinya (rentang tuts penuh, jadi lapisan berbunyi bersamaan seperti di FLM).
+  Flt Env, Frq Env dan LFO dikonversi dari nilai file; nilai tab Sample / Filter disimpan mentah di `inst.from` (urutannya belum diketahui).
 - **Program library bawaan FLM** (mis. `DirectWave Samples/Keyboard/Grand Piano.dwp`, tidak ikut di ZIP) → **SoundFont General MIDI** bawaan
   MobileDAW (`SoundFonts/TimGM6mb.sf2`) dengan preset paling mirip dari namanya (Grand Piano → Acoustic Grand Piano); chip "pengganti …" di
   kartu instrumen. Suaranya mirip, bukan sample FLM yang sama. Tanpa padanan nama → DirectWave kosong, pattern utuh, chip "hilang".
-- **GMS / MiniSynth / SuperSaw** → synth MDAW yang sama (GMS / Mini Synth / SuperSaw) dengan preset bernama sama bila ada (mis. "Acid Bass");
+- **GMS / MiniSynth / SuperSaw** → instrumen FLM MobileDAW yang sama (31 / 32 / 33, tab dan kontrol seperti FLM) dengan preset bernama sama bila ada;
   nilai parameter FLM asli disimpan di `inst.from`. Dikenali dari nama / path preset modul — type id synth ini belum terverifikasi dari file
   FLM asli (arsip pemilik tidak memakainya).
 - **Sample pad drum tidak ada** → pad tetap (nama, step), dibisukan sampai diberi sample.

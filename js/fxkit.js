@@ -16,6 +16,7 @@ import { DsKick, DsSnare, DsTom, DsHH, DsClap, DsFm } from './engine/ds.js';
 import { WT_CATS, WT_LIST, WT_COUNT, WT_N_FRAMES, wtTable, wtCatOf } from './engine/live.js';
 import { offerAutomation } from './automate.js';
 import { Biquad } from './engine/dsp.js';
+import { cutHz, gmsWaveTable } from './engine/flmsyn.js';
 import { eng, MASTER, RET0 } from './engine.js';
 import * as P from './project.js';
 import * as BR from './browser.js';
@@ -1381,3 +1382,103 @@ export function padChainView(i, k, every) {
   });
   return { el: h('div', { class: 'drk-chain' }, head, body), draw: () => { for (const f of draws) f(); } };
 }
+
+// ================================================================================================ FL Studio Mobile instruments (30..33)
+// Same tabs and controls as the FLM modules (owner's screenshots): DirectWave SAMPLE / FILTER / FLT ENV / FRQ ENV / LFO, GMS FILTER / OSC /
+// MOD / LEVEL / EG / LFO / VOICES / FX, MiniSynth OSC / FILTER / FLT EG / LFO / MASTER / FX, SuperSaw OSC / FILTER / LFO / LEVEL / MOD /
+// VOICES / FX - drawn with the Live 12 kit (tabs, knobs with label + value, dark displays with cyan curves, orange switches).
+const FLM_TAB = new Map();
+function flmTabs(k, names, pages) {
+  const key = k.d.id + ':' + k.d.type, page = h('div', { class: 'lk-page lk-flmpg' });
+  const show = (j) => { FLM_TAB.set(key, j); page.replaceChildren(pages[j]()); };
+  const cur = Math.min(FLM_TAB.get(key) || 0, names.length - 1);
+  const tb = lvTabs(names.map((label) => ({ label })), cur, show, { cls: 'lk-tabs lk-flmtabs' }); show(cur);
+  return k.col(tb, page);
+}
+const flmEnv = (k, a, d, s, r, col = DISPC.bl) => k.D(140, 54, (g, w, hh) => lvPath(g, lvEnvPts(w, hh, k.get(a), k.get(d), s == null ? 0 : k.get(s), r == null ? k.get(d) : k.get(r), 5), col, hh, 1.6));
+function flmFilt(k, cut, res, type) {                                             // response of the instrument filter (cutoff 0..100, resonance 0..100)
+  return k.D(140, 54, (g, w, hh) => {
+    grid(g, w, hh);
+    const t = typeof type === 'function' ? type() : type, f = cutHz(k.get(cut)), q = 0.5 + Math.pow(k.get(res) / 100, 2) * 18, b = new Biquad();
+    if (t < 0) { lvPath(g, [[0, hh * 0.4], [w, hh * 0.4]], DISPC.grid2, hh, 1.4); return; }
+    if (t === 1) b.highpass(SR, f, q); else if (t === 2) b.bandpass(SR, f, q); else b.lowpass(SR, f, q);
+    const pts = []; for (let x = 0; x <= w; x += 2) { const m = mag(b, xl(x, w)); pts.push([x, hh - 4 - Math.min(2, m) / 2 * (hh - 10)]); }
+    lvPath(g, pts, DISPC.bl, hh, 1.6); lvRing(g, lx(f, w), hh - 4 - Math.min(2, mag(b, f)) / 2 * (hh - 10), 4);
+  }, { onDown: () => ({ c: k.get(cut), r: k.get(res) }), onMove: (x, y, dx, dy, s) => { k.set(cut, Math.max(0, Math.min(100, s.c + dx / (w0 / 100)))); k.set(res, Math.max(0, Math.min(100, s.r - dy * 0.8))); } });
+}
+const w0 = 140;
+function flmLfo(k, shapeK, shapes) {                                             // LFO wave preview
+  return k.D(110, 54, (g, w, hh) => {
+    const sh = shapes[Math.round(k.get(shapeK))] || 'Sine', pts = []; let rv = 0.4;
+    for (let x = 0; x <= w; x++) { const p = (x / w * 2) % 1; let v; if (/Sine|SIN/.test(sh)) v = Math.sin(2 * Math.PI * p); else if (/Saw|SAW/.test(sh)) v = 1 - 2 * p; else if (/Square|SQR/.test(sh)) v = p < 0.5 ? 1 : -1; else { if (x % 14 === 0) rv = Math.sin(x * 12.9898) * 0.9; v = rv; } pts.push([x, hh / 2 - v * (hh / 2 - 6)]); }
+    lvPath(g, pts, DISPC.or, null, 1.6);
+  });
+}
+const lfoRate = (k, modeK, rateK, syncK) => k.swapN(modeK, (m) => (m === 2 ? k.TL('Rate', k.S(syncK, { w: 72 })) : k.K(rateK, { n: 'Rate' })));
+const flmLvl = (k, j) => k.K(j, { n: 'Level' });
+// DirectWave: zones (sample / root / key and velocity range) are edited in the zone list next to this panel
+VI[30] = (k) => flmTabs(k, ['SAMPLE', 'FILTER', 'FLT ENV', 'FRQ ENV', 'LFO'], [
+  () => k.row(k.K(0), k.K(1), k.sep(), flmEnv(k, 2, 3, 4, 5), k.K(2), k.K(3), k.K(4), k.K(5), k.sep(), k.K(6), k.TL('PB Range', k.N(7, { w: 60 })),
+    k.col(k.T(8, 'Reverse', { w: 74 }), k.T(9, 'Loop', { w: 74 })), k.col(k.T(10, 'Legato', { w: 74 }), k.T(11, 'Mono', { w: 74 })), k.sep(), flmLvl(k, 34)),
+  () => k.row(flmFilt(k, 12, 13, () => Math.round(k.get(16)) - 1), k.K(12, { big: true }), k.K(13, { n: 'Res' }), k.K(14), k.K(15), k.TL('Filter', k.S(16, { w: 92 }))),
+  () => k.row(flmEnv(k, 17, 18, 19, 20), k.K(17, { n: 'Attack' }), k.K(18, { n: 'Decay' }), k.K(19, { n: 'Sustain' }), k.K(20, { n: 'Release' }), k.K(21, { n: 'Amount' })),
+  () => k.row(flmEnv(k, 22, 23, 24, 25, DISPC.or), k.K(22, { n: 'Attack' }), k.K(23, { n: 'Decay' }), k.K(24, { n: 'Sustain' }), k.K(25, { n: 'Release' }), k.K(26, { n: 'Amount' })),
+  () => k.row(k.CH(27, ['Hertz', 'One Shot', 'Tmp Sync'], { v: true, cls: 'sm' }), lfoRate(k, 27, 28, 29), k.col(flmLfo(k, 30, ['Sine', 'Saw', 'Square']), k.TL('Shape', k.S(30, { w: 90 }))),
+    k.K(31, { n: 'Attack' }), k.K(32, { n: 'Amount' }), k.TL('Destination', k.S(33, { w: 96 }))),
+]);
+function gmsWave(k, a, b) {
+  return k.D(130, 54, (g, w, hh) => {
+    for (const [j, col] of [[b, 'rgba(79,195,240,.55)'], [a, '#f2f2f2']]) { const t = gmsWaveTable(k.get(j)), pts = []; for (let x = 0; x <= w; x++) { const v = t[Math.floor((x / w * 2 % 1) * 2048)]; pts.push([x, hh / 2 - v * (hh / 2 - 6)]); } lvPath(g, pts, col, null, 1.5); }
+  });
+}
+VI[31] = (k) => flmTabs(k, ['FILTER', 'OSC', 'MOD', 'LEVEL', 'EG', 'LFO', 'VOICES', 'FX'], [
+  () => k.row(flmFilt(k, 0, 1, () => [0, 0, 1][Math.round(k.get(6))]), k.K(0, { big: true, n: 'Cutoff' }), k.K(1), flmEnv(k, 2, 3, null, null, DISPC.or), k.K(2, { n: 'Attack' }), k.K(3, { n: 'Decay' }), k.K(4, { n: 'Amount' }),
+    k.col(k.T(5, 'Kbd', { w: 60 }), k.TL('Kind', k.S(6, { w: 70 })))),
+  () => k.row(k.col(k.TL('A', k.S(7, { w: 104 })), k.TL('B', k.S(8, { w: 104 }))), gmsWave(k, 7, 8), k.K(9), k.K(10), k.K(11), k.K(12), k.K(13)),
+  () => k.row(k.K(14, { n: 'Mod Amnt' }), k.TL('Kind', k.S(15, { w: 72 })), flmEnv(k, 16, 17, null, null, DISPC.or), k.K(16, { n: 'Attack' }), k.K(17, { n: 'Decay' }), k.K(18, { n: 'EG Amt' }), k.sep(),
+    k.TL('PB Range', k.N(19, { w: 60 })), k.TL('MW Dest', k.S(20, { w: 86 })), k.K(21, { n: 'MW Amt' })),
+  () => k.row(k.K(22, { big: true }), k.K(23), flmEnv(k, 24, 25, 26, 27), k.K(24), k.K(25), k.K(26), k.K(27)),
+  () => k.row(k.K(28, { n: 'Amount' }), flmEnv(k, 29, 30, 31, 32, DISPC.or), k.K(29, { n: 'Attack' }), k.K(30, { n: 'Decay' }), k.K(31, { n: 'Sustain' }), k.K(32, { n: 'Release' }),
+    k.col(k.T(33, 'Vel', { w: 60 }), k.TL('Dest', k.S(34, { w: 80 })))),
+  () => k.row(k.K(35, { big: true, n: 'Amount' }), k.col(flmLfo(k, 36, ['Sine', 'Saw', 'Square']), k.TL('Shape', k.S(36, { w: 90 }))), k.TL('Dest', k.S(37, { w: 76 })), k.TL('Rate', k.S(38, { w: 80 }))),
+  () => k.row(k.K(39, { n: 'Trnsp' }), k.K(40), k.K(41, { n: 'Chor Dtn' }), k.K(42, { n: 'Chor Str' }), k.col(k.T(43, 'Mono', { w: 64 }), k.T(44, 'Auto', { w: 64 })), k.TL('Voices', k.S(45, { w: 70 })), k.TL('Scale', k.S(46, { w: 76 }))),
+  () => k.col(...[0, 1, 2].map((s) => { const o = 47 + s * 7; return k.row(k.T(o, String(s + 1), { w: 28 }), k.TL('FX Kind', k.S(o + 1, { w: 96 })), k.K(o + 2, { n: 'Amnt' }), k.K(o + 3, { n: 'X' }), k.K(o + 4, { n: 'Y' }), k.TL('LFO Rate', k.S(o + 5, { w: 70 })), k.TL('LFO Shape', k.S(o + 6, { w: 72 }))); })),
+]);
+function miniWave(k) {                                                           // the oscillator kind's waveform (Modifier applied)
+  return k.D(130, 54, (g, w, hh) => {
+    const kind = Math.round(k.get(0)), m = k.get(1) / 100, saw = (p) => 2 * (p - Math.floor(p)) - 1, sq = (p, pw = 0.5) => ((p - Math.floor(p)) < pw ? 1 : -1), r2 = Math.pow(2, m * 2), pts = [];
+    for (let x = 0; x <= w; x++) {
+      const p = x / w * 2; let v;
+      switch (kind) { case 0: v = 0.6 * saw(p) + 0.4 * sq(p, 0.5 - m * 0.45); break; case 1: v = 0.5 * (saw(p) + saw(p * r2)); break; case 2: v = 0.5 * (sq(p) + sq(p + m * 0.5)); break; case 3: v = 0.5 * (sq(p) + saw(p * r2)); break;
+        case 4: v = 0.5 * (sq(p) + sq(p * r2)); break; case 5: v = (saw(p) + saw(p * (1 + m * 0.02)) + saw(p * (1 - m * 0.02))) / 3; break; case 6: v = 0.7 * saw(p) + m * 0.6 * Math.sin(6 * Math.PI * p) * Math.sin(2 * Math.PI * p); break;
+        case 7: v = 0.5 * (saw(p) + saw(p + 0.15 + m * 0.35)); break; case 8: v = 0.5 * (saw(p) + saw(p * 2)); break; default: v = 0.5 * (saw(p) + saw(p * 1.4983)); }
+      pts.push([x, hh / 2 - v * (hh / 2 - 6)]);
+    }
+    lvPath(g, pts, '#f2f2f2', null, 1.5);
+  });
+}
+VI[32] = (k) => flmTabs(k, ['OSC', 'FILTER', 'FLT EG', 'LFO', 'MASTER', 'FX'], [
+  () => k.row(k.col(k.TL('Oscillator Kind', k.S(0, { w: 128 })), miniWave(k)), k.K(1, { big: true }), k.K(2), k.K(3), k.sep(), flmLvl(k, 43)),
+  () => k.row(flmFilt(k, 4, 7, 0), k.K(4, { big: true }), k.K(5), k.K(6), k.K(7)),
+  () => k.row(flmEnv(k, 8, 9, 10, 11, DISPC.or), k.K(8, { n: 'Atk' }), k.K(9, { n: 'Dec' }), k.K(10, { n: 'Sus' }), k.K(11, { n: 'Rel' }), k.K(12, { big: true, n: 'Amnt' })),
+  () => k.row(k.K(13, { n: 'LFO Amnt' }), k.TL('LFO Rate', k.S(14, { w: 72 })), k.col(flmLfo(k, 15, ['SIN', 'SAW', 'SQR']), k.TL('LFO Shape', k.S(15, { w: 72 }))), k.TL('LFO Dest', k.S(16, { w: 64 })), k.sep(), k.K(17), k.TL('MW Dest', k.S(18, { w: 64 }))),
+  () => k.row(flmEnv(k, 19, 20, 21, 22), k.K(19, { n: 'Atk' }), k.K(20, { n: 'Dec' }), k.K(21, { n: 'Sus' }), k.K(22, { n: 'Rel' }), k.TL('Voices Mode', k.S(23, { w: 80 })), k.K(24)),
+  () => k.col(
+    k.row(k.T(25, 'DIST', { w: 70 }), k.K(26), k.K(27), k.sep(), k.T(33, 'CHORUS', { w: 70 }), k.K(34, { n: 'Rate' }), k.K(35, { n: 'Mod' }), k.K(36, { n: 'Mix' })),
+    k.row(k.T(28, 'DELAY', { w: 70 }), k.K(29, { n: 'Feedback' }), k.K(30, { n: 'Filter' }), k.K(31, { n: 'Mix' }), k.TL('Time', k.S(32, { w: 64 })), k.sep(),
+      k.T(37, 'PHASER', { w: 70 }), k.K(38, { n: 'Speed' }), k.K(39, { n: 'Width' }), k.K(40, { n: 'Feedback' }), k.K(41, { n: 'Freq' }), k.K(42, { n: 'Mix' }))),
+]);
+VI[33] = (k) => flmTabs(k, ['OSC', 'FILTER', 'LFO', 'LEVEL', 'MOD', 'VOICES', 'FX'], [
+  () => k.col(k.row(k.T(0, 'Pulse Mode', { w: 96 }), k.CH(1, ['SUPERSAW', 'SUPERSYNC'], { cls: 'sm' }), k.T(2, 'Retrig', { w: 70 })),
+    k.swapN(1, (m) => (m === 0
+      ? k.row(k.K(3, { n: 'Pulse W' }), k.K(4, { n: 'Sub Osc' }), k.TL('Unison', k.S(5, { w: 70 })), k.K(6), k.K(7, { n: 'Uni Pan' }), k.K(8, { n: 'Spread' }), k.K(9, { n: 'Uni Phase' }))
+      : k.row(k.K(10, { big: true }), k.K(11, { n: 'Pulse Width' }), flmEnv(k, 12, 13, 14, 15, DISPC.or), k.K(12, { n: 'A' }), k.K(13, { n: 'D' }), k.K(14, { n: 'S' }), k.K(15, { n: 'R' }), k.K(16, { n: 'Amount' }), k.T(17, 'Flip', { w: 52 }), k.TL('Unison', k.S(5, { w: 64 })), k.K(6))))),
+  () => k.row(flmFilt(k, 18, 19, 0), k.K(18, { big: true }), k.K(19, { n: 'Res' }), k.K(20), k.K(21), flmEnv(k, 22, 23, 24, 25, DISPC.or), k.K(22, { n: 'Attack' }), k.K(23, { n: 'Decay' }), k.K(24, { n: 'Sustain' }), k.K(25, { n: 'Release' }), k.K(26, { n: 'Amount' })),
+  () => k.row(k.CH(27, ['Hertz', 'One Shot', 'Tmp Sync'], { v: true, cls: 'sm' }), lfoRate(k, 27, 28, 29), k.col(flmLfo(k, 30, ['Sine', 'Saw', 'Square', 'Random']), k.TL('Shape', k.S(30, { w: 90 }))),
+    k.K(31, { n: 'Attack' }), k.K(32, { n: 'Amount' }), k.TL('Destination', k.S(33, { w: 110 }))),
+  () => k.row(k.K(34, { big: true }), k.K(35), flmEnv(k, 36, 37, 38, 39), k.K(36), k.K(37), k.K(38), k.K(39)),
+  () => k.row(k.TL('PW Range', k.N(40, { w: 60 })), k.K(41, { big: true, n: 'MW Amount' }), k.TL('ModWheel Dest', k.S(42, { w: 110 }))),
+  () => k.row(k.TL('Poly', k.N(43, { w: 60 })), k.K(44), k.K(45), k.col(k.T(46, 'Legato', { w: 84 }), k.T(47, 'Constant', { w: 84 }), k.T(48, 'Mono Mode', { w: 84 })), k.sep(),
+    k.TL('Arp Rate', k.S(49, { w: 70 })), k.TL('Arp Range', k.S(50, { w: 70 })), k.TL('Arp Mode', k.S(51, { w: 92 }))),
+  () => k.row(k.K(52), k.K(53), k.sep(), k.TL('Delay Time', k.S(54, { w: 70 })), k.K(55, { n: 'Fdbk' }), k.K(56, { n: 'Filter' }), k.K(57, { n: 'Mix' })),
+]);

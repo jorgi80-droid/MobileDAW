@@ -538,7 +538,7 @@ export function addTrack(kind) {
   const names = { midi: 'Synth', drum: 'Drums', audio: 'Audio' };
   const t = {
     id: uid(), name: `${names[kind]} ${n}`, color: COLORS[(n - 1) % COLORS.length], kind,
-    inst: kind === 'audio' ? null : { type: kind === 'drum' ? INST.DRUM : INST.MINISYNTH, params: {} },
+    inst: kind === 'audio' ? null : { type: kind === 'drum' ? INST.DRUM : INST.FLM_MINI, params: {} },   // new synth tracks: FL Studio Mobile MiniSynth
     clips: [], devices: [], vol: 0.85, pan: 0, mute: false, solo: false, send: [0, 0], out: -1,   // out: -1 = Master, k = effect track k
   };
   state.tracks.push(t);
@@ -668,7 +668,7 @@ export function toggleMonitor(i) {
 export function toggleReturnMute(k) { const r = state.returns[k]; if (HK.on) HK.add({ t: 'tog', k: 'mute', s: 'ret' + k }); r.mute = !r.mute; eng.trackMute(RET0 + k, r.mute); emit('mix'); }
 export function toggleMute(i) { const t = state.tracks[i]; if (HK.on) HK.add({ t: 'tog', k: 'mute', s: t.id }); t.mute = !t.mute; eng.trackMute(i, t.mute); if (t.kind === 'auto') syncAutomation(); emit('mix'); }
 export function toggleSolo(i) { const t = state.tracks[i]; if (HK.on) HK.add({ t: 'tog', k: 'solo', s: t.id }); t.solo = !t.solo; eng.trackSolo(i, t.solo); emit('mix'); }
-export const isSampler = (type) => type === INST.DIRECTWAVE || type === INST.KEYSTONE || type === INST.SAMPLER || type === INST.SIMPLER || type === INST.IMPULSE || type === INST.GRANULATOR;
+export const isSampler = (type) => type === INST.DIRECTWAVE || type === INST.FLM_DW || type === INST.KEYSTONE || type === INST.SAMPLER || type === INST.SIMPLER || type === INST.IMPULSE || type === INST.GRANULATOR;
 export function setInstrument(i, type) {
   const t = state.tracks[i];
   if (HK.on) HK.add({ t: 'inst', s: t.id, v: t.inst });

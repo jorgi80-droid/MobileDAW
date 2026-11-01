@@ -11,7 +11,19 @@ import { gmFor, GM_SF } from './gm.js';
 
 // the channel's instrument -> MDAW: DirectWave layers -> zones of MDAW's DirectWave; a library program that is not in the archive -> the
 // closest General MIDI program of the bundled SoundFont; GMS / MiniSynth / SuperSaw -> MDAW's instrument of the same name (preset by name)
-const SYNTH_TYPE = { gms: 5, minisynth: 1, supersaw: 2 };
+const SYNTH_TYPE = { gms: 31, minisynth: 32, supersaw: 33 };   // the FL Studio Mobile instruments of MobileDAW (js/engine/flmsyn.js)
+// FLM DirectWave module parameters (normalised 0..1, [0] = on) -> MDAW DirectWave (30). Only the groups whose layout is confirmed by the
+// owner's screenshots against the stored values (bipolar amounts at 0.5 = 0) are converted: filter envelope [17..21], frequency envelope
+// [22..26], LFO [27..32]. The Sample / Filter tab values ([1..16]) are kept raw in inst.from (their order is not known yet).
+const fT = (v) => 0.001 * Math.pow(10000, clamp(v, 0, 1));                  // 0..1 slider -> 1 ms .. 10 s (MDAW curve)
+export function dwParamsFromFlm(raw) {
+  const r = raw || [], out = {};
+  if (r.length < 33) return out;
+  const amt = (v) => Math.round((clamp(v, 0, 1) - 0.5) * 200), idx = (v, n) => clamp(Math.round(v > 1 ? v : v * (n - 1)), 0, n - 1);
+  [[17, 17], [22, 22]].forEach(([src, dst]) => { out[dst] = fT(r[src]); out[dst + 1] = fT(r[src + 1]); out[dst + 2] = Math.round(clamp(r[src + 2], 0, 1) * 1e4) / 1e4; out[dst + 3] = fT(r[src + 3]); out[dst + 4] = amt(r[src + 4]); });
+  out[27] = idx(r[27], 3); out[28] = 0.03 * Math.pow(1000, clamp(r[28], 0, 1)); out[30] = idx(r[29], 3); out[31] = clamp(r[30], 0, 1) * 5; out[32] = amt(r[31]); out[33] = idx(r[32], 4);
+  return out;
+}
 function presetFor(type, name) {
   const L = PRESETS[type] || [], n = String(name || '').toLowerCase().replace(/\.\w+$/, '').replace(/^.*\//, '').trim();
   if (!n) return null;
@@ -58,12 +70,12 @@ export function buildMdaw(M, opts) {
     const layers = I.layers || (I.sample ? [{ sample: I.sample, root: 60 }] : []);
     const zones = [];
     for (const L of layers) { const f = sample(L.sample); if (!f.missing) zones.push(zoneOf({ path: f.path, name: f.path.split('/').pop() }, L.root)); }
-    if (zones.length) { note('DirectWave (' + zones.length + ' zona' + (zones.length < layers.length ? ', ' + (layers.length - zones.length) + ' sample hilang' : '') + ')', 'exact'); return { type: 4, params: {}, pitch: 0, zones, from: { app: M.app, name: I.name, preset: I.preset || '', layers: layers.map((L) => ({ sample: L.sample, root: L.root, params: (L.params || []).map((v) => Math.round(v * 1e5) / 1e5) })) } }; }
+    if (zones.length) { note('DirectWave (' + zones.length + ' zona' + (zones.length < layers.length ? ', ' + (layers.length - zones.length) + ' sample hilang' : '') + ')', 'exact'); return { type: 30, params: dwParamsFromFlm((layers.find((L) => (L.params || []).length >= 33) || {}).params), pitch: 0, zones, from: { app: M.app, name: I.name, preset: I.preset || '', layers: layers.map((L) => ({ sample: L.sample, root: L.root, params: (L.params || []).map((v) => Math.round(v * 1e5) / 1e5) })) } }; }
     const gm = I.library ? gmFor(I.library) : null;
     if (gm) { needSf = true; note('SoundFont GM: ' + gm.name + ' (pengganti program library yang tidak ada di arsip)', 'substitute'); return { type: 6, params: { 0: 0.8 }, pitch: 0, sf: { path: GM_SF, preset: gm.program }, sub: { from: I.name, library: gm.label, gm: gm.name } }; }
     note('DirectWave tanpa sample (pattern tetap)', 'missing');
     report.plugins.set((I.name || 'Instrumen') + (I.library ? ' (' + I.library.replace(/^.*\//, '').replace(/\.\w+$/, '') + ')' : ''), 1);
-    return { type: 4, params: {}, pitch: 0, zones: [zoneOf(null, 60)], missing: { name: I.name || 'Instrumen', library: I.library || I.preset || '', sample: layers[0] ? layers[0].sample : '' } };
+    return { type: 30, params: {}, pitch: 0, zones: [zoneOf(null, 60)], missing: { name: I.name || 'Instrumen', library: I.library || I.preset || '', sample: layers[0] ? layers[0].sample : '' } };
   };
   let needSf = false;
   const vol = (g) => clamp((Number.isFinite(g) ? g : 1) * DEF_VOL, 0, VMAX);

@@ -1,10 +1,11 @@
 import { factoryPresets } from './presetlib.js';
 import { wtName, WT_COUNT } from './engine/live.js';
+import { FLM_SYNC, GMS_FX, GMS_WAVES, MINI_KINDS, SS_LFO_DEST } from './engine/flmsyn.js';
 // Instrument + device definitions. Parameter ORDER must match the C++ side
 // (app/src/main/cpp/instruments.h and devices.h).
-export const INST = { MINISYNTH: 1, SUPERSAW: 2, DRUM: 3, DIRECTWAVE: 4, GMS: 5, SOUNDFONT: 6, MOISTURE: 7, OSPHERE: 8, KEYSTONE: 9, SAMPLER: 10, WAVETABLE: 11, SIMPLER: 18, IMPULSE: 28, GRANULATOR: 29 };
+export const INST = { FLM_DW: 30, FLM_GMS: 31, FLM_MINI: 32, FLM_SAW: 33, MINISYNTH: 1, SUPERSAW: 2, DRUM: 3, DIRECTWAVE: 4, GMS: 5, SOUNDFONT: 6, MOISTURE: 7, OSPHERE: 8, KEYSTONE: 9, SAMPLER: 10, WAVETABLE: 11, SIMPLER: 18, IMPULSE: 28, GRANULATOR: 29 };
 // Instruments a synth/sampler track can switch between (drums have their own track type).
-export const INST_LIST = [18, 17, 16, 15, 14, 13, 11, 10, 28, 29, 25, 26, 27, 19, 20, 21, 22, 23, 24, 1, 2, 4, 5, 6, 7, 8, 9, 12];
+export const INST_LIST = [30, 31, 32, 33, 18, 17, 16, 15, 14, 13, 11, 10, 28, 29, 25, 26, 27, 19, 20, 21, 22, 23, 24, 6, 7, 8, 9, 12, 1, 2, 4, 5];   // FLM instruments first, the classic engines last
 
 export const INSTRUMENTS = {
   1: { name: 'Mini Synth', params: [
@@ -912,6 +913,74 @@ export function fmtParam(p, v) {
   if (p.unit === ':1') return v.toFixed(1) + ':1';
   if (p.unit) return v.toFixed(1) + ' ' + p.unit;
   return v.toFixed(2);
+}
+
+// ---- FL Studio Mobile instruments (engine js/engine/flmsyn.js; layout = the FLM module tabs, drawn as Live 12 panels in fxkit.js VI)
+// Values in FLM's own units: 0..100 knobs, semitones, cents, tempo values in beats ('1/4' = a quarter beat); envelope times in seconds.
+{
+  const k100 = (n, d = 0) => q(n, 0, 100, d, { fmt: 'num' }), bip = (n, d = 0) => q(n, -100, 100, d, { fmt: 'int' }), tm = (n, d, max = 10) => q(n, 0.001, max, d, { curve: 'log', unit: 's' });
+  const st = (n, lo, hi, d = 0) => q(n, lo, hi, d, { step: 1, fmt: 'st' }), sus = (n, d = 1) => q(n, 0, 1, d, { unit: '%' }), lvl = (n, d = 0) => q(n, -60, 6, d, { fmt: 'dbinf' });
+  const adsr = (pre, a, d, s, r) => [tm(pre + 'Attack', a), tm(pre + 'Decay', d), sus(pre + 'Sustain', s), tm(pre + 'Release', r)];
+  const SYNC = FLM_SYNC, LFO3 = ['Hertz', 'One Shot', 'Tmp Sync'];
+  INSTRUMENTS[30] = { name: 'DirectWave', view: 'kit', full: true, flm: true, zones: true, params: [
+    st('Pitch', -24, 24), q('Fine Tune', -100, 100, 0, { unit: 'ct' }), ...adsr('', 0.001, 1, 1, 0.3), tm('Slide Time', 0.1, 2), st('PB Range', 0, 24, 2),
+    onoff('Reverse'), onoff('Loop'), onoff('Legato'), onoff('Mono'),
+    k100('Cutoff', 100), k100('Resonance'), k100('Kbd Trk'), k100('Vel Trk'), list('Filter', ['Off', 'Lowpass', 'Highpass', 'Bandpass'], 1),
+    ...adsr('Flt ', 0.001, 1, 1, 0.3), bip('Flt Amount'), ...adsr('Frq ', 0.001, 1, 1, 0.3), bip('Frq Amount'),
+    list('LFO Mode', LFO3, 0), q('LFO Rate', 0.03, 30, 0.03, { curve: 'log', unit: 'Hz' }), list('LFO Sync', SYNC, 9), list('LFO Shape', ['Sine', 'Saw', 'Square'], 0),
+    q('LFO Attack', 0, 5, 0, { unit: 's' }), bip('LFO Amount'), list('LFO Destination', ['Filter', 'Frequency', 'Level', 'Pan'], 0), lvl('Level')] };
+  const FXP = (s) => [onoff(`FX${s} On`), list(`FX${s} Kind`, GMS_FX, [1, 2, 5][s - 1]), bip(`FX${s} Amount`), k100(`FX${s} X`, 50), k100(`FX${s} Y`, 50), list(`FX${s} LFO Rate`, SYNC, 9), list(`FX${s} LFO Shape`, ['Sine', 'Saw', 'Square'], 0)];
+  INSTRUMENTS[31] = { name: 'GMS', view: 'kit', full: true, flm: true, params: [
+    k100('Cutoff', 100), k100('Res'), tm('Flt Attack', 0.001), tm('Flt Decay', 1), bip('Flt Amount'), onoff('Kbd'), list('Kind', ['LP 12', 'LP 24', 'HP'], 0),
+    list('Osc A', GMS_WAVES, 0), list('Osc B', GMS_WAVES, 0), st('Pitch B', -24, 24), q('Fine B', -100, 100, 0, { unit: 'ct' }), q('Phase B', 0, 1, 0, { unit: '%' }), bip('Balance'), k100('Noise'),
+    k100('Mod Amount'), list('Mod Kind', ['Mix', 'FM', 'Ring', 'Sync'], 2), tm('Mod Attack', 0.001), tm('Mod Decay', 1), bip('EG Amount'), st('PB Range', 0, 24, 2), list('MW Dest', ['Osc. Mod', 'Filter', 'Pitch'], 0), k100('MW Amount'),
+    lvl('Level'), bip('Pan'), tm('Atk', 0.001), tm('Dec', 1), sus('Sus'), tm('Rel', 0.1),
+    bip('EG Contour'), tm('EG Attack', 0.001), tm('EG Decay', 0.5), sus('EG Sustain', 0), tm('EG Release', 0.3), onoff('EG Vel'), list('EG Dest', ['Filter', 'Osc. Mod', 'Pitch'], 0),
+    bip('LFO Amount'), list('LFO Shape', ['Sine', 'Saw', 'Square'], 0), list('LFO Dest', ['FLT', 'OSC', 'PITCH'], 0), list('LFO Rate', SYNC, 0),
+    st('Transpose', -24, 24), tm('Slide', 0.1, 2), k100('Chorus Detune'), k100('Chorus Stereo'), onoff('Mono'), onoff('Auto'), list('Voices', ['Solo', '2', '3', '4'], 0), list('Scale', ['Flat', 'Chord', 'Octave'], 0),
+    ...FXP(1), ...FXP(2), ...FXP(3)] };
+  INSTRUMENTS[32] = { name: 'MiniSynth', view: 'kit', full: true, flm: true, params: [
+    list('Oscillator Kind', MINI_KINDS, 0), k100('Modifier'), k100('Noise'), st('Transp', -12, 12),
+    k100('Cutoff', 100), k100('Kbd Trk'), k100('Vel Trk'), k100('Res'),
+    ...adsr('Flt ', 0.001, 1, 1, 1), bip('Flt Amount'),
+    bip('LFO Amount'), list('LFO Rate', SYNC, 6), list('LFO Shape', ['SIN', 'SAW', 'SQR'], 0), list('LFO Dest', ['FLT', 'FRQ', 'MOD'], 0), k100('MW'), list('MW Dest', ['FLT', 'FRQ', 'MOD'], 0),
+    ...adsr('', 0.001, 1, 1, 0.08), list('Voices Mode', ['Poly', 'Mono', 'Lead'], 0), tm('Slide', 0.05, 2),
+    onoff('Dist On'), k100('Drive'), k100('Decim'),
+    onoff('Delay On'), k100('Delay Feedback', 40), k100('Delay Filter', 30), k100('Delay Mix', 25), list('Delay Time', SYNC, 6),
+    onoff('Chorus On'), k100('Chorus Rate', 30), k100('Chorus Mod', 40), k100('Chorus Mix', 40),
+    onoff('Phaser On'), k100('Phaser Speed', 40), k100('Phaser Width', 60), k100('Phaser Feedback', 40), k100('Phaser Freq', 30), k100('Phaser Mix', 50), lvl('Level')] };
+  INSTRUMENTS[33] = { name: 'SuperSaw', view: 'kit', full: true, flm: true, params: [
+    onoff('Pulse Mode'), list('Osc Mode', ['Supersaw', 'Supersync'], 0), onoff('Retrig'), k100('Pulse Width', 50), k100('Sub Osc'),
+    list('Unison', ['Single', '2', '3', '4', '5', '6', '7', '8', '9'], 0), k100('Detune', 20), k100('Unison Pan'), k100('Dtn. Spread', 50), k100('Unison Phase'),
+    k100('Sync'), k100('Sync PW', 50), ...adsr('Sync ', 0.001, 0.5, 0, 0.3), bip('Sync Amount'), onoff('Flip'),
+    k100('Cutoff', 100), k100('Resonance'), k100('Kbd Trk'), k100('Vel Trk'), ...adsr('Flt ', 0.001, 0.5, 1, 0.3), bip('Flt Amount'),
+    list('LFO Mode', LFO3, 0), q('LFO Rate', 0.03, 30, 0.03, { curve: 'log', unit: 'Hz' }), list('LFO Sync', SYNC, 9), list('LFO Shape', ['Sine', 'Saw', 'Square', 'Random'], 0),
+    q('LFO Attack', 0, 5, 0, { unit: 's' }), bip('LFO Amount'), list('LFO Destination', SS_LFO_DEST, 0),
+    k100('Output Level', 100), bip('Panning'), ...adsr('', 0.001, 0.5, 1, 0.3),
+    st('PW Range', 0, 24, 2), bip('ModWheel Amount'), list('ModWheel Dest', ['Cutoff', 'Resonance', 'Osc Sync', 'Pulse Width', 'Unison Detune', 'LFO Amount'], 0),
+    q('Poly', 1, 16, 5, { step: 1, fmt: 'num' }), st('Transp', -24, 24), tm('Slide', 0.05, 2), onoff('Legato'), onoff('Constant', 1), onoff('Mono Mode'),
+    list('Arp Rate', SYNC, 9), list('Arp Range', ['1 Oct', '2 Oct', '3 Oct', '4 Oct'], 2), list('Arp Mode', ['Off', 'Up', 'Down', 'Up & Down', 'Random'], 0),
+    k100('Distortion'), q('Gain', -24, 12, 0, { unit: 'dB' }), list('Delay Time', SYNC, 6), k100('Delay Fdbk', 40), k100('Delay Filter', 50), k100('Delay Mix')] };
+  // factory presets (by parameter name), after the sound-design examples of the FLM instrument guide
+  const pre = (type, cat, name, vals) => { const ps = INSTRUMENTS[type].params, p = {}; for (const [n, v] of Object.entries(vals)) { const k = ps.findIndex((x) => x.n === n); if (k < 0) throw new Error('preset ' + name + ': ' + n); p[k] = v; } return { cat, name, p }; };
+  PRESETS[30] = [pre(30, 'Dasar', 'Default', {}), pre(30, 'Dasar', 'Mono Bass', { Mono: 1, 'Slide Time': 0.06, Release: 0.12, Cutoff: 62, 'Vel Trk': 40 }),
+    pre(30, 'Pad', 'Slow Pad', { Attack: 0.9, Release: 2.5, Loop: 1, 'LFO Amount': 40, 'LFO Rate': 0.25, 'LFO Destination': 3, Cutoff: 80 }),
+    pre(30, 'FX', 'Reverse Chop', { Reverse: 1, Attack: 0.01, Decay: 0.25, Sustain: 0.4, Release: 0.1 }), pre(30, 'Keys', 'Soft Keys', { Cutoff: 55, 'Kbd Trk': 50, 'Vel Trk': 80, Release: 0.6 })];
+  PRESETS[31] = [pre(31, 'Dasar', 'Default', {}), pre(31, 'Bell', 'FM Bell', { 'Osc A': 1, 'Osc B': 1, 'Pitch B': 12, 'Mod Kind': 1, 'Mod Amount': 30, 'EG Amount': 60, 'Mod Decay': 0.4, Dec: 1.8, Sus: 0, Rel: 1.2 }),
+    pre(31, 'Bass', 'Growl Bass', { 'Osc A': 3, 'Osc B': 0, 'Mod Kind': 2, 'Mod Amount': 45, Mono: 1, Cutoff: 45, Res: 35, 'Flt Amount': 50, 'Flt Decay': 0.3, 'FX1 On': 1, 'FX1 Kind': 0, 'FX1 X': 40 }),
+    pre(31, 'Pluck', 'Pluck', { Dec: 0.25, Sus: 0, Rel: 0.2, Cutoff: 50, 'Flt Amount': 60, 'Flt Decay': 0.2, 'FX3 On': 1, 'FX3 X': 35, 'FX3 Y': 40 }),
+    pre(31, 'Pad', 'Wide Chord', { Voices: 2, Scale: 1, 'Chorus Detune': 40, 'Chorus Stereo': 70, Atk: 0.4, Rel: 1.2, Cutoff: 70, 'FX3 On': 1, 'FX3 Kind': 6, 'FX3 X': 60, 'FX3 Y': 35 })];
+  PRESETS[32] = [pre(32, 'Dasar', 'Default', {}), pre(32, 'Pluck', 'Pluck', { Cutoff: 45, 'Flt Amount': 55, 'Flt Decay': 0.25, 'Flt Sustain': 0, Decay: 0.3, Sustain: 0, Release: 0.15 }),
+    pre(32, 'Bass', 'Retro Bass', { 'Oscillator Kind': 2, Modifier: 30, 'Voices Mode': 1, Cutoff: 38, Res: 40, 'Flt Amount': 40, 'Flt Decay': 0.2, 'Flt Sustain': 0.2, Release: 0.08 }),
+    pre(32, 'Bell', 'Bell', { 'Oscillator Kind': 6, Modifier: 60, Decay: 1.2, Sustain: 0, Release: 0.8, 'Delay On': 1, 'Delay Mix': 20 }),
+    pre(32, 'Pad', 'Pad', { 'Oscillator Kind': 5, Modifier: 45, Attack: 0.6, Release: 1.5, 'LFO Amount': 25, 'LFO Rate': 2, Cutoff: 70, 'Chorus On': 1 }),
+    pre(32, 'Lead', 'Lead', { 'Oscillator Kind': 1, Modifier: 2, 'Voices Mode': 2, Slide: 0.08, Cutoff: 75, 'Delay On': 1 })];
+  PRESETS[33] = [pre(33, 'Dasar', 'Default', {}), pre(33, 'Lead', 'EDM Lead', { Unison: 6, Detune: 40, 'Unison Pan': 70, Release: 0.3, 'Delay Mix': 20 }),
+    pre(33, 'Pad', 'Wide Pad', { Unison: 8, Detune: 25, 'Unison Pan': 90, Attack: 0.8, Release: 2, 'LFO Amount': 30, 'LFO Destination': 7, 'LFO Rate': 0.2, Cutoff: 75 }),
+    pre(33, 'Lead', 'Sync Lead', { 'Osc Mode': 1, Sync: 30, 'Sync Amount': 50, 'Sync Decay': 0.4, Unison: 2, Cutoff: 85 }),
+    pre(33, 'Pluck', 'Pluck', { Unison: 4, Detune: 25, Decay: 0.3, Sustain: 0, Release: 0.2, Cutoff: 60, 'Flt Amount': 40, 'Flt Decay': 0.25, 'Flt Sustain': 0 })];
+  // the classic MobileDAW engines keep their numbers (old projects sound the same); new tracks get the FL Studio Mobile ones
+  INSTRUMENTS[1].name = 'Mini Synth Klasik'; INSTRUMENTS[2].name = 'SuperSaw Klasik'; INSTRUMENTS[4].name = 'DirectWave Klasik'; INSTRUMENTS[5].name = 'GMS Klasik';
 }
 
 // v72: the factory preset library (js/presetlib.js) adds 100 presets each to Mini Synth, SuperSaw, GMS, Moisture and Osphere. Merged per category

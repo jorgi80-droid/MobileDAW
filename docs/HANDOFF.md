@@ -168,6 +168,15 @@ Peta lengkap per layar: **`docs/GESTURES.md`**. Ringkasan teknis:
 - Tes: `tools/pdc-test.mjs`, `tools/export-test.mjs` (keduanya di run-tests), golden `core-pdc` (identik), `tools/engine-e2e.mjs` (Chromium
   sungguhan: latensi dari worklet + ekspor mono 44,1 kHz 24-bit; butuh Playwright, tidak di CI).
 
+## Instrumen FL Studio Mobile: DirectWave / GMS / MiniSynth / SuperSaw (tipe 30-33, sesi ini)
+- Mesin `js/engine/flmsyn.js` (kelas FlmDirectWave / FlmGms / FlmMiniSynth / FlmSuperSaw, dasar bersama `Voices`: poly dengan batas,
+  mono, legato, slide konstan / per oktaf; `Svf` filter ZDF; LFO per voice Hertz / One Shot / tempo; FX Delay / ModDelay / Phaser / Reverb /
+  decimator; wavetable GMS band-limited per oktaf lewat FFT). Parameter di `defs.js` (full: true, `flm: true`, DirectWave `zones: true`
+  = zona 100 + k * 8 seperti DirectWave Klasik). Panel `fxkit.js` VI[30..33] memakai `flmTabs` (tab FLM, ingat tab per track).
+- Tipe lama 1 / 2 / 4 / 5 tidak diubah (nama + " Klasik"), jadi proyek lama, preset lama, demo dan golden tetap identik. Track synth baru =
+  32 (MiniSynth). Engine C++ belum memuat 30-33 → fallback Web otomatis (`blocker()` di web.js).
+- Rincian kontrol, batas (kurva buatan MDAW, mod wheel belum ada sumbernya) dan tes: `docs/FLM-INSTRUMENTS.md`.
+
 ## Kualitas MP3 + instrumen impor FLM (sesi ini)
 - **Encoder MP3** (`js/engine/mp3.js`): dulu satu global_gain per granule tanpa scalefactor dan tanpa bit reservoir (noise putih, kalah dari
   LAME pada musik asli). Sekarang: `_mask()` = ambang masking per scalefactor band (energi band disebar per Bark, -10 / -27 dB per Bark,
