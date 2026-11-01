@@ -242,7 +242,7 @@ export class Engine {
   err(e) { if (this.onError) this.onError(e); }
   // Run one device; an exception or non-finite output switches that device off instead of killing the whole audio thread.
   runDev(strip, di, d, L, R, n) {
-    try { d.process(L, R, n); } catch (e) { d.bypass = true; this.err({ kind: 'dev', strip, dev: di, msg: e && e.message }); return; }
+    try { d.process(L, R, n); } catch (e) { d.bypass = true; L.fill(0, 0, n); R.fill(0, 0, n); this.err({ kind: 'dev', strip, dev: di, msg: e && e.message }); return; }   // a half-processed block never goes on
     const x = L[0] + L[n - 1] + R[n - 1];
     if (!(x > -1e6 && x < 1e6)) { d.bypass = true; L.fill(0, 0, n); R.fill(0, 0, n); this.err({ kind: 'dev', strip, dev: di, msg: 'nilai tidak valid (NaN/tak hingga)' }); }
   }

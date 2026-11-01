@@ -12,7 +12,7 @@ import { prefs } from '../prefs.js';
 import { isNativeApp, saveAndShare, subFor, pickerAccept, accepts } from '../native.js';
 import { createNativeSink } from './nativesink.js';
 
-export const FOLDERS = ['/Samples', '/SoundFonts', '/Recordings', '/Projects', '/Exports', '/Presets/Mixer', '/Presets/Instruments'];
+export const FOLDERS = ['/Samples', '/SoundFonts', '/Recordings', '/Projects', '/Exports', '/Presets/Mixer', '/Presets/Instruments', '/Plugins'];
 const NO_MIRROR = /\/_autosave\.mdaw$/;   // rewritten every few seconds: stays in the app's own storage only
 const TEXT_RE = /\.(mdaw|json)$/i;
 const dcache = new Map(); let dbytes = 0; const DMAX = 2e9;   // decoded samples (LRU): a preview makes the following "add" instant, and re-adding costs no decode
@@ -625,6 +625,13 @@ export function createWebBackend() {
     while (k > 0) { const n = Math.min(4096, k); off.e.render(l, r, n); k -= n; }
   }
   // Track Freeze render (project.js freezeTrack): the track's instrument + devices + automation offline, frame 0 = song start (PDC pre-roll)
+  // plugins (js/plugins.js): the module (blob URL) is added to the AudioWorklet scope by a tiny wrapper that registers it under its type
+  me.loadPluginModule = async (type, url) => {
+    await me.start();
+    const w = URL.createObjectURL(new Blob([`import * as M from '${url}'; (globalThis.__mdawPlugins = globalThis.__mdawPlugins || new Map()).set(${type | 0}, M);`], { type: 'text/javascript' }));
+    try { await st.ctx.audioWorklet.addModule(w); } finally { URL.revokeObjectURL(w); }
+    return true;
+  };
   me.renderTrack = async (strip, secs, replay, onProgress) => {
     await me.start();
     const sr = st.ctx.sampleRate, off = new OfflineTarget(sr, st.bank, st.sfs);

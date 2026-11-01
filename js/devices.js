@@ -292,6 +292,8 @@ function fxCard(i, d, di, n, o = {}) {
       { label: 'Geser ke kiri', dim: di <= 0, fn: () => { if (di > 0) P.moveDevice(i, di, di - 1); } },
       { label: 'Geser ke kanan', dim: di >= n - 1, fn: () => { if (di < n - 1) P.moveDevice(i, di, di + 1); } },
       { sep: true },
+      ...(def.presets && def.presets.length ? [{ sep: true }, ...def.presets.map((q) => ({ label: 'Preset: ' + q.name, fn: () => { q.params.forEach((v, k) => { if (k < def.params.length && Number.isFinite(v)) P.setDeviceParam(i, di, k, v); }); render(); } }))] : []),   // plugin presets (manifest.presets)
+      ...(def.plugin ? [{ label: `Plugin: ${def.plugin.id} ${def.plugin.version || ''}${def.plugin.missing ? ' (tidak terpasang)' : ''}`, dim: true }] : []),
       { label: d.bypass ? 'Aktifkan' : 'Bypass', fn: () => P.toggleBypass(i, di) },
       { label: 'Hapus device', fn: () => P.removeDevice(i, di) },
     ], r.left - 120, r.bottom);

@@ -16,6 +16,7 @@ import * as FS from './storage.js';
 import { log, logs, logText, clearLog, setLogLevel } from './log.js';
 import { aboutTabs } from './about.js';
 import { PROFILES, applyProfile, runDeviceTest, effectiveClass, guessClass } from './perf.js';
+import { plugins, installPlugin, PLUGIN_DIR } from './plugins.js';
 
 const SNAP_NAMES = ['Auto', 'Bar', '1 Beat', '1/2 Beat', '1/4 Beat', 'Triplet', 'Off'];
 const section = (title, ...kids) => h('div', { class: 'set' }, h('h4', {}, title), ...kids);
@@ -153,6 +154,15 @@ function perfSection() {
     h('div', { class: 'sv' }, 'Rendah: buffer audio terbesar, UI 60 fps, gerak dikurangi, engine Native bila ada. Menengah: buffer seimbang. Tinggi: latensi terendah. Tes perangkat mengukur engine di HP ini (benchmark + tes langsung di jalur audio, senyap) dan melaporkan CPU audio dan underrun per jumlah track.'),
     btn('Tes performa perangkat', test), btn('Simpan laporan', save), prog, res);
 }
+// Plugins (js/plugins.js, docs/PLUGIN-SDK.md): installed plugins, install a .js file
+function pluginSection() {
+  const list = h('div', { class: 'sv' }), msg = h('div', { class: 'sv' });
+  const paint = () => { const a = [...plugins.values()]; list.replaceChildren(...(a.length ? a.map((p) => h('div', {}, `${p.manifest ? p.manifest.name + ' ' + p.manifest.version : p.id} \u2014 ${p.missing ? 'tidak terpasang (placeholder)' : 'aktif'} (${p.id})`)) : [h('div', {}, 'Belum ada plugin. File .js di folder ' + PLUGIN_DIR + ' dimuat saat aplikasi dibuka.')])); };
+  const pick = () => { const inp = h('input', { type: 'file', accept: isNativeApp() ? '' : '.js,.mjs,text/javascript' }); inp.onchange = async () => { const f = inp.files && inp.files[0]; if (!f) return; if (!/\.m?js$/i.test(f.name)) { msg.textContent = 'Pilih file plugin .js'; return; } msg.textContent = 'Memeriksa plugin\u2026'; const r = await installPlugin(f.name, await f.text()); msg.textContent = r.error ? 'Ditolak: ' + r.error : `Terpasang: ${r.name}. Ada di Browser \u2192 Efek \u2192 Plugin.`; paint(); }; inp.click(); };
+  paint();
+  return section('Plugin', list, btn('Pasang plugin (.js)\u2026', pick), msg,
+    h('div', { class: 'sv' }, 'Format plugin MobileDAW: satu modul JavaScript (boleh memakai WebAssembly) dengan manifest dan kelas DSP; lihat docs/PLUGIN-SDK.md. Plugin berjalan di AudioWorklet (engine Web). Plugin VST/VST3/AU desktop tidak bisa dimuat di browser/HP. Proyek dengan plugin diputar engine Web, bukan engine Native.'));
+}
 function logSection() {
   const view = h('div', { class: 'logbox' });
   const paint = () => {
@@ -224,6 +234,7 @@ export function openSettings() {
         line('Latensi output', info.baseLatency || info.outputLatency ? `${info.baseLatency} + ${info.outputLatency} ms` : '\u2014'), line('Status', info.state), line('Beban CPU', Math.round(P.state.cpu * 100) + ' %')),
       engineSection(),
       perfSection(),
+      pluginSection(),
       section('Mesin audio',
         choice('Mode latensi', 'latencyHint', [['interactive', 'Rendah'], ['balanced', 'Seimbang'], ['playback', 'Stabil']]),
         choice('Sample rate', 'sampleRate', [[0, 'Otomatis'], [44100, '44.1 kHz'], [48000, '48 kHz']]),

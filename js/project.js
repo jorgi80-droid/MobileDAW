@@ -5,6 +5,7 @@ import { processBuffers, detectBpm } from './engine/audioops.js';
 import { valueAt as curveAt, densify } from './autocurve.js';
 import { encodeWav } from './engine/wav.js';
 import { log } from './log.js';
+import { resolvePluginDevice } from './plugins.js';
 import { INSTRUMENTS, DEVICES, DRUM_PADS, INST, PRESETS, normOf, valOf, MOD_MAP, IRACK_DEF } from './defs.js';
 
 export const PPQ = 960, MAX_TRACKS = 64;
@@ -898,6 +899,7 @@ export function addDevice(i, type) {
   const t = tr(i);
   if (t.devices.length >= 16) return;
   const d = { id: uid(), type, params: DEVICES[type].params.map((p) => p.def), bypass: false };
+  if (DEVICES[type].plugin) d.plugin = { id: DEVICES[type].plugin.id, version: DEVICES[type].plugin.version, name: DEVICES[type].name };   // saved by id: the type is per session
   if (type === RACK) { d.chains = [{ id: uid(), name: 'Chain', devices: [] }]; d.macroMap = []; d.params[32] = 1; }
   t.devices.push(d);
   if (HK.on) HK.add({ t: 'dpres', s: stripOf(i), d, di: t.devices.length - 1, present: true });
@@ -1290,6 +1292,8 @@ async function deserializeInner(text) {
     }
     t.clips = t.clips.filter((c) => !missing.includes(c.sample.path) || state.samples[c.sample.path]);
   }
+  { const walk = (devs) => { for (const d of devs || []) { resolvePluginDevice(d); for (const c of d.chains || []) walk(c.devices); } };   // plugin devices: this session's types
+    for (const x of [state.master, ...state.returns, ...state.tracks]) { walk(x.devices); for (const c of (x.inst && x.inst.chains) || []) walk(c.devices); for (const q of (x.inst && x.inst.pads) || []) if (q && q.chain) walk(q.chain.devices); } }
   frozenSmp.clear();
   for (const t of state.tracks) {                                  // frozen tracks: their audio from the library; missing = the track plays live again
     if (!t.frozen || !t.frozen.path) { delete t.frozen; continue; }

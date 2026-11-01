@@ -630,4 +630,26 @@ class MiniMeters extends Fx {
 const TYPES = [Utility, AutoFilter, Eq3, Saturator, Compressor, Limiter, Echo, Reverb, ParametricEq, Roar, Autoduck, null, Levelness, Analyzer, Stereolizer, Spacer, MiniMeters,
   Delay, FilterDelay, BeatRepeat, ChorusEnsemble, PhaserFlanger, AutoPan, Gate, GlueComp, ChannelEq, Erosion, Redux, VinylDist, DrumBuss, Tuner, EqEight, Spectrum,
   Amp, Cabinet, Overdrive, Pedal, DynTube, MultibandDyn, Resonators, Corpus, Vocoder, Shifter, GrainDelay, HybridReverb, Looper, SpectralTime, SpectralResonator, LfoMod, ShaperMod, EnvFollower, AudioEffectRack];   // 17.. = Live 12 set (fx3.js)
-export function makeDevice(type, sr, sc) { const C = TYPES[type]; return C ? new C(sr, sc) : null; }
+// ---- plugins (docs/PLUGIN-SDK.md): device types >= PLUGIN_BASE come from modules registered in globalThis.__mdawPlugins (type -> module
+// namespace) by js/plugins.js, in the AudioWorklet scope and on the main thread (export). The wrapper gives every plugin the engine's device
+// interface; an exception or NaN output switches it off (core.js runDev) without stopping the engine; a plugin that cannot be built, or is
+// not loaded, becomes a pass-through so the device indices of the strip stay right.
+export const PLUGIN_BASE = 1000;
+class PluginDevice {
+  constructor(M, sr, sc) { this.bypass = false; this.p = new M.default(sr, { sidechain: sc, api: 1 }); }
+  setParam(i, v) { if (this.p.setParam) this.p.setParam(i, v); }
+  setTempo(b) { if (this.p.setTempo) this.p.setTempo(b); }
+  process(L, R, n) {                            // third-party code: the whole block is checked (built-in devices are checked by core.js runDev)
+    this.p.process(L, R, n);
+    for (let i = 0; i < n; i++) { const a = L[i], b = R[i]; if (!(a > -1e6 && a < 1e6 && b > -1e6 && b < 1e6)) throw new Error('plugin: nilai tidak valid (NaN / tak hingga)'); }
+  }
+  readOut(o) { return this.p.readOut ? this.p.readOut(o) | 0 : 0; }
+  lat() { return this.p.lat ? Math.max(0, Math.min(16383, this.p.lat() | 0)) : 0; }   // PDC: the plugin reports its own latency in frames
+}
+class PassThrough { constructor() { this.bypass = false; this.missing = true; } setParam() {} process() {} readOut() { return 0; } }
+function makePlugin(type, sr, sc) {
+  const M = globalThis.__mdawPlugins && globalThis.__mdawPlugins.get(type);
+  if (!M || typeof M.default !== 'function') return new PassThrough();
+  try { return new PluginDevice(M, sr, sc); } catch (e) { return new PassThrough(); }
+}
+export function makeDevice(type, sr, sc) { if (type >= PLUGIN_BASE) return makePlugin(type, sr, sc); const C = TYPES[type]; return C ? new C(sr, sc) : null; }

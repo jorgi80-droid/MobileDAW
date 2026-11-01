@@ -26,6 +26,7 @@ import { startAutosave, restore, saveNow } from './autosave.js';
 import { makeZip } from './zip.js';
 import * as Tempo from './tempo.js';
 import { exportMidi, importMidi } from './midiio.js';
+import { loadInstalledPlugins, installPlugin, plugins as PLUGINS } from './plugins.js';
 const { state } = P;
 
 let view = 'arr', tab = 'dev';
@@ -488,7 +489,7 @@ function boot() {
   if (backendError()) showFatal(backendError());
   Promise.resolve(eng.init ? eng.init() : null).catch(() => {}).then(() => {
     eng.setLatencyMs(prefs.latencyMs); eng.metroVol(prefs.metroVol ?? 1); eng.masterLimit(prefs.masterLimit !== false); if (eng.pdc) eng.pdc(prefs.pdc !== false);
-    restore().then((ok) => { if (!ok) P.newProject(true); }).catch(() => P.newProject(true)).then(() => { showTab('dev'); startAutosave(); });
+    loadInstalledPlugins().catch((e) => log('warn', 'plugin', e)).then(() => restore()).then((ok) => { if (!ok) P.newProject(true); }).catch(() => P.newProject(true)).then(() => { showTab('dev'); startAutosave(); });
     if (prefs.midiOn && !isNativeApp()) enableMidi(true);   // no Web MIDI in the Android WebView
     if (isNativeApp() && eng.setEngine) {                 // Android: C++ engine when chosen in Pengaturan -> Audio (falls back to Web by itself)
       addEventListener('enginechange', (e) => engineToast(e.detail));
