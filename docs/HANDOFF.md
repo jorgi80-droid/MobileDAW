@@ -341,3 +341,21 @@ Permintaan pemilik: SEMUA efek dan instrumen diganti dengan set stok Ableton Liv
 - Drum Rack chain: pad.chain = { inst: { type, params, sample }, devices }. Note pad memainkan instrumen chain di C3 + Pitch pad; Level/Pan/Mute/Solo pad
   berlaku untuk chain; rackCmd op 7 = kosongkan satu chain. Simpler di pad memakai sample sendiri (browser `padChain`). DrumSynth belum di-port C++,
   jadi track drum tetap di engine Web.
+
+## Sisa master prompt (sesi ini): kurva automasi, width/invert, freeze, real-time vs offline, Plugin SDK
+- **Kurva automasi** (`js/autocurve.js`): tiap titik punya bentuk segmen `s` (0 linear, 1 step, 2 halus S, 3 lengkung `k`, 4 Bézier).
+  Segmen non-linear dikirim ke engine sebagai breakpoint padat (engine JS dan C++ tetap interpolasi linear, jadi golden tetap identik).
+  Proyek lama (tanpa `s`) = linear. Tes: `tools/autocurve-test.mjs`.
+- **Mixer: stereo width + phase invert** per channel (engine `stereo()`, automasi kind 7; JS + C++). Tes: `tools/mixer-test.mjs`,
+  golden `core-width-invert`.
+- **Track Freeze**: render offline track ke `/Frozen/<id>.wav`, diputar sebagai klip; otomatis unfreeze kalau isi track berubah
+  (`freezeKey`). `Engine.settle()` dipakai render offline supaya fader/ramp sudah diam sebelum frame pertama. Fade klip `-1` = tanpa fade.
+  Tes: `tools/freeze-e2e.mjs` (mix beku = mix live, beda -105.8 dB).
+- **Real-time vs offline**: `tools/rt-offline-test.mjs` menjalankan worklet asli di OfflineAudioContext dan membandingkan dengan Engine
+  (ekspor): SuperSaw identik bit; Moisture berbeda di nada pertama karena tabel dibangun bertahap di worklet (terdokumentasi).
+- **Plugin SDK** (`js/plugins.js`, `docs/PLUGIN-SDK.md`, contoh di `plugins/examples/`): plugin efek = satu modul JS (+ WASM opsional)
+  di folder `/Plugins`, berjalan di AudioWorklet dan di ekspor. Device type plugin >= 1000 diberikan per sesi; proyek menyimpan
+  `plugin.id`/`version`. Plugin hilang = placeholder diam yang menyimpan parameter. Error/NaN di plugin = blok dibisukan + bypass.
+  Engine Native tidak bisa menjalankan plugin JS -> proyek dengan plugin otomatis diputar engine Web. VST/VST3/AU tidak didukung.
+  Tes: `tools/plugin-test.mjs` (masuk run-tests), `tools/plugin-e2e.mjs` (Chromium).
+- **Belum bisa dari sandbox**: pengukuran CPU/underrun di HP sungguhan. Gunakan tes perangkat di Pengaturan -> Audio -> Performa.
