@@ -141,6 +141,10 @@ function instCard(i, t, o = {}) {
   } }, h('span', {}, def.name), h('i', { class: 'tri', 'aria-hidden': 'true' })));
   else head.append(h('span', {}, def.name));
   titleFold(head, fk);
+  if (t.inst.missing) {                                  // imported instrument whose program / sample is not available: the pattern is kept, the chip says what is missing
+    const x = t.inst.missing, what = x.sample ? 'sample ' + x.sample.split('/').pop() : x.library ? 'program ' + x.library.replace(/^.*\//, '').replace(/\.\w+$/, '') : x.name;
+    head.append(h('span', { class: 'dv-miss-chip', title: 'Muat sample di zona untuk membunyikan pattern ini' }, '\u26a0 ' + (x.name || 'Instrumen') + ': ' + what + ' tidak tersedia'));
+  }
   if (t.kind === 'midi') {
     const presets = P.presetsFor(t.inst.type);
     head.append(h('button', { class: 'pre', 'aria-label': 'Preset', style: 'width:auto;padding:0 6px;font-size:11px', onclick: (e) => {
@@ -319,12 +323,19 @@ function fxCard(i, d, di, n, o = {}) {
       { label: 'Hapus device', fn: () => P.removeDevice(i, di) },
     ], r.left - 120, r.bottom);
   } }, '\u22EF');
-  if (!o.floating && FW.isOpen('d:' + d.id)) return floatedCard('d:' + d.id, def.name, () => openDeviceWindow(d.id));
-  if (!o.floating && isFolded(d.id)) { const c = foldedCard(d.id, def.name, pw); if (d.bypass) c.classList.add('off'); return c; }
+  const dname = d.missing ? '[Tidak tersedia] ' + d.missing.name : def.name;
+  if (!o.floating && FW.isOpen('d:' + d.id)) return floatedCard('d:' + d.id, dname, () => openDeviceWindow(d.id));
+  if (!o.floating && isFolded(d.id)) { const c = foldedCard(d.id, dname, pw); if (d.bypass) c.classList.add('off'); return c; }
 
   let view = null;
   const ids = () => new Set((P.tr(i) || { devices: [] }).devices.map((x) => String(x.id)));   // the chain's effect cards (dataset keys are strings)
   const grip = (hd) => (o.floating || o.nested || n < 2 ? hd : reorderGrip(hd, { index: di, siblings: (card) => { const k = ids(); return [...card.parentElement.children].filter((el) => k.has(el.dataset.k)); }, move: (to) => P.moveDevice(i, di, to) }));
+  if (d.missing) {                                     // imported plugin MDAW does not have: a named placeholder (neutral, audio passes through)
+    const x = d.missing, hd = grip(titleFold(h('h4', {}, pw, h('span', {}, '[Plugin tidak tersedia] ' + x.name), more), d.id));
+    return h('div', { class: 'card dv-missing' + (d.bypass ? ' off' : '') }, hd, h('div', { class: 'dvm-b' },
+      h('b', {}, x.name), h('span', {}, 'dari ' + (x.app || 'proyek impor') + (x.preset ? ' \u2022 preset ' + x.preset : '')),
+      h('span', {}, (x.params && x.params.length ? x.params.length + ' nilai parameter asli disimpan. ' : '') + 'Plugin ini tidak ada di MDAW: audio diteruskan tanpa diproses. Ganti dengan efek MDAW lewat menu \u22EF \u2192 Ganti dengan.')));
+  }
   const knobsDiv = h('div', { class: 'knobs side' });
   const ctx = { i, di, d, def, every: o.every || every, set: (k, v) => P.setDeviceParam(i, di, k, v), refreshKnobs: () => { for (const c of knobsDiv.children) if (c.update) c.update(); } };
   if (def.kit) {                                                                   // Live 12 panel (js/fxkit.js): the panel lays out every control itself

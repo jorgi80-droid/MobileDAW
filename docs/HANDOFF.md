@@ -41,7 +41,20 @@ Baca juga `README-ANDROID.md` (build, install, status fase 2).
 | Ekspor: Mono, pilihan sample rate (resampler Kaiser HQ), rentang Area loop | selesai (`tools/export-test.mjs`) |
 | Kontrol sentuh gaya FL Studio Mobile: pengaturan gestur, ketuk-ganda bersih, batal gestur, Kontrol Klip tidak modal, Snap ketuk/tahan, reorder device, seleksi latar, titik otomasi banyak, menu pad drum, Simpan cepat geser + cadangan, pintasan keyboard yang bisa diubah | selesai (`docs/GESTURES.md`, `tools/gesture-test.mjs`, `tools/touch-ui-test.mjs`) |
 
-## Sesi ini (lanjutan prompt FL Studio Mobile): implementasi menyeluruh
+## Sesi ini: impor proyek FL Studio Mobile (.flm), FL Studio (.flp), Ableton (.als)
+Dokumen lengkap: **`docs/IMPORT.md`** (format FLM yang dipetakan, aturan placeholder, alur + progres, tes).
+- Kode: `js/import/flm.js` (pembaca FLM + `flmToModel`), `als.js` (gzip XML, parser XML kecil tanpa DOM), `flp.js` (event, eksperimental),
+  `build.js` (model netral -> JSON MDAW: placeholder plugin `d.missing`, klip sample hilang + file hening, DirectWave / pad hilang tetap
+  dengan pattern), `index.js` (ZIP -> parse -> build -> salin sample -> simpan -> `P.deserialize(text, onProgress)`), `ui.js` (pemilih
+  file, jendela progres, laporan). `P.deserialize` kini menerima `onProgress`.
+- UI: Browser -> Proyek -> Impor proyek…, menu ⋮ -> Impor proyek FLM / FLP / Ableton. Kartu device `.dv-missing` ("[Plugin tidak
+  tersedia] <nama>"), chip `.dv-miss-chip` di kartu instrumen.
+- Tes: `tools/import-test.mjs` (run-tests; `FLM_ZIP=` untuk arsip asli), `tools/import-ui-test.mjs` (`IMPORT_FILE=`; Chromium).
+- **Belum**: nama sebagian tipe efek FLM (tampil "Efek FLM #id" sampai namanya diketahui), parameter efek tidak dipetakan ke efek MDAW
+  (semua jadi placeholder), routing send / bus FLM dan routing insert FLP, otomasi parameter plugin + otomasi master, FLP diuji hanya
+  dengan file buatan.
+
+## Sesi sebelumnya (lanjutan prompt FL Studio Mobile): implementasi menyeluruh
 Matriks paritas + hasil acceptance: **`docs/PARITY.md`**. Peta gestur diperbarui: `docs/GESTURES.md`.
 - **Reorder modul bersama** `js/reorder.js` (`reorderGrip(head, { index, siblings, move })`): rantai utama (`devices.js`), Audio /
   Instrument Rack (`fxkit.js`, kartu `.lk-rfx`, `P.rackMoveDevice` -> `rackSync`), chain pad Drum Rack (`.lk-pfx`, `P.padChainMoveDevice` baru).

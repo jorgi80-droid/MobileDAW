@@ -936,3 +936,19 @@
 .kb-alt .chs i { flex: 1; display: flex; align-items: center; justify-content: center; font: 500 9.5px/1 var(--font); font-style: normal; color: var(--lv-dim, var(--dim)); border-top: 1px solid rgba(0, 0, 0, .25); }
 .kb-alt .chs.on { background: color-mix(in srgb, var(--tc) 55%, var(--lv-ctl, #3a3a3e)); }
 .kb-alt .chs.on b, .kb-alt .chs.on i { color: #111; }
+/* imported projects: placeholder for a plugin MDAW does not have, missing-instrument chip, import progress + report */
+.card.dv-missing { min-width: 230px; max-width: 300px; background: repeating-linear-gradient(135deg, var(--lv-panel, #2a2a2d) 0 10px, color-mix(in srgb, var(--lv-panel, #2a2a2d) 88%, #e5484d) 10px 20px); }
+.card.dv-missing > h4 span { color: #ffb4a8; }
+.dvm-b { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; color: var(--lv-dim, var(--dim)); font: 500 11px/1.35 var(--font); }
+.dvm-b b { color: var(--lv-ink, var(--text)); font: 700 14px/1.2 var(--font); }
+.dv-miss-chip { margin-left: 6px; padding: 1px 6px; border-radius: var(--r-1); background: rgba(229, 72, 77, .22); color: #ffb4a8; font: 600 10px/16px var(--font); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 55%; }
+.modal.imp { width: min(440px, 92%); }
+.imp-l { color: var(--lv-ink, var(--text)); margin: 6px 0 10px; }
+.imp-bar { height: 10px; border-radius: 5px; background: var(--lv-well, var(--bg)); overflow: hidden; border: 1px solid var(--lv-edge, var(--line)); }
+.imp-fill { display: block; height: 100%; width: 0; background: var(--accent); transition: width .15s linear; }
+.imp-row { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; color: var(--lv-dim, var(--dim)); font-size: 11px; }
+.imp-row b { color: var(--accent); font: 700 13px/1 var(--font); }
+.imp-rep { display: flex; flex-direction: column; gap: 10px; max-height: 60vh; overflow-y: auto; touch-action: pan-y; }
+.imp-sec b { display: block; margin-bottom: 4px; color: var(--lv-ink, var(--text)); font-weight: 600; }
+.imp-sec ul { margin: 0; padding-left: 18px; color: var(--lv-dim, var(--dim)); font-size: 11.5px; }
+.imp-sec.warn b { color: #ffb4a8; }

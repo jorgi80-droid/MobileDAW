@@ -1308,11 +1308,12 @@ export function serialize() {
   return JSON.stringify({ v: 2, name: state.projectName, bpm: state.bpm, sig: state.sig, sigs: state.sigs, markers: state.markers, groove: state.groove, countIn: state.countIn, punch: state.punch, recLoop: state.recLoop, loop: state.loop, tracks: state.tracks, master: state.master, returns: state.returns, cc: state.ccLinks }, compact);
 }
 
-export async function deserialize(text) {
+// onProgress(fraction): optional, called while samples are decoded / stretched clips rendered (big imported projects take a while)
+export async function deserialize(text, onProgress) {
   HK.on = false;
-  try { return await deserializeInner(text); } finally { HK.on = true; HK.barrier(); }
+  try { return await deserializeInner(text, onProgress); } finally { HK.on = true; HK.barrier(); }
 }
-async function deserializeInner(text) {
+async function deserializeInner(text, onProgress) {
   const o = JSON.parse(text);
   if (!o || typeof o !== 'object' || !Array.isArray(o.tracks)) throw new Error('Berkas proyek tidak valid (tidak ada daftar track).');
   if (o.tracks.length > MAX_TRACKS) throw new Error('Proyek memiliki terlalu banyak track.');
@@ -1336,6 +1337,8 @@ async function deserializeInner(text) {
   for (const r of state.returns) r.devices = Array.isArray(r.devices) ? r.devices : [];
   for (const t of state.tracks) t.out = Number.isInteger(t.out) && t.out >= 0 && t.out < state.returns.length ? t.out : -1;   // projects from before routing existed: everything goes to the Master
   const missing = [];
+  const totalA = state.tracks.reduce((n, t) => n + (t.kind === 'audio' ? t.clips.length : 0), 0) || 1; let doneA = 0, lastP = 0;
+  const tick = () => { doneA++; const now = Date.now(); if (onProgress && now - lastP > 80) { lastP = now; onProgress(Math.min(0.98, doneA / totalA)); } };
   for (const t of state.tracks) {
     if (t.kind !== 'audio') continue;
     t.clips = t.clips.filter((c) => c && c.sample && c.sample.path);   // a clip without a sample reference cannot be played
@@ -1345,6 +1348,7 @@ async function deserializeInner(text) {
         c.sample = s;
         if (c.warp && (c.warp.ratio !== 1 || c.warp.rev || c.warp.pitch)) c.dsample = await deriveSample(s, c.warp);
       } else missing.push(c.sample.path);
+      tick();
     }
     t.clips = t.clips.filter((c) => !missing.includes(c.sample.path) || state.samples[c.sample.path]);
   }

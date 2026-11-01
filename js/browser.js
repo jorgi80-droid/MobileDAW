@@ -13,6 +13,7 @@ import { DEMOS, openDemo } from './demos.js';
 import { isNativeApp } from './native.js';
 import * as QS from './quicksave.js';
 import * as PM from './projects.js';
+import * as IMP from './import/ui.js';
 
 const DL = isNativeApp() ? 'Simpan ke Documents & bagikan' : 'Unduh ke perangkat';   // Android app: Documents/MobileDAW + share sheet
 const { state } = P;
@@ -560,6 +561,7 @@ function tabProjects(list) {
     WEB ? row(isNativeApp() ? 'Simpan proyek ke Documents & bagikan' : 'Unduh proyek ke perangkat', () => { const n = (state.projectName || 'Untitled').replace(/[^\w\- ]+/g, '') || 'Untitled'; eng.writeText(dir + '/' + n + '.mdaw', P.serialize()); setTimeout(() => eng.download(dir + '/' + n + '.mdaw'), 80); }) : null,
     WEB ? row('Buka proyek (.mdaw / .zip) dari perangkat\u2026', async () => { const f = await eng.importFiles('.mdaw,.zip'); if (f.length) { toast('Proyek diimpor.'); render(); } }) : null,
     row('Proyek baru\u2026 (nama, tempo, birama, template)', () => PM.newProjectDialog(() => closeBrowser())),
+    row('Impor proyek FL Studio Mobile / FL Studio / Ableton\u2026', () => IMP.importDialog(() => closeBrowser()), '.flm .flp .als .zip'),
     head('Demo song (instrumen virtual)'),
     ...DEMOS.map((d) => row(d.title, async () => {
       if (demoBusy) return;

@@ -28,6 +28,7 @@ import * as Tempo from './tempo.js';
 import { exportMidi, importMidi } from './midiio.js';
 import * as QS from './quicksave.js';
 import * as PM from './projects.js';
+import * as IMP from './import/ui.js';
 import * as KM from './keymap.js';
 import { cancelGestures, gestureTiming } from './gesture.js';
 import { ctrlButton } from './automate.js';
@@ -85,6 +86,7 @@ function wireTransport() {
       { label: 'Ekspor audio (WAV/MP3/stem)\u2026', fn: exportWav },
       { label: 'Ekspor MIDI (.mid)', fn: exportMidi },
       { label: 'Impor MIDI (.mid)\u2026', fn: importMidi },
+      { label: 'Impor proyek FLM / FLP / Ableton (.flm .flp .als .zip)\u2026', fn: () => IMP.importDialog() },
       { label: 'Ekspor proyek (.mdaw)', fn: exportMdaw },
       { label: 'Ekspor ZIP (proyek + sample)\u2026', fn: exportZip },
       { label: 'Proyek baru\u2026', fn: () => PM.newProjectDialog() },
