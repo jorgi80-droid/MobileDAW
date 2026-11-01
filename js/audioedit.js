@@ -4,11 +4,12 @@ import { attachGestures } from './gesture.js';
 import { h, menu, toast, bar, clamp, modal, ask, slider } from './ui.js';
 import { C } from './theme.js';
 import { wavePath, peaksPath } from './waveform.js';
-import { checkpoint } from './history.js';
+import { checkpoint, revertLast, undoOp } from './history.js';
 import * as P from './project.js';
 const { state, PPQ } = P;
 
 const RULER = 16, GRIP = 16;
+let asel = null, busy = false;   // time selection (seconds of the shown audio), an edit in progress
 let root = null, wave, ov, ctx, octx, stage, info, tools, W = 0, H = 0, dpr = 1, dirty = true, cursor = null, lastHead = -1e9, headDirty = true, drag = null;
 const v = { x0: 0, pps: 100 };
 let themeBound = false, ro = null;
@@ -79,6 +80,11 @@ function draw() {
   ctx.beginPath(); ctx.moveTo(x1 + 1, top); ctx.lineTo(x1 - 13, top); ctx.lineTo(x1 - 13, top + 11); ctx.lineTo(x1 + 1, top + 15); ctx.closePath(); ctx.fill();
   ctx.fillStyle = C('#1a1100'); ctx.font = '700 9px system-ui'; ctx.textBaseline = 'middle'; ctx.textAlign = 'center'; ctx.fillText('S', x0 + 6, top + 6.5); ctx.fillText('E', x1 - 6, top + 6.5); ctx.textAlign = 'left';
   for (const fx of [xs(o + fi), xs(e - fo)]) { ctx.beginPath(); ctx.arc(fx, top + 22, 4.5, 0, 6.2832); ctx.fillStyle = C('#ffffff'); ctx.fill(); ctx.strokeStyle = 'rgba(0,0,0,.5)'; ctx.lineWidth = 1; ctx.stroke(); }
+  if (asel) {                                                     // time selection: white wash with bright edges, its length in the ruler
+    const sa = xs(asel.a), sb = xs(asel.b);
+    ctx.fillStyle = 'rgba(255,255,255,.18)'; ctx.fillRect(sa, 0, sb - sa, H); ctx.fillStyle = 'rgba(255,255,255,.7)'; ctx.fillRect(Math.round(sa), 0, 1, H); ctx.fillRect(Math.round(sb), 0, 1, H);
+    ctx.fillStyle = C('#fff'); ctx.font = '600 10px system-ui'; ctx.textBaseline = 'middle'; ctx.fillText((asel.b - asel.a).toFixed(3) + ' dtk', Math.max(2, Math.min(W - 60, sa + 4)), RULER / 2);
+  }
   setInfo(c, e0, D, o, e, fi, fo);
 }
 const stOf = (p) => Math.round(p || 0), ctOf = (p) => Math.round(((p || 0) - Math.round(p || 0)) * 100), pitchOf = (st, ct) => Math.round((st + ct / 100) * 100) / 100;
@@ -265,9 +271,39 @@ function splitAt(r, t) {
   toast('Klip dipisah di kursor.'); cursor = null; refresh();
 }
 
+// FL Studio Mobile Wave Editor: the time-selection menu. Each edit is one undo step; the label says whether time is removed too.
+function selMenu(x) {
+  const r = cur(); if (!r || !asel) return;
+  const q = ov.getBoundingClientRect(), run = async (op, keep) => {
+    if (busy) return; busy = true; const { a, b } = asel;
+    checkpoint(); toast('Memproses audio\u2026', 20000);
+    const res = await P.editClipAudio(r.track, r.clip.id, op, a, b);
+    busy = false;
+    if (res.error) { revertLast(); toast(res.error, 3500); return; }
+    if (!keep) asel = null;
+    toast(P.WAVE_OPS[op] + ' selesai.' + (op === 'normalize' && res.gain ? ' Gain ' + (20 * Math.log10(res.gain)).toFixed(1) + ' dB.' : '') + ' Urungkan untuk membatalkan.', 2200);
+    dirty = true; build();
+  };
+  menu([
+    { label: 'Deselect', fn: () => { asel = null; dirty = true; } }, { sep: true },
+    { label: 'Insert Silence (sisip waktu kosong)', fn: () => run('silence') },
+    { label: 'Duplicate', fn: () => run('duplicate') },
+    { label: 'Clear (hapus isi, waktu tetap)', fn: () => run('clear', true) },
+    { label: 'Delete Space (hapus isi + waktu)', fn: () => run('deleteSpace') },
+    { label: 'Trim Selection (simpan seleksi saja)', fn: () => run('trim') },
+    { sep: true },
+    { label: 'Normalize', fn: () => run('normalize', true) },
+    { label: 'Fade In', fn: () => run('fadeIn', true) },
+    { label: 'Fade Out', fn: () => run('fadeOut', true) },
+    { sep: true },
+    { label: 'Undo', fn: () => { undoOp(); dirty = true; build(); } },
+  ], q.left + clamp(x, 6, Math.max(6, W - 240)), q.top + RULER + 4);
+}
+
 // ------------------------------------------------------------------ gestures
 function hit(x, y) {
   const r = cur(); if (!r) return null;
+  if (y < RULER) return { k: asel && x >= xs(asel.a) - 8 && x <= xs(asel.b) + 8 ? 'rsel' : 'ruler' };   // drag the ruler = time selection
   const c = r.clip, [o, e] = region(c), x0 = xs(o), x1 = xs(e), top = RULER;
   const fi = xs(o + (c.fadeIn || 0)), fo = xs(e - (c.fadeOut || 0));
   if (Math.abs(x - fi) < 16 && y > top + 10 && y < top + 34) return { k: 'fi' };   // fade dots sit just under the Start / End flags
@@ -281,20 +317,28 @@ function handlers() {
     hit,
     tap(x, y, t) {
       const r = cur(); if (!r || !t) return;
+      if (t.k === 'rsel') return selMenu(x);
+      if (asel && t.k === 'wave' && (tsec(x) < asel.a || tsec(x) > asel.b)) { asel = null; dirty = true; }
       cursor = clamp(tsec(x), 0, eff(r.clip).duration); dirty = true; headDirty = true;
       const q = ov.getBoundingClientRect();
       bar([{ label: 'Split di sini', fn: () => splitAt(r, cursor) }, { label: 'Awal di sini', fn: () => { checkpoint(); setStart(r, cursor); touch(r); } }, { label: 'Akhir di sini', fn: () => { checkpoint(); setEnd(r, cursor); touch(r); } },
         { label: 'Putar dari sini', fn: () => { const c = r.clip; P.seekTo(Math.max(0, c.start + (cursor - (c.offset || 0)) / secPerTick())); P.play(); } }], q.left + clamp(x - 130, 4, W - 300), q.top + Math.max(RULER + 4, y - 44));
     },
-    dragStart(x0, y0, t) { if (t && t.k !== 'wave') { checkpoint(); drag = t.k; return true; } return false; },
+    long(x, y, t) { if (t && t.k === 'wave') { const r = cur(); if (!r) return false; const s0 = clamp(tsec(x), 0, eff(r.clip).duration); asel = { a: s0, b: s0, s0 }; drag = 'sel'; dirty = true; return true; } return false; },   // long-press + drag on the waveform = time selection too
+    dragStart(x0, y0, t, fromLong) {
+      if (fromLong) return drag === 'sel';
+      if (t && (t.k === 'ruler' || t.k === 'rsel')) { const r = cur(); if (!r) return false; const s0 = clamp(tsec(x0), 0, eff(r.clip).duration); asel = { a: s0, b: s0, s0 }; drag = 'sel'; return true; }
+      if (t && t.k !== 'wave') { checkpoint(); drag = t.k; return true; } return false;
+    },
     drag(x) {
       const r = cur(); if (!r || !drag) return;
+      if (drag === 'sel') { const q = clamp(tsec(x), 0, eff(r.clip).duration); asel = { a: Math.min(asel.s0, q), b: Math.max(asel.s0, q), s0: asel.s0 }; dirty = true; return; }
       const c = r.clip, t = clamp(tsec(x), 0, eff(c).duration), [o, e] = region(c);
       if (drag === 'hs') setStart(r, t); else if (drag === 'he') setEnd(r, t);
       else if (drag === 'fi') c.fadeIn = clamp(t - o, 0, (e - o) * 0.9); else if (drag === 'fo') c.fadeOut = clamp(e - t, 0, (e - o) * 0.9);
       touch(r);
     },
-    dragEnd() { drag = null; },
+    dragEnd(x, y, t, cancel) { const was = drag; drag = null; if (was === 'sel') { if (cancel || !asel || asel.b - asel.a < 0.005) asel = null; else selMenu(x); dirty = true; } else if (cancel && was) { revertLast(); dirty = true; } },
     pan(dx) { const r = cur(); if (!r) return; v.x0 -= dx / v.pps; clampView(r.clip); dirty = true; },
     pinch(cx, cy, sx) { const r = cur(); if (!r) return; const t = tsec(cx); v.pps *= sx; v.x0 = t - cx / v.pps; clampView(r.clip); dirty = true; },
     wheel(e, p) { const r = cur(); if (!r) return; const t = tsec(p.x); v.pps *= Math.exp(-e.deltaY * 0.002); v.x0 = t - p.x / v.pps; clampView(r.clip); dirty = true; },
@@ -326,7 +370,7 @@ export function mount(host) {
   if (ro) ro.disconnect();                        // mount() runs every time a clip is opened: do not stack observers / listeners
   ro = new ResizeObserver(fit); ro.observe(stage);
   if (!themeBound) { window.addEventListener('themechange', invalidate); themeBound = true; }
-  W = 0; H = 0; cursor = null; dirty = true; infoKey = '';
+  W = 0; H = 0; cursor = null; asel = null; dirty = true; infoKey = '';
   build(); fit(); fitView(r.clip); dirty = true; frame();
 }
 export function refresh() { const r = cur(); if (!r || !root || !root.isConnected) return false; build(); dirty = true; return true; }

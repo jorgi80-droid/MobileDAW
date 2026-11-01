@@ -4,6 +4,7 @@ import { eng, MASTER, RET0, hooks } from './engine.js';
 import { processBuffers, detectBpm } from './engine/audioops.js';
 import { valueAt as curveAt, densify } from './autocurve.js';
 import { encodeWav } from './engine/wav.js';
+import * as WOPS from './engine/waveops.js';
 import { log } from './log.js';
 import { INSTRUMENTS, DEVICES, DRUM_PADS, INST, PRESETS, normOf, valOf, MOD_MAP, IRACK_DEF } from './defs.js';
 
@@ -339,6 +340,7 @@ export function syncClips(i) {
 // The note events a pattern clip plays (appended to `f` as start, length, pitch, velocity, pan; returns the count). One event per note per
 // cycle, read from the source: sourcePos = (local + lp) % cycle. A note sounds in a piece of the clip when it starts inside that piece and
 // is cut at the piece end (cycle end / clip end), so nothing hangs over into the next cycle and nothing triggers twice.
+const DRUM_STEP = 240;   // one step of the step sequencer (a 16th) in ticks
 export function clipNoteEvents(c, kind, f = []) {
   let n = 0;
   const xp = kind === 'drum' ? 0 : (c.xpose | 0);   // xpose = clip transpose (semitones, playback only)
@@ -347,6 +349,11 @@ export function clipNoteEvents(c, kind, f = []) {
     for (const nt of c.notes) {
       if (nt.t < g.s || nt.t >= e) continue;
       const at = g.o + nt.t - g.s, sw = swingShift(c, at);
+      if (kind === 'drum' && nt.rpt > 1) {                       // step graph Note Repeat: rpt triggers spread over the step (both engines get plain note events)
+        const q = Math.min(8, nt.rpt | 0), sub = DRUM_STEP / q;
+        for (let k = 0; k < q; k++) { const t0 = nt.t + k * sub; if (t0 >= e) break; f.push(c.start + at + Math.round(k * sub) + sw, Math.max(1, Math.min(nt.d, sub * 0.9, e - t0)), nt.p, nt.v, nt.pan || 0); n++; }
+        continue;
+      }
       f.push(c.start + at + sw, Math.min(nt.d, e - nt.t), xp ? Math.max(0, Math.min(127, nt.p + xp)) : nt.p, nt.v, nt.pan || 0);
       n++;
     }
@@ -835,6 +842,7 @@ export function padChainAddDevice(i, k, type) {
   sendPadChain(i, k); emit('devices');
 }
 export function padChainRemoveDevice(i, k, j) { padChainEdit(i, k, null, (c) => { c.devices.splice(j, 1); }); sendPadChain(i, k); emit('devices'); }
+export function padChainMoveDevice(i, k, j, to) { const q = padsOf(i)[k], a = q && q.chain && q.chain.devices; if (!a || !a[j] || to < 0 || to >= a.length || to === j) return; padChainEdit(i, k, null, (c) => { c.devices.splice(to, 0, c.devices.splice(j, 1)[0]); }); sendPadChain(i, k); emit('devices'); }
 export function padChainBypass(i, k, j) { padChainEdit(i, k, null, (c) => { const d = c.devices[j]; if (d) d.bypass = !d.bypass; }); sendPadChain(i, k); emit('devices'); }
 export function padChainDevParam(i, k, j, p, v) {
   padChainEdit(i, k, 'd' + j + '.' + p, (c) => { const d = c.devices[j]; if (d) d.params[p] = v; });
@@ -931,6 +939,32 @@ export function addDevice(i, type) {
   if (d.chains) rackSync(i, di);
   emit('devices');
 }
+// ---- module menu (FL Studio Mobile Rack: Insert Above / Below, Replace, Copy / Paste, Reset) and rack presets. Every call is one undo step.
+const cloneDev = (d) => { const c = JSON.parse(JSON.stringify(d)); c.id = uid(); if (c.chains) for (const ch of c.chains) { const old = ch.id; ch.id = uid(); for (const m of c.macroMap || []) if (m && m.c === old) m.c = ch.id; for (const x of ch.devices || []) { const oid = x.id; x.id = uid(); for (const m of c.macroMap || []) if (m && m.id === oid && m.c === ch.id) m.id = x.id; } } return c; };
+export const devicesSnapshot = (i, a = 0, b = Infinity) => tr(i).devices.slice(a, b).map((d) => JSON.parse(JSON.stringify(d)));
+// insert copies of devices (from a copy / a preset) at position `at`; unknown types are skipped and reported (never dropped silently)
+export function insertDeviceCopies(i, at, list) {
+  const t = tr(i); let added = 0; const skipped = [];
+  HK.group(() => {
+    for (const src of list || []) {
+      if (!DEVICES[src.type]) { skipped.push(src.name || 'tipe ' + src.type); continue; }
+      if (t.devices.length >= 16) { skipped.push(DEVICES[src.type].name + ' (rantai penuh)'); continue; }
+      const d = cloneDev(src); if (!Array.isArray(d.params)) d.params = []; fillParams(d, DEVICES); d.bypass = !!d.bypass;
+      if (d.type === RACK && !d.chains) { d.chains = [{ id: uid(), name: 'Chain', devices: [] }]; d.macroMap = []; }
+      if (d.chains) for (const ch of d.chains) ch.devices = (ch.devices || []).filter((x) => { if (DEVICES[x.type]) { if (!Array.isArray(x.params)) x.params = []; fillParams(x, DEVICES); return true; } skipped.push(x.name || 'tipe ' + x.type); return false; });
+      const di = Math.min(Math.max(0, at + added), t.devices.length);
+      placeDevice(i, di, d);
+      if (HK.on) HK.add({ t: 'dpres', s: stripOf(i), d, di, present: true });
+      added++;
+    }
+  });
+  return { added, skipped };
+}
+export function insertDeviceAt(i, at, type) { if (!DEVICES[type]) return { added: 0, skipped: [] }; const d = { type, params: DEVICES[type].params.map((q) => q.def), bypass: false }; if (type === RACK) { d.chains = [{ id: uid(), name: 'Chain', devices: [] }]; d.macroMap = []; d.params[32] = 1; } return insertDeviceCopies(i, at, [d]); }
+export function replaceDevice(i, di, type) { const t = tr(i); if (!t.devices[di] || !DEVICES[type]) return; HK.group(() => { removeDevice(i, di); insertDeviceAt(i, di, type); }); }
+export function resetDevice(i, di) { const d = tr(i).devices[di]; if (!d) return; HK.group(() => DEVICES[d.type].params.forEach((q, k) => { if (k !== 32 || d.type !== RACK) setDeviceParam(i, di, k, q.def); })); emit('devices'); }
+// replace the whole chain (Load Rack Preset / Paste All)
+export function replaceChain(i, list) { const t = tr(i); let r = null; HK.group(() => { while (t.devices.length) removeDevice(i, t.devices.length - 1); r = insertDeviceCopies(i, 0, list); }); return r; }
 export function removeDevice(i, di) { const d0 = tr(i).devices[di]; if (HK.on && d0) HK.add({ t: 'dpres', s: stripOf(i), d: d0, di, present: false }); tr(i).devices.splice(di, 1); eng.removeDevice(i, di); emit('devices'); }
 export function setDeviceParam(i, di, pi, v) { if (i < MAX_TRACKS && state.tracks[i] && state.tracks[i].frozen) unfreezeTrack(i, true); const d = tr(i).devices[di]; if (HK.on && d.params[pi] !== v && !HK.hit('dp' + stripOf(i) + '.' + d.id + '.' + pi)) HK.add({ t: 'val', k: 'dev', s: stripOf(i), d: d.id, p: pi, v: d.params[pi] }); tr(i).devices[di].params[pi] = v; eng.devParam(i, di, pi, v);  if (modsMapped) fixMods(); }
 export function toggleBypass(i, di) {
@@ -1410,6 +1444,15 @@ export function autoCurrent(t) {
 
 export function autoValueAt(c, t) { return curveAt([...c.pts].sort((a, b) => a.t - b.t), t); }   // with the segment shapes (autocurve.js)
 
+// FL Studio Mobile CTRL -> "Link to Current Track": the selected automation track drives another parameter from now on (its points stay;
+// they are read in the new parameter's range). One undo step.
+export function retargetAutoTrack(i, target, label) {
+  const t = state.tracks[i]; if (!t || t.kind !== 'auto' || !target) return false;
+  if (HK.on) HK.add({ t: 'atgt', s: t.id, v: { target: t.target, name: t.name } });
+  t.target = target; t.name = 'Auto: ' + label;
+  syncAutomation(); emit('tracks');
+  return true;
+}
 export function syncAutomation() {
   const flat = [];
   syncTempoMap();
@@ -1530,6 +1573,48 @@ export async function setClipAudio(i, id, opts) {
   syncClips(i); emit('clips');
   if (gridLocked(c)) scheduleBake(60);                                    // tempo-map / swing bake uses the clip's warp mode too
   return { ok: true };
+}
+// ---- Wave Editor time-selection operations (FL Studio Mobile): op = normalize | fadeIn | fadeOut | silence | duplicate | clear | deleteSpace | trim.
+// a / b = the selection in seconds of the audio the editor shows (the clip's played buffer). The edit is applied to the clip's source sample
+// (mapped through stretch / reverse), written as a new file in Samples/Edits (the original file is never touched) and the clip points at it;
+// warp settings are applied again, and the clip's region follows insertions / removals. The caller takes the undo checkpoint first.
+export const WAVE_OPS = { normalize: 'Normalize', fadeIn: 'Fade In', fadeOut: 'Fade Out', silence: 'Insert Silence', duplicate: 'Duplicate', clear: 'Clear', deleteSpace: 'Delete Space', trim: 'Trim Selection' };
+export async function editClipAudio(i, id, op, a, b) {
+  const t = state.tracks[i], c = t && t.clips.find((x) => x.id === id);
+  if (!c || t.kind !== 'audio') return { error: 'Klip audio tidak ditemukan.' };
+  if (!WAVE_OPS[op]) return { error: 'Operasi tidak dikenal.' };
+  const base = c.sample, buf = base && eng.sampleBuffers(base.id);
+  if (!buf || !buf.l) return { error: 'Edit audio hanya tersedia di versi web.' };
+  if (state.nextSample >= SAMPLE_MAX) return { error: SAMPLE_FULL };
+  const w = c.warp || {}, warped = !!c.dsample, ratio = warped ? w.ratio || 1 : 1, rev = warped && !!w.rev, Dd = (c.dsample || base).duration;
+  a = Math.max(0, Math.min(Dd, a)); b = Math.max(0, Math.min(Dd, b)); if (b - a < 0.002) return { error: 'Seleksi terlalu pendek.' };
+  const l = buf.l, r = buf.r || buf.l, sr = l.length / base.duration;
+  const fa = Math.round((rev ? Dd - b : a) / ratio * sr), fb = Math.round((rev ? Dd - a : b) / ratio * sr);
+  const o = op === 'normalize' ? WOPS.normalize(l, r, fa, fb) : op === 'fadeIn' ? WOPS.fade(l, r, fa, fb, rev ? -1 : 1) : op === 'fadeOut' ? WOPS.fade(l, r, fa, fb, rev ? 1 : -1)
+    : op === 'silence' ? WOPS.insertSilence(l, r, fa, fb) : op === 'duplicate' ? WOPS.duplicate(l, r, fa, fb) : op === 'clear' ? WOPS.clear(l, r, fa, fb, sr)
+    : op === 'deleteSpace' ? WOPS.deleteSpace(l, r, fa, fb, sr) : WOPS.trim(l, r, fa, fb, sr);
+  if (op === 'normalize' && o.gain === 1 && o.l === l) return { error: 'Seleksi hening: tidak ada yang dinormalisasi.' };
+  // the new source file (32-bit float: no quality loss), then the engine bank slot
+  const stem = (base.name || 'sample').replace(/\.[^.]+$/, '').replace(/-ed[0-9a-z]+$/i, '').replace(/[^\w\- ]+/g, '').slice(0, 40) || 'sample';
+  const path = '/Samples/Edits/' + stem + '-ed' + Date.now().toString(36) + '.wav';
+  const wav = encodeWav([o.l], o.r === o.l ? null : [o.r], o.l.length, Math.round(sr), 32, o.r === o.l ? 1 : 2);
+  try { await eng.saveBytes(path, new Uint8Array(wav)); } catch (e) { return { error: 'File hasil edit tidak bisa disimpan: ' + (e && e.message || e) }; }
+  const sid = state.nextSample++, m = await eng.putSampleBuffers(sid, o.l, o.r);
+  if (!m || m.error) return { error: 'Engine tidak bisa memuat hasil edit.' };
+  const ns = { id: sid, path, name: path.split('/').pop(), duration: m.duration, peaks: m.peaks, pyr: m.pyr };
+  state.samples[path] = ns;
+  // region bookkeeping in the shown (effective) seconds
+  const spt = 60 / (state.bpm * PPQ), lp = loopOf(c), off = c.offset || 0, end = off + (lp || c.len) * spt, d = b - a;
+  let offset = off, grow = 0;
+  if (op === 'silence' || op === 'duplicate') { const p = op === 'silence' ? a : b; if (p <= off) offset += d; else if (p < end) grow = d; }
+  else if (op === 'deleteSpace') { const rb = Math.max(0, Math.min(b, off) - a), ri = Math.max(0, Math.min(b, end) - Math.max(a, off)); offset -= rb; grow = -ri; }
+  else if (op === 'trim') { const s0 = Math.max(off, a), e0 = Math.min(end, b); if (e0 > s0) { offset = s0 - a; grow = (e0 - s0) - (end - off); } else { offset = 0; grow = d - (end - off); } }
+  c.sample = ns;
+  if (warped) { const ds = await deriveSample(ns, w); c.dsample = ds && ds !== ns ? ds : null; }
+  c.offset = Math.max(0, offset);
+  if (grow) { const k = Math.round(grow / spt), min = PPQ / 16; if (lp) c.ll = Math.max(min, c.ll + k); else c.len = Math.max(min, c.len + k); if (lp) normLoop(c); }
+  syncClips(i); emit('clips'); emit('notes');
+  return { ok: true, path, gain: o.gain };
 }
 // ---- tempo: detect, sync and free stretch (the clip keeps its trimmed region and its place on the grid)
 const baseOf = (c) => c.sample;
@@ -1905,6 +1990,7 @@ export function swapRec(e) {
     case 'groove': { const cur = { amt: state.groove.amt, grid: state.groove.grid }; setGroove(e.v); e.v = cur; return; }
     case 'marks': { const cur = marksSnap(); state.markers = e.v; state.markers.sort((a, b) => a.t - b.t); e.v = cur; emit('markers'); return; }
     case 'meter': { const cur = meterSnap(); restoreMeter(e.v); e.v = cur; return; }
+    case 'atgt': { const t2 = state.tracks.find((x) => x.id === e.s); if (!t2) return; const cur = { target: t2.target, name: t2.name }; t2.target = e.v.target; t2.name = e.v.name; e.v = cur; syncAutomation(); emit('tracks'); return; }
     case 'trk': {
       if (e.present) { const k = state.tracks.indexOf(e.r.gone); if (k < 0) return; e.r = detachTrack(k); e.present = false; }
       else { attachTrack(e.r); e.present = true; }

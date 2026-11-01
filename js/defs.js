@@ -848,7 +848,11 @@ export const PRESETS = {
   ],
 };
 
-export const noteName = (p) => ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'][p % 12] + (Math.floor(p / 12) - 1);
+// octave numbering (Settings: middle C = C3 / C4 / C5); 4 = MIDI 60 is C4 (the default, as before)
+let OCT_SHIFT = 0;
+export function setOctaveNaming(midC) { OCT_SHIFT = [3, 4, 5].includes(+midC) ? +midC - 4 : 0; }
+export const octaveOf = (p) => Math.floor(p / 12) - 1 + OCT_SHIFT;
+export const noteName = (p) => ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'][((p % 12) + 12) % 12] + octaveOf(p);
 
 export function fmtParam(p, v) {
   switch (p.fmt) {
@@ -894,7 +898,7 @@ export function fmtParam(p, v) {
     case 'wfx': return ['None', 'FM', 'Classic', 'Modern'][Math.round(v)] || '';
     case 'wtab': return wtName(v);
     case 'list16': return Math.round(v) % 16 === 0 ? Math.round(v) / 16 + (Math.round(v) === 16 ? ' Bar' : ' Bars') : Math.round(v) + '/16';
-    case 'note': return ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'][Math.round(v) % 12] + (Math.floor(Math.round(v) / 12) - 1);   // same octave numbering as the piano roll (60 = C4)
+    case 'note': return noteName(Math.round(v));   // same octave numbering as the piano roll (60 = C4)
     case 'list': return (p.items || [])[Math.round(v - p.min)] ?? '';
     case 'dbinf': return v <= -60 ? '-inf dB' : v.toFixed(1) + ' dB';
     case 'deg': return Math.round(v) + '\u00B0';

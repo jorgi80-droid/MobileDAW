@@ -923,3 +923,16 @@
 .kmap .sline { gap: 8px; }
 .kmap .kmr { display: flex; gap: 6px; align-items: center; }
 .kmap .kmk { min-width: 120px; height: 30px; font-variant-numeric: tabular-nums; }
+/* CTRL (transport): automation / link / MIDI CC for the control that was moved last */
+#btn-ctrl { width: auto; min-width: 44px; padding: 0 8px; font: 700 10.5px/1 var(--font); letter-spacing: .06em; }
+/* Keys modes: Scale (equal keys), Chord / Strum strips (chord name on top, zones below) */
+.kb-seg { display: flex; gap: 2px; }
+.kb-alt { flex: 1; min-width: 0; display: flex; gap: 3px; padding: 3px; touch-action: none; }
+.kb-alt .sk { flex: 1; min-width: 0; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 6px; border: 1px solid var(--lv-edge, var(--line)); border-radius: var(--r-1); background: var(--lv-ctl, #3a3a3e); color: var(--lv-dim, var(--dim)); font: 600 10px/1 var(--font); user-select: none; }
+.kb-alt .sk.root { background: color-mix(in srgb, var(--tc) 30%, var(--lv-ctl, #3a3a3e)); color: var(--lv-ink, var(--text)); }
+.kb-alt .sk.hit { background: var(--tc); color: #111; }
+.kb-alt .chs { flex: 1; min-width: 0; display: flex; flex-direction: column; border: 1px solid var(--lv-edge, var(--line)); border-radius: var(--r-1); background: var(--lv-ctl, #3a3a3e); overflow: hidden; user-select: none; -webkit-user-select: none; }
+.kb-alt .chs b { padding: 6px 2px; text-align: center; color: var(--lv-ink, var(--text)); font: 700 12px/1 var(--font); background: rgba(0, 0, 0, .18); }
+.kb-alt .chs i { flex: 1; display: flex; align-items: center; justify-content: center; font: 500 9.5px/1 var(--font); font-style: normal; color: var(--lv-dim, var(--dim)); border-top: 1px solid rgba(0, 0, 0, .25); }
+.kb-alt .chs.on { background: color-mix(in srgb, var(--tc) 55%, var(--lv-ctl, #3a3a3e)); }
+.kb-alt .chs.on b, .kb-alt .chs.on i { color: #111; }

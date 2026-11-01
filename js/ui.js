@@ -1,6 +1,10 @@
 // Small UI toolkit: element helper, icons, popup menus, modals, toasts, knobs.
 import { C } from './theme.js';
 import { gestureTiming, haptic } from './gesture.js';
+// CTRL (FL Studio Mobile): the last control the user moved remembers its automation / MIDI-CC offer, the CTRL button runs it
+let lastCtrl = null;
+export const touchCtrl = (fn) => { if (fn) lastCtrl = fn; };
+export const lastControl = () => lastCtrl;
 export const $ = (s, r = document) => r.querySelector(s);
 export const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 
@@ -208,7 +212,7 @@ export function knob(p, get, set, fmt, color = null, onLong = null) {
   root.addEventListener('pointermove', (e) => {
     if (!start || start.fired) return;
     const dy = start.y - e.clientY;
-    if (!start.moved && Math.abs(dy) > 3) { start.moved = true; clearTimeout(start.timer); root.classList.add('act'); }
+    if (!start.moved && Math.abs(dy) > 3) { start.moved = true; clearTimeout(start.timer); root.classList.add('act'); touchCtrl(onLong); }
     if (start.moved) {
       // fine adjustment: the further the finger slides sideways away from the knob, the finer the vertical drag (up to 1/8 at ~420 px);
       // incremental, so moving sideways never makes the value jump
@@ -224,6 +228,7 @@ export function knob(p, get, set, fmt, color = null, onLong = null) {
       const now = performance.now();
       if (p.step && p.max - p.min <= 4) { const v = get() + p.step; set(v > p.max ? p.min : v); }
       else if (root._lt && now - root._lt < 320) set(p.def);      // double tap = reset
+      touchCtrl(onLong);
       root._lt = now;
       draw();
     }

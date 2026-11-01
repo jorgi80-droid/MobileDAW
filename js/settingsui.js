@@ -18,6 +18,7 @@ import { aboutTabs } from './about.js';
 import { PROFILES, applyProfile, runDeviceTest, effectiveClass, guessClass } from './perf.js';
 import { attachGestures, haptic, GESTURE_DEFAULTS } from './gesture.js';
 import * as KM from './keymap.js';
+import { setOctaveNaming } from './defs.js';
 
 const SNAP_NAMES = ['Auto', 'Bar', '1 Beat', '1/2 Beat', '1/4 Beat', 'Triplet', 'Off'];
 const section = (title, ...kids) => h('div', { class: 'set' }, h('h4', {}, title), ...kids);
@@ -309,6 +310,12 @@ export function openSettings() {
     ],
     Sentuhan: [touchSection()],
     Pintasan: [keysSection()],
+    Editor: [section('Editor not',
+      toggle('Ghost notes (not klip synth lain di waktu yang sama, samar)', 'ghostNotes', () => P.emit('notes')),
+      choice('Penamaan C tengah (MIDI 60)', 'midC', [[3, 'C3'], [4, 'C4'], [5, 'C5']], () => { setOctaveNaming(prefs.midC); P.emit('notes'); P.emit('sel'); }),
+      choice('Velocity not baru', 'defVel', [[0.6, '60%'], [0.8, '80%'], [1, '100%']]),
+      choice('Panjang not baru (berlaku saat editor dibuka ulang)', 'defLen', [[120, '1/32'], [240, '1/16'], [480, '1/8'], [960, '1/4']]),
+      h('div', { class: 'sv' }, 'Snap awal arrangement ada di Tampilan -> Timeline. Mode keyboard (Klasik / Skala / Chord / Strum) dipilih di bar atas tab Keys.'))],
     Penyimpanan: [
       folderSection(),
       section('Ruang', storage, btn('Minta penyimpanan permanen', () => { eng.requestStorage(); toast('Permintaan dikirim. Browser memutuskan apakah file dijaga permanen.', 3500); })),
@@ -317,7 +324,7 @@ export function openSettings() {
     Log: [logSection()],
     About: aboutTabs(),
     Lainnya: [
-      section('Reset', btn('Kembalikan pengaturan awal', () => { resetPrefs(); eng.setLatencyMs(0); setLogLevel(prefs.logLevel); applyTimelinePrefs(); applyTheme(prefs.theme); applyViewportMeta(); applyUiPrefs(); relayoutSoon(); scaleSlider.value = Math.round(prefs.uiScale * 100); paintScale(); eng.metroVol(prefs.metroVol ?? 1); toast('Pengaturan dikembalikan.'); })),
+      section('Reset', h('div', { class: 'sv' }, 'Mengembalikan semua pengaturan aplikasi. Proyek, sample, preset dan file lain tidak dihapus.'), btn('Kembalikan pengaturan awal\u2026', () => modal('Kembalikan pengaturan awal?', 'Semua pengaturan (tema, sentuhan, pintasan, audio, ekspor) kembali ke bawaan. Proyek dan file Anda tidak disentuh.', [{ label: 'Batal' }, { label: 'Kembalikan', go: true, fn: () => { resetPrefs(); eng.setLatencyMs(0); setLogLevel(prefs.logLevel); applyTimelinePrefs(); applyTheme(prefs.theme); applyViewportMeta(); applyUiPrefs(); relayoutSoon(); scaleSlider.value = Math.round(prefs.uiScale * 100); paintScale(); eng.metroVol(prefs.metroVol ?? 1); setOctaveNaming(prefs.midC); toast('Pengaturan dikembalikan.'); } }]))),
     ],
   };
   const tabBar = h('div', { class: 'btabs', style: 'margin:-2px -2px 10px;flex-wrap:wrap' }), pane = h('div', { class: 'settings' });

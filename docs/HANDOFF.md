@@ -41,7 +41,30 @@ Baca juga `README-ANDROID.md` (build, install, status fase 2).
 | Ekspor: Mono, pilihan sample rate (resampler Kaiser HQ), rentang Area loop | selesai (`tools/export-test.mjs`) |
 | Kontrol sentuh gaya FL Studio Mobile: pengaturan gestur, ketuk-ganda bersih, batal gestur, Kontrol Klip tidak modal, Snap ketuk/tahan, reorder device, seleksi latar, titik otomasi banyak, menu pad drum, Simpan cepat geser + cadangan, pintasan keyboard yang bisa diubah | selesai (`docs/GESTURES.md`, `tools/gesture-test.mjs`, `tools/touch-ui-test.mjs`) |
 
-## Sesi ini: kontrol sentuh disempurnakan (prompt "Workflow FL Studio Mobile Touch")
+## Sesi ini (lanjutan prompt FL Studio Mobile): implementasi menyeluruh
+Matriks paritas + hasil acceptance: **`docs/PARITY.md`**. Peta gestur diperbarui: `docs/GESTURES.md`.
+- **Reorder modul bersama** `js/reorder.js` (`reorderGrip(head, { index, siblings, move })`): rantai utama (`devices.js`), Audio /
+  Instrument Rack (`fxkit.js`, kartu `.lk-rfx`, `P.rackMoveDevice` -> `rackSync`), chain pad Drum Rack (`.lk-pfx`, `P.padChainMoveDevice` baru).
+  `tools/chain-order-test.mjs`: urutan = urutan sinyal (rantai utama + rack), urutan baru identik dengan rantai yang dibangun baru.
+- **Menu modul** (`devices.js`): Sisip kiri/kanan (`P.insertDeviceAt`), Ganti (`P.replaceDevice`), Copy / Paste (`P.devicesSnapshot`,
+  `P.insertDeviceCopies` = salinan dengan id baru termasuk chain/macro rack, tipe tak dikenal dilaporkan), Reset (`P.resetDevice`),
+  rantai (`P.replaceChain`). **Rack Preset** di `presets.js` (`saveRackPreset`, `rackPresets`, `applyRackPreset`; folder `/Presets/Racks`).
+- **CTRL**: `ui.js touchCtrl()/lastControl()` (knob, kit number box `liveui.js`, fader mixer mencatat tawaran otomasinya saat digerakkan),
+  `automate.js ctrlButton()` + item "Link ke track otomasi terpilih" (`P.retargetAutoTrack`, undo `atgt`). Tombol `#btn-ctrl` di transport.
+- **Wave Editor**: `js/engine/waveops.js` (murni, `tools/waveops-test.mjs`), `P.editClipAudio(i, id, op, a, b)` (seleksi dipetakan ke sample
+  sumber lewat ratio / reverse warp, hasil 32-bit float di `/Samples/Edits/`, region klip ikut sisip/hapus), menu `selMenu` di `audioedit.js`.
+- **Piano roll**: Ghost Notes (`ghostList`, cache dikosongkan saat not/klip berubah; pref `ghostNotes`). Velocity / panjang default
+  (`defVel`, `defLen`), penamaan oktaf `defs.js setOctaveNaming/octaveOf` (pref `midC`).
+- **Step**: graph Note Repeat (`n.rpt` 2..8, diekspansi di `clipNoteEvents` -> kedua engine tanpa perubahan engine; lane head = pilih mode).
+- **Keys**: mode Klasik / Skala / Chord / Strum (`keys.js renderAlt`, teori di `js/chords.js`, `tools/chords-test.mjs`; pref `keyMode`,
+  `chord7`, `chordHold`, `strumMs`).
+- **Proyek**: `js/projects.js` (dialog New Project nama/tempo/birama/template, Recent `prefs.recent`, Duplikat / Ganti nama / Hapus).
+- **Ekspor**: rentang Seleksi (`TL.timeSelection()`), tail Leave / Wrap / Cut + Trim Silence (`wav.js postRender`, dipanggil di `web.js exportJob`).
+- **Pengaturan**: tab Editor baru.
+- **Belum** (alasan di PARITY.md): slide note, cut group / poly / shift / AUX per pad, pan/pitch per step, sub-track, rekam otomasi,
+  envelope per klip audio, placeholder plugin hilang, monitoring input + peringatan headphone, MIDI di APK, FLAC/AAC/OGG.
+
+## Sesi sebelumnya: kontrol sentuh disempurnakan (prompt "Workflow FL Studio Mobile Touch")
 Peta lengkap per layar: **`docs/GESTURES.md`**. Ringkasan teknis:
 - **`js/gesture.js` v2**: ambang dari pref (`longMs`, `touchSlop`, `dtapMs`, dibaca per gestur lewat `gestureTiming()`; mouse slop 4 px),
   `haptic(ms)` (navigator.vibrate, pref `haptics`), handler opsional `defer(target)` = ketukan tunggal ditunda dan TIDAK dikirim bila

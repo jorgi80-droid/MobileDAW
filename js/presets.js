@@ -6,7 +6,7 @@ import { INSTRUMENTS, DEVICES } from './defs.js';
 import * as P from './project.js';
 import { log } from './log.js';
 
-export const DIR_INST = '/Presets/Instruments', DIR_MIX = '/Presets/Mixer';
+export const DIR_INST = '/Presets/Instruments', DIR_MIX = '/Presets/Mixer', DIR_RACK = '/Presets/Racks';
 const clean = (n) => (n || '').trim().replace(/[\\/:*?"<>|]+/g, '').slice(0, 60);
 const num = (v, d) => (Number.isFinite(+v) ? +v : d);
 
@@ -78,4 +78,40 @@ export function userInstrumentPresets(type) {
     if (o && o.kind === 'instrument' && o.type === type) out.push({ name: o.name || it.name.replace(/\.json$/i, ''), path: DIR_INST + '/' + it.name });
   }
   return out;
+}
+
+// Rack presets (FL Studio Mobile Rack Preset): the effect chain of a track (all modules with every setting, racks with their chains and
+// macros) and, for a synth track, its instrument. Load = replace the chain; Insert = put the modules at a position in the current chain.
+export function saveRackPreset(i, name, from = 0, to = Infinity) {
+  const t = P.tr(i); name = clean(name);
+  if (!t) return { error: 'Pilih track dulu.' };
+  if (!name) return { error: 'Nama kosong.' };
+  const devices = P.devicesSnapshot(i, from, to).map((d) => ({ ...d, name: (DEVICES[d.type] || {}).name }));
+  const inst = from === 0 && to === Infinity && t.inst && t.kind === 'midi' ? { type: t.inst.type, name: INSTRUMENTS[t.inst.type].name, p: INSTRUMENTS[t.inst.type].params.map((q, k) => num(t.inst.params[k], q.def)), pitch: t.inst.pitch || 0 } : null;
+  const path = `${DIR_RACK}/${name}.json`;
+  eng.writeText(path, JSON.stringify({ app: 'mobiledaw', kind: 'rack', name, devices, inst }));
+  return { path, n: devices.length };
+}
+export function rackPresets() {
+  const d = eng.listDir(DIR_RACK), out = [];
+  for (const it of (d && d.items) || []) { if (!/\.json$/i.test(it.name)) continue; const o = read(DIR_RACK + '/' + it.name); if (o && o.kind === 'rack') out.push({ name: o.name || it.name.replace(/\.json$/i, ''), path: DIR_RACK + '/' + it.name, n: (o.devices || []).length, inst: !!o.inst }); }
+  return out.sort((a, b) => a.name.localeCompare(b.name));
+}
+// mode 'replace' (Load Rack Preset) or 'insert' at position `at`. Returns { msg } or { error }.
+export function applyRackPreset(path, i, mode = 'replace', at = 0) {
+  const o = read(path), t = P.tr(i);
+  if (!o || o.kind !== 'rack') return { error: 'File rack preset rusak.' };
+  if (!t) return { error: 'Pilih track dulu.' };
+  let r = null;
+  P.HK.group(() => {
+    if (mode === 'replace' && o.inst && t.kind === 'midi' && INSTRUMENTS[o.inst.type]) {
+      if (t.inst.type !== o.inst.type) P.setInstrument(i, o.inst.type);
+      INSTRUMENTS[o.inst.type].params.forEach((q, k) => P.setInstParam(i, k, Math.min(q.max, Math.max(q.min, num(o.inst.p && o.inst.p[k], q.def)))));
+      P.setPitch(i, num(o.inst.pitch, 0));
+    }
+    r = mode === 'replace' ? P.replaceChain(i, o.devices || []) : P.insertDeviceCopies(i, at, o.devices || []);
+  });
+  P.emit('devices');
+  const miss = r.skipped.length ? ` ${r.skipped.length} modul dilewati (tidak dikenal / rantai penuh): ${r.skipped.join(', ')}.` : '';
+  return { msg: `Rack preset "${o.name}": ${r.added} modul${mode === 'replace' ? ' (rantai diganti)' : ' disisipkan'}.${miss}` };
 }

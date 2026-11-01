@@ -131,6 +131,13 @@ function oldEvents(c, kind) {
   ok(all, 'regression: 300 random plain / looped clips play exactly the events of the previous engine sync');
   ok(!dup, 'regression: no note triggers twice at the same place');
   ok(!hang, 'regression: no note hangs past its cycle / clip end (no stuck notes)'); }
+// step graph Note Repeat (FL Studio Mobile): rpt triggers inside the step, in the event list both engines get; the source keeps ONE note
+{ const c = clip(DI, [{ t: 0, d: 200, p: 36, v: 0.9, rpt: 4 }, { t: 480, d: 200, p: 38, v: 0.7 }], 1); const ev = events(c, 'drum');
+  const k = ev.filter((e) => e.p === 36);
+  ok(k.length === 4 && k.map((e) => e.t).join() === '0,60,120,180' && k.every((e) => e.d <= 54 && e.v === 0.9), 'Note Repeat 4: four kicks 1/64 apart inside the step, same velocity (' + k.map((e) => e.t + '/' + e.d).join(' ') + ')');
+  ok(ev.filter((e) => e.p === 38).length === 1 && c.notes.length === 2, 'other steps play once; the source keeps one note per step (no copies)');
+  const c8 = clip(DI, [{ t: 0, d: 200, p: 36, v: 0.9, rpt: 8 }], 1); ok(events(c8, 'drum').length === 8, 'Note Repeat 8: eight triggers');
+  const cm = clip(MI, [{ t: 0, d: 200, p: 60, v: 0.9, rpt: 4 }], 1); ok(events(cm, 'midi').length === 1, 'repeat only applies to drum steps'); }
 ok(P.state.bpm === bpm0, 'regression: tempo unchanged');
 
 console.log(bad ? bad + ' FAILED' : 'ALL OK'); process.exit(bad ? 1 : 0);

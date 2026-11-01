@@ -3,7 +3,7 @@
 // has a fixed height on every strip (tracks, returns, master), so the rows line up across the whole mixer.
 // Every control works (no placeholders). Meters come from the engine poll. Long-press a fader / pan / send to create automation for it.
 import { C } from './theme.js';
-import { h, knob, clamp, ask, menu } from './ui.js';
+import { h, knob, clamp, ask, menu, touchCtrl } from './ui.js';
 import { fmtParam } from './defs.js';
 import { MASTER, RET0, eng } from './engine.js';
 import { offerAutomation } from './automate.js';
@@ -89,7 +89,7 @@ function strip(i, pos) {
   fader.addEventListener('pointermove', (e) => {
     if (!d) return;
     const dy = e.clientY - d.y0;
-    if (!d.moved) { if (Math.abs(dy) < 4) return; d.moved = true; clearTimeout(timer); fader.classList.add('drag'); }
+    if (!d.moved) { if (Math.abs(dy) < 4) return; d.moved = true; clearTimeout(timer); fader.classList.add('drag'); touchCtrl((r) => offerAutomation(r, { kind: 0, strip: P.stripOf(i), param: 0, def: P.AUTO_VOL }, `${label} • Volume`)); }
     const v = posToVol(clamp(d.p0 - dy / d.span, 0, 1));
     P.setVol(i, Math.abs(v - 1) < 0.02 ? 1 : v); refreshVol();
   });

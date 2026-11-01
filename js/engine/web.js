@@ -2,7 +2,7 @@
 import { Engine, NSTRIPS, MASTER, RET0, NFX } from './core.js';
 import { sabAvailable, makeShared, RingWriter, PollReader } from './sabio.js';
 import { parseSf2 } from './sf2.js';
-import { encodeWav, finishRender } from './wav.js';
+import { encodeWav, finishRender, postRender } from './wav.js';
 import { Mp3Encoder, Resampler, mp3Rate, concatBytes } from './mp3.js';
 import { makeZip } from '../zip.js';
 import { buildPyramid } from '../waveform.js';
@@ -694,6 +694,7 @@ export function createWebBackend() {
             if (Date.now() - lastYield > 60) { report(base + span * 0.75 * done / total, label); await tick(); lastYield = Date.now(); }
           }
           if (st.cancel) break;
+          if ((job.tailMode && job.tailMode !== 'leave') || job.trimStart) { ({ L, R } = postRender(L, R, Math.round(job.secs * sr), { tail: job.tailMode || 'leave', trimStart: !!job.trimStart })); peak = -1; }   // Wrap / Cut Remainder, Trim Silence
           const mono = job.channels === 1, rate = job.format !== 'mp3' && job.rate > 0 ? job.rate : sr;
           ({ L, R, frames: done } = finishRender(L, R, sr, { mono, rate, normalize: job.normalize, peak }));
           let data;

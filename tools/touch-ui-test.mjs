@@ -225,6 +225,106 @@ await ev(() => [...document.querySelectorAll('.prefs .btabs .b')].find((x) => x.
 ok(await ev(() => document.querySelectorAll('.kmap .sline').length >= 20), 'Pintasan settings: every shortcut listed and rebindable');
 await closeAll();
 
+// ===== session 2: Rack reorder, module menu, Rack Preset, CTRL, Wave Editor, Keys modes, ghost notes, New Project
+// 16. Audio Effect Rack: long-press a device title inside the rack chain and slide it past the next one
+await ev(async () => { const P = await import('./js/project.js'); P.newProject(false); P.addTrack('midi'); P.selectTrack(0); P.addDevice(0, 51); P.rackAddDevice(0, 0, 0, 3); P.rackAddDevice(0, 0, 0, 2); P.emit('devices'); });
+await ev(async () => { (await import('./js/devices.js')).render(); }); await wait(500);
+const rcards = await ev(() => [...document.querySelectorAll('.lk-rfx')].map((c) => { const r = c.querySelector('h4 > span').getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2, w: c.getBoundingClientRect().width }; }));
+if (rcards.length === 2) {
+  await ev(() => { window.__h4 = document.querySelectorAll('.lk-rfx')[0].querySelector('h4'); });
+  const pe = (type, x, y) => ev(async ([type, x, y]) => { const k = (await import('./js/uiscale.js')).emuK(); window.__h4.dispatchEvent(new PointerEvent(type, { bubbles: true, pointerId: 11, pointerType: 'touch', clientX: x * k, clientY: y * k, buttons: type === 'pointerup' ? 0 : 1 })); }, [type, x, y]);
+  const [c0, c1] = rcards; await pe('pointerdown', c0.x, c0.y); await wait(560);
+  ok(await ev(() => !!document.querySelector('.lk-rfx.dv-lift')), 'rack chain: long-press a device title lifts it');
+  for (let k = 1; k <= 14; k++) { await pe('pointermove', c0.x + (c1.x - c0.x + c1.w * 0.3) * k / 14, c0.y); await wait(16); }
+  await pe('pointerup', c1.x + c1.w * 0.3, c0.y); await wait(400);
+  const ro = await ev(async () => (await import('./js/project.js')).state.tracks[0].devices[0].chains[0].devices.map((d) => d.type));
+  ok(JSON.stringify(ro) === '[2,3]', 'Audio Effect Rack reorder by touch: [Saturator, EQ Three] -> ' + JSON.stringify(ro));
+  await ev(async () => (await import('./js/history.js')).undoOp()); await wait(200);
+  ok(JSON.stringify(await ev(async () => (await import('./js/project.js')).state.tracks[0].devices[0].chains[0].devices.map((d) => d.type))) === '[3,2]', 'Undo restores the rack order');
+} else ok(false, 'rack chain cards found (' + rcards.length + ')');
+// 17. module menu: Insert right / Replace / Copy + Paste / Reset; Rack Preset save + load
+const mm = await ev(async () => { const P = await import('./js/project.js'); const t = P.state.tracks[0];
+  P.insertDeviceAt(0, 1, 6); const a = t.devices.map((d) => d.type).join();
+  P.replaceDevice(0, 1, 7); const b = t.devices.map((d) => d.type).join();
+  P.setDeviceParam(0, 1, 0, 0.123); P.resetDevice(0, 1); const reset = t.devices[1].params[0] === (await import('./js/defs.js')).DEVICES[7].params[0].def;
+  const snap = P.devicesSnapshot(0); const r = P.insertDeviceCopies(0, 2, snap); const c = t.devices.map((d) => d.type).join();
+  const ids = new Set(t.devices.map((d) => d.id)), rackIds = t.devices.filter((d) => d.chains).map((d) => d.chains[0].id);
+  return { a, b, c, reset, uniq: ids.size === t.devices.length && new Set(rackIds).size === rackIds.length, added: r.added }; });
+ok(mm.a === '51,6' && mm.b === '51,7', 'module menu: Insert right, Replace (' + mm.a + ' -> ' + mm.b + ')');
+ok(mm.reset, 'module menu: Reset parameters');
+ok(mm.c === '51,7,51,7' && mm.uniq && mm.added === 2, 'Copy All / Paste: copies get fresh ids (rack chains too): ' + mm.c);
+const rp = await ev(async () => { const PRS = await import('./js/presets.js'), P = await import('./js/project.js'); const t = P.state.tracks[0];
+  const s = PRS.saveRackPreset(0, 'Tes Rack'); const before = JSON.stringify(t.devices.map((d) => [d.type, d.params, d.chains && d.chains.map((c) => c.devices.map((x) => x.type))]));
+  P.replaceChain(0, []); const empty = t.devices.length;
+  const L = PRS.rackPresets(); const r = PRS.applyRackPreset(L.find((x) => x.name === 'Tes Rack').path, 0, 'replace');
+  const after = JSON.stringify(t.devices.map((d) => [d.type, d.params, d.chains && d.chains.map((c) => c.devices.map((x) => x.type))]));
+  return { n: s.n, empty, same: before === after, msg: r.msg }; });
+ok(rp.n === 4 && rp.empty === 0 && rp.same, 'Rack Preset: save, clear, load -> chain identical (types, parameters, rack chains) ' + (rp.msg || ''));
+// 18. CTRL: move a knob, press CTRL -> automation / MIDI CC menu for THAT control; Link to the selected automation track
+await ev(async () => { (await import('./js/devices.js')).render(); }); await wait(400);
+const kb2 = await ev(() => { const k = document.querySelector('.dev-scroll .knob'); if (!k) return null; k.setPointerCapture = () => {}; const r = k.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; });
+if (kb2) {
+  await ev(async ([x, y]) => { const K = (await import('./js/uiscale.js')).emuK(); x *= K; y *= K; const k = document.querySelector('.dev-scroll .knob'); k.setPointerCapture = () => {}; k.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 4, pointerType: 'touch', clientX: x, clientY: y })); k.dispatchEvent(new PointerEvent('pointermove', { pointerId: 4, pointerType: 'touch', clientX: x, clientY: y - 20 })); k.dispatchEvent(new PointerEvent('pointerup', { pointerId: 4, pointerType: 'touch' })); }, [kb2.x, kb2.y]);   // layout px x UI scale (as ptr())
+  await page.locator('#btn-ctrl').tap(); await wait(450);
+  m = await menuTexts();
+  ok(m.some((x) => x.startsWith('Otomatisasi: ')) && m.includes('Hubungkan ke MIDI CC'), 'CTRL after moving a knob: automation + MIDI CC for that knob (' + m[0] + ')');
+  await ev(() => [...document.querySelectorAll('#layer .menu .mi')].find((e) => e.textContent.startsWith('Otomatisasi: ')).click()); await wait(300);
+  const at0 = await ev(async () => { const P = await import('./js/project.js'); const t = P.state.tracks[P.state.sel.track]; return t && t.kind === 'auto' ? { name: t.name, n: t.clips.length } : null; });
+  ok(!!at0 && at0.n === 1, 'CTRL -> automation track with an empty clip, selected (' + (at0 && at0.name) + ')');
+  // link: select that automation track, move the mixer pan of track 1, CTRL -> "Link ke track otomasi terpilih"
+  await ev(async () => { const { touchCtrl } = await import('./js/ui.js'); const { offerAutomation } = await import('./js/automate.js'); const P = await import('./js/project.js'); touchCtrl((r) => offerAutomation(r, { kind: 1, strip: P.stripOf(0), param: 0, def: P.AUTO_PAN }, 'Track 1 • Pan')); });
+  await page.locator('#btn-ctrl').tap(); await wait(450);
+  m = await menuTexts(); const li = m.find((x) => x.startsWith('Link ke track otomasi terpilih'));
+  ok(!!li, 'CTRL with an automation track selected offers "Link to Current Track"');
+  if (li) { await ev(() => [...document.querySelectorAll('#layer .menu .mi')].find((e) => e.textContent.startsWith('Link ke')).click()); await wait(200); }
+  const lk = await ev(async () => { const P = await import('./js/project.js'); const t = P.state.tracks[P.state.sel.track]; return { kind: t.target.kind, name: t.name }; });
+  ok(lk.kind === 1 && /Pan/.test(lk.name), 'linked: the automation track now drives Pan (' + lk.name + ')');
+  await closeAll();
+} else ok(false, 'a knob in the device chain for the CTRL test');
+// 19. Wave Editor: ruler drag = time selection -> menu; Fade In and Delete Space edit the audio, Undo restores
+await ev(async () => { const P = await import('./js/project.js'), E = await import('./js/engine.js'); const sr = 44100, n = sr * 2, buf = new ArrayBuffer(44 + n * 2), dv = new DataView(buf);
+  const wr = (o, s) => { for (let k = 0; k < s.length; k++) dv.setUint8(o + k, s.charCodeAt(k)); };
+  wr(0, 'RIFF'); dv.setUint32(4, 36 + n * 2, true); wr(8, 'WAVE'); wr(12, 'fmt '); dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, 1, true); dv.setUint32(24, sr, true); dv.setUint32(28, sr * 2, true); dv.setUint16(32, 2, true); dv.setUint16(34, 16, true); wr(36, 'data'); dv.setUint32(40, n * 2, true);
+  for (let k = 0; k < n; k++) dv.setInt16(44 + k * 2, Math.sin(2 * Math.PI * 220 * k / sr) * 0.5 * 32000, true);
+  await E.eng.saveBytes('/Samples/Tone2.wav', buf); P.addTrack('audio'); const i = P.state.tracks.length - 1; await P.addAudioClip(i, '/Samples/Tone2.wav', 0); P.selectClip(i, P.state.tracks[i].clips[0].id); window.__ai = i; });
+await wait(400); await ev(async () => (await import('./js/timeline.js')).openEditor()); await wait(900);
+const wv = await ev(() => { const c = [...document.querySelectorAll('.ed-body canvas')].pop(); const all = [...document.querySelectorAll('canvas')].filter((x) => x.getBoundingClientRect().width > 200 && x.closest('.ed-host')); const el = all.pop(); window.__wv = el; if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height }; });
+if (wv) {
+  const pw = (type, x, y) => ev(async ([type, x, y]) => { const k = (await import('./js/uiscale.js')).emuK(); window.__wv.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, pointerId: 7, pointerType: 'touch', isPrimary: true, clientX: x * k, clientY: y * k, buttons: type === 'pointerup' ? 0 : 1 })); }, [type, x, y]);
+  const x0 = wv.x + wv.w * 0.3, x1 = wv.x + wv.w * 0.5, y = wv.y + 6;
+  await pw('pointerdown', x0, y); await wait(30); for (let k = 1; k <= 10; k++) { await pw('pointermove', x0 + (x1 - x0) * k / 10, y); await wait(16); } await pw('pointerup', x1, y); await wait(500);
+  m = await menuTexts();
+  ok(['Deselect', 'Insert Silence (sisip waktu kosong)', 'Duplicate', 'Clear (hapus isi, waktu tetap)', 'Delete Space (hapus isi + waktu)', 'Trim Selection (simpan seleksi saja)', 'Normalize', 'Fade In', 'Fade Out', 'Undo'].every((x) => m.includes(x)), 'Wave Editor: ruler drag -> selection menu with all ten actions');
+  const d0 = await ev(async () => { const P = await import('./js/project.js'); const c = P.state.tracks[window.__ai].clips[0]; return { dur: c.sample.duration, path: c.sample.path, len: c.len }; });
+  await ev(() => [...document.querySelectorAll('#layer .menu .mi')].find((e) => e.textContent.startsWith('Delete Space')).click()); await wait(1500);
+  const d1 = await ev(async () => { const P = await import('./js/project.js'), E = await import('./js/engine.js'); const c = P.state.tracks[window.__ai].clips[0]; const t = E.eng.readBytes ? await E.eng.readBytes(c.sample.path) : null; return { dur: c.sample.duration, path: c.sample.path, len: c.len, file: !!t }; });
+  ok(d1.path !== d0.path && /\/Samples\/Edits\//.test(d1.path) && d1.dur < d0.dur - 0.3 && d1.dur > d0.dur - 0.5, 'Delete Space: new source in Samples/Edits, ~0.4 s shorter (' + d0.dur.toFixed(2) + ' -> ' + d1.dur.toFixed(2) + ' s)');
+  ok(d1.len < d0.len, 'the clip shrank with the removed time (' + d0.len + ' -> ' + d1.len + ' ticks)');
+  await ev(async () => (await import('./js/history.js')).undoOp()); await wait(300);
+  const d2 = await ev(async () => { const P = await import('./js/project.js'); const c = P.state.tracks[window.__ai].clips[0]; return { path: c.sample.path, len: c.len }; });
+  ok(d2.path === d0.path && d2.len === d0.len, 'Undo: original sample and length back');
+  await closeAll(); await page.keyboard.press('Escape'); await page.keyboard.press('Escape'); await wait(400);
+} else ok(false, 'wave editor canvas found');
+// 20. Keys: Chord mode strips (names from the scale), a strip plays 3 notes; Scale mode keys
+await ev(async () => { const P = await import('./js/project.js'); P.selectTrack(0); const { prefs } = await import('./js/prefs.js'); prefs.keyMode = 'chord'; });
+await ev(() => [...document.querySelectorAll('#dtabs .b, #dtabs button')].find((b) => /Keys/i.test(b.textContent))?.click()); await wait(500);
+const chs = await ev(() => [...document.querySelectorAll('.kb-chord .chs b')].map((b) => b.textContent));
+ok(chs.join(' ') === 'C Dm Em F G Am Bdim', 'Chord keyboard: diatonic strips ' + chs.join(' '));
+const played = await ev(async () => { const P = await import('./js/project.js'); const got = []; const o = P.noteEvent; const strip = document.querySelectorAll('.kb-chord .chs')[4]; strip.setPointerCapture = () => {};
+  const r = strip.getBoundingClientRect(); const k = (await import('./js/uiscale.js')).emuK();
+  window.__ne = []; const orig = P.noteEvent; return new Promise((res) => { const obs = setInterval(() => {}, 10); strip.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 21, clientX: (r.x + r.width / 2) * k, clientY: (r.y + r.height * 0.25) * k })); setTimeout(() => { const on = strip.classList.contains('on'); strip.dispatchEvent(new PointerEvent('pointerup', { pointerId: 21 })); clearInterval(obs); res({ on, off: !strip.classList.contains('on') }); }, 120); }); });
+ok(played.on && played.off, 'tapping a chord strip plays and releases it');
+await ev(async () => { const { prefs } = await import('./js/prefs.js'); prefs.keyMode = 'scale'; (await import('./js/keys.js')).render(); }); await wait(200);
+ok(await ev(() => document.querySelectorAll('.kb-scale .sk').length === 15), 'Scale keyboard: 2 octaves of scale notes (15 keys)');
+await ev(async () => { const { prefs } = await import('./js/prefs.js'); prefs.keyMode = 'classic'; });
+// 21. New Project dialog: name, tempo, signature
+await ev(async () => (await import('./js/projects.js')).newProjectDialog()); await wait(300);
+await page.fill('#layer .modal input[type=text]', 'Lagu Baru'); await page.fill('#layer .modal input[type=number]', '96');
+await ev(() => [...document.querySelectorAll('#layer .modal .b')].find((b) => b.textContent === '3/4').click());
+await ev(() => [...document.querySelectorAll('#layer .modal .b')].find((b) => b.textContent === 'Buat').click()); await wait(400);
+const npj = await ev(async () => { const P = await import("./js/project.js"), H = await import('./js/history.js'); return { name: P.state.projectName, bpm: P.state.bpm, sig: P.sigTextAt(0), undo: H.canUndo() }; });
+ok(npj.name === "Lagu Baru" && npj.bpm === 96 && /3\s*\/\s*4/.test(npj.sig) && !npj.undo, 'New Project: "Lagu Baru", 96 BPM, 3/4, fresh undo history ' + JSON.stringify(npj));
+
 ok(!errs.length, 'no page errors' + (errs.length ? ': ' + errs.join(' | ') : ''));
 await b.close(); server.close();
 console.log(bad ? `\n${bad} FAILED` : '\ntouch-ui-test: all passed');

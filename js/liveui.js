@@ -1,6 +1,7 @@
 // Ableton Live style controls for device panels: value boxes, toggles, drop-downs, tabs, dark displays.
 // Everything is a plain element with .update() so panels can refresh it after a preset / automation changes the value.
-import { h, menu, toNorm, fromNorm, clamp } from './ui.js';
+import { h, menu, toNorm, fromNorm, clamp, touchCtrl } from './ui.js';
+import { gestureTiming } from './gesture.js';
 
 // small label above a control (Live puts the name of a control above its box)
 export const lvLab = (text, el, cls = '') => h('div', { class: 'lv-fl ' + cls }, h('span', { class: 'lv-lb' }, text), el);
@@ -19,12 +20,12 @@ export function lvNum(p, get, set, fmt, o = {}) {
   root.addEventListener('pointerdown', (e) => {
     root.setPointerCapture(e.pointerId);
     st = { y: e.clientY, x: e.clientX, n: toNorm(p, get()), moved: false, fired: false, t: 0 };
-    if (o.onLong) st.t = setTimeout(() => { if (st && !st.moved) { st.fired = true; o.onLong(root.getBoundingClientRect()); } }, 480);
+    if (o.onLong) st.t = setTimeout(() => { if (st && !st.moved) { st.fired = true; o.onLong(root.getBoundingClientRect()); } }, gestureTiming().longMs);
   });
   root.addEventListener('pointermove', (e) => {
     if (!st || st.fired) return;
     const dy = st.y - e.clientY, dx = e.clientX - st.x;
-    if (Math.abs(dy) > 3 || Math.abs(dx) > 3) { st.moved = true; clearTimeout(st.t); }
+    if (!st.moved && (Math.abs(dy) > 3 || Math.abs(dx) > 3)) { st.moved = true; clearTimeout(st.t); touchCtrl(o.onLong); }
     if (st.moved) {
       const d = Math.abs(dy) >= Math.abs(dx) ? dy : dx;
       set(fromNorm(p, st.n + d / (o.px || 150))); draw();

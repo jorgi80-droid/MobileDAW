@@ -893,6 +893,7 @@ function placeBar() {
 function clearSel() { if (!msel.size) return; msel.clear(); marq = null; updateBar(); invalidate(); }
 // canvas coordinates of a tick on track row i (UI tests drive real touches with it)
 export function probe(tick, i) { return { x: tx(tick), y: rowY(i) + rh(i) / 2, top: rowY(i) }; }
+export const timeSelection = () => (sel && sel.b > sel.a ? { a: sel.a, b: sel.b } : null);   // the ruler time selection (export: Selection)
 export const testState = () => ({ snap: SNAPS[cfg.snap][0], picked: msel.size, sel: sel ? { a: sel.a, b: sel.b } : null, dragging: !!drag });   // UI tests
 export function openEditor() { if (hooks.openEditor) hooks.openEditor(); }   // the selected clip's editor (full screen)
 export function clearSelection() { const had = msel.size > 0; clearSel(); return had; }

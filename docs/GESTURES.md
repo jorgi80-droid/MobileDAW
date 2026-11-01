@@ -78,6 +78,7 @@ Di bawah pengaturan ada **area uji gestur** (ketuk, ketuk-ganda, tekan lama, ser
 | Seret vertikal | step yang menyala | velocity step |
 | Ketuk | nama pad (kiri) | panel pad (Mixer / Sample / Envelope) |
 | Tekan lama | nama pad | **Load Sample…, Clone, Set MIDI Key… (ketik nada / angka atau tekan tuts controller), Hapus pad… (konfirmasi)**, Isi tiap 1 / 2 / 4 step, Kosongkan, Pengaturan pad |
+| Ketuk | nama lane bawah (Velocity ▾) | pilih graph: **Velocity** atau **Note Repeat** (1–8 pukulan di dalam step; seret batang ke atas = lebih banyak) |
 | Seret | lane velocity bawah | velocity pad terpilih |
 | 2 jari | | geser + pinch (lebar step / tinggi baris) |
 
@@ -92,13 +93,35 @@ Di bawah pengaturan ada **area uji gestur** (ketuk, ketuk-ganda, tekan lama, ser
 | Tekan lama | titik | bentuk kurva (berlaku untuk grup), Copy titik, Hapus titik |
 | Paste | | kurva tempelan menggantikan titik di rentangnya; bentuk dan jarak waktu terjaga |
 
+## Wave Editor (klip audio)
+| Gestur | Aksi |
+|---|---|
+| Seret di ruler atas / tekan lama + seret di waveform | seleksi waktu -> menu Deselect, Insert Silence, Duplicate, Clear (isi saja), Delete Space (isi + waktu), Trim Selection, Normalize, Fade In, Fade Out, Undo |
+| Ketuk di dalam seleksi pada ruler | menu seleksi lagi; ketuk waveform di luar seleksi = lepas seleksi |
+| Ketuk waveform | kursor + Split / Awal / Akhir / Putar dari sini |
+| Seret bendera S / E, titik fade | awal / akhir region, panjang fade |
+| Pinch / geser | zoom berpusat / gulir |
+
+## Keys (Klasik / Skala / Chord / Strum)
+| Mode | Gestur |
+|---|---|
+| Klasik | ketuk tuts (lebih ke bawah = lebih keras), pitch wheel kiri |
+| Skala | hanya nada skala Clip View, tuts sama lebar, 2 oktaf |
+| Chord | satu strip per derajat skala; zona atas = posisi dasar, tengah = inversi 1, bawah = inversi 2; **Hold** = chord tetap bunyi, sentuh lagi untuk berhenti; **7th** = akor septim |
+| Strum | setengah atas = strum turun (nada tertinggi dulu), bawah = strum naik; kecepatan Cepat / Normal / Lambat |
+
+## CTRL (transport)
+Gerakkan knob / fader / slider apa pun, lalu ketuk **CTRL**: Otomatisasi (track otomasi + klip kosong), **Link ke track otomasi terpilih**
+(bila track otomasi sedang dipilih), atau Hubungkan ke MIDI CC.
+
 ## Device chain / Rack (`js/devices.js`)
 | Gestur | Aksi |
 |---|---|
 | Ketuk-ganda title bar | lipat / buka modul |
-| **Tekan lama title bar lalu geser kiri/kanan** | **ubah urutan** (kartu terangkat mengikuti jari, garis aksen = posisi jatuh, rantai menggulir di tepi; satu langkah undo; urutan sinyal langsung berubah) |
+| **Tekan lama title bar lalu geser kiri/kanan** | **ubah urutan** (kartu terangkat mengikuti jari, garis aksen = posisi jatuh, rantai menggulir di tepi; satu langkah undo; urutan sinyal langsung berubah). Berlaku di rantai utama, **di dalam Audio / Instrument Rack**, dan di chain pad Drum Rack (`js/reorder.js`) |
 | Geser title bar tanpa tekan lama | menggulir rantai seperti biasa |
-| `⋯` | menu device (jendela mengambang, lipat, geser kiri/kanan, bypass, hapus) |
+| `⋯` | menu modul: jendela mengambang, lipat, geser kiri/kanan, **Sisip efek di kiri / kanan, Ganti dengan, Copy modul, Paste di kanan, Reset parameter, Simpan modul sebagai preset, Sisip preset**, bypass, hapus |
+| Kartu `+` | Rack Preset: simpan rantai, muat (ganti rantai), sisip di akhir, Copy semua / Paste semua (konfirmasi), lalu daftar efek |
 | Knob: seret vertikal | nilai; **geser jari menjauh ke samping = penyesuaian halus** (sampai 1/8), ketuk-ganda = nilai awal, tekan lama = otomasi / MIDI CC |
 
 ## Mixer
@@ -130,5 +153,6 @@ posisi saat menyeret, Escape membatalkan gestur, getar, pengaturan ambang gestur
 ## Tes
 - `node tools/gesture-test.mjs` (masuk `run-tests`): pengenal di Node dengan event sintetis — tap, toleransi, seret, pan + fling,
   ketuk-ganda (tertunda / tidak), tekan lama (ambang dari pref), pinch berpusat, geser dua jari, batal, slop mouse.
-- `node tools/touch-ui-test.mjs` (Chromium emulasi Pixel 7, sentuhan; butuh Playwright, tidak di CI): 45 cek alur sentuh nyata di aplikasi.
+- `node tools/touch-ui-test.mjs` (Chromium emulasi Pixel 7, sentuhan; butuh Playwright, tidak di CI): 64 cek alur sentuh nyata di aplikasi.
+- `chain-order-test`, `waveops-test`, `chords-test` (masuk `run-tests`): urutan sinyal, operasi Wave Editor + mode render ekspor, teori chord.
 - `node tools/pattern-ui-test.mjs`: alur klip pattern dengan sentuhan (tetap lulus).

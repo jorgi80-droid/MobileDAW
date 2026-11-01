@@ -8,6 +8,8 @@ import { eng } from './engine.js';
 import * as P from './project.js';
 import { ask, toast } from './ui.js';
 import { haptic } from './gesture.js';
+import { prefs, savePrefs } from './prefs.js';
+const noteRecent = (n) => { if (!n || n === 'Untitled') return; prefs.recent = [n, ...(Array.isArray(prefs.recent) ? prefs.recent : []).filter((x) => x !== n)].slice(0, 8); savePrefs(); };
 
 const dir = () => eng.home() + '/Projects';
 export const BACKUP_PREFIX = '_backup_';
@@ -26,6 +28,7 @@ function write(name) {
   const txt = P.serialize(), path = projectPath(name);
   eng.writeText(path, txt);
   P.state.projectName = name; savedName = name; savedText = txt; maybe = false; setDirty(false);
+  noteRecent(name);
   return path;
 }
 export function saveAs(after) {

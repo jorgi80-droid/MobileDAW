@@ -16,7 +16,7 @@ import { buildSuite, minimetersView } from './minimeters.js';
 import { kitView, irackView, instKitView, padChainView } from './fxkit.js';
 import { prefs } from './prefs.js';
 import * as DP from './drumpad.js';
-import { gestureTiming, haptic } from './gesture.js';
+import { reorderGrip } from './reorder.js';
 const { state } = P;
 const VIEWS = { ...FXVIEW, 16: minimetersView };   // MiniMeters has its own view module
 
@@ -34,55 +34,6 @@ function titleFold(head, k) {                 // Live: double-click a device's t
   return head;
 }
 
-// FL Studio Mobile module reorder: long-press a device's title bar (not its buttons), then slide it left / right along the chain. The card lifts,
-// follows the finger, an accent line shows where it will land, the chain scrolls at its edges; lifting the finger moves the device there
-// (one undo step, signal order follows at once). Moving before the long press is recognised scrolls the chain as usual.
-function reorderGrip(head, i, di) {
-  let st = null;
-  const clear = () => { if (!st) return; clearTimeout(st.tm); cancelAnimationFrame(st.raf); if (st.on) { st.card.classList.remove('dv-lift'); st.card.style.transform = ''; for (const o of st.others) o.el.classList.remove('dv-ins-b', 'dv-ins-a'); } st = null; };
-  const target = () => {
-    const sc = st.scroll, mid = st.c0 + (st.x - st.x0) + (sc.scrollLeft - st.sl0);
-    let to = 0; for (const o of st.others) if (o.c < mid) to++;
-    for (const o of st.others) o.el.classList.remove('dv-ins-b', 'dv-ins-a');
-    const o = st.others[to] || null, p = st.others[to - 1] || null;
-    if (to !== di) { if (o) o.el.classList.add('dv-ins-b'); else if (p) p.el.classList.add('dv-ins-a'); }
-    return to;
-  };
-  const begin = () => {
-    const card = head.closest('.card'), scroll = card && card.parentElement; if (!card || !scroll) { st = null; return; }
-    const ids = new Set((P.tr(i) || { devices: [] }).devices.map((d) => String(d.id))), sl = scroll.scrollLeft;   // dataset keys are strings
-    const cx = (el) => { const r = el.getBoundingClientRect(); return r.left + r.width / 2 + sl; };
-    st.on = true; st.card = card; st.scroll = scroll; st.sl0 = sl; st.c0 = cx(card); head._noTap = true;
-    st.others = [...scroll.children].filter((el) => el !== card && ids.has(el.dataset.k)).map((el) => ({ el, c: cx(el) }));
-    card.classList.add('dv-lift'); haptic(14);
-    try { head.setPointerCapture(st.id); } catch (_) { /* pointer gone */ }
-    const edge = () => { if (!st) return; const r = st.scroll.getBoundingClientRect(), M = 40; const v = st.x < r.left + M ? -(r.left + M - st.x) / 3 : st.x > r.right - M ? (st.x - (r.right - M)) / 3 : 0; if (v) { st.scroll.scrollLeft += v; move(); } st.raf = requestAnimationFrame(edge); };
-    st.raf = requestAnimationFrame(edge);
-    move();
-  };
-  const move = () => { if (!st || !st.on) return; st.card.style.transform = `translateX(${st.x - st.x0 + (st.scroll.scrollLeft - st.sl0)}px)`; target(); };
-  head.addEventListener('pointerdown', (e) => {
-    if ((e.target.closest && e.target.closest('button')) || head.closest('.fw') || e.button > 0) return;
-    clear();
-    st = { id: e.pointerId, x0: e.clientX, y0: e.clientY, x: e.clientX, on: false, tm: 0, raf: 0 };
-    st.tm = setTimeout(() => { if (st && !st.on) begin(); }, gestureTiming().longMs);
-  });
-  head.addEventListener('pointermove', (e) => {
-    if (!st || e.pointerId !== st.id) return;
-    st.x = e.clientX;
-    if (!st.on) { if (Math.hypot(e.clientX - st.x0, e.clientY - st.y0) > gestureTiming().slop) clear(); return; }   // moved first = a scroll, not a reorder
-    move();
-  });
-  head.addEventListener('touchmove', (e) => { if (st && st.on && e.cancelable) e.preventDefault(); }, { passive: false });   // the lifted card, not the chain, follows the finger
-  head.addEventListener('pointerup', (e) => {
-    if (!st || e.pointerId !== st.id) return;
-    const on = st.on, to = on ? target() : di; clear();
-    if (on && to !== di) P.moveDevice(i, di, to);
-  });
-  head.addEventListener('pointercancel', clear);
-  head.addEventListener('contextmenu', (e) => e.preventDefault());
-  return head;
-}
 const foldBtn = (k, on) => { const b = h('button', { class: 'fold-b', 'aria-label': on ? 'Buka lipatan' : 'Lipat modul', onclick: () => setFolded(k, !on) }, on ? '\u25B8' : '\u25C2'); return b; };
 function foldedCard(k, name, pw) {
   const c = h('div', { class: 'card fold', 'aria-label': 'Buka ' + name, onclick: (e) => { if (e.target.closest && e.target.closest('.pw')) return; setFolded(k, false); } }, pw || null, h('span', { class: 'fn' }, name), foldBtn(k, true));
@@ -332,16 +283,37 @@ function sideLayout(el) {
   } catch (e) { console.error('sideLayout', e); }
 }
 
+// module menu helpers: effect picker, device clipboard (Copy / Paste module, Copy All / Paste All), rack preset picker
+let devClip = null;
+function fxPick(r, fn) { menu(FX_GROUPS.flatMap(([, label, ks]) => [{ label: label.toUpperCase(), dim: true }, ...ks.filter((k) => DEVICES[k]).map((k) => ({ label: DEVICES[k].name, fn: () => fn(k) }))]), Math.max(8, r.left - 40), Math.max(8, r.top - 120)); }
+const report = (x) => { if (x && x.skipped && x.skipped.length) toast(`${x.added} modul ditempel; ${x.skipped.length} dilewati: ${x.skipped.join(', ')}.`, 4000); else if (x) toast(x.added + ' modul ditempel.', 1200); };
+function pasteDevs(i, at) { if (!devClip) return; report(P.insertDeviceCopies(i, at, devClip)); }
+function presetPick(r, i, mode, at) {
+  const L = PRS.rackPresets();
+  if (!L.length) return toast('Belum ada rack preset. Simpan dulu lewat menu + (Simpan rantai) atau menu modul.', 3500);
+  menu([{ label: mode === 'replace' ? 'MUAT (GANTI RANTAI)' : 'SISIPKAN', dim: true }, ...L.map((p) => ({ label: `${p.name} (${p.n} modul${p.inst ? ' + instrumen' : ''})`, fn: () => { const x = PRS.applyRackPreset(p.path, i, mode, at); toast(x.error || x.msg, 3500); } }))], Math.max(8, r.left - 40), Math.max(8, r.top - 60));
+}
+
 function fxCard(i, d, di, n, o = {}) {
   const def = DEVICES[d.type];
   const pw = h('button', { class: 'pw' + (d.bypass ? '' : ' on'), 'aria-label': 'Bypass', onclick: () => P.toggleBypass(i, di) });
   // device menu (Live: the title bar's context menu): float, fold, move left / right, delete
   const more = h('button', { class: 'dv-more', 'aria-label': 'Menu device', onclick: (e) => {
     const r = e.currentTarget.getBoundingClientRect();
+    const full = (P.tr(i) || { devices: [] }).devices.length >= 16;
     menu([
       ...(o.floating ? [] : [{ label: 'Buka di jendela mengambang', fn: () => openDeviceWindow(d.id) }, { label: 'Lipat', fn: () => setFolded(d.id, true) }, { sep: true }]),
       { label: 'Geser ke kiri', dim: di <= 0, fn: () => { if (di > 0) P.moveDevice(i, di, di - 1); } },
       { label: 'Geser ke kanan', dim: di >= n - 1, fn: () => { if (di < n - 1) P.moveDevice(i, di, di + 1); } },
+      { label: 'Sisip efek di kiri\u2026', dim: full, fn: () => fxPick(r, (ty) => P.insertDeviceAt(i, di, ty)) },
+      { label: 'Sisip efek di kanan\u2026', dim: full, fn: () => fxPick(r, (ty) => P.insertDeviceAt(i, di + 1, ty)) },
+      { label: 'Ganti dengan\u2026', fn: () => fxPick(r, (ty) => P.replaceDevice(i, di, ty)) },
+      { sep: true },
+      { label: 'Copy modul', fn: () => { devClip = P.devicesSnapshot(i, di, di + 1); toast(def.name + ' disalin.', 1200); } },
+      { label: 'Paste di kanan', dim: !devClip || full, fn: () => pasteDevs(i, di + 1) },
+      { label: 'Reset parameter', fn: () => { P.resetDevice(i, di); toast(def.name + ': parameter kembali ke awal.', 1400); } },
+      { label: 'Simpan modul sebagai preset\u2026', fn: () => ask('Nama preset', def.name, (nm) => { const x = PRS.saveRackPreset(i, nm, di, di + 1); toast(x.error || 'Preset tersimpan di Presets/Racks.'); }) },
+      { label: 'Sisip preset di kanan\u2026', dim: full, fn: () => presetPick(r, i, 'insert', di + 1) },
       { sep: true },
       { label: d.bypass ? 'Aktifkan' : 'Bypass', fn: () => P.toggleBypass(i, di) },
       { label: 'Hapus device', fn: () => P.removeDevice(i, di) },
@@ -351,7 +323,8 @@ function fxCard(i, d, di, n, o = {}) {
   if (!o.floating && isFolded(d.id)) { const c = foldedCard(d.id, def.name, pw); if (d.bypass) c.classList.add('off'); return c; }
 
   let view = null;
-  const grip = (hd) => (o.floating || o.nested || n < 2 ? hd : reorderGrip(hd, i, di));
+  const ids = () => new Set((P.tr(i) || { devices: [] }).devices.map((x) => String(x.id)));   // the chain's effect cards (dataset keys are strings)
+  const grip = (hd) => (o.floating || o.nested || n < 2 ? hd : reorderGrip(hd, { index: di, siblings: (card) => { const k = ids(); return [...card.parentElement.children].filter((el) => k.has(el.dataset.k)); }, move: (to) => P.moveDevice(i, di, to) }));
   const knobsDiv = h('div', { class: 'knobs side' });
   const ctx = { i, di, d, def, every: o.every || every, set: (k, v) => P.setDeviceParam(i, di, k, v), refreshKnobs: () => { for (const c of knobsDiv.children) if (c.update) c.update(); } };
   if (def.kit) {                                                                   // Live 12 panel (js/fxkit.js): the panel lays out every control itself
@@ -414,9 +387,18 @@ export function render() {
   else if (i < MASTER) put(h('div', { class: 'card dev-src' }, h('h4', {}, h('i', { class: 'pdot' }), h('span', {}, 'Audio')), h('div', { class: 'dev-src-b' }, h('b', {}, 'Klip audio'), 'diputar lalu lewat rantai efek di kanan')), 'src');
   t.devices.forEach((d, di) => put(fxCard(i, d, di, t.devices.length), d.id));
   const full = t.devices.length >= 16;
-  const add = h('button', { class: 'card addcard dev-drop b', 'aria-label': 'Tambah efek', disabled: full, onclick: (e) => {
-    const r = e.currentTarget.getBoundingClientRect();
-    menu(FX_GROUPS.flatMap(([, label, ks]) => [{ label: label.toUpperCase(), dim: true }, ...ks.filter((k) => DEVICES[k]).map((k) => ({ label: DEVICES[k].name, fn: () => P.addDevice(i, k) }))]), Math.max(8, r.left - 40), Math.max(8, r.top - 120));
+  const add = h('button', { class: 'card addcard dev-drop b', 'aria-label': 'Tambah efek', onclick: (e) => {
+    const r = e.currentTarget.getBoundingClientRect(), n = t.devices.length;
+    menu([
+      { label: 'RACK PRESET', dim: true },
+      { label: 'Simpan rantai sebagai Rack Preset\u2026', dim: !n && !(t.inst && t.kind === 'midi'), fn: () => ask('Nama rack preset', '', (nm) => { const x = PRS.saveRackPreset(i, nm); toast(x.error || `Rack preset tersimpan (${x.n} modul${t.inst && t.kind === 'midi' ? ' + instrumen' : ''}).`); }) },
+      { label: 'Muat Rack Preset (ganti rantai)\u2026', fn: () => presetPick(r, i, 'replace', 0) },
+      { label: 'Sisip Rack Preset di akhir\u2026', dim: full, fn: () => presetPick(r, i, 'insert', n) },
+      { label: 'Copy semua modul', dim: !n, fn: () => { devClip = P.devicesSnapshot(i); toast(n + ' modul disalin.', 1200); } },
+      { label: 'Paste semua (ganti rantai)\u2026', dim: !devClip, fn: () => modal('Ganti rantai efek?', `${n} modul di rantai ini diganti dengan ${devClip.length} modul yang disalin. Bisa dibatalkan dengan Urungkan.`, [{ label: 'Batal' }, { label: 'Ganti', go: true, fn: () => { const x = P.replaceChain(i, devClip); report(x); } }]) },
+      { label: 'Paste di akhir', dim: !devClip || full, fn: () => pasteDevs(i, n) },
+      ...(full ? [{ label: 'Rantai penuh (16 efek)', dim: true }] : FX_GROUPS.flatMap(([, label, ks]) => [{ label: label.toUpperCase(), dim: true }, ...ks.filter((k) => DEVICES[k]).map((k) => ({ label: DEVICES[k].name, fn: () => P.addDevice(i, k) }))])),
+    ], Math.max(8, r.left - 40), Math.max(8, r.top - 120));
   } }, h('b', { 'aria-hidden': 'true' }, '+'), h('span', {}, full ? 'Rantai penuh (16 efek)' : 'Ketuk untuk menambah efek'), h('small', {}, 'atau seret efek dari Browser ke sini'));
   put(add, 'add');
   root.replaceChildren(scroll);

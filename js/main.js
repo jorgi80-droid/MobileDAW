@@ -27,8 +27,12 @@ import { makeZip } from './zip.js';
 import * as Tempo from './tempo.js';
 import { exportMidi, importMidi } from './midiio.js';
 import * as QS from './quicksave.js';
+import * as PM from './projects.js';
 import * as KM from './keymap.js';
 import { cancelGestures, gestureTiming } from './gesture.js';
+import { ctrlButton } from './automate.js';
+import { setOctaveNaming } from './defs.js';
+setOctaveNaming(prefs.midC);
 const { state } = P;
 
 let view = 'arr', tab = 'dev';
@@ -60,6 +64,7 @@ function wireTransport() {
     b.addEventListener('contextmenu', (e) => e.preventDefault());
     b.onclick = () => { if (long) { long = false; return; } P.toggleMetro(); };
   }
+  $('#btn-ctrl').onclick = (e) => ctrlButton(e.currentTarget.getBoundingClientRect());   // FL Studio Mobile CTRL: automation / link / MIDI CC for the last moved control
   $('#btn-undo').onclick = undoOp;
   $('#btn-redo').onclick = redoOp;
   $('#btn-browser').onclick = BR.toggleBrowser;
@@ -82,7 +87,7 @@ function wireTransport() {
       { label: 'Impor MIDI (.mid)\u2026', fn: importMidi },
       { label: 'Ekspor proyek (.mdaw)', fn: exportMdaw },
       { label: 'Ekspor ZIP (proyek + sample)\u2026', fn: exportZip },
-      { label: 'Proyek baru (kosong)', fn: () => modal('Proyek baru', 'Perubahan yang belum disimpan akan hilang.', [{ label: 'Batal' }, { label: 'Buat baru', go: true, fn: () => P.newProject(false) }]) },
+      { label: 'Proyek baru\u2026', fn: () => PM.newProjectDialog() },
       { sep: true },
       { label: 'Tempo\u2026', fn: Tempo.openTempo },
       { label: 'Nama proyek\u2026', fn: () => ask('Nama proyek', state.projectName, (v) => { if (v && v.trim()) state.projectName = v.trim(); }) },
@@ -164,7 +169,7 @@ function exportWav() {
   const info = h('div', { class: 'hint xd-info' });
   const o = {
     fmt: prefs.exportFmt === 'mp3' ? 'mp3' : 'wav', bits: [16, 24, 32].includes(prefs.exportBits) ? prefs.exportBits : 16, kbps: [128, 192, 256, 320].includes(prefs.exportKbps) ? prefs.exportKbps : 192,
-    stems: !!prefs.exportStems, ret: prefs.exportRet !== false, master: !!prefs.exportMaster, range: ['all', 'loop', 'manual'].includes(prefs.exportRange) ? prefs.exportRange : 'all', tail: [0, 3, 10].includes(prefs.exportTail) ? prefs.exportTail : 3, norm: !!prefs.exportNorm,
+    stems: !!prefs.exportStems, ret: prefs.exportRet !== false, master: !!prefs.exportMaster, range: ['all', 'loop', 'manual', 'sel'].includes(prefs.exportRange) ? (prefs.exportRange === 'sel' && !TL.timeSelection() ? 'all' : prefs.exportRange) : (TL.timeSelection() ? 'sel' : 'all'), tailMode: ['leave', 'wrap', 'cut'].includes(prefs.exportTailMode) ? prefs.exportTailMode : 'leave', trim: !!prefs.exportTrim, tail: [0, 3, 10].includes(prefs.exportTail) ? prefs.exportTail : 3, norm: !!prefs.exportNorm,
     ch: prefs.exportCh === 1 ? 1 : 2, rate: [0, 44100, 48000, 88200, 96000].includes(prefs.exportRate) ? prefs.exportRate : 0,
   };
   const devRate = (eng.info && eng.info().sampleRate) || 48000;
@@ -183,11 +188,14 @@ function exportWav() {
   const stemOpts = h('div', { class: 'xd-row xd-ind' });
   const retB = h('button', { class: 'b sw' + (o.ret ? ' on' : ''), onclick: () => { o.ret = !o.ret; retB.classList.toggle('on', o.ret); refresh(); } }, 'Sertakan Return'), mstB = h('button', { class: 'b sw' + (o.master ? ' on' : ''), onclick: () => { o.master = !o.master; mstB.classList.toggle('on', o.master); refresh(); } }, 'Sertakan Master');
   stemOpts.append(retB, mstB);
-  const rangeRow = seg('Rentang', [['all', 'Seluruh proyek'], ['loop', 'Area loop'], ['manual', 'Manual']], () => o.range, (v) => { o.range = v; });
+  const rangeRow = seg('Rentang', [['all', 'Seluruh lagu'], ...(TL.timeSelection() ? [['sel', 'Seleksi']] : []), ['loop', 'Area loop'], ['manual', 'Manual']], () => o.range, (v) => { o.range = v; });
   rangeRow.append(manual);
-  const tailRow = seg('Ekor efek', [[0, '0 dtk'], [3, '3 dtk'], [10, '10 dtk']], () => o.tail, (v) => { o.tail = v; });
+  const tailModeRow = seg('Sisa ekor', [['leave', 'Leave'], ['wrap', 'Wrap'], ['cut', 'Cut']], () => o.tailMode, (v) => { o.tailMode = v; });
+  const tailRow = seg('Ekor efek', [[3, '3 dtk'], [10, '10 dtk'], [0, '0 dtk']], () => o.tail, (v) => { o.tail = v; });
+  const trimRow = tog('Trim Silence', 'trim', 'Buang hening di awal');
   const normRow = tog('Normalisasi', 'norm', 'Puncak ke \u22120,1 dBFS');
   const span = () => {
+    if (o.range === 'sel') { const q = TL.timeSelection(); return q ? [q.a, q.b] : null; }
     if (o.range === 'loop') return state.loop.on && state.loop.end > state.loop.start ? [state.loop.start, state.loop.end] : null;
     if (o.range === 'manual') { const a = Math.max(1, Math.floor(+from.value) || 1), b = Math.max(a, Math.floor(+to.value) || a); return [P.barStart(a - 1), P.barStart(b)]; }
     return [0, full];
@@ -202,18 +210,19 @@ function exportWav() {
   function refresh() {
     kbpsRow.style.display = o.fmt === 'mp3' ? 'flex' : 'none'; rateRow.style.display = o.fmt === 'mp3' ? 'none' : 'flex'; stemOpts.style.display = o.stems ? 'flex' : 'none'; manual.style.display = o.range === 'manual' ? 'inline-flex' : 'none';
     const sp = span(), n = itemsOf().length;
-    if (!sp) { info.textContent = 'Area loop belum aktif: nyalakan Loop dan atur rentangnya di ruler.'; return; }
-    const sec = P.tickToSec(sp[1]) - P.tickToSec(sp[0]) + o.tail, mb = (sec * (o.fmt === 'mp3' ? o.kbps * 125 : (o.rate || devRate) * o.ch * (o.bits / 8)) * n) / 1048576;
-    info.textContent = `${((P.barAt(sp[1]) - P.barAt(sp[0]) + (sp[1] - P.barStart(P.barAt(sp[1]))) / P.barLenAt(sp[1]) - (sp[0] - P.barStart(P.barAt(sp[0]))) / P.barLenAt(sp[0]))).toFixed(1).replace('.', ',')} bar + ekor ${o.tail} dtk, ${n} file (\u00b1${mb < 10 ? mb.toFixed(1).replace('.', ',') : Math.round(mb)} MB). ${o.fmt === 'wav' && o.bits === 16 ? '16-bit memakai dither. ' : ''}${o.fmt === 'wav' && o.rate && o.rate !== devRate ? `Dirender di ${devRate / 1000} kHz lalu di-resample. ` : ''}${o.ch === 1 ? 'Mono = (L + R) / 2. ' : ''}${o.stems ? 'Stem dikemas dalam satu ZIP; tiap stem tanpa rantai master. ' : ''}${hasNative || FS.isDevice() ? 'Disimpan di folder MobileDAW/Exports.' : isNativeApp() ? 'Disimpan di Documents/MobileDAW/Exports lalu bisa dibagikan.' : 'Diunduh ke perangkat dan tersimpan di File \u2192 Exports.'}`;
+    tailRow.style.display = o.tailMode === 'cut' ? 'none' : 'flex';
+    if (!sp) { info.textContent = o.range === 'sel' ? 'Belum ada seleksi waktu: seret di ruler arrangement.' : 'Area loop belum aktif: nyalakan Loop dan atur rentangnya di ruler.'; return; }
+    const tl = o.tailMode === 'leave' ? o.tail : 0, sec = P.tickToSec(sp[1]) - P.tickToSec(sp[0]) + tl, mb = (sec * (o.fmt === 'mp3' ? o.kbps * 125 : (o.rate || devRate) * o.ch * (o.bits / 8)) * n) / 1048576;
+    info.textContent = `${((P.barAt(sp[1]) - P.barAt(sp[0]) + (sp[1] - P.barStart(P.barAt(sp[1]))) / P.barLenAt(sp[1]) - (sp[0] - P.barStart(P.barAt(sp[0]))) / P.barLenAt(sp[0]))).toFixed(1).replace('.', ',')} bar${o.tailMode === 'leave' ? ' + ekor ' + o.tail + ' dtk' : o.tailMode === 'wrap' ? ', ekor dibungkus ke awal (loop mulus)' : ', berhenti tepat di akhir'}${o.trim ? ', hening di awal dibuang' : ''}, ${n} file (\u00b1${mb < 10 ? mb.toFixed(1).replace('.', ',') : Math.round(mb)} MB). ${o.fmt === 'wav' && o.bits === 16 ? '16-bit memakai dither. ' : ''}${o.fmt === 'wav' && o.rate && o.rate !== devRate ? `Dirender di ${devRate / 1000} kHz lalu di-resample. ` : ''}${o.ch === 1 ? 'Mono = (L + R) / 2. ' : ''}${o.stems ? (o.master ? 'Stem dikemas dalam satu ZIP; tiap stem tanpa rantai master (efek Master hanya ada di file Master). ' : 'Stem dikemas dalam satu ZIP; tiap stem tanpa rantai master. ') : ''}${hasNative || FS.isDevice() ? 'Disimpan di folder MobileDAW/Exports.' : isNativeApp() ? 'Disimpan di Documents/MobileDAW/Exports lalu bisa dibagikan.' : 'Diunduh ke perangkat dan tersimpan di File \u2192 Exports.'}`;
   }
   from.oninput = to.oninput = refresh;
-  const body = h('div', { class: 'xdlg' }, name, fmtRow, kbpsRow, rateRow, chRow, modeRow, stemOpts, rangeRow, tailRow, normRow, info);
+  const body = h('div', { class: 'xdlg' }, name, fmtRow, kbpsRow, rateRow, chRow, modeRow, stemOpts, rangeRow, tailModeRow, tailRow, trimRow, normRow, info);
   refresh();
   const close = modal('Ekspor audio', body, [{ label: 'Batal' }, { label: 'Ekspor', go: true, fn: () => {
     const sp = span(), items = itemsOf();
     if (!sp) { toast('Area loop belum aktif.'); return false; }
     if (!items.length) { toast('Tidak ada track untuk diekspor.'); return false; }
-    Object.assign(prefs, { exportFmt: o.fmt, exportBits: o.bits, exportKbps: o.kbps, exportStems: o.stems, exportRet: o.ret, exportMaster: o.master, exportRange: o.range, exportTail: o.tail, exportNorm: o.norm, exportCh: o.ch, exportRate: o.rate }); savePrefs();
+    Object.assign(prefs, { exportFmt: o.fmt, exportBits: o.bits, exportKbps: o.kbps, exportStems: o.stems, exportRet: o.ret, exportMaster: o.master, exportRange: o.range, exportTail: o.tail, exportTailMode: o.tailMode, exportTrim: o.trim, exportNorm: o.norm, exportCh: o.ch, exportRate: o.rate }); savePrefs();
     runExport({ name: clean(name.value), items, sp, o });
   } }]);
   body.parentNode && body.parentNode.classList.add('big');
@@ -235,7 +244,7 @@ async function runExport({ name, items, sp, o }) {
   msg.textContent = 'Menyiapkan audio\u2026';
   await P.ensureBakes();                                   // audio clips on a tempo map / with swing must be rendered before the export copies the sample bank
   P.stop();
-  const job = { dir: `${eng.home()}/Exports`, name, format: ext, bits: o.bits, kbps: o.kbps, startTick: sp[0], endTick: sp[1], bpm: state.bpm, secs: P.tickToSec(sp[1]) - P.tickToSec(sp[0]), tailSec: o.tail, normalize: o.norm, channels: o.ch, rate: o.rate, zip: o.stems, items };
+  const job = { dir: `${eng.home()}/Exports`, name, format: ext, bits: o.bits, kbps: o.kbps, startTick: sp[0], endTick: sp[1], bpm: state.bpm, secs: P.tickToSec(sp[1]) - P.tickToSec(sp[0]), tailSec: o.tailMode === 'cut' ? 0 : o.tail, tailMode: o.tailMode, trimStart: !!o.trim, normalize: o.norm, channels: o.ch, rate: o.rate, zip: o.stems, items };
   if (eng.exportJob(job) !== true) { overlay.remove(); window.onExport = null; window.onExportDone = null; toast('Ekspor lain masih berjalan atau tidak didukung.'); }
 }
 

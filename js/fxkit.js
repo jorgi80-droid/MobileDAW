@@ -1,6 +1,7 @@
 // Live 12 device panels for the effects of js/engine/fx3.js (defs.js: kit: true). Every control is bound to a real engine parameter;
 // the layout follows the owner's reference images of Live 12 (sections side by side, label above / value below each knob, orange toggles,
 // cyan value boxes, dark displays with a cyan curve and hollow orange rings that can be dragged).
+import { reorderGrip } from './reorder.js';
 import { h, knob, menu, ask, fromNorm, toNorm } from './ui.js';
 import { C } from './theme.js';
 import { fmtParam, normOf, valOf, MOD_MAP, DEVICES, INSTRUMENTS, FX_GROUPS, IRACK_DEF } from './defs.js';
@@ -701,7 +702,9 @@ function rackPanel(k) {
         const more = h('button', { class: 'dv-more', 'aria-label': 'Menu device', onclick: (e) => { const r = e.currentTarget.getBoundingClientRect(), n = ch.devices.length;
           menu([{ label: 'Geser ke kiri', dim: j <= 0, fn: () => P.rackMoveDevice(i, di, sc, j, j - 1) }, { label: 'Geser ke kanan', dim: j >= n - 1, fn: () => P.rackMoveDevice(i, di, sc, j, j + 1) }, { sep: true },
             { label: x.bypass ? 'Aktifkan' : 'Bypass', fn: () => P.rackBypass(i, di, sc, j) }, { label: 'Hapus device', fn: () => P.rackRemoveDevice(i, di, sc, j) }], r.left - 120, r.bottom); } }, '⋯');
-        cards.push(h('div', { class: 'card lkcard lk-rcard' + (x.bypass ? ' off' : '') }, h('h4', {}, pw, h('span', {}, def.name), more), kv ? kv.el : null));
+        const hd = h('h4', {}, pw, h('span', {}, def.name), more);
+        if (ch.devices.length > 1) reorderGrip(hd, { index: j, siblings: (card) => [...card.parentElement.children].filter((el) => el.classList.contains('lk-rfx')), move: (to) => P.rackMoveDevice(i, di, sc, j, to) });   // long-press the title, slide = reorder inside the chain
+        cards.push(h('div', { class: 'card lkcard lk-rcard lk-rfx' + (x.bypass ? ' off' : '') }, hd, kv ? kv.el : null));
       });
       parts.push(h('div', { class: 'lk-rkd' }, ...cards, h('button', { class: 'lk-rdrop2', disabled: !ch, onclick: (e) => fxMenu(e.currentTarget.getBoundingClientRect(), (t) => P.rackAddDevice(i, di, sc, t)) }, 'Drop Audio Effects Here')));
     }
@@ -1370,8 +1373,11 @@ export function padChainView(i, k, every) {
   (c ? c.devices : []).forEach((x, j) => {
     const def = DEVICES[x.type], ctx = { i, di: -1, d: x, def, every, nested: true, setParam: (kk, v) => P.padChainDevParam(i, k, j, kk, v), autoFn: () => null };
     const kv = kitView(ctx); if (kv) draws.push(kv.draw);
-    const more = h('button', { class: 'dv-more', 'aria-label': 'Menu efek', onclick: (e) => { const rc = r(e); menu([{ label: x.bypass ? 'Aktifkan' : 'Bypass', fn: () => P.padChainBypass(i, k, j) }, { label: 'Hapus efek', fn: () => P.padChainRemoveDevice(i, k, j) }], rc.left - 120, rc.bottom); } }, '⋯');
-    body.append(h('div', { class: 'card lkcard lk-rcard' + (x.bypass ? ' off' : '') }, h('h4', {}, h('span', {}, def.name), more), kv ? kv.el : null));
+    const n = c.devices.length;
+    const more = h('button', { class: 'dv-more', 'aria-label': 'Menu efek', onclick: (e) => { const rc = r(e); menu([{ label: 'Geser ke kiri', dim: j <= 0, fn: () => P.padChainMoveDevice(i, k, j, j - 1) }, { label: 'Geser ke kanan', dim: j >= n - 1, fn: () => P.padChainMoveDevice(i, k, j, j + 1) }, { sep: true }, { label: x.bypass ? 'Aktifkan' : 'Bypass', fn: () => P.padChainBypass(i, k, j) }, { label: 'Hapus efek', fn: () => P.padChainRemoveDevice(i, k, j) }], rc.left - 120, rc.bottom); } }, '⋯');
+    const hd = h('h4', {}, h('span', {}, def.name), more);
+    if (n > 1) reorderGrip(hd, { index: j, siblings: (card) => [...card.parentElement.children].filter((el) => el.classList.contains('lk-pfx')), move: (to) => P.padChainMoveDevice(i, k, j, to) });
+    body.append(h('div', { class: 'card lkcard lk-rcard lk-pfx' + (x.bypass ? ' off' : '') }, hd, kv ? kv.el : null));
   });
   return { el: h('div', { class: 'drk-chain' }, head, body), draw: () => { for (const f of draws) f(); } };
 }

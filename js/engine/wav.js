@@ -13,6 +13,22 @@ export function finishRender(L, R, sr, { mono = false, rate = sr, normalize = fa
   let frames = 0; for (const c of L) frames += c.length;
   return { L, R, frames, peak };
 }
+// Render modes after the offline render (FL Studio Mobile export options), on chunk lists at the engine rate:
+//   tail 'leave' = the effect tail after the end stays (rendered tailSec), 'cut' = stop exactly at the end, 'wrap' = the tail is mixed into the
+//   start and the file ends at the end (seamless loop); trimStart = leading silence (below -80 dBFS) removed. Returns single-chunk lists.
+export function postRender(L, R, bodyFrames, { tail = 'leave', trimStart = false, thresh = 1e-4 } = {}) {
+  const flat = (cs) => { let n = 0; for (const c of cs) n += c.length; const o = new Float32Array(n); let k = 0; for (const c of cs) { o.set(c, k); k += c.length; } return o; };
+  let l = flat(L), r = R === L ? l : flat(R);
+  const body = Math.max(1, Math.min(l.length, Math.round(bodyFrames)));
+  if (tail === 'cut') { l = l.slice(0, body); r = R === L ? l : r.slice(0, body); }
+  else if (tail === 'wrap') {
+    const wl = l.slice(0, body), wr = R === L ? wl : r.slice(0, body);
+    for (let k = body; k < l.length; k++) { const j = (k - body) % body; wl[j] += l[k]; if (wr !== wl) wr[j] += r[k]; }
+    l = wl; r = wr;
+  }
+  if (trimStart) { let s = 0; while (s < l.length - 1 && Math.abs(l[s]) < thresh && Math.abs(r[s]) < thresh) s++; if (s > 0) { l = l.slice(s); r = R === L ? l : r.slice(s); } }
+  return { L: [l], R: [r] };
+}
 export function encodeWav(chunksL, chunksR, frames, sr, bits, channels = 2) {
   const bytes = bits === 16 ? 2 : bits === 24 ? 3 : 4, data = frames * channels * bytes, buf = new ArrayBuffer(44 + data), dv = new DataView(buf);
   const w = (o, s) => { for (let i = 0; i < s.length; i++) dv.setUint8(o + i, s.charCodeAt(i)); };
