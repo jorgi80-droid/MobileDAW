@@ -28,17 +28,43 @@ Baca juga `README-ANDROID.md` (build, install, status fase 2).
 | Port C++: DS Kick/Snare/Tom/HH/Clap/FM, Electric, Tension, Collision, Impulse, Granulator III (`native/engine/inst_live.*`) | selesai, identik bit (golden `play-*`, `params-*`) |
 | Port C++: Drift (`drift.*`), Poli (`poli.*`); engine C++ kini mendukung `setBend` (PB Range per instrumen) | selesai, golden `play-*` / `params-*` |
 | Port C++: Operator, Analog, Meld, Simpler (`operator.*`, `analog.*`, `meld.*`, `simpler.*`) | selesai, golden `play-*` / `params-*` |
-| **Port C++: GMS, Moisture, Osphere, DirectWave/Keystone/Sampler, Drum Sampler (+ chain per pad), SoundFont, Wavetable, Instrument Rack** | **belum** |
+| Port C++: GMS, Moisture, Osphere, DirectWave/Keystone, Sampler (10), Drum Sampler (+ chain per pad), SoundFont, Wavetable, Instrument Rack | selesai (golden `presets-*`, `play-*`, `inst-sampler`, `inst-livesampler`, `inst-drums`, `inst-irack`, `demo-*`) |
 | Port C++: Utility, Auto Filter, EQ Three, Saturator (oversampler 4x), Compressor, Limiter, Echo, Reverb, Parametric EQ, Roar (`native/engine/fx*.{h,cpp}`) | selesai, identik bit (golden `fx-*`) |
 | Port C++: seluruh fx3.js (Delay ... Spectrum, 16 efek, `fx3*.{h,cpp}`); engine C++ memanggil `tr()` untuk efek tersinkron bar | selesai, golden `fx-*` identik |
 | Port C++: seluruh fx4.js (Amp .. Looper, 13 efek, `fx4.{h,cpp}`) | selesai, golden `fx-*` identik |
 | Port C++: Autoduck (sidechain lewat `eng.sc`), Stereolizer, Spacer (`native/engine/fxu.*`) | selesai, golden `fx-autoduck`, `fx-autoduck-sc`, `fx-stereolizer`, `fx-spacer` identik |
-| **Port C++: Level/Analyzer/MiniMeters, fx5 (Spectral), fx6 (modulator + Map), Audio Effect Rack** | **belum** |
+| Port C++: Level/Analyzer/MiniMeters, fx5 (Spectral), fx6 (modulator + Map), Audio Effect Rack | selesai (golden `fx-*`, `fx-modulators`, `fx-rack`, `fx-spectral-midi`) — SEMUA instrumen dan efek kini punya port C++ |
 | Arrangement gaya gambar pemilik: klip warna penuh + isi gelap, fade klip audio + handle (seret), locator outline, garis track tebal, palet warna Live jenuh | selesai (`docs/redesign/40-*.jpg`) |
 | Drum Rack: chain per pad (instrumen + efek di pad, `pad.chain`; engine `DrumSynth.cmd/endBlock`, project `setPadChainInst / padChain*`, UI `padChainView` di fxkit.js, tes `tools/drumrack-test.mjs`) | selesai (`docs/redesign/39-drumrack-chain.png`) |
 | Ekspor WAV lewat engine native; angka CPU/underrun Web vs Native dari HP | belum |
 | Plugin Delay Compensation (PDC): track, send/return, grup, master, chain paralel rack, metronom + count-in, ekspor, rekaman; JS + C++ identik | selesai (`tools/pdc-test.mjs`, golden `core-pdc`, `tools/engine-e2e.mjs`) |
 | Ekspor: Mono, pilihan sample rate (resampler Kaiser HQ), rentang Area loop | selesai (`tools/export-test.mjs`) |
+
+## Sesi lanjutan: port C++ lengkap, warp mode, SharedArrayBuffer, profil performa
+- **Port C++ selesai untuk semua unit** (`native/engine/`): `fx5.*` (Spectral Time/Resonator: STFT + FFT sama dengan dsp.js, `jsHypot` = Math.hypot V8,
+  MIDI ke efek `midiScan/midiTo`), `fx6.*` (LFO/Shaper/Envelope Follower; engine `applyMod/runMods`), `fx7.*` (Audio Effect Rack + Instrument Rack;
+  perintah `rackCmd` dengan objek siap-pakai kedua `Cmd::p2` untuk instrumen chain), `inst_classic.*` (Sampler/DirectWave/Keystone, Moisture, Osphere,
+  GMS, SoundFont, Drum Sampler + chain per pad), `live.*` (Sampler 10, Wavetable 11), `fxm.*` (Level/Analyzer/MiniMeters + Loudness BS.1770).
+  - SoundFont ke native: perintah `sf id data rates zones counts` (`cmdtext.js sfArgs`); Android mengirim data lewat kanal sampel sebagai slot
+    1000 + id (bridge `stageSoundFont`), lalu `sf id u ...`.
+  - Wavetable: 34 set frame dibangun di `commands.cpp prepare` (`wtEnsure`) saat track mendapat instrumen 11 / memilih tabel — tidak pernah di audio thread.
+  - **Bug referensi JS diperbaiki**: `DrumSynth.noteOn` — `v.ed = q.d; v.es = q.s; v.er = q.r;` tertelan komentar, jadi Decay/Sustain/Release pad
+    sampel tidak berfungsi.
+  - Display device di mode native: bridge mengambil readout device yang ditonton per snapshot (`nWatch` / `nDevOut`), poll membawanya (dulu kosong).
+  - web.js: `nat.rk` mencatat tipe di dalam rack (instrumen = 1000 + tipe) untuk fallback otomatis.
+- **Warp mode klip audio** (`js/engine/audioops.js`, `c.warp.mode`): `beats` WSOLA (bawaan, proyek lama sama), `tones` phase vocoder 4096 / 4x overlap,
+  identity phase locking, fase dari mid (stereo terjaga), *transient lock* (frame yang memuat onset disalin 1:1 dan diposisikan agar serangan jatuh
+  tepat: error 0,0 ms, tanpa pre-echo), `repitch` resample. Resampler HQ memakai tabel polifase. Panel Warp: baris **Mode**. Tes `tools/stretch-test.mjs`.
+- **SharedArrayBuffer** (`js/engine/sabio.js`): ring perintah SPSC (perintah skalar) + blok poll dengan seqlock (posisi, CPU, PDC, meter, load, 8
+  readout device). Urutan dijaga dengan nomor urut di setiap perintah (ring dikuras sampai nomor pesan sebelum pesan diterapkan). Aktif hanya bila
+  `crossOriginIsolated` (header COOP/COEP di `vercel.json`); WebView Android dan server tanpa header memakai postMessage seperti dulu.
+  `Pengaturan` log menulis kanal yang dipakai; `eng.channel()`. Tes `tools/sab-test.mjs`, `ISOLATED=1 node tools/engine-e2e.mjs`.
+- **Profil performa + tes perangkat** (`js/perf.js`, Pengaturan -> Audio -> Performa perangkat): profil Otomatis/Rendah/Menengah/Tinggi (buffer
+  `latencyHint`, fps UI, reduce motion, Native bila ada), tes ~30 dtk: benchmark engine offline + tes langsung di instance worklet kedua yang senyap
+  (CPU audio dari worklet, underrun dari `AudioContext.playbackStats` bila browser punya) + statistik native; laporan teks bisa disimpan ke
+  `/Exports/perf-*.txt`. `PERF=1 node tools/engine-e2e.mjs` menjalankannya di Chromium desktop.
+- **Belum**: angka dari HP sungguhan (pemilik perlu menjalankan *Tes performa perangkat* di HP kelas rendah/menengah/tinggi dan mengirim laporannya);
+  build bridge Android hanya diverifikasi oleh CI APK.
 
 ## Plugin Delay Compensation (PDC) + opsi ekspor (sesi ini)
 - **Laporan latensi**: device dengan latensi punya `lat()` (frame): Saturator `OS4_LATENCY` (37, oversampler 4x, wet + dry), Compressor

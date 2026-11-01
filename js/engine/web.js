@@ -334,6 +334,7 @@ export function createWebBackend() {
     pdcMs: () => { const sr = nat.on && nat.sink && nat.sink.sr ? nat.sink.sr : st.ctx ? st.ctx.sampleRate : 0; return sr && st.poll && st.poll.lat ? st.poll.lat / sr * 1000 : 0; },   // how far the heard output trails the song position
     poll: () => (st.pr && !nat.on ? sabPoll() : st.poll),
     channel: () => (st.sab ? 'sab' : 'message'),
+    audioContext: () => st.ctx,                                            // perf.js: the live device test runs its own silent worklet instance
     devOut: (t, d) => { st.wanted.set(t + ',' + d, Date.now()); return st.dev[t + ',' + d] || []; },
   });
 

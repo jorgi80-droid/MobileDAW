@@ -57,6 +57,11 @@ ok(r.lat === 3 * la, `worklet reports the PDC output latency while playing: ${r.
 ok(r.started === true && r.res && r.res.ok, `export job ran: ${JSON.stringify(r.res)}`);
 ok(r.hdr && r.hdr.ch === 1 && r.hdr.sr === 44100 && r.hdr.bits === 24 && Math.abs(r.hdr.data / 3 - r.secs * 44100) < 400, `exported WAV: ${JSON.stringify(r.hdr)} (mono, 44.1 kHz, 24-bit, ${r.secs.toFixed(2)} s)`);
 for (const [m, w] of Object.entries(r.warps)) { const want = 2 * 60 / r.bpm; ok(!w.error && w.mode === m && Math.abs(w.dur - want) < 0.01, `warp mode ${m} in the stretch worker: 2 s tone -> 2 beats = ${w.dur} s (${want.toFixed(3)} expected) in ${w.ms} ms${w.error ? ' ERROR ' + w.error : ''}`); }
+if (process.env.PERF === '1') {                   // the on-device performance test (perf.js), as Pengaturan -> Audio -> Tes performa runs it
+  const t = await page.evaluate(async () => { const M = await import('./js/perf.js'); const t0 = performance.now(); const o = await M.runDeviceTest(); return { ms: performance.now() - t0, o, rep: M.report(o) }; });
+  console.log(t.rep.split('\n').map((x) => '     | ' + x).join('\n'));
+  ok(t.o.bench.steps.length >= 3 && t.o.live && !t.o.live.error && t.o.live.steps.length >= 2 && ['low', 'mid', 'high'].includes(t.o.measured), `device test ran in ${(t.ms / 1000).toFixed(1)} s: benchmark ${t.o.bench.steps.length} steps, live ${t.o.live.steps.length} steps, class ${t.o.measured}`);
+}
 ok(!errs.length, 'no page errors' + (errs.length ? ': ' + errs.slice(0, 3).join(' | ') : ''));
 await browser.close(); server.close();
 console.log(bad ? `\n${bad} FAILED` : '\nALL OK');

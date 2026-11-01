@@ -15,6 +15,7 @@ import { INSTRUMENTS, DEVICES } from './defs.js';
 import * as FS from './storage.js';
 import { log, logs, logText, clearLog, setLogLevel } from './log.js';
 import { aboutTabs } from './about.js';
+import { PROFILES, applyProfile, runDeviceTest, effectiveClass, guessClass } from './perf.js';
 
 const SNAP_NAMES = ['Auto', 'Bar', '1 Beat', '1/2 Beat', '1/4 Beat', 'Triplet', 'Off'];
 const section = (title, ...kids) => h('div', { class: 'set' }, h('h4', {}, title), ...kids);
@@ -128,6 +129,30 @@ function engineSection() {
     btn('Ukur beban CPU', () => measure(false)), btn('Reset statistik', () => measure(true)), meas);
 }
 
+// Performance profile + on-device test (perf.js): the test measures this device; the profile sets buffer size, UI frame rate and motion
+function perfSection() {
+  const res = h('pre', { class: 'sv', style: 'white-space:pre-wrap;max-height:220px;overflow:auto;font-size:11px' }, prefs.perfReport || ''), prog = h('div', { class: 'sv' });
+  const cur = () => `Profil aktif: ${PROFILES[effectiveClass()].name}${prefs.perfProfile === 'auto' ? (prefs.perfMeasured ? ' (otomatis, dari tes perangkat)' : ' (otomatis, perkiraan dari jumlah inti / memori: belum dites)') : ''}.`;
+  const line = h('div', { class: 'sv' }, cur());
+  const set = () => { const r = applyProfile(effectiveClass()); line.textContent = cur(); if (r.reload) toast('Ukuran buffer audio berubah: berlaku setelah aplikasi dimuat ulang.', 4000); };
+  let busy = false;
+  const test = async () => {
+    if (busy) return; busy = true; prog.textContent = 'Menguji… (sekitar 30 detik, jangan putar lagu)';
+    try { const o = await runDeviceTest((t) => { prog.textContent = t; }); res.textContent = prefs.perfReport; prog.textContent = 'Selesai. Kelas terukur: ' + PROFILES[o.measured].name + '.'; if (prefs.perfProfile === 'auto') set(); }
+    catch (e) { prog.textContent = 'Tes gagal: ' + (e && e.message || e); }
+    busy = false;
+  };
+  const save = async () => {
+    if (!prefs.perfReport) return toast('Belum ada laporan. Jalankan tes dulu.');
+    const name = 'perf-' + new Date().toISOString().replace(/[:T]/g, '-').slice(0, 19) + '.txt', path = '/Exports/' + name;
+    await eng.saveBytes(path, new TextEncoder().encode(prefs.perfReport).buffer); if (eng.download) eng.download(path);
+    toast('Laporan disimpan: ' + path, 4000);
+  };
+  return section('Performa perangkat',
+    choice('Profil', 'perfProfile', [['auto', 'Otomatis'], ['low', 'Rendah'], ['mid', 'Menengah'], ['high', 'Tinggi']], set), line,
+    h('div', { class: 'sv' }, 'Rendah: buffer audio terbesar, UI 60 fps, gerak dikurangi, engine Native bila ada. Menengah: buffer seimbang. Tinggi: latensi terendah. Tes perangkat mengukur engine di HP ini (benchmark + tes langsung di jalur audio, senyap) dan melaporkan CPU audio dan underrun per jumlah track.'),
+    btn('Tes performa perangkat', test), btn('Simpan laporan', save), prog, res);
+}
 function logSection() {
   const view = h('div', { class: 'logbox' });
   const paint = () => {
@@ -198,6 +223,7 @@ export function openSettings() {
       section('Audio', line('Mesin', backend === 'web' ? 'Web Audio (AudioWorklet)' : backend === 'native' ? 'Native (aplikasi Android)' : 'Tidak tersedia'), line('Sample rate', info.sampleRate ? info.sampleRate + ' Hz' : '\u2014'),
         line('Latensi output', info.baseLatency || info.outputLatency ? `${info.baseLatency} + ${info.outputLatency} ms` : '\u2014'), line('Status', info.state), line('Beban CPU', Math.round(P.state.cpu * 100) + ' %')),
       engineSection(),
+      perfSection(),
       section('Mesin audio',
         choice('Mode latensi', 'latencyHint', [['interactive', 'Rendah'], ['balanced', 'Seimbang'], ['playback', 'Stabil']]),
         choice('Sample rate', 'sampleRate', [[0, 'Otomatis'], [44100, '44.1 kHz'], [48000, '48 kHz']]),
