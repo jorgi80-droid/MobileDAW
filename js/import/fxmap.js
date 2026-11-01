@@ -40,7 +40,21 @@ const near = (a, b, e = 0.004) => Math.abs(a - b) <= e;
 
 // m = device.missing (name, app, params, flmType?) -> decision
 //   { apply: true, type, params, bypass, how: 'exact' | 'approx' | 'off' | 'later', note } | { apply: false, why: 'none' | 'unknown' | 'layout', stock }
-export function decide(m, mode = 'map') {
+export function decide(m, mode = 'map') { return withMix(m, decide0(m, mode)); }
+// FLM module level / mix (SMPR, < 1 = part dry): the stock plugin's Dry/Wet / Mix, or for Utility / EQ Eight the equivalent blend of dry and
+// processed level (1 - mix + mix * gain; exact for Utility, per band for the EQ)
+function withMix(m, r) {
+  const mix = m.mix;
+  if (!r.apply || r.bypass || mix == null || !(mix < 0.999)) return r;
+  const ps = DEVICES[r.type].params, q = (r.params && r.params.length ? r.params : defaults(r.type)).slice(), pct = Math.round(mix * 100);
+  const blend = (db) => Math.round(20 * Math.log10(Math.max(1e-4, 1 - mix + mix * Math.pow(10, db / 20))) * 100) / 100;
+  const k = ps.findIndex((x) => /^(Dry\/Wet|Mix)$/.test(x.n));
+  if (k >= 0) { q[k] = (Number.isFinite(q[k]) ? q[k] : ps[k].def) * mix; return { ...r, params: q, note: r.note + `; mix modul ${pct} %` }; }
+  if (r.type === 0) { q[0] = blend(q[0] || 0); return { ...r, params: q, note: r.note + `; mix modul ${pct} % (gain gabungan)` }; }
+  if (r.type === 31) { for (let b = 0; b < 8; b++) q[b * 5 + 3] = blend(q[b * 5 + 3] || 0); return { ...r, params: q, how: r.how === 'exact' ? 'exact' : 'approx', note: r.note + `; mix modul ${pct} % (per band)` }; }
+  return { ...r, how: r.how === 'exact' ? 'approx' : r.how, note: r.note + `; mix modul ${pct} % tidak ada padanannya` };
+}
+function decide0(m, mode) {
   const nm = moduleName(m.name), stock = Object.prototype.hasOwnProperty.call(STOCK, nm) ? STOCK[nm] : undefined, p = m.params || [];
   const on = !(p.length && p[0] < 0.5) && m.enabled !== false;
   if (stock === undefined) return { apply: false, why: 'unknown' };

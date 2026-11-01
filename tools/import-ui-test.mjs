@@ -40,6 +40,9 @@ ok(where.n > 0 && where.inFlm === where.n && where.listed && where.listed.includ
 ok(st.tracks > 0 && st.decoded === st.audio, 'every audio clip has a decoded sample (' + st.decoded + '/' + st.audio + ')');
 ok(st.warped === 0 || st.rendered === st.warped, 'stretched clips rendered (' + st.rendered + '/' + st.warped + ')');
 ok(st.missingDev > 0, 'placeholder devices in the project: ' + st.missingDev);
+const a7 = await ev(async () => { const P = await import('./js/project.js'); const t = P.state.tracks.find((x) => /^Audio 7$/.test(x.name)); if (!t) return null; const c = t.clips.slice().sort((a, b) => a.start - b.start);
+  return { n: c.length, bars: c.reduce((s, x) => s + x.len, 0) / P.BAR, pitched: c.filter((x) => x.warp && x.warp.pitch).length, rendered: c.filter((x) => x.warp && x.dsample).length, firstLen: c[0] && c[0].len / P.BAR }; });
+if (a7) ok(a7.n > 60 && a7.firstLen === 2 && a7.pitched === a7.rendered && a7.pitched > 60, 'FLM clips never resized fill their cycle (Audio 7: ' + a7.n + ' clips, ' + a7.bars + ' bars, first ' + a7.firstLen + ' bars) and keep their pitch (' + a7.pitched + ' pitched, ' + a7.rendered + ' rendered)');
 const ins = await ev(async () => { const P = await import('./js/project.js'), { eng } = await import('./js/engine.js'); const T = P.state.tracks;
   return T.filter((t) => t.inst && [4, 6, 1, 2, 5, 30, 31, 32, 33].includes(t.inst.type) && t.kind === 'midi').map((t) => ({ name: t.name, type: t.inst.type, zones: (t.inst.zones || []).filter((z) => z.sample).length, roots: (t.inst.zones || []).map((z) => z.root).join(), sf: t.inst.sf ? t.inst.sf.preset : null, sfSize: t.inst.sf ? eng.fileSize(t.inst.sf.path) : 0, sub: t.inst.sub ? t.inst.sub.gm : '' })); });
 console.log('     instruments: ' + JSON.stringify(ins));
@@ -69,6 +72,11 @@ await ev(async () => { const P = await import('./js/project.js'); const i = P.st
 await page.evaluate(() => [...document.querySelectorAll('#layer .modal .b')].find((x) => x.textContent === 'OK')?.click()); await page.waitForTimeout(500);
 ok(await ev(() => [...document.querySelectorAll('.card.dv-missing h4')].some((x) => /^\[Plugin tidak tersedia\]/.test(x.textContent))), 'device chain shows "[Plugin tidak tersedia] <name>" cards');
 await page.screenshot({ path: path.join(root, 'docs/redesign/54-import-flm.png') });
+// the arrangement around Audio 7 (FLM duplicates of the bass clip: one cycle each, pitched)
+await ev(async () => { const P = await import('./js/project.js'); const i = P.state.tracks.findIndex((t) => t.name === 'Audio 7'); if (i >= 0) { P.selectTrack(i); const c = P.state.tracks[i].clips.slice().sort((a, b) => a.start - b.start)[4]; if (c) P.selectClip(i, c.id); } P.seekTo(P.BAR * 8); });
+await ev(() => { const b = document.querySelector('#dtabs .b.on'); if (b) b.click(); }); await page.waitForTimeout(800);
+await page.mouse.move(400, 300); for (let k = 0; k < 4; k++) { await page.mouse.wheel(0, 120); await page.waitForTimeout(120); } await page.waitForTimeout(500);
+await page.screenshot({ path: path.join(root, 'docs/redesign/56-import-flm-arrangement.png') });
 await ev(async () => { const P = await import('./js/project.js'); P.play(); }); await page.waitForTimeout(1500);
 const pos = await ev(async () => (await import('./js/project.js')).state.pos); await ev(async () => (await import('./js/project.js')).stop());
 ok(pos > 0, 'the imported project plays (position ' + Math.round(pos) + ' ticks after 1.5 s)');

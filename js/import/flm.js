@@ -7,10 +7,16 @@
 //     TRKH (one per sub-track): DESc = i32 kind (0 notes, 1 automation, 2 audio, 3 drums), i32 module id, i32 param, ..., name[...] (+0x1c)
 //       CLIP = u32 position (128 ticks / beat) + "20LC" + CLHd (f64 length, f64 loop/cycle length, f64 offset, i32 id, f64 source length, u8 flags)
 //              EVN2 = u16 record size (20) + records: u32 time (128/beat), f64 length (beats), u16 pitch, u16 pan, u16 velocity, u16 flags
-//              CLSm (audio) = PTH1 (u16 len + "@L@\0" + path relative to the FLM user folder), STRC (u8, f64 stretch ratio, ...), PRMS (f32 gain, pan, ...)
+//              CLSm (audio) = PTH1 (u16 len + "@L@\0" + path relative to the FLM user folder), STRC (u8 stretch on, f64 time ratio, f64 pitch ratio,
+//              f32 pitch knob = 0.5 + semitones / 48, f32), STR1 (u8 on, f64 time ratio, f64 pitch in semitones), PRMS (f32 gain, pan, pitch knob used
+//              when stretching is off = resampled, ..., attack / decay / sustain / release at [6..9]). A clip with length 0 has never been resized:
+//              its length is its cycle length (FLM duplicates / linked clips, LINk).
+//           MODULE SMPR = f32 pan, level / mix (1 = full), f32. DirectWave ZONE root is stored 12 below MIDI (a WAV with unity note 60 -> 48), so are
+//              the note pitches of EVN2: both are shifted +12 (relative pitch unchanged; absolute pitch right for synths / General MIDI).
 //     RACK: RPRM (f32 volume, f32 pan 0..1, ...), RMOd modules in signal order (prefix i32 type, u32 instance id; HEAD, DESC names, PRST preset
 //           path, PRMS f32 params with [0] = enabled, CSTM: ZONE / PATh = DirectWave sample), RSMP = Drums sampler: SMPl per pad (PTH1, PRMS)
 import { FLM_TYPES } from './fxmap.js';
+const NOTE_OFS = 12;                                                               // FLM note / root numbering = MIDI - 12
 const TD = typeof TextDecoder !== 'undefined' ? new TextDecoder('utf-8') : null;
 const isTag = (u, p) => { for (let k = 0; k < 4; k++) { const c = u[p + k]; if (!((c >= 48 && c <= 57) || (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || c === 95)) return false; } return true; };
 
@@ -50,14 +56,15 @@ export function parseFlm(buf, onProgress) {
     const rp = one(ks, 'RPRM'); if (rp && rp.n >= 8) { out.vol = f32(rp.a); out.pan = f32(rp.a + 4); }
     for (const m of ks.filter((x) => x.tag === 'RMOd')) {
       const mk = kids(m), type = i32(m.a), id = u32(m.a + 4);
-      const prst = one(mk, 'PRST'), prms = one(mk, 'PRMS'), desc = one(mk, 'DESC'), cstm = one(mk, 'CSTM');
+      const prst = one(mk, 'PRST'), prms = one(mk, 'PRMS'), desc = one(mk, 'DESC'), cstm = one(mk, 'CSTM'), smpr = one(mk, 'SMPR');
       const pr = prst && prst.n > 8 ? str(prst.a + 4, Math.min(prst.n - 4, u32(prst.a))) : '';
       const params = []; if (prms) for (let k = 0; k + 4 <= prms.n; k += 4) params.push(f32(prms.a + k));
       const names = desc ? [str(desc.a, 256), str(desc.a + 0x100, 256)].filter(Boolean) : [];
       const folder = /Effect Presets\/([^/]+)\//.exec(pr); if (folder && !KNOWN[type]) presetName[type] = folder[1].replace(/\d+$/, '');
       const mod = { type, id, params, enabled: !(params.length && params[0] < 0.5), preset: pr.replace(/^.*\//, '').replace(/\.(flmpst|dwp)$/i, ''), presetPath: pr, names };
+      if (smpr && smpr.n >= 12) { mod.pan = f32(smpr.a) * 2 - 1; mod.level = f32(smpr.a + 4); }   // module pan / level (mix)
       if (cstm) for (const z of kids(cstm)) {                 // DirectWave: the sample of its zone (user folder) or a library program (built-in content)
-        if (z.tag === 'ZONE') { mod.sample = clean(raw(z.a, Math.min(z.n, 1024))); if (z.n > 1028) mod.root = u[z.a + 1024]; }   // path[1024], then the zone's root key (MIDI)
+        if (z.tag === 'ZONE') { mod.sample = clean(raw(z.a, Math.min(z.n, 1024))); if (z.n > 1028) mod.root = Math.min(127, u[z.a + 1024] + NOTE_OFS); }   // path[1024], then the zone's root key (MIDI)
         if (z.tag === 'PATh') mod.library = clean(raw(z.a + 4, Math.min(z.n - 4, u32(z.a))));
       }
       if (type === 1 && !mod.sample && !mod.library && names.length > 1 && /\.(wav|mp3|ogg|flac|m4a|aif+)$/i.test(names[names.length - 1])) mod.sample = names[names.length - 1];
@@ -75,6 +82,7 @@ export function parseFlm(buf, onProgress) {
     const pos = u32(c.a), ck = kids(c), h = one(ck, 'CLHd');
     if (!h || h.n < 36) return null;
     const clip = { pos: pos / 128, len: f64(h.a), cycle: f64(h.a + 8), offset: f64(h.a + 16), id: i32(h.a + 24), srcLen: f64(h.a + 28), muted: h.n > 36 && u[h.a + 36] === 1, events: [] };
+    if (!(clip.len > 0)) { clip.len = clip.cycle > 0 ? clip.cycle : clip.srcLen > 0 ? clip.srcLen : 4; clip.lenFromCycle = true; }   // never resized: one cycle long
     const e = one(ck, 'EVN2');
     if (e && e.n >= 2) { const rs = u16(e.a); if (rs >= 20) for (let p = e.a + 2; p + rs <= e.a + e.n; p += rs) clip.events.push({ t: u32(p) / 128, len: f64(p + 4), pitch: u16(p + 12), pan: u16(p + 14), vel: u16(p + 16), flags: u16(p + 18) }); }
     const sm = one(ck, 'CLSm');
@@ -82,8 +90,10 @@ export function parseFlm(buf, onProgress) {
       const sk = kids(sm), stc = one(sk, 'STRC'), pm = one(sk, 'PRMS'), main = one(sk, 'MAIN');
       clip.sample = path1(one(sk, 'PTH1'));
       clip.name = main ? str(main.a + 12, 256) : '';
-      if (stc && stc.n >= 9) { clip.stretchOn = u[stc.a] === 1; clip.stretch = f64(stc.a + 1); }
-      if (pm && pm.n >= 8) { clip.gain = f32(pm.a); clip.pan = f32(pm.a + 4); clip.params = []; for (let k = 0; k + 4 <= pm.n; k += 4) clip.params.push(f32(pm.a + k)); }
+      const s1 = one(sk, 'STR1');
+      if (stc && stc.n >= 9) { clip.stretchOn = u[stc.a] === 1; clip.stretch = f64(stc.a + 1); if (stc.n >= 17 && clip.stretchOn) clip.pitch = 12 * Math.log2(Math.max(1e-6, f64(stc.a + 9))); }
+      if (s1 && s1.n >= 17 && u[s1.a] === 1) clip.pitch = f64(s1.a + 9);              // semitones while stretching (time and pitch independent)
+      if (pm && pm.n >= 8) { clip.gain = f32(pm.a); clip.pan = f32(pm.a + 4); clip.params = []; for (let k = 0; k + 4 <= pm.n; k += 4) clip.params.push(f32(pm.a + k)); if (!clip.stretchOn && pm.n >= 12) clip.repitch = (f32(pm.a + 8) - 0.5) * 48; }   // stretch off: the pitch knob resamples
     }
     return clip;
   };
@@ -131,13 +141,13 @@ export function flmToModel(P) {
     const dw = ch.modules.filter((m) => m.type === 1), syn = dw.length ? null : ch.modules.find((m) => synthOf(m));
     const instMods = new Set(dw.length ? dw : syn ? [syn] : []);
     const c = { kind: ch.kind, name: ch.name, hue: hue(ch.hue), gain: ch.vol / LVL0, pan: ch.pan * 2 - 1, tracks: [], pads: [],
-      modules: ch.modules.filter((m) => !instMods.has(m)).map((m) => ({ name: m.name, enabled: m.enabled, preset: m.preset && m.preset !== 'Default' ? m.preset : '', params: m.params, id: m.id, flmType: m.type, ...(FLM_TYPES[m.type] && FLM_TYPES[m.type].sure === false ? { sure: false } : {}), app: 'FL Studio Mobile' })) };
+      modules: ch.modules.filter((m) => !instMods.has(m)).map((m) => ({ name: m.name, enabled: m.enabled, ...(m.level != null && m.level < 0.999 ? { mix: m.level } : {}), preset: m.preset && m.preset !== 'Default' ? m.preset : '', params: m.params, id: m.id, flmType: m.type, ...(FLM_TYPES[m.type] && FLM_TYPES[m.type].sure === false ? { sure: false } : {}), app: 'FL Studio Mobile' })) };
     if (dw.length) {
       const lib = dw.find((m) => m.library);
-      c.instrument = { kind: 'directwave', name: 'DirectWave', layers: dw.filter((m) => m.enabled && m.sample).map((m) => ({ sample: m.sample, root: m.root ?? 60, params: m.params })), library: lib ? lib.library : '', preset: dw[0].preset, enabled: dw.some((m) => m.enabled) };
-      if (!c.instrument.layers.length && !c.instrument.library && dw[0].sample) c.instrument.layers.push({ sample: dw[0].sample, root: dw[0].root ?? 60 });
+      c.instrument = { kind: 'directwave', name: 'DirectWave', layers: dw.filter((m) => m.enabled && m.sample).map((m) => ({ sample: m.sample, root: m.root ?? 60, params: m.params, level: m.level ?? 1, pan: m.pan || 0 })), library: lib ? lib.library : '', preset: dw[0].preset, enabled: dw.some((m) => m.enabled) };
+      if (!c.instrument.layers.length && !c.instrument.library && dw[0].sample) c.instrument.layers.push({ sample: dw[0].sample, root: dw[0].root ?? 60, params: dw[0].params, level: dw[0].level ?? 1, pan: dw[0].pan || 0 });
     } else if (syn) { const k = synthOf(syn); c.instrument = { kind: k.kind, name: k.name, preset: syn.preset && syn.preset !== 'Default' ? syn.preset : '', params: syn.params, enabled: syn.enabled, flmType: syn.type }; }
-    c.pads = ch.pads.map((q, k) => ({ path: q.path, name: (q.path.split('/').pop() || 'Pad ' + (k + 1)).replace(/\.[^.]+$/, ''), gain: q.vol / LVL0, pan: q.pan * 2 - 1, pitch: Math.round((q.pitch - 0.5) * 48) }));
+    c.pads = ch.pads.map((q, k) => ({ path: q.path, name: (q.path.split('/').pop() || 'Pad ' + (k + 1)).replace(/\.[^.]+$/, ''), gain: q.vol / LVL0, pan: q.pan * 2 - 1, pitch: Math.round((q.pitch - 0.5) * 48 * 1000) / 1000, env: q.params.length >= 10 ? { a: q.params[6], d: q.params[7], s: q.params[8], r: q.params[9] } : null }));   // pitch 0.5 + st / 48 (cents kept)
     for (const t of ch.tracks) {
       if (!t.clips.length && t.kind === 'automation') continue;               // empty automation slots
       const tr = { kind: t.kind, label: t.label, clips: [] };
@@ -147,9 +157,9 @@ export function flmToModel(P) {
       }
       for (const x of t.clips) {
         const cl = { pos: x.pos, len: x.len, cycle: x.cycle, offset: x.offset, srcLen: x.srcLen, muted: x.muted };
-        if (t.kind === 'audio') Object.assign(cl, { sample: x.sample, name: x.name, stretch: x.stretchOn !== false && x.stretch > 0.01 ? x.stretch : 1, gain: (x.gain ?? LVL0) / LVL0, pan: x.pan != null ? x.pan * 2 - 1 : 0 });
+        if (t.kind === 'audio') Object.assign(cl, { sample: x.sample, name: x.name, pitch: x.pitch || 0, repitch: x.repitch || 0, stretch: x.stretchOn !== false && x.stretch > 0.01 ? x.stretch : 1, gain: (x.gain ?? LVL0) / LVL0, pan: x.pan != null ? x.pan * 2 - 1 : 0 });
         else if (t.kind === 'automation') cl.points = x.events.map((e) => ({ t: e.t, v: e.vel / 65535 }));
-        else cl.notes = x.events.map((e) => ({ t: e.t, len: Math.max(1 / 64, e.len || 0.25), pitch: e.pitch, vel: Math.max(0.05, Math.min(1, e.vel / 32767 * 0.8)), pan: Math.max(-1, Math.min(1, e.pan / 32767.5 - 1)) }));
+        else cl.notes = x.events.map((e) => ({ t: e.t, len: Math.max(1 / 64, e.len || 0.25), pitch: t.kind === 'notes' ? Math.min(127, e.pitch + NOTE_OFS) : e.pitch, vel: Math.max(0.05, Math.min(1, e.vel / 32767 * 0.8)), pan: Math.max(-1, Math.min(1, e.pan / 32767.5 - 1)) }));
         tr.clips.push(cl);
       }
       c.tracks.push(tr);

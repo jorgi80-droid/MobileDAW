@@ -705,6 +705,7 @@ function sendZone(i, k) {
   for (const f of ['root', 'lo', 'hi', 'vlo', 'vhi', 'tune']) eng.instParam(i, zIdx(i, k, f), z[f]);
   if (big) for (const f of ['sus', 's0', 's1', 'l0', 'l1', 'xf', 'rev', 'vol', 'pan']) eng.instParam(i, zIdx(i, k, f), zNum(z[f] ?? newZone()[f]));
   else eng.instParam(i, zIdx(i, k, 'loop'), z.loop ? 1 : 0);
+  if (state.tracks[i].inst.type === INST.FLM_DW) { eng.instParam(i, 300 + k * 2, z.vol || 0); eng.instParam(i, 301 + k * 2, z.pan || 0); }   // FLM DirectWave: layer level (dB) / pan
 }
 export function syncZones(i) {
   const t = state.tracks[i];
@@ -735,7 +736,8 @@ export function setZoneField(i, k, field, v, quiet) {
   const z = state.tracks[i].inst.zones[k];
   if (HK.on && z[field] !== v && !HK.hit('zn' + state.tracks[i].id + '.' + k + field)) HK.add({ t: 'val', k: 'zone', s: state.tracks[i].id, d: k, p: field, v: z[field] });
   z[field] = v;
-  eng.instParam(i, zIdx(i, k, field), zNum(v));
+  if (state.tracks[i].inst.type === INST.FLM_DW && (field === 'vol' || field === 'pan')) eng.instParam(i, 300 + k * 2 + (field === 'pan' ? 1 : 0), v);   // FLM DirectWave layer level / pan
+  else eng.instParam(i, zIdx(i, k, field), zNum(v));
   if (!quiet) emit('devices');
 }
 export async function setZoneSample(i, k, path) {

@@ -54,6 +54,21 @@ Format tidak terdokumentasi; struktur di bawah dibaca dan diverifikasi pada proy
   Tipe lain tampil sebagai **"Efek FLM #<id>"** (bukan tebakan). Tabel `KNOWN` di `flm.js` bisa dilengkapi begitu nama tipe lain
   diketahui (mis. dari screenshot rack FLM).
 - Level FLM (slider 0..1, bawaan 0,853) dipetakan relatif ke level bawaan MDAW. Velocity not 0x7FFF → 0,8.
+- **Klip yang tidak pernah di-resize** (duplikat / klip tertaut, chunk `LINk`) menyimpan panjang 0: panjangnya = panjang siklus (dulu
+  terbaca hampir nol, contoh arsip pemilik: 74 klip "BASS LOUD FUNKYTONE" di Audio 7 hanya muncul sebagian). 82 klip di arsip pemilik.
+- **Pitch klip audio**: stretch hidup → `STR1` (u8 on, f64 rasio waktu, f64 **semitone**), sama dengan `STRC` (f64 rasio pitch =
+  2^(st/12), f32 knob = 0,5 + st/48); diterapkan sebagai warp pitch (waktu tetap). Stretch mati → knob pitch di `PRMS[2]` (0,5 + st/48)
+  = resample (kecepatan ikut berubah) → warp mode `repitch`. Arsip pemilik: 377 klip dengan pitch + 48 klip repitch (96_Tom −4,16 st).
+- **Pad drum**: pitch dengan cent (`PRMS[2]` = 0,5 + st/48, mis. kick +1,85 st) dan envelope A / D / S / R (`PRMS[6..9]`, kurva waktu
+  kubik 1 ms–10 s, perkiraan — FLM tidak menampilkan angka).
+- **Modul**: `SMPR` = pan, level / mix (1 = penuh). Pada efek yang dikonversi: Dry/Wet stock plugin, atau campuran dry + olahan untuk
+  Utility / EQ Eight; pada lapisan DirectWave: level (dB) dan pan per zona.
+- **Penomoran nada**: root zona DirectWave FLM tersimpan 12 di bawah MIDI (Banjo.wav ber-unity 60 di chunk `smpl` / `acid`, FLM
+  menyimpan 48; nada dasarnya terukur C4 = 261 Hz). Root dan not pattern digeser +12 → nada relatif sampler tetap, nada absolut benar untuk
+  synth / SoundFont. Kesimpulan dari satu sample; dikonfirmasi lebih lanjut bila ada proyek FLM dengan synth.
+- Belum terbaca: urutan nilai tab Sample / Filter DirectWave di `PRMS[1..16]` (disimpan mentah; mis. lapisan Banjo berbeda di `PRMS[3]`
+  0,236 vs 0,5 — kemungkinan Fine Tune −53 ct, belum terbukti), chunk `KEYB` (pengaturan akor keyboard FLM, JSON), `META` (tanggal).
+  `SEND` dibaca: semua kanal arsip pemilik ke Master dengan level bawaan.
 
 ## Migrasi modul ke stock plugin MobileDAW (`js/import/fxmap.js`)
 Sumber nama / parameter modul: panduan FX FL Studio Mobile dari pemilik (30 modul) + data di proyek asli.

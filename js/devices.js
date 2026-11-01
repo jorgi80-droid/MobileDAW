@@ -52,7 +52,8 @@ function knobGrid(def, count) {
 function zoneEditor(i, k) {
   const t = state.tracks[i], z = t.inst.zones[k], multi = t.inst.type === INST.KEYSTONE || t.inst.type === INST.FLM_DW;
   const num = (v, lo, hi) => h('input', { type: 'number', value: v, min: lo, max: hi, step: 1, inputmode: 'numeric', style: 'width:70px;height:32px;margin-left:8px;background:var(--bg);border:1px solid var(--line);color:var(--text);border-radius:2px;padding:0 6px;user-select:text' });
-  const f = { root: num(z.root, 0, 127), lo: num(z.lo, 0, 127), hi: num(z.hi, 0, 127), vlo: num(z.vlo, 1, 127), vhi: num(z.vhi, 1, 127), tune: num(z.tune, -100, 100) };
+  const f = { root: num(z.root, 0, 127), lo: num(z.lo, 0, 127), hi: num(z.hi, 0, 127), vlo: num(z.vlo, 1, 127), vhi: num(z.vhi, 1, 127), tune: num(z.tune, -100, 100), vol: num(Math.round((z.vol || 0) * 10) / 10, -60, 12), pan: num(Math.round((z.pan || 0) * 100), -100, 100) };
+  const flm = t.inst.type === INST.FLM_DW; f.vol.step = 0.1;
   const loop = h('input', { type: 'checkbox', style: 'width:22px;height:22px;margin-left:8px' }); loop.checked = z.loop;
   const row = (label, el, hint) => h('label', { style: 'display:flex;align-items:center;padding:4px 0' }, h('span', { style: 'flex:1' }, label), el, h('span', { style: 'width:34px;color:var(--dim);font-size:11px;margin-left:6px' }, hint || ''));
   const hint = (el) => { const v = Math.round(+el.value); return Number.isFinite(v) ? noteName(Math.max(0, Math.min(127, v))) : ''; };
@@ -62,7 +63,7 @@ function zoneEditor(i, k) {
     row('Nada dasar (root)', f.root, hint(f.root)),
     multi ? row('Tuts terendah', f.lo, hint(f.lo)) : null, multi ? row('Tuts tertinggi', f.hi, hint(f.hi)) : null,
     multi ? row('Velocity min', f.vlo) : null, multi ? row('Velocity maks', f.vhi) : null,
-    row('Tune (cent)', f.tune), row('Loop sample', loop));
+    row('Tune (cent)', f.tune), flm ? row('Level lapisan (dB)', f.vol) : null, flm ? row('Pan lapisan', f.pan) : null, row('Loop sample', loop));
   const acts = [{ label: 'Batal' }];
   if (multi && t.inst.zones.length > 1) acts.push({ label: 'Hapus zona', fn: () => P.removeZone(i, k) });
   acts.push({ label: 'Simpan', go: true, fn: () => {
@@ -70,6 +71,7 @@ function zoneEditor(i, k) {
     P.setZoneField(i, k, 'root', n(f.root, 0, 127));
     if (multi) { const lo = n(f.lo, 0, 127), hi = n(f.hi, 0, 127); P.setZoneField(i, k, 'lo', Math.min(lo, hi)); P.setZoneField(i, k, 'hi', Math.max(lo, hi)); const a = n(f.vlo, 1, 127), b = n(f.vhi, 1, 127); P.setZoneField(i, k, 'vlo', Math.min(a, b)); P.setZoneField(i, k, 'vhi', Math.max(a, b)); }
     P.setZoneField(i, k, 'tune', n(f.tune, -100, 100));
+    if (flm) { P.setZoneField(i, k, 'vol', Math.max(-60, Math.min(12, Math.round((+f.vol.value || 0) * 10) / 10))); P.setZoneField(i, k, 'pan', n(f.pan, -100, 100) / 100); }
     P.setZoneField(i, k, 'loop', loop.checked);
   } });
   modal(multi ? `Zona ${k + 1}` : 'Sample DirectWave', body, acts);

@@ -15,7 +15,7 @@ const SYNTH_TYPE = { gms: 31, minisynth: 32, supersaw: 33 };   // the FL Studio 
 // FLM DirectWave module parameters (normalised 0..1, [0] = on) -> MDAW DirectWave (30). Only the groups whose layout is confirmed by the
 // owner's screenshots against the stored values (bipolar amounts at 0.5 = 0) are converted: filter envelope [17..21], frequency envelope
 // [22..26], LFO [27..32]. The Sample / Filter tab values ([1..16]) are kept raw in inst.from (their order is not known yet).
-const fT = (v) => 0.001 * Math.pow(10000, clamp(v, 0, 1));                  // 0..1 slider -> 1 ms .. 10 s (MDAW curve)
+const fT = (v) => Math.round((0.001 + 10 * Math.pow(clamp(v, 0, 1), 3)) * 1e4) / 1e4;   // FLM 0..1 envelope slider -> seconds (1 ms .. 10 s, cubic; FLM shows no times)
 export function dwParamsFromFlm(raw) {
   const r = raw || [], out = {};
   if (r.length < 33) return out;
@@ -57,7 +57,7 @@ export function buildMdaw(M, opts) {
     }
     return files.get(key);
   };
-  const zoneOf = (smp, root) => ({ sample: smp, root: clamp(Math.round(root ?? 60), 0, 127), lo: 0, hi: 127, vlo: 1, vhi: 127, tune: 0, loop: false, sus: 0, s0: 0, s1: 1, l0: 0, l1: 1, xf: 0, rev: false, vol: 0, pan: 0 });
+  const zoneOf = (smp, root, L = {}) => ({ sample: smp, root: clamp(Math.round(root ?? 60), 0, 127), lo: 0, hi: 127, vlo: 1, vhi: 127, tune: 0, loop: false, sus: 0, s0: 0, s1: 1, l0: 0, l1: 1, xf: 0, rev: false, vol: L.level != null && L.level < 0.999 ? Math.round(20 * Math.log10(Math.max(1e-4, L.level)) * 100) / 100 : 0, pan: clamp(L.pan || 0, -1, 1) });   // FLM module level / pan per layer
   report.instruments = [];
   const instrumentOf = (I, trackName) => {
     I = I || { kind: 'unknown', name: 'Instrumen' };
@@ -69,7 +69,7 @@ export function buildMdaw(M, opts) {
     }
     const layers = I.layers || (I.sample ? [{ sample: I.sample, root: 60 }] : []);
     const zones = [];
-    for (const L of layers) { const f = sample(L.sample); if (!f.missing) zones.push(zoneOf({ path: f.path, name: f.path.split('/').pop() }, L.root)); }
+    for (const L of layers) { const f = sample(L.sample); if (!f.missing) zones.push(zoneOf({ path: f.path, name: f.path.split('/').pop() }, L.root, L)); }
     if (zones.length) { note('DirectWave (' + zones.length + ' zona' + (zones.length < layers.length ? ', ' + (layers.length - zones.length) + ' sample hilang' : '') + ')', 'exact'); return { type: 30, params: dwParamsFromFlm((layers.find((L) => (L.params || []).length >= 33) || {}).params), pitch: 0, zones, from: { app: M.app, name: I.name, preset: I.preset || '', layers: layers.map((L) => ({ sample: L.sample, root: L.root, params: (L.params || []).map((v) => Math.round(v * 1e5) / 1e5) })) } }; }
     const gm = I.library ? gmFor(I.library) : null;
     if (gm) { needSf = true; note('SoundFont GM: ' + gm.name + ' (pengganti program library yang tidak ada di arsip)', 'substitute'); return { type: 6, params: { 0: 0.8 }, pitch: 0, sf: { path: GM_SF, preset: gm.program }, sub: { from: I.name, library: gm.label, gm: gm.name } }; }
@@ -78,11 +78,13 @@ export function buildMdaw(M, opts) {
     return { type: 30, params: {}, pitch: 0, zones: [zoneOf(null, 60)], missing: { name: I.name || 'Instrumen', library: I.library || I.preset || '', sample: layers[0] ? layers[0].sample : '' } };
   };
   let needSf = false;
+  // FLM pad envelope (0..1 sliders): applied when it shapes the sound (attack, sustain below full, release); full settings = play the sample through
+  const padEnv = (e) => { if (!e || (e.a < 0.005 && e.s > 0.995 && e.r > 0.995)) return { a: 0, d: 0, s: 1, r: 0 }; return { a: e.a < 0.005 ? 0 : fT(e.a), d: fT(e.d), s: clamp(Math.round(e.s * 1e4) / 1e4, 0, 1), r: e.r > 0.995 ? 0 : fT(e.r) }; };
   const vol = (g) => clamp((Number.isFinite(g) ? g : 1) * DEF_VOL, 0, VMAX);
   const util = DEVICES[0].params.map((q) => q.def);
   const placeholder = (m) => {
     report.plugins.set(m.name, (report.plugins.get(m.name) || 0) + 1);
-    return { id: uid(), type: 0, params: util.slice(), bypass: m.enabled === false, missing: { name: m.name, app: m.app || M.app, preset: m.preset || '', enabled: m.enabled !== false, ...(m.flmType != null ? { flmType: m.flmType } : {}), ...(m.sure === false ? { sure: false } : {}), params: (m.params || []).map((v) => Math.round(v * 1e5) / 1e5) } };
+    return { id: uid(), type: 0, params: util.slice(), bypass: m.enabled === false, missing: { name: m.name, app: m.app || M.app, preset: m.preset || '', enabled: m.enabled !== false, ...(m.flmType != null ? { flmType: m.flmType } : {}), ...(m.sure === false ? { sure: false } : {}), ...(m.mix != null ? { mix: m.mix } : {}), params: (m.params || []).map((v) => Math.round(v * 1e5) / 1e5) } };
   };
   const devices = (ch) => (ch.modules || []).slice(0, 16).map(placeholder);
   const notesOf = (cl, map) => (cl.notes || []).map((n) => ({ t: Math.max(0, T(n.t)), d: Math.max(1, T(n.len)), p: map ? map(n.pitch) : clamp(Math.round(n.pitch), 0, 127), v: clamp(n.vel ?? 0.8, 0.01, 1), ...(n.pan ? { pan: clamp(n.pan, -1, 1) } : {}) })).filter((n) => n.p >= 0 && n.p <= 127);
@@ -122,7 +124,7 @@ export function buildMdaw(M, opts) {
         t.kind = 'drum';
         const pads = (ch.pads || []).slice(0, MAX_PADS).map((q, k2) => {
           const f = q.path ? sample(q.path, q.name) : null;
-          return { pitch: 36 + k2, name: (q.name || 'Pad ' + (k2 + 1)).slice(0, 14), kind: -1, sample: f && !f.missing ? { path: f.path, name: f.path.split('/').pop() } : null, gain: clamp(20 * Math.log10(Math.max(1e-4, q.gain ?? 1)), -60, 12), pan: clamp(q.pan || 0, -1, 1), pit: clamp(q.pitch || 0, -24, 24), dec: 1, start: 0, end: 1, rev: false, a: 0, d: 0, s: 1, r: 0, mute: !!(f && f.missing), solo: false };
+          return { pitch: 36 + k2, name: (q.name || 'Pad ' + (k2 + 1)).slice(0, 14), kind: -1, sample: f && !f.missing ? { path: f.path, name: f.path.split('/').pop() } : null, gain: clamp(20 * Math.log10(Math.max(1e-4, q.gain ?? 1)), -60, 12), pan: clamp(q.pan || 0, -1, 1), pit: clamp(q.pitch || 0, -24, 24), dec: 1, start: 0, end: 1, rev: false, ...padEnv(q.env), mute: !!(f && f.missing), solo: false };
         });
         t.inst = { type: 3, params: {}, pads: pads.length ? pads : undefined };
         const map = pads.length ? (p) => (p >= 0 && p < pads.length ? pads[p].pitch : -1) : (p) => 36 + p;
@@ -132,7 +134,10 @@ export function buildMdaw(M, opts) {
           if (!cl.sample) continue;
           const f = sample(cl.sample, cl.name), ratio = cl.stretch > 0 ? cl.stretch : 1, nm = cl.name || (cl.sample.split('/').pop() || '').replace(/\.[^.]+$/, '');
           const c = { id: uid(), start: Math.max(0, T(cl.pos)), len: Math.max(1, T(cl.len)), sample: { path: f.path, name: f.path.split('/').pop() }, gain: clamp(cl.gain ?? 1, 0, 8), name: f.missing ? '⚠ ' + nm + ' (sample tidak ada)' : nm, offset: Math.max(0, (cl.offset || 0) * spb) };
-          if (!f.missing && Math.abs(ratio - 1) > 1e-4) c.warp = { beats: 0, ratio: Math.round(ratio * 1e5) / 1e5, rev: false, pitch: 0, bpm: out.bpm };
+          const st = Math.round((cl.pitch || 0) * 1000) / 1000, rp = Math.round((cl.repitch || 0) * 1000) / 1000;
+          if (!f.missing && rp) c.warp = { beats: 0, ratio: Math.round(Math.pow(2, -rp / 12) * 1e5) / 1e5, rev: false, pitch: 0, mode: 'repitch', bpm: out.bpm };   // stretch off: pitch by resampling (speed follows)
+          else if (!f.missing && (Math.abs(ratio - 1) > 1e-4 || st)) c.warp = { beats: 0, ratio: Math.round(ratio * 1e5) / 1e5, rev: false, pitch: st, bpm: out.bpm };   // stretch on: time and pitch independent
+          if (st || rp) report.pitched = (report.pitched || 0) + 1;
           const cyc = T(cl.cycle || 0); if (!f.missing && cyc > 0 && cyc < c.len - 1) c.ll = cyc;   // the loop repeats inside a longer clip
           if (cl.muted) c.muted = true;
           if (f.missing) c.missing = { sample: cl.sample };

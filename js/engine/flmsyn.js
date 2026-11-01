@@ -239,14 +239,15 @@ class Arp {
 const DW_ZONES = 16;
 export class FlmDirectWave extends Voices {
   constructor(sr, bank) {
-    super(sr, 32, () => ({ pos: 0, rate: 1, id: -1, zroot: 60, ztune: 0, zloop: false, fenv: new Adsr(), penv: new Adsr(), sl: new Svf(), sr2: new Svf(), fade: 0 }));
+    super(sr, 32, () => ({ pos: 0, rate: 1, id: -1, zroot: 60, ztune: 0, zloop: false, zg: 1, zp: 0, fenv: new Adsr(), penv: new Adsr(), sl: new Svf(), sr2: new Svf(), fade: 0 }));
     this.bank = bank; this.p = new Float64Array(40);
-    this.z = Array.from({ length: DW_ZONES }, () => ({ id: -1, root: 60, lo: 0, hi: 127, vlo: 1, vhi: 127, tune: 0, loop: false }));
+    this.z = Array.from({ length: DW_ZONES }, () => ({ id: -1, root: 60, lo: 0, hi: 127, vlo: 1, vhi: 127, tune: 0, loop: false, gain: 1, pan: 0 }));   // gain / pan: 300 + zone * 2 (FLM layer level / pan)
     this.ap = {}; this.fp = {}; this.qp = {};
     const D = [0, 0, 0.001, 1, 1, 0.3, 0.1, 2, 0, 0, 0, 0, 100, 0, 0, 0, 1, 0.001, 1, 1, 0.3, 0, 0.001, 1, 1, 0.3, 0, 0, 0.03, 9, 0, 0, 0, 0, 0];
     D.forEach((x, i) => this.setParam(i, x));
   }
   setParam(i, x) {
+    if (i >= 300) { const zi = (i - 300) >> 1; if (zi < DW_ZONES) { if ((i - 300) & 1) this.z[zi].pan = clamp(x, -1, 1); else this.z[zi].gain = dbg(clamp(x, -60, 12)); } return; }
     if (i >= 100) {
       const zi = Math.floor((i - 100) / 8), k = (i - 100) % 8; if (zi >= DW_ZONES) return; const q = this.z[zi];
       switch (k) { case 0: q.id = x | 0; break; case 1: q.root = clamp(x | 0, 0, 127); break; case 2: q.lo = clamp(x | 0, 0, 127); break; case 3: q.hi = clamp(x | 0, 0, 127); break; case 4: q.vlo = clamp(x | 0, 1, 127); break; case 5: q.vhi = clamp(x | 0, 1, 127); break; case 6: q.tune = clamp(x, -100, 100); break; case 7: q.loop = x > 0.5; break; }
@@ -271,7 +272,7 @@ export class FlmDirectWave extends Voices {
       const s = q.id >= 0 ? this.bank[q.id] : null;
       if (!s || p < q.lo || p > q.hi || vi < q.vlo || vi > q.vhi) continue;
       const v = this.mono ? this.v[0] : this.pick();
-      v.id = q.id; v.zroot = q.root; v.ztune = q.tune; v.zloop = q.loop;
+      v.id = q.id; v.zroot = q.root; v.ztune = q.tune; v.zloop = q.loop; v.zg = q.gain; v.zp = q.pan;
       if (this.mono) { super.noteOn(p, vel); return; }
       this.begin(v, p, vel, 0);
     }
@@ -298,7 +299,7 @@ export class FlmDirectWave extends Voices {
           const oct = (v.pitch - 60) / 12 * p[14] / 100 + (v.vel - 1) * 4 * p[15] / 100 + fe * p[21] / 100 * 6 + (ldest === 0 ? lf * 4 : 0);
           const f = cutHz(p[12]) * Math.pow(2, oct); v.sl.set(sr, f, res); v.sr2.a1 = v.sl.a1; v.sr2.a2 = v.sl.a2; v.sr2.a3 = v.sl.a3; v.sr2.k = v.sl.k;
         }
-        const amp = lvl * v.vel * (ldest === 2 ? Math.max(0, 1 + lf) : 1), pan = ldest === 3 ? clamp(lf, -1, 1) : 0, gl = amp * Math.min(1, 1 - pan), gr = amp * Math.min(1, 1 + pan);
+        const amp = lvl * v.vel * v.zg * (ldest === 2 ? Math.max(0, 1 + lf) : 1), pan = clamp((ldest === 3 ? lf : 0) + v.zp, -1, 1), gl = amp * Math.min(1, 1 - pan), gr = amp * Math.min(1, 1 + pan);
         for (let k = i; k < e2; k++) {
           const e = v.env.next(this.ap); v.fenv.next(this.fp); v.penv.next(this.qp);
           if (v.env.st === 0) { v.on = false; break; }

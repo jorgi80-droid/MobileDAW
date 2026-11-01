@@ -24,24 +24,27 @@ const pth = (p) => { const s = cat(asc('@L@'), new Uint8Array(1), asc(p)); retur
 function flmFile() {
   const head = ck('HEAD', u32(0), u32(2), fixed('Tes FLM', 256), new Uint8Array(0x108 - 264), f64(150), new Uint8Array(32), asc('4.6.0'));
   const chhd = (name, order, num) => ck('CHHD', fixed(name, 1024), new Uint8Array(8), f32s(order, 0.3), new Uint8Array(0x438 - 1040), u32(num));
-  const mod = (type, id, params, preset = 'Default/Default', extra = []) => ck('RMOd', i32(type), u32(id), ck('HEAD', new Uint8Array(9)), ck('DESC', fixed('Default', 256), fixed('Default', 256), new Uint8Array(4)), ck('PRST', u32(preset.length), asc(preset)), ck('ADD1', new Uint8Array(3)), ck('PRMS', f32s(...params)), ck('SMPR', new Uint8Array(12)), ...extra);
+  const mod = (type, id, params, preset = 'Default/Default', extra = [], smpr = [0.5, 1, 0.5]) => ck('RMOd', i32(type), u32(id), ck('HEAD', new Uint8Array(9)), ck('DESC', fixed('Default', 256), fixed('Default', 256), new Uint8Array(4)), ck('PRST', u32(preset.length), asc(preset)), ck('ADD1', new Uint8Array(3)), ck('PRMS', f32s(...params)), ck('SMPR', f32s(...smpr)), ...extra);
   const rack = (flag, vol, mods = [], rsmp = []) => ck('RACK', u32(flag), asc('10KR'), ck('RHED', new Uint8Array(16)), ck('RPRM', f32s(vol, 0.25, 0, 0, 0.5, 0)), ...mods, ...rsmp);
   const desc = (kind, mod = -1, prm = -1, label = '') => ck('DESc', i32(kind), i32(mod), i32(prm), new Uint8Array(16), fixed(label, 1024));
   const clhd = (len, cyc, off, src = 0, flags = 0) => ck('CLHd', f64(len), f64(cyc), f64(off), i32(1), f64(src), new Uint8Array([flags]));
   const evn = (recs) => ck('EVN2', u16(20), ...recs.map((r) => cat(u32(r.t * 128), f64(r.len || 0), u16(r.p), u16(32767), u16(r.v ?? 32767), u16(0))));
   const clip = (pos, ...kids) => ck('CLIP', u32(pos * 128), asc('20LC'), ...kids);
-  const clsm = (path, ratio) => ck('CLSm', asc('20LS'), ck('MAIN', i32(-1), f64(-1), fixed('nama klip', 1024)), ck('PTH1', pth(path)), ck('STRC', new Uint8Array([1]), f64(ratio), f64(1), f32s(0.5, 0.3)), ck('PRMS', f32s(0.853, 0.5, 0.5)));
+  // audio clip: stretch on (time ratio + pitch in semitones: STRC pitch ratio / knob, STR1) or off (pitch knob in PRMS = resampled)
+  const clsm = (path, ratio, st = 0, on = 1) => ck('CLSm', asc('20LS'), ck('MAIN', i32(-1), f64(-1), fixed('nama klip', 1024)), ck('LINk', new Uint8Array(14)), ck('STRC', new Uint8Array([on]), f64(on ? ratio : 1), f64(on ? Math.pow(2, st / 12) : 1), f32s(on ? 0.5 + st / 48 : 0.5, 0.3)),
+    ck('STR1', new Uint8Array([on]), f64(on ? ratio : 1), f64(on ? st : 0)), ck('PTH1', pth(path)), ck('PRMS', f32s(0.853, 0.5, on ? 0.5 : 0.5 + st / 48, 0, 0, 0, 0, 1, 1, 1, 0.5)));
   const chnl = (flag, name, order, num, ...trk) => ck('CHNL', u32(flag), asc('20HC'), chhd(name, order, num), ...trk);
   const parts = [asc('10LF'), head, ck('TDIV', new Uint8Array([3, 4]))];
   parts.push(rack(0, 0.853, [mod(7, 2, [1, 0.5, 0.5])]), rack(0x100, 0.6, [mod(7, 2, [1, 0.5]), mod(29, 3, [0, 1], 'urces/Effect Presets/Autoduck2/Hard.flmpst')]),
     rack(0x100, 0.853, [mod(1, 2, [1], 'x', [ck('CSTM', asc('10WD'), ck('ZONE', asc('@L@'), new Uint8Array(1), asc('My Samples/lead.wav'), new Uint8Array(20)))]),
-      mod(1, 5, [1, ...Array(16).fill(0), 0, 0.5, 0.3, 0.25, 0.8, 0, 1, 1, 1, 0.5, 2, 0.5, 1, 0, 0.75, 3, 0], 'x', [ck('CSTM', asc('10WD'), ck('ZONE', fixed('@L@\0My Samples/lead2.wav', 1024), new Uint8Array([48]), new Uint8Array(20)))]), mod(20, 4, [1, 0.7, 0.5])]),
-    rack(0x100, 0.853, [], [ck('RSMP', asc('10MS'), u32(2), ck('PADS', new Uint8Array(22)), ck('SMPl', asc('20LS'), ck('PTH1', pth('My Samples/kick.wav')), ck('PRMS', f32s(0.853, 0.5, 0.5))), ck('SMPl', asc('20LS'), ck('PTH1', pth('My Samples/hilang.wav')), ck('PRMS', f32s(0.5, 0.5, 0.5))))]),
+      mod(1, 5, [1, ...Array(16).fill(0), 0, 0.5, 0.3, 0.25, 0.8, 0, 1, 1, 1, 0.5, 2, 0.5, 1, 0, 0.75, 3, 0], 'x', [ck('CSTM', asc('10WD'), ck('ZONE', fixed('@L@\0My Samples/lead2.wav', 1024), new Uint8Array([48]), new Uint8Array(20)))], [0.5, 0.5, 0.5]), mod(20, 4, [1, 0.7, 0.5], 'Default/Default', [], [0.5, 0.5, 0.5])]),
+    rack(0x100, 0.853, [], [ck('RSMP', asc('10MS'), u32(2), ck('PADS', new Uint8Array(22)), ck('SMPl', asc('20LS'), ck('PTH1', pth('My Samples/kick.wav')), ck('PRMS', f32s(0.853, 0.5, 0.539, 1, 0, 0, 0.095, 0.381, 0, 0.222, 0.5))), ck('SMPl', asc('20LS'), ck('PTH1', pth('My Samples/hilang.wav')), ck('PRMS', f32s(0.5, 0.5, 0.5))))]),
     rack(0x100, 0.853, [mod(99, 6, [1, 0.3], 'Presets/GMS Presets/Bass/Growl Bass.flmpst')]), rack(0x100, 0.853, [mod(98, 7, [1], 'Presets/MiniSynth/Bass/Retro Bass.flmpst')]),
     rack(0x100, 0.853, [mod(97, 8, [1], 'Presets/SuperSaw/EDM Lead.flmpst')]), rack(0x100, 0.853, [mod(1, 9, [1], 'Keyboard/Grand Piano.dwp', [ck('CSTM', asc('10WD'), ck('PATh', u32(46), asc('@R@\0DirectWave Samples/Keyboard/Grand Piano.dwp')))])]),
     rack(0x100, 0.853, [mod(7, 10, [1, 0.5], 'Effect Presets/SuperSaw Chorus.flmpst')]));
   parts.push(chnl(0, 'MASTER', 0, 0, ck('TRKH', desc(1))),
-    chnl(0x100, 'Vokal', 2.5, 1, ck('TRKH', desc(2), clip(4, clhd(8, 1024, 1, 7.5), ck('ZOOM', new Uint8Array(32)), clsm('My Tracks/vokal.wav', 0.8), evn([])), clip(16, clhd(8, 4, 0, 4), ck('ZOOM', new Uint8Array(32)), clsm('My Tracks/tidakada.wav', 1), evn([]))),
+    chnl(0x100, 'Vokal', 2.5, 1, ck('TRKH', desc(2), clip(4, clhd(8, 1024, 1, 7.5), ck('ZOOM', new Uint8Array(32)), clsm('My Tracks/vokal.wav', 0.8), evn([])), clip(16, clhd(8, 4, 0, 4), ck('ZOOM', new Uint8Array(32)), clsm('My Tracks/tidakada.wav', 1), evn([])),
+      clip(28, clhd(0, 4, 0, 4), ck('ZOOM', new Uint8Array(32)), clsm('My Tracks/vokal.wav', 1.25, 5), evn([])), clip(36, clhd(4, 4, 0, 4), ck('ZOOM', new Uint8Array(32)), clsm('My Tracks/vokal.wav', 1, -4, 0), evn([]))),
       ck('TRKH', desc(1, 0, 0, 'Level'), clip(0, clhd(8, 8, 0), ck('ZOOM', new Uint8Array(32)), evn([{ t: 0, p: 1, v: 30000 }, { t: 4, p: 1, v: 60000 }])))),
     chnl(0x100, 'Lead', 2.0, 2, ck('TRKH', desc(0), clip(8, clhd(12, 4, 2), ck('ZOOM', new Uint8Array(32)), evn([{ t: 0, len: 0.5, p: 60 }, { t: 1, len: 0.5, p: 64 }, { t: 3, len: 1, p: 67 }]))),
       ck('TRKH', desc(1, 4, 1, 'Gain : FX Leveller'), clip(0, clhd(4, 4, 0), ck('ZOOM', new Uint8Array(32)), evn([{ t: 0, p: 2, v: 100 }])))),
@@ -53,7 +56,7 @@ const flm = flmFile();
 const P = parseFlm(flm), M = flmToModel(P);
 ok(P.name === 'Tes FLM' && P.bpm === 150 && P.sig.join('/') === '3/4' && P.appVersion === '4.6.0', 'FLM header: name, tempo 150, 3/4, app version');
 const ch = (n) => M.channels.find((c) => c.name === n);
-ok(ch('Lead').tracks[0].clips[0].notes.length === 3 && ch('Lead').instrument.layers.map((l) => l.sample + '@' + l.root).join() === 'My Samples/lead.wav@60,My Samples/lead2.wav@48', 'FLM notes track + every DirectWave layer with its sample and root key');
+ok(ch('Lead').tracks[0].clips[0].notes.length === 3 && ch('Lead').instrument.layers.map((l) => l.sample + '@' + l.root).join() === 'My Samples/lead.wav@60,My Samples/lead2.wav@60' && ch('Lead').tracks[0].clips[0].notes[0].pitch === 72, 'FLM notes track + every DirectWave layer with its sample and root key (FLM numbering + 12 = MIDI)');
 ok(ch('GmsT').instrument.kind === 'gms' && ch('GmsT').instrument.preset === 'Growl Bass' && ch('MiniT').instrument.kind === 'minisynth' && ch('SawT').instrument.kind === 'supersaw', 'FLM GMS / MiniSynth / SuperSaw recognised from their preset path');
 ok(ch('Piano').instrument.kind === 'directwave' && /Grand Piano/.test(ch('Piano').instrument.library) && !ch('EqOnly').instrument, 'DirectWave library program kept; an effect preset named "SuperSaw" is not a synth');
 ok(!ch('GmsT').modules.length && ch('Lead').modules.map((m) => m.name).join() === 'Leveller', 'instrument modules are not in the effect chain');
@@ -68,16 +71,23 @@ ok(B.json.bpm === 150 && B.json.sig.n === 3 && B.json.sig.d === 4, 'MDAW project
 ok(voc.kind === 'audio' && voc.clips[0].start === 4 * 960 && voc.clips[0].len === 8 * 960 && Math.abs(voc.clips[0].offset - 60 / 150) < 1e-9 && voc.clips[0].warp.ratio === 0.8, 'audio clip: position, length, offset (s), stretch ratio');
 ok(voc.clips[1].name.includes('sample tidak ada') && voc.clips[1].sample.path.includes('/_missing/') && voc.clips[1].start === 16 * 960, 'missing sample: clip kept (place, length, name) with a silent placeholder');
 ok(voc.clips[1].len === 8 * 960 && !voc.clips[1].ll, 'missing sample clip: no loop on the placeholder');
+ok(voc.clips[2].start === 28 * 960 && voc.clips[2].len === 4 * 960 && voc.clips[2].warp && voc.clips[2].warp.pitch === 5 && voc.clips[2].warp.ratio === 1.25 && !voc.clips[2].warp.mode, 'clip never resized (length 0) = one cycle long; stretched clip keeps its pitch (+5 st, STR1) and time ratio');
+ok(voc.clips[3].warp && voc.clips[3].warp.mode === 'repitch' && Math.abs(voc.clips[3].warp.ratio - Math.pow(2, 4 / 12)) < 1e-4, 'stretch off: the pitch knob (-4 st) resamples the clip (repitch, longer and lower)');
+ok(B.report.pitched === 2, 'report counts the pitched audio clips');
+{ const lv = lead.devices.find((d) => d.missing ? d.missing.name === 'Leveller' : d.from && d.from.name === 'Leveller'); ok(lv && (lv.missing ? lv.missing.mix === 0.5 : true), 'module level / mix (SMPR) kept on the module (' + JSON.stringify(lv && (lv.missing || lv.from).mix) + ')'); }
+{ const k = drum.inst.pads[0]; ok(Math.abs(k.pit - 1.872) < 0.001 && Math.abs(k.a - 0.0096) < 1e-4 && Math.abs(k.d - 0.554) < 1e-3 && k.s === 0 && Math.abs(k.r - 0.1104) < 1e-3, 'drum pad pitch with cents (+1.872 st) and envelope from the FLM pad (A / D / S / R)'); }
+{ const FXm = await import('../js/import/fxmap.js'), r = FXm.decide({ name: 'Leveller', params: [1, 0.7071, 0.5], mix: 0.5 }), r2 = FXm.decide({ name: 'Leveller', params: [1, 0.3536, 0.5], mix: 0.5 });
+  ok(r.params[0] === 0 && Math.abs(r2.params[0] - 20 * Math.log10(0.5 + 0.5 * 0.25)) < 0.01, 'module mix 50 %: Utility gain = blend of dry and processed (-12 dB at 50 % -> ' + r2.params[0] + ' dB)'); }
 ok(voc.devices.length === 2 && voc.devices.every((d) => d.type === 0 && d.missing) && voc.devices[1].bypass && voc.devices[1].missing.name === 'Autoduck', 'plugins -> placeholder devices "[Plugin tidak tersedia]" keeping name, preset and params');
-ok(lead.kind === 'midi' && lead.inst.type === 30 && lead.inst.zones[0].sample.path === '/Samples/Imports/T/My Samples/lead.wav' && lead.inst.zones.length === 2 && lead.inst.zones[1].root === 48 && lead.inst.zones[1].lo === 0 && lead.inst.zones[1].hi === 127, 'FLM DirectWave -> MDAW DirectWave: one zone per layer, root key kept, full key range');
+ok(lead.kind === 'midi' && lead.inst.type === 30 && lead.inst.zones[0].sample.path === '/Samples/Imports/T/My Samples/lead.wav' && lead.inst.zones.length === 2 && lead.inst.zones[1].root === 60 && Math.abs(lead.inst.zones[1].vol + 6.02) < 0.01 && lead.inst.zones[0].vol === 0 && lead.inst.zones[1].lo === 0 && lead.inst.zones[1].hi === 127, 'FLM DirectWave -> MDAW DirectWave: one zone per layer, root key kept, full key range');
 {
   const g = tr('GmsT').inst, m = tr('MiniT').inst, s = tr('SawT').inst, pi = tr('Piano').inst;
   const { PRESETS } = await import('../js/defs.js');
   const same = (inst, type, name) => { const p = PRESETS[type].find((x) => x.name === name); return p && Object.keys(p.p).every((k) => inst.params[k] === p.p[k]); };
   ok(g.type === 31 && same(g, 31, 'Growl Bass') && m.type === 32 && same(m, 32, 'Retro Bass') && s.type === 33 && same(s, 33, 'EDM Lead'), 'GMS / MiniSynth / SuperSaw -> the MobileDAW FL Studio Mobile instrument (31 / 32 / 33) with the preset of the same name');
   { const { dwParamsFromFlm } = await import('../js/import/build.js'); const q = lead.inst.params, r = dwParamsFromFlm([1, ...Array(16).fill(0), 0, 0.5, 0.3, 0.25, 0.8, 0, 1, 1, 1, 0.5, 2, 0.5, 1, 0, 0.75, 3, 0]);
-    ok(q[21] === 60 && Math.abs(q[18] - 0.1) < 1e-9 && q[19] === 0.3 && Math.abs(q[20] - 0.01) < 1e-9 && q[26] === 0 && q[27] === 2 && q[30] === 2 && q[32] === 50 && q[33] === 3 && r[21] === 60,
-      'FLM DirectWave filter / frequency envelope and LFO values -> MDAW DirectWave (amount 0.8 -> +60, decay 0.5 -> 100 ms, LFO Tmp Sync / Square / +50 / Pan)'); }
+    ok(q[21] === 60 && Math.abs(q[18] - 1.251) < 1e-6 && q[19] === 0.3 && Math.abs(q[20] - 0.1573) < 1e-4 && q[26] === 0 && q[27] === 2 && q[30] === 2 && q[32] === 50 && q[33] === 3 && r[21] === 60,
+      'FLM DirectWave filter / frequency envelope and LFO values -> MDAW DirectWave (amount 0.8 -> +60, decay 0.5 -> 1.25 s, LFO Tmp Sync / Square / +50 / Pan)'); }
   ok(g.from && g.from.name === 'GMS' && g.from.params.length === 2, 'synth keeps the original FLM parameters (d.from)');
   ok(pi.type === 6 && pi.sf.preset === 0 && pi.sf.path === '/SoundFonts/TimGM6mb.sf2' && pi.sub.gm === 'Acoustic Grand Piano' && B.json.needsSoundFont === '/SoundFonts/TimGM6mb.sf2', 'DirectWave library "Grand Piano" (not in the archive) -> General MIDI SoundFont Acoustic Grand Piano');
   ok(B.report.instruments.length >= 5 && B.report.instruments.some((x) => x.track === 'Piano' && x.how === 'substitute'), 'report lists every instrument conversion');
