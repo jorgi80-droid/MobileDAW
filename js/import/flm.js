@@ -10,6 +10,7 @@
 //              CLSm (audio) = PTH1 (u16 len + "@L@\0" + path relative to the FLM user folder), STRC (u8, f64 stretch ratio, ...), PRMS (f32 gain, pan, ...)
 //     RACK: RPRM (f32 volume, f32 pan 0..1, ...), RMOd modules in signal order (prefix i32 type, u32 instance id; HEAD, DESC names, PRST preset
 //           path, PRMS f32 params with [0] = enabled, CSTM: ZONE / PATh = DirectWave sample), RSMP = Drums sampler: SMPl per pad (PTH1, PRMS)
+import { FLM_TYPES } from './fxmap.js';
 const TD = typeof TextDecoder !== 'undefined' ? new TextDecoder('utf-8') : null;
 const isTag = (u, p) => { for (let k = 0; k < 4; k++) { const c = u[p + k]; if (!((c >= 48 && c <= 57) || (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || c === 95)) return false; } return true; };
 
@@ -17,7 +18,7 @@ export function isFlm(u8) { return u8.length > 12 && u8[0] === 0x31 && u8[1] ===
 
 // FLM module type ids. Names proven by evidence inside real projects (preset folders, automation labels); every other type is named from the
 // preset path of the same type in the file when there is one, else reported as "Efek FLM #id" (never a guessed name).
-const KNOWN = { 1: 'DirectWave', 8: 'Compressor', 20: 'FX Leveller', 29: 'Autoduck', 34: 'Spacer', 43: 'Wow & Flutter' };
+const KNOWN = Object.fromEntries(Object.entries(FLM_TYPES).map(([k, v]) => [k, v.name]));
 
 export function parseFlm(buf, onProgress) {
   const u = buf instanceof Uint8Array ? buf : new Uint8Array(buf), dv = new DataView(u.buffer, u.byteOffset, u.byteLength);
@@ -119,7 +120,7 @@ export function flmToModel(P) {
   for (const ch of ordered) {
     const inst = ch.modules.find((m) => m.type === 1);                       // DirectWave: the channel's instrument (first one; layers are reported)
     const c = { kind: ch.kind, name: ch.name, hue: hue(ch.hue), gain: ch.vol / LVL0, pan: ch.pan * 2 - 1, tracks: [], pads: [],
-      modules: ch.modules.filter((m) => m !== inst).map((m) => ({ name: m.name, enabled: m.enabled, preset: m.preset && m.preset !== 'Default' ? m.preset : '', params: m.params, id: m.id, app: 'FL Studio Mobile' })) };
+      modules: ch.modules.filter((m) => m !== inst).map((m) => ({ name: m.type === 1 ? 'DirectWave (lapisan tambahan)' : m.name, enabled: m.enabled, preset: m.preset && m.preset !== 'Default' ? m.preset : '', params: m.params, id: m.id, flmType: m.type, ...(FLM_TYPES[m.type] && FLM_TYPES[m.type].sure === false ? { sure: false } : {}), app: 'FL Studio Mobile' })) };
     if (inst) {
       c.instrument = { kind: 'directwave', name: 'DirectWave', sample: inst.sample || '', library: inst.library || '', preset: inst.preset, enabled: inst.enabled };
       const extra = ch.modules.filter((m) => m.type === 1 && m !== inst).length;

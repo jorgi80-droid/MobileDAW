@@ -47,11 +47,15 @@ Dokumen lengkap: **`docs/IMPORT.md`** (format FLM yang dipetakan, aturan placeho
   `build.js` (model netral -> JSON MDAW: placeholder plugin `d.missing`, klip sample hilang + file hening, DirectWave / pad hilang tetap
   dengan pattern), `index.js` (ZIP -> parse -> build -> salin sample -> simpan -> `P.deserialize(text, onProgress)`), `ui.js` (pemilih
   file, jendela progres, laporan). `P.deserialize` kini menerima `onProgress`.
+- Lokasi sample: FLM -> `/FLM/<proyek>/<folder asli>` (folder library baru: `FOLDERS` di web.js, `TREE` di storage.js, Browser),
+  FLP/ALS -> `/Samples/Imports/<proyek>/`. Ekspor ZIP kini juga membawa sample pad drum; impor ZIP mempertahankan path folder library.
 - UI: Browser -> Proyek -> Impor proyek…, menu ⋮ -> Impor proyek FLM / FLP / Ableton. Kartu device `.dv-missing` ("[Plugin tidak
   tersedia] <nama>"), chip `.dv-miss-chip` di kartu instrumen.
 - Tes: `tools/import-test.mjs` (run-tests; `FLM_ZIP=` untuk arsip asli), `tools/import-ui-test.mjs` (`IMPORT_FILE=`; Chromium).
-- **Belum**: nama sebagian tipe efek FLM (tampil "Efek FLM #id" sampai namanya diketahui), parameter efek tidak dipetakan ke efek MDAW
-  (semua jadi placeholder), routing send / bus FLM dan routing insert FLP, otomasi parameter plugin + otomasi master, FLP diuji hanya
+- Migrasi modul -> stock plugin: `js/import/fxmap.js` (`decide`, `migrateJson` saat impor, `replaceAllMissing` di `import/ui.js`),
+  detail di IMPORT.md. Tes: bagian fxmap + null test engine di `import-test`, tombol ganti-seluruh di `import-ui-test`.
+- **Belum**: tipe efek FLM 4, 9, 16, 30, 35, 45 belum dikenali; parameter Compressor / Autoduck / Multiband / Tape Delay dll. belum
+  dikonversi (dipasang bypass lewat "ganti seluruh"), routing send / bus FLM dan routing insert FLP, otomasi parameter plugin + otomasi master, FLP diuji hanya
   dengan file buatan.
 
 ## Sesi sebelumnya (lanjutan prompt FL Studio Mobile): implementasi menyeluruh

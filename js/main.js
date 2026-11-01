@@ -87,6 +87,7 @@ function wireTransport() {
       { label: 'Ekspor MIDI (.mid)', fn: exportMidi },
       { label: 'Impor MIDI (.mid)\u2026', fn: importMidi },
       { label: 'Impor proyek FLM / FLP / Ableton (.flm .flp .als .zip)\u2026', fn: () => IMP.importDialog() },
+      { label: 'Ganti modul yang hilang dengan stock plugin\u2026', fn: () => IMP.replaceAllMissing() },
       { label: 'Ekspor proyek (.mdaw)', fn: exportMdaw },
       { label: 'Ekspor ZIP (proyek + sample)\u2026', fn: exportZip },
       { label: 'Proyek baru\u2026', fn: () => PM.newProjectDialog() },
@@ -139,6 +140,7 @@ function usedFiles() {
   for (const t of state.tracks) {
     for (const c of t.clips || []) if (c.sample && c.sample.path) set.add(c.sample.path);
     if (t.inst) { if (t.inst.sf && t.inst.sf.path) set.add(t.inst.sf.path); for (const z of t.inst.zones || []) if (z.sample && z.sample.path) set.add(z.sample.path); }
+    for (const q of (t.kind === 'drum' && t.inst && t.inst.pads) || []) { if (q.sample && q.sample.path) set.add(q.sample.path); const ci = q.chain && q.chain.inst; if (ci && ci.sample && ci.sample.path) set.add(ci.sample.path); }   // drum pads + pad chains
   }
   return [...set];
 }

@@ -49,9 +49,9 @@ const P = parseFlm(flm), M = flmToModel(P);
 ok(P.name === 'Tes FLM' && P.bpm === 150 && P.sig.join('/') === '3/4' && P.appVersion === '4.6.0', 'FLM header: name, tempo 150, 3/4, app version');
 const ch = (n) => M.channels.find((c) => c.name === n);
 ok(ch('Lead').tracks[0].clips[0].notes.length === 3 && ch('Lead').instrument.sample === 'My Samples/lead.wav', 'FLM notes track + DirectWave sample from its zone');
-ok(ch('Vokal').modules.map((m) => m.name).join() === 'Efek FLM #7,Autoduck' && ch('Vokal').modules[1].enabled === false, 'FLM modules in rack order, names from evidence, bypass from param 0');
+ok(ch('Vokal').modules.map((m) => m.name).join() === 'Graphic EQ,Autoduck' && ch('Vokal').modules[1].enabled === false, 'FLM modules in rack order, names from the module table, bypass from param 0');
 ok(Math.abs(ch('Vokal').gain - 0.6 / 0.853) < 1e-6 && Math.abs(ch('Vokal').pan - (-0.5)) < 1e-6, 'FLM channel level / pan');
-ok(ch('Lead').modules.some((m) => m.name === 'FX Leveller'), 'automation label names an unknown module type ("Gain : FX Leveller")');
+ok(ch('Lead').modules.some((m) => m.name === 'Leveller'), 'Leveller (type 20) named from the module table');
 const have = new Set(['My Tracks/vokal.wav', 'My Samples/lead.wav', 'My Samples/kick.wav']);
 const B = buildMdaw(M, { root: '/Samples/Imports/T', has: (p) => have.has(p) });
 const tr = (n) => B.json.tracks.find((t) => t.name === n);
@@ -70,6 +70,35 @@ ok(auto && auto.target.strip === voc.id && auto.clips[0].pts.length === 2 && aut
 ok(B.report.skipped.some((s) => /FX Leveller/.test(s)), 'automation of an unavailable plugin is reported, not dropped silently');
 ok(B.report.samplesMissing.includes('My Tracks/tidakada.wav') && B.report.samplesMissing.includes('My Samples/hilang.wav') && B.report.samplesFound === 3, 'report: samples found / missing');
 
+// ---------- module migration to MDAW stock plugins (js/import/fxmap.js) and the sound it keeps
+const FX = await import('../js/import/fxmap.js');
+const { Engine } = await import('../js/engine/core.js');
+const { DEVICES } = await import('../js/defs.js');
+{
+  const d = (name, params, extra = {}) => FX.decide({ name, params, ...extra });
+  const geqFlat = d('Graphic EQ', [1, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5]), geq = d('Graphic EQ', [1, 0.5, 0.75, 0.5, 0.5, 0.5, 0.5, 0.5, 0.25]);
+  ok(geqFlat.apply && geqFlat.type === 31 && geqFlat.how === 'exact' && geq.how === 'approx' && geq.params[8] === 6 && geq.params[38] === -6, 'Graphic EQ -> EQ Eight: flat = exact, band gains from the sliders (+6 dB at 160 Hz, -6 dB at 12 kHz)');
+  const lv = d('FX Leveller', [1, 0.7071, 0.5]), lv2 = d('Leveller', [1, 0.554, 0.75]);
+  ok(lv.apply && lv.type === 0 && lv.how === 'exact' && Math.abs(lv.params[0]) < 0.01 && lv2.how === 'approx' && Math.abs(lv2.params[0] - 20 * Math.log10((0.554 / 0.7071) ** 2)) < 0.01 && lv2.params[1] === 0.5, 'Leveller -> Utility gain / pan');
+  ok(d('Compressor', [0, 0.7, 0.2]).how === 'off' && d('Compressor', [0, 0.7]).bypass === true, 'a module that is OFF in the source -> its stock equivalent, bypassed');
+  ok(!d('Compressor', [1, 0.7, 0.2]).apply && d('Compressor', [1, 0.7, 0.2], {}).why === 'layout' && FX.decide({ name: 'Compressor', params: [1, 0.7] }, 'all').bypass === true, 'unverified parameters: not applied on import; "replace all" installs it bypassed');
+  ok(d('Pitcher 2', [1]).why === 'none' && d('Tape Stop', [1]).why === 'none' && d('Efek FLM #35', [1]).why === 'unknown', 'no MDAW equivalent / unidentified module -> reported, stays a placeholder');
+  ok(!d('Tape Delay', [1, 0.4, 0.6, 0.4, 0.6], { sure: false }).apply && FX.decide({ name: 'Tape Delay', params: [1], sure: false }, 'all').how === 'later', 'identity only guessed from the layout: never switched on automatically');
+  ok(d('Spacer', [1, 0.5, 0.5, 0.5, 0, 0.5, 0, 0]).how === 'exact' && !d('Spacer', [1, 0.9, 0.5, 0.5, 0, 0.5, 0, 0]).apply, 'Spacer at its neutral default -> neutral Utility; any other setting is not guessed');
+  // engine: the converted chain sounds like the original module would where the mapping is exact (null tests at the sample level)
+  const render = (devs) => { const e = new Engine(48000); e.trackInst(0, 1); devs.forEach((x, j) => { e.insertDevice(0, j, x.type); x.params.forEach((v, k) => e.devParam(0, j, k, v)); if (x.bypass) e.devBypass(0, j, true); }); e.preview(0, 45, 0.9, true); const L = new Float32Array(128), R = new Float32Array(128), out = []; for (let b = 0; b < 150; b++) { L.fill(0); R.fill(0); e.render(L, R, 128); for (let i = 0; i < 128; i++) out.push(L[i], R[i]); } return out; };
+  const diffDb = (a, b) => { let n = 0, s = 0; for (let i = 0; i < a.length; i++) { n += (a[i] - b[i]) ** 2; s += b[i] ** 2; } return n ? 10 * Math.log10(n / Math.max(1e-20, s)) : -Infinity; };
+  const dry = render([]), util = DEVICES[0].params.map((q) => q.def);
+  ok(diffDb(render([{ type: 0, params: util }]), dry) < -120, 'placeholder (neutral Utility) leaves the audio unchanged');
+  ok(diffDb(render([{ type: 4, params: DEVICES[4].params.map((q) => q.def), bypass: true }]), dry) < -120, 'a bypassed stock plugin leaves the audio unchanged ("off" modules, "replace all")');
+  ok(diffDb(render([{ type: 31, params: FX.fill(31, geqFlat.params) }]), dry) < -90, 'flat Graphic EQ -> EQ Eight: same sound (difference < -90 dB)');
+  ok(diffDb(render([{ type: 0, params: FX.fill(0, lv.params) }]), dry) < -120, 'Leveller at 0 dB -> Utility: same sound');
+  const tone = (f, devs) => { const e = new Engine(48000); devs.forEach((x, j) => { e.insertDevice(0, j, x.type); x.params.forEach((v, k) => e.devParam(0, j, k, v)); }); const n = 48000, s = new Float32Array(n), L = new Float32Array(128), R = new Float32Array(128); let i0 = 0, acc = 0, cnt = 0; const dev = e.s && e.s[0] && e.s[0].dev; if (!dev) return null; for (let b = 0; b * 128 < n; b++) { for (let i = 0; i < 128; i++) { L[i] = R[i] = 0.25 * Math.sin(2 * Math.PI * f * (b * 128 + i) / 48000); } for (const x of dev) x.process(L, R, 128); if (b * 128 > n / 2) for (let i = 0; i < 128; i++) { acc += L[i] * L[i]; cnt++; } } return 10 * Math.log10(acc / cnt / (0.25 * 0.25 / 2)); };
+  const g160 = tone(160, [{ type: 31, params: FX.fill(31, geq.params) }]), g12k = tone(12000, [{ type: 31, params: FX.fill(31, geq.params) }]);
+  if (g160 === null) console.log('     (direct device processing not exposed: band-gain check skipped)');
+  else ok(Math.abs(g160 - 6) < 1.5 && Math.abs(g12k + 6) < 1.5, `Graphic EQ conversion: +6 dB slider -> ${g160.toFixed(1)} dB at 160 Hz, -6 dB slider -> ${g12k.toFixed(1)} dB at 12 kHz`);
+}
+
 // ---------- the whole import (zip -> files -> project) with a fake storage
 const files = new Map(); let opened = null;
 const io = { home: '', saveBytes: async (p, b) => { files.set(p, b); }, writeText: async (p, t) => { files.set(p, t); }, open: async (t, prog) => { opened = JSON.parse(t); prog(0.5); prog(1); return []; } };
@@ -78,7 +107,8 @@ const zipBlob = makeZip([{ name: 'Tes/Tes FLM.flm', data: flm }, { name: 'Tes/My
 const steps = [];
 const R = await importProject('Tes.zip', new Uint8Array(await zipBlob.arrayBuffer()), io, (f, l) => steps.push([f, l]));
 ok(R.name === 'Tes FLM' && files.has('/Projects/Tes FLM.mdaw') && opened && opened.tracks.length === B.json.tracks.length, 'import: project saved as Projects/<name>.mdaw and opened');
-ok(files.has('/Samples/Imports/Tes FLM/Tes/My Tracks/vokal.wav') && [...files.keys()].some((k) => /_missing\/tidakada\.wav$/.test(k)), 'import: samples copied from the zip (path matched inside a folder), placeholders written for missing ones');
+ok(files.has('/FLM/Tes FLM/My Tracks/vokal.wav') && files.has('/FLM/Tes FLM/My Samples/lead.wav') && [...files.keys()].some((k) => /^\/FLM\/Tes FLM\/_missing\/tidakada\.wav$/.test(k)), 'import: FLM samples stored as FLM/<project>/<sample folders> (zip wrapper folder dropped), placeholders for missing ones');
+ok(opened.tracks.find((t) => t.name === 'Vokal').clips[0].sample.path === '/FLM/Tes FLM/My Tracks/vokal.wav', 'the saved .mdaw refers to the FLM/<project> paths');
 ok(steps.length > 5 && steps.every((s, k) => !k || s[0] >= steps[k - 1][0]) && steps[steps.length - 1][0] === 1, 'progress: ' + steps.length + ' steps, never going back, ends at 100 %');
 
 // ---------- Ableton .als (gzip XML)

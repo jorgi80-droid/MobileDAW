@@ -3,7 +3,10 @@
 Menu: **Browser → Proyek → Impor proyek FL Studio Mobile / FL Studio / Ableton…** (atau menu ⋮ → Impor proyek FLM / FLP / Ableton).
 Pilih `.flm`, `.flp`, `.als`, atau **ZIP** yang berisi file proyek itu beserta sample-nya (mis. ZIP ekspor FL Studio Mobile dengan folder
 `My Samples` / `My Tracks`). Jendela progres tampil selama konversi; di akhir ada laporan. Hasilnya disimpan sebagai
-`Projects/<nama>.mdaw`, sample disalin ke `Samples/Imports/<nama>/` (offline setelahnya).
+`Projects/<nama>.mdaw`. Sample proyek **FL Studio Mobile** disimpan di **`FLM/<nama proyek>/<folder sample aslinya>`** (mis.
+`FLM/Lagu Saya/My Samples/Drums/kick.wav`; folder pembungkus ZIP dibuang), sample FLP / ALS di `Samples/Imports/<nama>/`. Proyek `.mdaw`
+merujuk ke path itu, jadi tetap terbuka offline. **Ekspor ZIP** (menu ⋮) membawa semua sample di dalam ZIP dengan path yang sama
+(termasuk sample pad drum); saat ZIP itu dibuka lagi, path folder library (`FLM/...`, `Samples/sub/...`) dipertahankan.
 
 ## Alur (js/import/)
 | Langkah | File | Progres |
@@ -11,7 +14,8 @@ Pilih `.flm`, `.flp`, `.als`, atau **ZIP** yang berisi file proyek itu beserta s
 | Buka ZIP, cari file proyek, petakan sample | `index.js` (`readZip` dari `zip.js`) | 0–15 % |
 | Baca proyek | `flm.js` / `flp.js` / `als.js` → model netral | 15–30 % |
 | Konversi ke JSON MDAW | `build.js` | 30–35 % |
-| Salin sample (yang hilang: file hening pendek) | `index.js` | 35–70 % |
+| Sesuaikan modul ke stock plugin | `fxmap.js` | 30–35 % |
+| Salin sample ke `FLM/<proyek>/…` (yang hilang: file hening pendek) | `index.js` | 36–70 % |
 | Simpan + buka (decode sample, render klip stretch) | `P.deserialize(text, onProgress)` | 70–100 % |
 
 Model netral: satuan ketuk (beat), gain linear (1 = level bawaan), pan −1..1; kanal `master` / `bus` / `track` dengan `modules`
@@ -43,6 +47,28 @@ Format tidak terdokumentasi; struktur di bawah dibaca dan diverifikasi pada proy
   Tipe lain tampil sebagai **"Efek FLM #<id>"** (bukan tebakan). Tabel `KNOWN` di `flm.js` bisa dilengkapi begitu nama tipe lain
   diketahui (mis. dari screenshot rack FLM).
 - Level FLM (slider 0..1, bawaan 0,853) dipetakan relatif ke level bawaan MDAW. Velocity not 0x7FFF → 0,8.
+
+## Migrasi modul ke stock plugin MobileDAW (`js/import/fxmap.js`)
+Sumber nama / parameter modul: panduan FX FL Studio Mobile dari pemilik (30 modul) + data di proyek asli.
+- **Saat impor** (langkah "Menyesuaikan dan memproses parameter modul ke plugin bawaan…", 30–35 %), hanya konversi yang menjaga suara:
+  - Graphic EQ (8-band, 80 Hz – 12 kHz) → **EQ Eight**: 8 band bell, gain dari slider (0,5 = 0 dB, rentang ±12 dB diasumsikan) —
+    datar = persis (null test < −90 dB), diatur = perkiraan (tes: +6 dB slider → +6,0 dB di 160 Hz).
+  - Leveller → **Utility** gain / pan (0,7071 = 0 dB; null test persis di 0 dB).
+  - Spacer pada setelan netral → Utility netral (persis); setelan lain tidak ditebak.
+  - Modul yang **off** di proyek asli → stock plugin padanannya **dalam keadaan bypass** (suara identik).
+  - Analyzer / Tuner → Spectrum / Tuner (tidak mengubah audio).
+- **"Ganti seluruh modul hilang dengan stock plugin"** (tombol di laporan impor, menu ⋮): modul sisa yang punya padanan (Compressor,
+  Autoduck, Multiband Compressor, Tape Delay, Stereoizer, Waveshaper, …) menjadi stock plugin **bypass** — suara tetap seperti sebelumnya,
+  tinggal dinyalakan dan diatur; nilai asli tersimpan di `d.from`. Satu langkah Undo. Ada jendela progres dan laporan jumlah.
+- **Tidak diterapkan** (dilaporkan): modul tanpa padanan di MobileDAW (Pitcher 2, Tape Stop, Multi FX, Comb Filter, lapisan DirectWave
+  tambahan) dan tipe yang belum dikenali (`Efek FLM #id`).
+- Identitas tipe: pasti = 1 DirectWave, 7 Graphic EQ, 8 Compressor, 20 Leveller, 29 Autoduck, 34 Spacer, 36 Multiband Compressor,
+  43 Wow & Flutter; diduga dari tata letak (tidak pernah diaktifkan otomatis) = 11 Tape Delay, 25 Waveshaper, 44 Stereoizer;
+  belum dikenali = 4, 9, 16, 30, 35, 45.
+- Arsip pemilik: impor = 30 dari 70 modul diterapkan (3 persis, 25 perkiraan, 2 off); "ganti seluruh" = 50 dari 70 (20 bypass untuk
+  diatur); 20 tetap placeholder.
+- Batas yang jujur: kesamaan suara dengan FL Studio Mobile hanya bisa dibuktikan untuk konversi "persis" / bypass. Untuk Graphic EQ yang
+  diatur dan Leveller, skala nilai FLM diasumsikan; kalibrasi pasti butuh render referensi dari FLM (ekspor stem per track).
 
 ## Ableton Live (.als)
 gzip + XML (Live 9–12: MasterTrack / MainTrack). Dibaca: tempo, birama, MidiTrack / AudioTrack / ReturnTrack, volume / pan / mute, klip

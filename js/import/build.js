@@ -30,7 +30,7 @@ export function buildMdaw(M, opts) {
     const key = String(p || '').replace(/\\/g, '/').replace(/^\/+/, '');
     if (!files.has(key)) {
       const rel = key ? resolve(key) : null, base = (key.split('/').pop() || name || 'sample').replace(/\.[^.]+$/, '');
-      files.set(key, rel ? { path: root + '/' + rel, missing: false, src: rel } : { path: root + '/_missing/' + safeName(base) + '.wav', missing: true, src: key, name: base });
+      files.set(key, rel ? { path: root + '/' + (opts.relName ? opts.relName(rel) : rel), missing: false, src: rel } : { path: root + '/_missing/' + safeName(base) + '.wav', missing: true, src: key, name: base });
       const ok = !!rel;
       if (ok) report.samplesFound++; else report.samplesMissing.push(key || name || '?');
     }
@@ -40,7 +40,7 @@ export function buildMdaw(M, opts) {
   const util = DEVICES[0].params.map((q) => q.def);
   const placeholder = (m) => {
     report.plugins.set(m.name, (report.plugins.get(m.name) || 0) + 1);
-    return { id: uid(), type: 0, params: util.slice(), bypass: m.enabled === false, missing: { name: m.name, app: m.app || M.app, preset: m.preset || '', params: (m.params || []).map((v) => Math.round(v * 1e5) / 1e5) } };
+    return { id: uid(), type: 0, params: util.slice(), bypass: m.enabled === false, missing: { name: m.name, app: m.app || M.app, preset: m.preset || '', enabled: m.enabled !== false, ...(m.flmType != null ? { flmType: m.flmType } : {}), ...(m.sure === false ? { sure: false } : {}), params: (m.params || []).map((v) => Math.round(v * 1e5) / 1e5) } };
   };
   const devices = (ch) => (ch.modules || []).slice(0, 16).map(placeholder);
   const notesOf = (cl, map) => (cl.notes || []).map((n) => ({ t: Math.max(0, T(n.t)), d: Math.max(1, T(n.len)), p: map ? map(n.pitch) : clamp(Math.round(n.pitch), 0, 127), v: clamp(n.vel ?? 0.8, 0.01, 1), ...(n.pan ? { pan: clamp(n.pan, -1, 1) } : {}) })).filter((n) => n.p >= 0 && n.p <= 127);

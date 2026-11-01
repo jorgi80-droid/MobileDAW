@@ -12,12 +12,12 @@ import { prefs } from '../prefs.js';
 import { isNativeApp, saveAndShare, subFor, pickerAccept, accepts } from '../native.js';
 import { createNativeSink } from './nativesink.js';
 
-export const FOLDERS = ['/Samples', '/SoundFonts', '/Recordings', '/Projects', '/Exports', '/Presets/Mixer', '/Presets/Instruments'];
+export const FOLDERS = ['/Samples', '/SoundFonts', '/Recordings', '/Projects', '/Exports', '/Presets/Mixer', '/Presets/Instruments', '/FLM'];   // FLM/<project>/<sample folders>: samples of imported FL Studio Mobile projects
 const NO_MIRROR = /\/_autosave\.mdaw$/;   // rewritten every few seconds: stays in the app's own storage only
 const TEXT_RE = /\.(mdaw|json)$/i;
 const dcache = new Map(); let dbytes = 0; const DMAX = 2e9;   // decoded samples (LRU): a preview makes the following "add" instant, and re-adding costs no decode
 const dcDrop = (path) => { const d = dcache.get(path); if (d) { dbytes -= d.bytes; dcache.delete(path); } };
-const DROP_RE = /^\/(Samples|SoundFonts|Recordings|Exports)\//;
+const DROP_RE = /^\/(Samples|SoundFonts|Recordings|Exports|FLM)\//;
 const AUDIO_RE = /\.(wav|mp3|ogg|oga|flac|m4a|aac|opus|webm)$/i;
 
 // ------------------------------------------------------------------ file library (IndexedDB, works offline)
@@ -553,7 +553,8 @@ export function createWebBackend() {
             const { readZip } = await import('../zip.js');
             for (const e of await readZip(await f.arrayBuffer())) {
               const base = safeName(e.name.split('/').pop()), top = '/' + (e.name.split('/')[0] || '');
-              const path = /\.mdaw$/i.test(base) ? '/Projects/' + base : (FOLDERS.includes(top) && e.name.includes('/') ? top : folderFor(base)) + '/' + base;
+              const segs = e.name.split('/').filter(Boolean), keep = FOLDERS.includes(top) && segs.length > 1;   // a library folder: the whole path is kept (FLM/<project>/My Samples/..., Samples/sub/...), as the project refers to it
+              const path = /\.mdaw$/i.test(base) ? '/Projects/' + base : keep ? '/' + segs.slice(0, -1).map(safeName).join('/') + '/' + base : folderFor(base) + '/' + base;
               await lib.put(path, /\.mdaw$/i.test(base) ? new TextDecoder().decode(e.data) : e.data.slice().buffer); out.push(path);
             }
           } catch (_) { /* damaged zip: skipped */ }

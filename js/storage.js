@@ -6,7 +6,7 @@ import { log } from './log.js';
 import { isNativeApp } from './native.js';
 import { hasSaf, safPick, safFrom, safRelease } from './safdir.js';
 
-export const TREE = ['Samples', 'SoundFonts', 'Recordings', 'Exports', 'Projects', 'Presets/Mixer', 'Presets/Instruments'];
+export const TREE = ['Samples', 'SoundFonts', 'Recordings', 'Exports', 'Projects', 'Presets/Mixer', 'Presets/Instruments', 'FLM'];
 const ROOT = 'MobileDAW';
 // Android app: the system folder picker through the DawFolder plugin (js/safdir.js) instead of showDirectoryPicker
 export const canPick = () => (isNativeApp() ? hasSaf() : typeof globalThis.showDirectoryPicker === 'function');

@@ -295,7 +295,7 @@ async function doImport() {
   render();
 }
 
-const FOLDERS_UI = [['/Samples', 'Samples'], ['/SoundFonts', 'SoundFonts'], ['/Recordings', 'Recordings'], ['/Exports', 'Exports'], ['/Presets/Instruments', 'Preset instrumen'], ['/Presets/Mixer', 'Preset mixer']];
+const FOLDERS_UI = [['/Samples', 'Samples'], ['/SoundFonts', 'SoundFonts'], ['/Recordings', 'Recordings'], ['/Exports', 'Exports'], ['/Presets/Instruments', 'Preset instrumen'], ['/Presets/Mixer', 'Preset mixer'], ['/FLM', 'Proyek FLM (sample impor)']];
 async function connectFolder() {
   const r = await FS.chooseFolder();
   if (r.error) return toast(r.error, 5000);
