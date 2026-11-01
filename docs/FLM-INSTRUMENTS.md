@@ -11,9 +11,20 @@ desain Ableton Live 12 (tab, knob dengan label + nilai, layar gelap dengan kurva
 | 32 | MiniSynth | OSC · FILTER · FLT EG · LFO · MASTER · FX |
 | 33 | SuperSaw | OSC (SUPERSAW / SUPERSYNC) · FILTER · LFO · LEVEL · MOD · VOICES · FX |
 
-Instrumen lama tetap ada dengan nomor yang sama dan diberi nama **Klasik** (1 Mini Synth Klasik, 2 SuperSaw Klasik, 4 DirectWave Klasik,
-5 GMS Klasik): proyek lama terbuka dan berbunyi persis sama (golden test tetap identik). Track synth baru memakai **MiniSynth** (32).
-Pemilih instrumen menampilkan keempat instrumen FLM paling atas.
+Instrumen lama (Mini Synth / SuperSaw / DirectWave / GMS Klasik, tipe 1 / 2 / 4 / 5) **sudah diganti**: tidak ada lagi di pemilih
+instrumen, Instrument Rack, maupun chain pad drum. Proyek lama yang memakainya otomatis dibuka dengan instrumen FLM yang sama namanya
+(`migrateClassicInst` di defs.js; parameter dikonversi, nilai asli disimpan di `inst.classic`; jalur otomasi ikut ke parameter bernama
+sama). Mesin klasik masih ada di engine hanya untuk golden test dan audisi efek di browser. Track synth baru memakai **MiniSynth** (32).
+
+**Preset**: semua preset lama dipindahkan (GMS 119, MiniSynth 117, SuperSaw 113 termasuk preset FLM), kategori tetap. Konversi: cutoff Hz →
+knob 0..100, waktu envelope sama, gain → Level, oscillator GMS 1 / 2 (atau 3) → A / B dengan Balance dan oktaf → Transpose / Pitch B, Q →
+Res, envelope filter 4 oktaf → Flt Amount; SuperSaw 7 suara → Unison 7, detune (cent) sama. Arpeggiator GMS lama tidak punya padanan di GMS
+FLM (preset Arp dimainkan tertahan). `presets-test` merender setiap preset (tidak NaN, tidak terlalu pelan / keras).
+
+**Tata letak panel** (Live 12): tab di atas; di bawahnya section berjudul (Pitch, Amp Envelope, Filter, Unison …) dengan dua baris kontrol
+rapat (label / knob / nilai); display mengisi seluruh tinggi section dan membesar mengikuti tinggi panel (digambar ulang tajam), menyempit
+bila halaman akan melebihi layar; saklar on / off efek ada di judul section. Lebar kartu mengikuti isi tab. Panel efek dan instrumen Live
+lain disesuaikan tingginya otomatis (zoom 0,7–1,15×) supaya tidak terpotong dan tidak menyisakan ruang kosong.
 
 ## Alur sinyal (seperti FLM)
 not → voice manager (Poly dengan batas voice / Mono / Legato / Slide) → oscillator atau zona sample → filter (cutoff, resonance, key

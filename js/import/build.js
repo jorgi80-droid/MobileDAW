@@ -73,7 +73,7 @@ export function buildMdaw(M, opts) {
     if (zones.length) { note('DirectWave (' + zones.length + ' zona' + (zones.length < layers.length ? ', ' + (layers.length - zones.length) + ' sample hilang' : '') + ')', 'exact'); return { type: 30, params: dwParamsFromFlm((layers.find((L) => (L.params || []).length >= 33) || {}).params), pitch: 0, zones, from: { app: M.app, name: I.name, preset: I.preset || '', layers: layers.map((L) => ({ sample: L.sample, root: L.root, params: (L.params || []).map((v) => Math.round(v * 1e5) / 1e5) })) } }; }
     const gm = I.library ? gmFor(I.library) : null;
     if (gm) { needSf = true; note('SoundFont GM: ' + gm.name + ' (pengganti program library yang tidak ada di arsip)', 'substitute'); return { type: 6, params: { 0: 0.8 }, pitch: 0, sf: { path: GM_SF, preset: gm.program }, sub: { from: I.name, library: gm.label, gm: gm.name } }; }
-    note('DirectWave tanpa sample (pattern tetap)', 'missing');
+    note(I.kind === 'unknown' ? I.name + ' belum dikenal: DirectWave kosong (pattern tetap)' : 'DirectWave tanpa sample (pattern tetap)', 'missing');
     report.plugins.set((I.name || 'Instrumen') + (I.library ? ' (' + I.library.replace(/^.*\//, '').replace(/\.\w+$/, '') + ')' : ''), 1);
     return { type: 30, params: {}, pitch: 0, zones: [zoneOf(null, 60)], missing: { name: I.name || 'Instrumen', library: I.library || I.preset || '', sample: layers[0] ? layers[0].sample : '' } };
   };
@@ -84,7 +84,7 @@ export function buildMdaw(M, opts) {
   const util = DEVICES[0].params.map((q) => q.def);
   const placeholder = (m) => {
     report.plugins.set(m.name, (report.plugins.get(m.name) || 0) + 1);
-    return { id: uid(), type: 0, params: util.slice(), bypass: m.enabled === false, missing: { name: m.name, app: m.app || M.app, preset: m.preset || '', enabled: m.enabled !== false, ...(m.flmType != null ? { flmType: m.flmType } : {}), ...(m.sure === false ? { sure: false } : {}), ...(m.mix != null ? { mix: m.mix } : {}), params: (m.params || []).map((v) => Math.round(v * 1e5) / 1e5) } };
+    return { id: uid(), type: 0, params: util.slice(), bypass: m.enabled === false, missing: { name: m.name, app: m.app || M.app, preset: m.preset || '', enabled: m.enabled !== false, ...(m.flmType != null ? { flmType: m.flmType } : {}), ...(m.sure === false ? { sure: false } : {}), ...(m.mix != null ? { mix: m.mix } : {}), ...(m.id != null ? { flmId: m.id } : {}), params: (m.params || []).map((v) => Math.round(v * 1e5) / 1e5) } };
   };
   const devices = (ch) => (ch.modules || []).slice(0, 16).map(placeholder);
   const notesOf = (cl, map) => (cl.notes || []).map((n) => ({ t: Math.max(0, T(n.t)), d: Math.max(1, T(n.len)), p: map ? map(n.pitch) : clamp(Math.round(n.pitch), 0, 127), v: clamp(n.vel ?? 0.8, 0.01, 1), ...(n.pan ? { pan: clamp(n.pan, -1, 1) } : {}) })).filter((n) => n.p >= 0 && n.p <= 127);
@@ -150,6 +150,20 @@ export function buildMdaw(M, opts) {
   }
   // automation: mixer level -> an MDAW automation track on that channel's track; plugin parameters are listed (their plugin is a placeholder)
   for (const { ch, at, strip } of autoLater) {
+    if (at.target && at.target.kind === 'module' && strip != null) {           // plugin parameter: a device lane, mapped once the module is converted (index.js resolveFlmAutomation)
+      if (out.tracks.length >= MAX_TRACKS) break;
+      const host = out.tracks.find((x) => x.id === strip), dev = host && host.devices.find((d) => d.missing && d.missing.flmId === at.target.module);
+      if (!dev) { report.skipped.push(`Otomasi "${at.label || '?'}" di ${ch.name}: modulnya tidak ada di rantai`); continue; }
+      const t = { id: uid(), name: 'Auto: ' + ch.name + ' \u2022 ' + (at.label || 'Plugin'), color: '#9fb4d8', kind: 'auto', inst: null, clips: [], devices: [], vol: DEF_VOL, pan: 0, mute: false, solo: false, send: [0, 0],
+        target: { kind: 4, strip, devId: dev.id, param: -1, def: { n: at.label || 'Plugin', min: 0, max: 1 } }, flmAuto: { param: at.target.param, label: at.label || '', from: (dev.missing.params || [])[at.target.param] } };
+      for (const cl of at.clips) {
+        const len = Math.max(1, T(cl.len)), pts = (cl.points || []).map((q) => ({ t: clamp(T(q.t), 0, len), v: clamp(q.v || 0, 0, 1) })).sort((a, b) => a.t - b.t);
+        if (!pts.length) continue;
+        t.clips.push({ id: uid(), start: Math.max(0, T(cl.pos)), len, name: '', pts }); report.clips++;
+      }
+      if (t.clips.length) { out.tracks.push(t); report.tracks++; }
+      continue;
+    }
     if (!at.target || at.target.kind !== 'volume' || strip == null) { report.skipped.push(`Otomasi "${at.label || '?'}" di ${ch.name}: targetnya plugin yang tidak tersedia`); continue; }
     if (out.tracks.length >= MAX_TRACKS) break;
     const t = { id: uid(), name: 'Auto: ' + ch.name + ' • Volume', color: '#9fb4d8', kind: 'auto', inst: null, clips: [], devices: [], vol: DEF_VOL, pan: 0, mute: false, solo: false, send: [0, 0],

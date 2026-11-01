@@ -60,7 +60,7 @@ export function parseFlm(buf, onProgress) {
       const pr = prst && prst.n > 8 ? str(prst.a + 4, Math.min(prst.n - 4, u32(prst.a))) : '';
       const params = []; if (prms) for (let k = 0; k + 4 <= prms.n; k += 4) params.push(f32(prms.a + k));
       const names = desc ? [str(desc.a, 256), str(desc.a + 0x100, 256)].filter(Boolean) : [];
-      const folder = /Effect Presets\/([^/]+)\//.exec(pr); if (folder && !KNOWN[type]) presetName[type] = folder[1].replace(/\d+$/, '');
+      const folder = /Effect Presets\/([^/]+)\//.exec(pr); if (folder && !KNOWN[type]) presetName[type] = folder[1].replace(/(\S)\d+$/, '$1').trim();   // "Autoduck2" -> Autoduck, "Reverb 2" stays
       const mod = { type, id, params, enabled: !(params.length && params[0] < 0.5), preset: pr.replace(/^.*\//, '').replace(/\.(flmpst|dwp)$/i, ''), presetPath: pr, names };
       if (smpr && smpr.n >= 12) { mod.pan = f32(smpr.a) * 2 - 1; mod.level = f32(smpr.a + 4); }   // module pan / level (mix)
       if (cstm) for (const z of kids(cstm)) {                 // DirectWave: the sample of its zone (user folder) or a library program (built-in content)
@@ -139,21 +139,24 @@ export function flmToModel(P) {
     // the channel's instrument: every DirectWave layer (they all sound together in FLM -> zones of one MDAW DirectWave), else a GMS /
     // MiniSynth / SuperSaw module (recognised by its type id or by the name / preset path it stores)
     const dw = ch.modules.filter((m) => m.type === 1), syn = dw.length ? null : ch.modules.find((m) => synthOf(m));
-    const instMods = new Set(dw.length ? dw : syn ? [syn] : []);
+    // an unidentified module with a synth-sized parameter set on a notes channel is its instrument (not an effect): reported by id
+    const unk = dw.length || syn || !ch.tracks.some((t) => t.kind === 'notes') ? null : ch.modules.find((m) => !FLM_TYPES[m.type] && m.params.length >= 40);
+    const instMods = new Set(dw.length ? dw : syn ? [syn] : unk ? [unk] : []);
     const c = { kind: ch.kind, name: ch.name, hue: hue(ch.hue), gain: ch.vol / LVL0, pan: ch.pan * 2 - 1, tracks: [], pads: [],
       modules: ch.modules.filter((m) => !instMods.has(m)).map((m) => ({ name: m.name, enabled: m.enabled, ...(m.level != null && m.level < 0.999 ? { mix: m.level } : {}), preset: m.preset && m.preset !== 'Default' ? m.preset : '', params: m.params, id: m.id, flmType: m.type, ...(FLM_TYPES[m.type] && FLM_TYPES[m.type].sure === false ? { sure: false } : {}), app: 'FL Studio Mobile' })) };
     if (dw.length) {
       const lib = dw.find((m) => m.library);
       c.instrument = { kind: 'directwave', name: 'DirectWave', layers: dw.filter((m) => m.enabled && m.sample).map((m) => ({ sample: m.sample, root: m.root ?? 60, params: m.params, level: m.level ?? 1, pan: m.pan || 0 })), library: lib ? lib.library : '', preset: dw[0].preset, enabled: dw.some((m) => m.enabled) };
       if (!c.instrument.layers.length && !c.instrument.library && dw[0].sample) c.instrument.layers.push({ sample: dw[0].sample, root: dw[0].root ?? 60, params: dw[0].params, level: dw[0].level ?? 1, pan: dw[0].pan || 0 });
-    } else if (syn) { const k = synthOf(syn); c.instrument = { kind: k.kind, name: k.name, preset: syn.preset && syn.preset !== 'Default' ? syn.preset : '', params: syn.params, enabled: syn.enabled, flmType: syn.type }; }
+    } else if (unk) { c.instrument = { kind: 'unknown', name: 'Instrumen FLM #' + unk.type, preset: unk.preset && unk.preset !== 'Default' ? unk.preset : '', params: unk.params, enabled: unk.enabled, flmType: unk.type };
+    } else if (syn) { const k = synthOf(syn); c.instrument = { kind: k.kind, name: k.name, preset: syn.preset && syn.preset !== 'Default' ? syn.preset : '', params: syn.params, enabled: syn.enabled, flmType: syn.type, ...(k.kind === 'soundfont' ? { library: syn.presetPath } : {}) }; }
     c.pads = ch.pads.map((q, k) => ({ path: q.path, name: (q.path.split('/').pop() || 'Pad ' + (k + 1)).replace(/\.[^.]+$/, ''), gain: q.vol / LVL0, pan: q.pan * 2 - 1, pitch: Math.round((q.pitch - 0.5) * 48 * 1000) / 1000, env: q.params.length >= 10 ? { a: q.params[6], d: q.params[7], s: q.params[8], r: q.params[9] } : null }));   // pitch 0.5 + st / 48 (cents kept)
     for (const t of ch.tracks) {
       if (!t.clips.length && t.kind === 'automation') continue;               // empty automation slots
       const tr = { kind: t.kind, label: t.label, clips: [] };
       if (t.kind === 'automation') {
         if (t.target && t.target.module === 0 && t.target.param === 0) tr.target = { kind: 'volume' };   // mixer Level
-        else { const mod = ch.modules.find((m) => m.id === t.target.module); tr.target = { kind: 'module', name: t.label || (mod ? mod.name : '?') }; }
+        else { const mod = ch.modules.find((m) => m.id === t.target.module); tr.target = { kind: 'module', name: t.label || (mod ? mod.name : '?'), module: t.target.module, param: t.target.param }; }   // param 32705 = the module's mix (SMPR)
       }
       for (const x of t.clips) {
         const cl = { pos: x.pos, len: x.len, cycle: x.cycle, offset: x.offset, srcLen: x.srcLen, muted: x.muted };

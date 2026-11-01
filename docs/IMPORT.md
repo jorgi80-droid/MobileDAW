@@ -66,6 +66,15 @@ Format tidak terdokumentasi; struktur di bawah dibaca dan diverifikasi pada proy
 - **Penomoran nada**: root zona DirectWave FLM tersimpan 12 di bawah MIDI (Banjo.wav ber-unity 60 di chunk `smpl` / `acid`, FLM
   menyimpan 48; nada dasarnya terukur C4 = 261 Hz). Root dan not pattern digeser +12 → nada relatif sampler tetap, nada absolut benar untuk
   synth / SoundFont. Kesimpulan dari satu sample; dikonfirmasi lebih lanjut bila ada proyek FLM dengan synth.
+- **Proyek pemilik ke-2 (HIPDUT, 42 kanal)**: dari folder preset / file: tipe 2 = **GMSynth** (`.flgsynth`), 23 = **SuperSaw**, 52 =
+  **pemutar SoundFont** (sf2 bawaan FLM → pengganti SoundFont GM menurut nama: BAS → Synth Bass, LED → Saw Lead, PAD → Pad …), 6 =
+  Distortion, 15 = Stereoizer, 32 = Reverb, 35 = Reverb 2, 42 = Tape Stop, 46 = Tremolo. Tebakan lama "44 = Stereoizer" dicabut.
+  Modul tak dikenal berparameter banyak (≥ 40) di kanal not = instrumennya (dilaporkan "Instrumen FLM #39"); tipe 48 (3 parameter, selalu
+  sebelum instrumen) kemungkinan Note Effect, belum dikenali.
+- **Otomasi parameter plugin** (sebelumnya hanya volume): jalur otomasi device ke plugin hasil konversi — Tape Stop "Toggle Play" (param 5)
+  → Play (step, berbunyi sampai titiknya lalu berhenti), mix modul (id 32705) → Dry/Wet, Leveller gain / pan → Utility, band Graphic EQ →
+  EQ Eight (nilai dikonversi seperti modulnya). Otomasi ke modul yang tetap placeholder dihapus dan dilaporkan.
+- **Tape Stop** sekarang ada di MobileDAW (efek 52, `js/engine/fx8.js`): Play, Sync, Start / Stop Time (detik atau ketukan), Warp.
 - Belum terbaca: urutan nilai tab Sample / Filter DirectWave di `PRMS[1..16]` (disimpan mentah; mis. lapisan Banjo berbeda di `PRMS[3]`
   0,236 vs 0,5 — kemungkinan Fine Tune −53 ct, belum terbukti), chunk `KEYB` (pengaturan akor keyboard FLM, JSON), `META` (tanggal).
   `SEND` dibaca: semua kanal arsip pemilik ke Master dengan level bawaan.

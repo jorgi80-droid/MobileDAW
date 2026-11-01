@@ -8,7 +8,7 @@ import { parseFlm, flmToModel, isFlm } from './flm.js';
 import { parseFlp, isFlp } from './flp.js';
 import { parseAls, isAls } from './als.js';
 import { buildMdaw, safeName } from './build.js';
-import { migrateJson, describe } from './fxmap.js';
+import { migrateJson, describe, resolveFlmAutomation } from './fxmap.js';
 
 export const IMPORT_EXT = /\.(flm|flp|als|zip)$/i;
 const yieldUI = () => new Promise((r) => setTimeout(r, 0));
@@ -65,6 +65,7 @@ export async function importProject(fileName, buf, io, onProgress = () => {}) {
   json.name = name;
   // 3b. modules MDAW does not have -> stock plugins where the sound is kept (io.fxMode 'map' | 'all' | 'none')
   const fx = io.fxMode === 'none' ? null : await migrateJson(json, io.fxMode || 'map', (f) => onProgress(0.3 + 0.05 * f, 'Menyesuaikan dan memproses parameter modul ke plugin bawaan\u2026'));
+  resolveFlmAutomation(json, report);                                      // plugin automation lanes -> the converted device's parameter (or reported)
   // 4. samples (35 - 70 %)
   for (let k = 0; k < files.length; k++) {
     const f = files[k];

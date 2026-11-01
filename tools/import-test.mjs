@@ -95,11 +95,41 @@ ok(lead.kind === 'midi' && lead.inst.type === 30 && lead.inst.zones[0].sample.pa
 const lc = lead.clips[0];
 ok(lc.start === 8 * 960 && lc.len === 12 * 960 && lc.ll === 4 * 960 && lc.lp === 2 * 960 && lc.notes.length === 3 && lc.notes[1].t === 960 && lc.notes[0].d === 480, 'pattern clip: cycle 4 beats, loop position 2, length 12 (repeats without copying notes)');
 ok(drum.kind === 'drum' && drum.inst.pads.length === 2 && drum.inst.pads[1].mute && !drum.inst.pads[1].sample && drum.clips[0].notes.map((n) => n.p).join() === '36,37,36', 'drums: pads from the sampler, missing pad kept (muted), steps kept');
-const auto = B.json.tracks.find((t) => t.kind === 'auto');
+const auto = B.json.tracks.find((t) => t.kind === 'auto' && t.target.kind === 0);
 ok(auto && auto.target.strip === voc.id && auto.clips[0].pts.length === 2 && auto.clips[0].pts[1].t === 4 * 960, 'mixer Level automation -> MDAW volume automation on that track');
-ok(B.report.skipped.some((s) => /FX Leveller/.test(s)), 'automation of an unavailable plugin is reported, not dropped silently');
+{ const FXa = await import('../js/import/fxmap.js'), J = structuredClone(B.json), R0 = { skipped: [], tracks: 0 }; await FXa.migrateJson(J, 'map'); FXa.resolveFlmAutomation(J, R0);
+  const ln = J.tracks.find((t) => t.kind === 'auto' && t.target.kind === 4), dv = ln && J.tracks.find((t) => t.id === ln.target.strip).devices.find((x) => x.id === ln.target.devId);
+  ok(ln && dv && dv.type === 0 && ln.target.param === 0 && ln.clips[0].pts[0].v === 0, 'Leveller "Gain" automation -> Utility Gain lane, FLM slider converted like the module (near 0 -> -60 dB = bottom of the lane)');
+  const J2 = structuredClone(B.json); J2.tracks.forEach((t) => t.devices.forEach((x) => { if (x.missing && x.missing.name === 'Leveller') x.missing.name = 'Efek FLM #99'; })); await FXa.migrateJson(J2, 'map'); const R2 = { skipped: [], tracks: 9 }; FXa.resolveFlmAutomation(J2, R2);
+  ok(!J2.tracks.some((t) => t.flmAuto) && R2.skipped.some((s) => /FX Leveller/.test(s)), 'automation of a plugin that stays a placeholder is removed and reported, not dropped silently'); }
 ok(B.report.samplesMissing.includes('My Tracks/tidakada.wav') && B.report.samplesMissing.includes('My Samples/hilang.wav') && B.report.samplesFound === 4, 'report: samples found / missing');
 
+// ---------- 2nd owner project layout: SuperSaw (23) / SoundFont (52) / unknown instrument (39), Tape Stop (42) with "Toggle Play" automation
+{
+  const mod = (type, id, params, preset = 'Default/Default') => ck('RMOd', i32(type), u32(id), ck('HEAD', new Uint8Array(9)), ck('DESC', fixed('Default', 256), fixed('Default', 256), new Uint8Array(4)), ck('PRST', u32(preset.length), asc(preset)), ck('ADD1', new Uint8Array(3)), ck('PRMS', f32s(...params)), ck('SMPR', f32s(0.5, 1, 0.5)));
+  const rack = (mods) => ck('RACK', u32(0x100), asc('10KR'), ck('RHED', new Uint8Array(16)), ck('RPRM', f32s(0.853, 0.5, 0, 0, 0.5, 0)), ...mods);
+  const desc = (kind, m = -1, prm = -1, label = '') => ck('DESc', i32(kind), i32(m), i32(prm), new Uint8Array(16), fixed(label, 1024));
+  const clhd = (len, cyc) => ck('CLHd', f64(len), f64(cyc), f64(0), i32(1), f64(0), new Uint8Array([0]));
+  const evn = (recs) => ck('EVN2', u16(20), ...recs.map((r) => cat(u32(r.t * 128), f64(r.len || 0), u16(r.p), u16(32767), u16(r.v ?? 32767), u16(0))));
+  const clip = (pos, ...kids) => ck('CLIP', u32(pos * 128), asc('20LC'), ...kids);
+  const chnl = (name, n, ...trk) => ck('CHNL', u32(0x100), asc('20HC'), ck('CHHD', fixed(name, 1024), new Uint8Array(8), f32s(n, 0.3), new Uint8Array(0x438 - 1040), u32(n)), ...trk);
+  const notes = ck('TRKH', desc(0), clip(0, clhd(4, 4), ck('ZOOM', new Uint8Array(32)), evn([{ t: 0, len: 1, p: 48 }])));
+  const f = cat(asc('10LF'), ck('HEAD', u32(0), u32(2), fixed('T2', 256), new Uint8Array(0x108 - 264), f64(130), new Uint8Array(32), asc('4.7.0')), ck('TDIV', new Uint8Array([4, 4])),
+    ck('RACK', u32(0), asc('10KR'), ck('RHED', new Uint8Array(16)), ck('RPRM', f32s(0.853, 0.5, 0, 0, 0.5, 0))),
+    rack([mod(23, 3, [1, ...Array(59).fill(0.5)], 'Resources/Synth Presets2/SuperSaw/Pads/Pad Warm.flmpst'), mod(42, 9, [1, 0.073, 0, 0.333, 0.333, 1, 0.5, 0])]),
+    rack([mod(52, 4, [1, 0, 1, 1, 0.21, 1], 'Resources/SoundFonts/BAS Pro6Solid.sf2')]), rack([mod(48, 5, [1, 0.5, 0.5]), mod(39, 6, Array(149).fill(0.5))]),
+    ck('CHNL', u32(0), asc('20HC'), ck('CHHD', fixed('MASTER', 1024), new Uint8Array(8), f32s(0, 0.3), new Uint8Array(0x438 - 1040), u32(0)), ck('TRKH', desc(1))),
+    chnl('Pad', 1, notes, ck('TRKH', desc(1, 9, 5, 'Toggle Play : Tape Stop'), clip(8, clhd(4, 4), ck('ZOOM', new Uint8Array(32)), evn([{ t: 3, p: 6, v: 0 }])))), chnl('Bass', 2, notes), chnl('Rhythm', 3, notes));
+  const M2 = flmToModel(parseFlm(f)), B2 = buildMdaw(M2, { root: '/FLM/T2', has: () => false });
+  const S2 = await (await import('../js/import/fxmap.js')).migrateJson(B2.json, 'map'); (await import('../js/import/fxmap.js')).resolveFlmAutomation(B2.json, B2.report);
+  const tt = (n) => B2.json.tracks.find((t) => t.name === n), pad = tt('Pad'), ts = pad.devices.find((d) => d.type === 52), lane = B2.json.tracks.find((t) => t.kind === 'auto');
+  ok(M2.channels.find((c) => c.name === 'Pad').instrument.kind === 'supersaw' && pad.inst.type === 33, 'FLM type 23 (SuperSaw) -> MobileDAW SuperSaw, not an effect');
+  ok(tt('Bass').inst.type === 6 && tt('Bass').inst.sub && tt('Bass').inst.sub.gm === 'Synth Bass 1', 'FLM SoundFont Player (52) "BAS Pro6Solid.sf2" (FLM content) -> General MIDI Synth Bass 1 substitute');
+  ok(tt('Rhythm').inst.missing && /Instrumen FLM #39/.test(tt('Rhythm').inst.missing.name), 'unidentified synth-sized module (39) on a notes channel = its instrument, reported by id');
+  ok(ts && ts.params[0] === 1 && !ts.bypass && S2.total >= 1, 'Tape Stop (42) -> MobileDAW Tape Stop (52), Play from the module');
+  ok(lane && lane.target.kind === 4 && lane.target.devId === ts.id && lane.target.param === 0 && lane.clips[0].start === 8 * 960 && lane.clips[0].pts.map((q) => q.t + ':' + q.v + ':' + q.s).join() === '0:1:1,2880:0:1',
+    '"Toggle Play : Tape Stop" automation -> Tape Stop Play lane, stepped: playing until beat 3 of the clip, then stop');
+}
 // ---------- module migration to MDAW stock plugins (js/import/fxmap.js) and the sound it keeps
 const FX = await import('../js/import/fxmap.js');
 const { Engine } = await import('../js/engine/core.js');
@@ -112,7 +142,7 @@ const { DEVICES } = await import('../js/defs.js');
   ok(lv.apply && lv.type === 0 && lv.how === 'exact' && Math.abs(lv.params[0]) < 0.01 && lv2.how === 'approx' && Math.abs(lv2.params[0] - 20 * Math.log10((0.554 / 0.7071) ** 2)) < 0.01 && lv2.params[1] === 0.5, 'Leveller -> Utility gain / pan');
   ok(d('Compressor', [0, 0.7, 0.2]).how === 'off' && d('Compressor', [0, 0.7]).bypass === true, 'a module that is OFF in the source -> its stock equivalent, bypassed');
   ok(!d('Compressor', [1, 0.7, 0.2]).apply && d('Compressor', [1, 0.7, 0.2], {}).why === 'layout' && FX.decide({ name: 'Compressor', params: [1, 0.7] }, 'all').bypass === true, 'unverified parameters: not applied on import; "replace all" installs it bypassed');
-  ok(d('Pitcher 2', [1]).why === 'none' && d('Tape Stop', [1]).why === 'none' && d('Efek FLM #35', [1]).why === 'unknown', 'no MDAW equivalent / unidentified module -> reported, stays a placeholder');
+  ok(d('Pitcher 2', [1]).why === 'none' && d('Comb Filter', [1]).why === 'none' && d('Efek FLM #99', [1]).why === 'unknown', 'no MDAW equivalent / unidentified module -> reported, stays a placeholder');
   ok(!d('Tape Delay', [1, 0.4, 0.6, 0.4, 0.6], { sure: false }).apply && FX.decide({ name: 'Tape Delay', params: [1], sure: false }, 'all').how === 'later', 'identity only guessed from the layout: never switched on automatically');
   ok(d('Spacer', [1, 0.5, 0.5, 0.5, 0, 0.5, 0, 0]).how === 'exact' && !d('Spacer', [1, 0.9, 0.5, 0.5, 0, 0.5, 0, 0]).apply, 'Spacer at its neutral default -> neutral Utility; any other setting is not guessed');
   // engine: the converted chain sounds like the original module would where the mapping is exact (null tests at the sample level)

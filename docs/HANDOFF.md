@@ -168,6 +168,16 @@ Peta lengkap per layar: **`docs/GESTURES.md`**. Ringkasan teknis:
 - Tes: `tools/pdc-test.mjs`, `tools/export-test.mjs` (keduanya di run-tests), golden `core-pdc` (identik), `tools/engine-e2e.mjs` (Chromium
   sungguhan: latensi dari worklet + ekspor mono 44,1 kHz 24-bit; butuh Playwright, tidak di CI).
 
+## Instrumen lama diganti, preset dipindah, tata letak panel, Tape Stop (sesi ini)
+- Tipe 1 / 2 / 4 / 5 tidak ditawarkan lagi (INST_LIST, IRACK_INSTS, PAD_INSTS); `project.js migrateClassic` mengonversi proyek lama saat
+  dibuka (defs.js `migrateClassicInst` / `CLASSIC_TO_FLM`), preset lama dikonversi ke 31 / 32 / 33 di akhir defs.js. Engine klasik tetap
+  (golden, audisi efek browser.js).
+- Panel FLM (`fxkit.js` flmTabs / FS / FC / FT / flmCanvas): section berjudul, grid 2 baris (`.flm-g`), display `flmCanvas` mengisi
+  tinggi section (ResizeObserver, `_maxW` saat halaman melebihi layar). Kartu `.flm-card` lebar = isi. `devices.js fitKit`: zoom panel Live
+  lain agar muat tinggi panel (0,7–1,15×); `lvDrag` sudah menormalkan koordinat jadi aman untuk zoom.
+- Tape Stop = device 52 (`fx8.js`, buffer cincin, kecepatan turun / naik dengan kurva Warp, crossfade ke live). fx-test: tes khusus.
+- Impor FLM: `fxmap.js resolveFlmAutomation` (otomasi plugin), FLM_TYPES baru (2 / 23 / 52 synth, 6 / 15 / 32 / 35 / 42 / 46 efek).
+
 ## Instrumen FL Studio Mobile: DirectWave / GMS / MiniSynth / SuperSaw (tipe 30-33, sesi ini)
 - Mesin `js/engine/flmsyn.js` (kelas FlmDirectWave / FlmGms / FlmMiniSynth / FlmSuperSaw, dasar bersama `Voices`: poly dengan batas,
   mono, legato, slide konstan / per oktaf; `Svf` filter ZDF; LFO per voice Hertz / One Shot / tempo; FX Delay / ModDelay / Phaser / Reverb /

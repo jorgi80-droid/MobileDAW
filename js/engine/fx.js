@@ -5,6 +5,7 @@ import { Amp, Cabinet, Overdrive, Pedal, DynTube, MultibandDyn, Resonators, Corp
 import { SpectralTime, SpectralResonator } from './fx5.js';
 import { LfoMod, ShaperMod, EnvFollower } from './fx6.js';
 import { AudioEffectRack } from './fx7.js';
+import { TapeStop } from './fx8.js';
 import { TWO_PI, clamp, dbToLin, linToDb, Biquad, fft, fastLog2, fastPow2, fastTanh, Os4, OS4_LATENCY } from './dsp.js';
 
 const tanh = fastTanh;
@@ -629,5 +630,5 @@ class MiniMeters extends Fx {
 
 const TYPES = [Utility, AutoFilter, Eq3, Saturator, Compressor, Limiter, Echo, Reverb, ParametricEq, Roar, Autoduck, null, Levelness, Analyzer, Stereolizer, Spacer, MiniMeters,
   Delay, FilterDelay, BeatRepeat, ChorusEnsemble, PhaserFlanger, AutoPan, Gate, GlueComp, ChannelEq, Erosion, Redux, VinylDist, DrumBuss, Tuner, EqEight, Spectrum,
-  Amp, Cabinet, Overdrive, Pedal, DynTube, MultibandDyn, Resonators, Corpus, Vocoder, Shifter, GrainDelay, HybridReverb, Looper, SpectralTime, SpectralResonator, LfoMod, ShaperMod, EnvFollower, AudioEffectRack];   // 17.. = Live 12 set (fx3.js)
+  Amp, Cabinet, Overdrive, Pedal, DynTube, MultibandDyn, Resonators, Corpus, Vocoder, Shifter, GrainDelay, HybridReverb, Looper, SpectralTime, SpectralResonator, LfoMod, ShaperMod, EnvFollower, AudioEffectRack, TapeStop];   // 52 Tape Stop (fx8.js)   // 17.. = Live 12 set (fx3.js)
 export function makeDevice(type, sr, sc) { const C = TYPES[type]; return C ? new C(sr, sc) : null; }

@@ -15,7 +15,7 @@ function render(type, p) {
   for (let b = 0; b < Math.ceil(4 * SR / B); b++) { e.render(L, R, B); for (let i = 0; i < B; i++) { const a = Math.abs(L[i]), c = Math.abs(R[i]); if (!Number.isFinite(a + c)) nan = true; pk = Math.max(pk, a, c); ss += L[i] * L[i]; n++; } }
   return { pk, rms: Math.sqrt(ss / n), nan };
 }
-for (const t of [1, 2, 5, 7, 8]) {
+for (const t of [1, 2, 5, 7, 8, 31, 32, 33]) {   // 31 .. 33: FL Studio Mobile GMS / MiniSynth / SuperSaw with the classic presets moved over
   const def = D.INSTRUMENTS[t], L = D.PRESETS[t], names = new Set(L.map((x) => x.name));
   ok(L.length >= 100, `${def.name}: ${L.length} presets`); ok(names.size === L.length, `${def.name}: duplicate names`);
   for (const pr of L) for (const [k, v] of Object.entries(pr.p)) { const q = def.params[k]; ok(q && v >= q.min && v <= q.max && (!q.step || Math.abs(v / q.step - Math.round(v / q.step)) < 1e-9), `${def.name} / ${pr.name}: param ${k} = ${v}`); }

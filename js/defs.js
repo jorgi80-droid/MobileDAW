@@ -1,11 +1,12 @@
 import { factoryPresets } from './presetlib.js';
 import { wtName, WT_COUNT } from './engine/live.js';
 import { FLM_SYNC, GMS_FX, GMS_WAVES, MINI_KINDS, SS_LFO_DEST } from './engine/flmsyn.js';
+import { TS_BEATS } from './engine/fx8.js';
 // Instrument + device definitions. Parameter ORDER must match the C++ side
 // (app/src/main/cpp/instruments.h and devices.h).
 export const INST = { FLM_DW: 30, FLM_GMS: 31, FLM_MINI: 32, FLM_SAW: 33, MINISYNTH: 1, SUPERSAW: 2, DRUM: 3, DIRECTWAVE: 4, GMS: 5, SOUNDFONT: 6, MOISTURE: 7, OSPHERE: 8, KEYSTONE: 9, SAMPLER: 10, WAVETABLE: 11, SIMPLER: 18, IMPULSE: 28, GRANULATOR: 29 };
 // Instruments a synth/sampler track can switch between (drums have their own track type).
-export const INST_LIST = [30, 31, 32, 33, 18, 17, 16, 15, 14, 13, 11, 10, 28, 29, 25, 26, 27, 19, 20, 21, 22, 23, 24, 6, 7, 8, 9, 12, 1, 2, 4, 5];   // FLM instruments first, the classic engines last
+export const INST_LIST = [30, 31, 32, 33, 18, 17, 16, 15, 14, 13, 11, 10, 28, 29, 25, 26, 27, 19, 20, 21, 22, 23, 24, 6, 7, 8, 9, 12];   // FLM instruments first; the classic Mini Synth / SuperSaw / DirectWave / GMS are replaced by them
 
 export const INSTRUMENTS = {
   1: { name: 'Mini Synth', params: [
@@ -697,6 +698,9 @@ INSTRUMENTS[29] = { name: 'Granulator III', view: 'kit', full: true, sampler: tr
     q(`M${m + 1} Lo`, -1e6, 1e6, 0, H), q(`M${m + 1} Hi`, -1e6, 1e6, 1, H), q(`M${m + 1} Log`, 0, 1, 0, { step: 1, ...H }), q(`M${m + 1} Min`, 0, 1, 0, { unit: '%' }), q(`M${m + 1} Max`, 0, 1, 1, { unit: '%' }));
   P.push(q('Chain Selector', 0, 127, 0, { step: 1, fmt: 'num' })); for (let c = 0; c < 8; c++) P.push(q(`Chain ${c + 1} Zone Low`, 0, 127, 0, { step: 1, fmt: 'num' }), q(`Chain ${c + 1} Zone High`, 0, 127, 127, { step: 1, fmt: 'num' }));
   DEVICES[51] = { name: 'Audio Effect Rack', kit: true, rack: true, params: P };
+  // Tape Stop (FL Studio Mobile style, engine js/engine/fx8.js): Play is the switch to automate ("Toggle Play")
+  DEVICES[52] = { name: 'Tape Stop', params: [onoff('Play', 1), onoff('Sync', 1), q('Start Time', 0.005, 8, 0.5, { curve: 'log', unit: 's' }), list('Start Beats', TS_BEATS, 3),
+    q('Stop Time', 0.005, 8, 0.5, { curve: 'log', unit: 's' }), list('Stop Beats', TS_BEATS, 2), q('Warp', 0, 1, 0.5, { unit: '%' })] };
   // Instrument Rack (instrument type 12): the same rack parameters plus key and velocity zones per chain; stored at 100 + k in the instrument
   // parameters (90 is the engine's Pitch), so INSTRUMENTS[12].params starts with 100 hidden placeholders
   const IP = P.map((x) => (/ Device$/.test(x.n) ? { ...x, min: -1 } : x));
@@ -707,7 +711,7 @@ INSTRUMENTS[29] = { name: 'Granulator III', view: 'kit', full: true, sampler: tr
 }
 
 // Audio effect categories as in Live 12's browser. Older devices that have no Live 12 counterpart stay loadable under 'Lainnya (lama)'.
-export const FX_GROUPS = [['loop', 'Delay & Loop', [19, 17, 6, 18, 43, 45, 46]], ['drive', 'Drive & Color', [33, 34, 29, 37, 26, 27, 35, 36, 9, 3, 28]], ['dyn', 'Dynamics', [4, 23, 24, 5, 38]],
+export const FX_GROUPS = [['loop', 'Delay & Loop', [19, 17, 6, 18, 43, 45, 46, 52]], ['drive', 'Drive & Color', [33, 34, 29, 37, 26, 27, 35, 36, 9, 3, 28]], ['dyn', 'Dynamics', [4, 23, 24, 5, 38]],
   ['eq', 'EQ & Filters', [1, 25, 31, 2]], ['mod', 'Pitch & Modulation', [22, 20, 21, 42]], ['rev', 'Reverb & Resonance', [40, 44, 39, 7, 47, 41]], ['modu', 'Modulators', [50, 48, 49]], ['util', 'Utilities', [51, 0, 32, 30, 16]], ['old', 'Lainnya (lama)', [8, 13, 10, 12, 14, 15]]];
 
 // Parameter <-> 0..1 mapping shared by knobs, automation editing and the engine sync.
@@ -991,5 +995,67 @@ export function fmtParam(p, v) {
     const all = [...(PRESETS[t] || []), ...L], order = [];
     for (const x of all) if (!order.includes(x.cat)) order.push(x.cat);
     PRESETS[t] = order.flatMap((c) => all.filter((x) => x.cat === c));
+  }
+}
+
+// classic engine -> FL Studio Mobile instrument (the classic ones are no longer offered; old projects are converted when they open)
+export const CLASSIC_TO_FLM = { 1: 32, 2: 33, 5: 31, 4: 30 };
+const CLASSIC_CONV = {}, CLASSIC_IDX = {};
+// inst = { type, params, zones, ... } of a classic engine -> the same object converted in place (type, params); false when not classic
+export function migrateClassicInst(inst) {
+  const to = inst && CLASSIC_TO_FLM[inst.type];
+  if (!to || !CLASSIC_CONV[to]) return false;
+  const from = inst.type, old = inst.params || {};
+  inst.params = CLASSIC_IDX.fn(to, CLASSIC_CONV[to](old, INSTRUMENTS[from].params));
+  inst.type = to; inst.classic = { type: from, params: old };                  // the original values stay with the instrument
+  return true;
+}
+// ---- the classic presets moved to the FL Studio Mobile instruments: every Mini Synth / SuperSaw / GMS Klasik preset (hand-made + factory
+// library) converted to MiniSynth (32) / SuperSaw (33) / GMS (31) parameters, appended after the FLM presets under the same categories.
+// Conversion (same units where they exist): cutoff Hz -> FLM 0..100 knob (20 Hz .. 20 kHz log), envelope seconds kept, gain -> Level,
+// GMS oscillators 1 / 2 (or 3 when 2 is silent) -> A / B with Balance from their levels and octaves -> Transpose / Pitch B, resonance Q -> Res,
+// 4-octave filter envelope -> Flt Amount; SuperSaw 7 voices -> Unison 7 with the same detune in cents. The classic GMS arpeggiator has no
+// FLM GMS counterpart (arp presets play their notes held).
+{
+  const cutK = (hz) => Math.round(Math.max(0, Math.min(100, 100 * Math.log(Math.max(20, hz) / 20) / Math.log(1000))) * 10) / 10;
+  const r3 = (x) => Math.round(x * 1000) / 1000, cl = (v, a, b) => Math.max(a, Math.min(b, v)), dB = (x) => Math.round(20 * Math.log10(Math.max(1e-4, x)) * 10) / 10;
+  const idx = (type, n) => INSTRUMENTS[type].params.findIndex((q) => q.n === n);
+  const conv = CLASSIC_CONV;
+  Object.assign(conv, {
+    32: (p, d) => {                                                              // Mini Synth Klasik: Wave, Cutoff, A, D, S, R, Gain
+      const g = (k) => p[k] ?? d[k].def, w = Math.round(g(0)), cut = w === 2 ? Math.max(150, g(1) * 0.5) : g(1);   // triangle: a darker saw (no triangle kind in FLM MiniSynth)
+      return { 'Oscillator Kind': w === 1 ? 2 : 1, Modifier: 0, Cutoff: cutK(cut), Attack: r3(g(2)), Decay: r3(g(3)), Sustain: r3(g(4)), Release: r3(g(5)),
+        Level: cl(dB(g(6) / (w === 1 ? 0.19 : 0.209)), -60, 6) };
+    },
+    33: (p, d) => {                                                              // SuperSaw Klasik: Detune ct, Mix, Cutoff, Attack, Release, Gain
+      const g = (k) => p[k] ?? d[k].def, m = g(1), amp = Math.sqrt((1 - m / 2) ** 2 + 6 * (m / 2) ** 2) * g(5) * 0.72;
+      return { Unison: 6, Detune: cl(Math.round(g(0)), 0, 100), 'Unison Pan': 90, 'Dtn. Spread': 50, Cutoff: cutK(g(2)), Attack: r3(g(3)), Decay: 0.1, Sustain: 1, Release: r3(g(4)),
+        'Output Level': cl(Math.round(100 * amp / 0.19), 1, 100), Poly: 16 };
+    },
+    31: (p, d) => {                                                              // GMS Klasik
+      const g = (k) => p[k] ?? d[k].def, W = [3, 4, 2, 1];
+      const o = [0, 1, 2].map((j) => ({ wave: Math.round(g(10 + j * 4)), oct: Math.round(g(11 + j * 4)), fine: g(12 + j * 4), lv: g(13 + j * 4) }));
+      const A = o[0], B = o[1].lv >= o[2].lv ? o[1] : o[2], sum = A.lv + B.lv, bal = sum > 0 ? B.lv / sum : 0;
+      const q = g(3), res = Math.round(Math.sqrt(cl((q - 0.5) / 9.5, 0, 1)) * 100);
+      return { Cutoff: cutK(g(2)), Res: res, Kind: 1, 'Flt Attack': 0.001, 'Flt Decay': r3(cl(g(6) * 1.38, 0.001, 10)), 'Flt Amount': cl(Math.round(g(4) * 400 / 6), -100, 100),
+        'Osc A': W[A.wave] ?? 3, 'Osc B': W[B.wave] ?? 3, 'Pitch B': cl((B.oct - A.oct) * 12, -24, 24), 'Fine B': cl(Math.round(B.fine - A.fine), -100, 100), Balance: Math.round((bal * 2 - 1) * 100),
+        'Mod Amount': 0, 'Mod Kind': 0, Transpose: cl(A.oct * 12, -24, 24), Mono: g(0) > 0.5 ? 1 : 0, Slide: r3(cl(g(1) / 1000, 0.001, 2)),
+        Atk: r3(g(5)), Dec: r3(g(6)), Sus: r3(g(7)), Rel: r3(g(8)), Level: cl(dB(g(9) * Math.max(0.05, A.lv + B.lv + o[2].lv * (B === o[2] ? 0 : 1)) / 0.2), -60, 6) };
+    },
+    30: (p, d) => {                                                              // DirectWave Klasik: Gain, Attack, Release, Cutoff, Tune, Vel Sens, Mode (one-shot = long release)
+      const g = (k) => p[k] ?? d[k].def;
+      return { Level: cl(dB(g(0) / 0.8), -60, 6), Attack: r3(cl(g(1), 0.001, 10)), Decay: 1, Sustain: 1, Release: g(6) > 0.5 ? 10 : r3(cl(g(2), 0.001, 10)), Cutoff: g(3) >= 17999 ? 100 : cutK(g(3)), Filter: 1, Pitch: cl(Math.round(g(4)), -24, 24) };
+    },
+  });
+  CLASSIC_IDX.fn = (to, vals) => { const p = {}; for (const [n, v] of Object.entries(vals)) { const k = idx(to, n); if (k < 0) throw new Error('preset conv ' + n); const q = INSTRUMENTS[to].params[k]; p[k] = Math.max(q.min, Math.min(q.max, q.step ? Math.round(v / q.step) * q.step : v)); } return p; };
+  for (const [to, from] of [[32, 1], [33, 2], [31, 5]]) {
+    const dF = INSTRUMENTS[from].params, out = PRESETS[to] || [], names = new Set(out.map((x) => x.name));
+    for (const pr of PRESETS[from] || []) {
+      const p = CLASSIC_IDX.fn(to, conv[to](pr.p || {}, dF));
+      let name = pr.name; if (names.has(name)) name += ' (Klasik)'; names.add(name);
+      out.push({ cat: pr.cat, name, p, from: { type: from, name: pr.name } });
+    }
+    const order = []; for (const x of out) if (!order.includes(x.cat)) order.push(x.cat);   // one heading per category in the menu
+    PRESETS[to] = order.flatMap((c) => out.filter((x) => x.cat === c));
   }
 }

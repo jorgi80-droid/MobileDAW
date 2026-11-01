@@ -165,7 +165,7 @@ function instCard(i, t, o = {}) {
   }
   if (!o.floating) head.append(popBtn(() => openInstWindow(t.id)));
   if (!o.floating) head.append(foldBtn(fk, false));
-  if (def.view === 'kit') { const kv = instKitView(i, t, o.every || every); if (kv) return h('div', { class: 'card lkcard lvcard' }, head, def.zones ? h('div', { class: 'inst-row' }, h('div', { class: 'inst-side' }, zonePanel(i, t)), kv.el) : kv.el); }   // FLM DirectWave: zone list + panel   // Live 12 instruments (fxkit.js VI)
+  if (def.view === 'kit') { const kv = instKitView(i, t, o.every || every); if (kv) return h('div', { class: 'card lkcard lvcard' + (def.flm ? ' flm-card flm-t' + t.inst.type : '') }, head, def.zones ? h('div', { class: 'inst-row' }, h('div', { class: 'inst-side' }, zonePanel(i, t)), kv.el) : kv.el); }   // FLM DirectWave: zone list + panel   // Live 12 instruments (fxkit.js VI)
   if (def.view === 'irack') { const rv = irackView(i, t, o.every || every); return h('div', { class: 'card lkcard lvcard' }, head, rv.el); }   // Instrument Rack (fxkit.js rackPanel)
   if (def.view === 'lsampler' || def.view === 'lwavetable') {
     const pn = def.view === 'lsampler' ? samplerPanel(i, t) : wavetablePanel(i, t);
@@ -380,8 +380,26 @@ function flip(scroll, before) {
     else if (Math.abs(x0 - x1) > 1) el.animate([{ transform: `translateX(${x0 - x1}px)` }, { transform: 'none' }], { duration: dur(240), easing: ease });
   }
 }
+// Live 12 panels (effects, Live instruments) are laid out at one size; in the device panel they are zoomed so they use its height:
+// never cut at the bottom (zoom down to 0.7), and up to 1.15x when the panel is taller than the device (FL Studio Mobile instrument cards
+// adapt on their own). Pointer positions on displays are normalised by the drawn size (liveui lvDrag), so zoom is safe for dragging.
+function fitKit() {
+  if (!root) return;
+  const sc = root.querySelector(':scope > .dev-scroll'); if (!sc) return;
+  const cs = getComputedStyle(sc), avail0 = sc.clientHeight - parseFloat(cs.paddingTop || 0) - parseFloat(cs.paddingBottom || 0);
+  for (const card of sc.querySelectorAll(':scope > .card.lkcard:not(.flm-card), :scope > .card.lvcard:not(.flm-card)')) {
+    const lk = card.querySelector(':scope > .lk, :scope > .lv-dev'); if (!lk) continue;
+    lk.style.zoom = '';
+    const head = card.querySelector(':scope > h4'), avail = avail0 - (head ? head.offsetHeight : 0) - 4, need = lk.offsetHeight;
+    if (!(need > 0) || !(avail > 40)) continue;
+    const z = Math.max(0.7, Math.min(1.15, avail / need));
+    if (Math.abs(z - 1) > 0.03) lk.style.zoom = z.toFixed(3);
+  }
+}
+let fitRO = null;
 export function render() {
   if (!root) return;
+  if (!fitRO && typeof ResizeObserver !== 'undefined') { fitRO = new ResizeObserver(() => requestAnimationFrame(fitKit)); fitRO.observe(root); }
   for (const t of timers) clearInterval(t);
   timers = [];
   const i = state.sel.track, t = P.tr(i);
@@ -416,6 +434,7 @@ export function render() {
   } }, h('b', { 'aria-hidden': 'true' }, '+'), h('span', {}, full ? 'Rantai penuh (16 efek)' : 'Ketuk untuk menambah efek'), h('small', {}, 'atau seret efek dari Browser ke sini'));
   put(add, 'add');
   root.replaceChildren(scroll);
+  requestAnimationFrame(fitKit);
   if (same) { scroll.scrollLeft = sl; flip(scroll, before); }
   else if (old && !quiet()) scroll.animate([{ opacity: 0.25 }, { opacity: 1 }], { duration: dur(170), easing: 'ease-out' });
   const title = document.getElementById('dtitle');

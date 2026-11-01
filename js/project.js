@@ -6,7 +6,7 @@ import { valueAt as curveAt, densify } from './autocurve.js';
 import { encodeWav } from './engine/wav.js';
 import * as WOPS from './engine/waveops.js';
 import { log } from './log.js';
-import { INSTRUMENTS, DEVICES, DRUM_PADS, INST, PRESETS, normOf, valOf, MOD_MAP, IRACK_DEF } from './defs.js';
+import { INSTRUMENTS, DEVICES, DRUM_PADS, INST, PRESETS, normOf, valOf, MOD_MAP, IRACK_DEF, migrateClassicInst } from './defs.js';
 
 export const PPQ = 960, MAX_TRACKS = 64;
 export let BEAT = PPQ, BAR = PPQ * 4;   // live bindings: they change with the time signature (setSig), so always read them at use time
@@ -804,7 +804,7 @@ export function syncPads(i) {
 }
 // ---- Drum Rack chains: a pad can hold an instrument + effects (pad.chain = { inst: { type, params, sample }, devices: [{ id, type, params, bypass }] }).
 // The engine plays the chain instead of the pad's own sound (instruments.js DrumSynth.cmd). Every change is one undo step (the whole chain).
-export const PAD_INSTS = [19, 20, 21, 22, 23, 24, 18, 25, 26, 27, 13, 14, 15, 16, 17, 1, 2];   // DS ..., Simpler, physical models, synths
+export const PAD_INSTS = [19, 20, 21, 22, 23, 24, 18, 25, 26, 27, 13, 14, 15, 16, 17, 32, 33];   // DS ..., Simpler, physical models, synths
 const cloneChain = (c) => (c ? { inst: c.inst ? { ...c.inst, params: { ...c.inst.params } } : null, devices: c.devices.map((d) => ({ ...d, params: [...d.params] })) } : null);
 function sendPadChain(i, k) {
   const q = padsOf(i)[k], x = q && q.chain;
@@ -1019,7 +1019,7 @@ export function setModMap(i, di, m) { const d = tr(i).devices[di]; d.map = m || 
 // (chain c at 4c: volume, pan, activator, solo; 32 chain count; 33.. macros; 105 chain selector; 106 + 2c chain zones; Instrument Rack also
 // 122 + 2c key zones, 138 + 2c velocity zones); macroMap[m] = { c: chain id, id: device id | 'inst', k } is written into the hidden macro
 // map parameters (41 + 8m) by fixMacros. Every structural change is one undo step (a snapshot of the rack).
-export const RACK = 51, IRACK = 12, RACK_MAX_CH = 8, IRACK_INSTS = [1, 2, 5, 7, 8];
+export const RACK = 51, IRACK = 12, RACK_MAX_CH = 8, IRACK_INSTS = [32, 33, 31, 7, 8];   // FL Studio Mobile MiniSynth / SuperSaw / GMS, Moisture, Osphere
 const IRB = 100;
 const RDEF = (di) => (di < 0 ? IRACK_DEF : DEVICES[RACK]);
 function R(i, di) {
@@ -1311,6 +1311,26 @@ export function serialize() {
 }
 
 // onProgress(fraction): optional, called while samples are decoded / stretched clips rendered (big imported projects take a while)
+// Mini Synth / SuperSaw / GMS / DirectWave Klasik are no longer offered: a project that uses them opens with the FL Studio Mobile instrument
+// of the same name (defs.js migrateClassicInst: parameters converted, original values kept in inst.classic). Covers tracks, Instrument Rack
+// chains and Drum Rack pad chains; automation lanes of a converted instrument follow the parameter of the same name (dropped otherwise).
+function migrateClassic(tracks) {
+  const moved = new Map();                                                    // track id -> { from, to }
+  for (const t of tracks) {
+    const inst = t && t.inst; if (!inst) continue;
+    const from = inst.type;
+    if (migrateClassicInst(inst)) moved.set(t.id, { from, to: inst.type });
+    for (const ch of inst.chains || []) if (ch && ch.inst) migrateClassicInst(ch.inst);
+    for (const q of inst.pads || []) if (q && q.chain && q.chain.inst) migrateClassicInst(q.chain.inst);
+  }
+  if (!moved.size) return;
+  for (let k = tracks.length - 1; k >= 0; k--) {
+    const t = tracks[k], tg = t && t.kind === 'auto' && t.target;
+    if (!tg || tg.kind !== 5 || !moved.has(tg.strip)) continue;
+    const m = moved.get(tg.strip), old = INSTRUMENTS[m.from].params[tg.param], ni = old ? INSTRUMENTS[m.to].params.findIndex((q) => q.n === old.n) : -1;
+    if (ni >= 0) { tg.param = ni; tg.def = { ...INSTRUMENTS[m.to].params[ni] }; } else tracks.splice(k, 1);
+  }
+}
 export async function deserialize(text, onProgress) {
   HK.on = false;
   try { return await deserializeInner(text, onProgress); } finally { HK.on = true; HK.barrier(); }
@@ -1334,6 +1354,7 @@ async function deserializeInner(text, onProgress) {
   state.projectName = o.name || 'Untitled';
   state.returns = Array.isArray(o.returns) && o.returns.length >= 2 && o.returns.length <= MAX_FX ? o.returns : makeReturns();
   state.tracks = o.tracks;
+  migrateClassic(state.tracks);
   state.ccLinks = o.cc || {};
   for (const t of state.tracks) { const oc = OLD_COLORS.indexOf(t.color); if (oc >= 0) t.color = COLORS[oc]; else if (t.color === '#8ea2c0') t.color = AUTO_COLOR; t.send = t.send || [0, 0]; t.clips = Array.isArray(t.clips) ? t.clips : []; t.devices = Array.isArray(t.devices) ? t.devices : []; }
   for (const r of state.returns) r.devices = Array.isArray(r.devices) ? r.devices : [];

@@ -21,11 +21,12 @@ const RULES = [
   [/soprano\s*sax/, 64], [/tenor\s*sax/, 66], [/bari\w*\s*sax/, 67], [/sax/, 65], [/oboe/, 68], [/english\s*horn/, 69], [/bassoon/, 70], [/clarinet/, 71], [/piccolo/, 72], [/pan\s*flute/, 75], [/flute/, 73], [/recorder/, 74], [/whistle/, 78], [/ocarina/, 79],
   [/square/, 80], [/(saw|lead)/, 81], [/warm\s*pad/, 89], [/(choir|voice)\s*pad/, 91], [/sweep/, 95], [/pad/, 88],
   [/sitar/, 104], [/banjo/, 105], [/shamisen/, 106], [/koto/, 107], [/kalimba/, 108], [/bagpipe/, 109], [/fiddle/, 110], [/steel\s*drum/, 114], [/taiko/, 116], [/bell/, 112],
+  [/^bas\b/, 38], [/^led\b/, 81], [/^pad\b/, 89], [/^(key|pno)\b/, 0], [/^(plk|pluck)\b/, 45], [/^arp\b/, 81], [/^brs\b/, 61], [/^str\b/, 48], [/^org\b/, 16], [/^(syn|sy)\b/, 81],   // FLM SoundFont names (BAS / LED / PAD ...)
   [/^keyboards?\b|\/keyboards?\//, 0], [/^bass\b|\/bass\//, 33], [/^strings?\b/, 48], [/^pads?\b/, 89], [/^synth/, 81], [/^guitars?\b/, 24], [/^brass\b/, 61], [/^(wood)?winds?\b/, 73], [/^(mallets?|percussion)\b/, 12],
 ];
 // "DirectWave Samples/Keyboard/Grand Piano.dwp" -> { program: 0, name: 'Acoustic Grand Piano', label: 'Keyboard/Grand Piano' }
 export function gmFor(library) {
-  const label = String(library || '').replace(/^.*?DirectWave Samples\//i, '').replace(/\.\w+$/, '');
+  const label = String(library || '').replace(/^.*?(DirectWave Samples[^/]*|SoundFonts)\//i, '').replace(/\.\w+$/, '');
   const s = label.toLowerCase(), base = s.split('/').pop();
   for (const [re, prog] of RULES) if (re.test(base)) return { program: prog, name: GM_NAMES[prog], label };
   for (const [re, prog] of RULES) if (re.test(s)) return { program: prog, name: GM_NAMES[prog], label };

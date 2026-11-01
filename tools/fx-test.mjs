@@ -11,9 +11,11 @@ import { makeInstrument } from '../js/engine/instruments.js';
 const SR = 48000, N = 128, BLOCKS = Math.round(SR * 1.2 / N);
 const want = process.argv.slice(2).map(Number), types = Object.keys(DEVICES).map(Number).filter((t) => !want.length || want.includes(t));
 // parameters that cannot change the audio by design: display / meter options, momentary triggers, the Tuner reference
-const NO_AUDIO = { 51: 'all', 48: 'all', 49: 'all', 50: 'all', 47: [1], 13: 'all', 12: 'all', 16: 'all', 30: 'all', 32: 'all', 19: [15], 10: 'all', 45: 'all' };   // 45 Looper: state-driven, has its own test below   // 10 Autoduck: listens to another track's sidechain only
+const NO_AUDIO = { 52: [2, 3], 51: 'all',   // 52 Tape Stop: start times only act when Play returns to 1 (tested below)
+  48: 'all', 49: 'all', 50: 'all', 47: [1], 13: 'all', 12: 'all', 16: 'all', 30: 'all', 32: 'all', 19: [15], 10: 'all', 45: 'all' };   // 45 Looper: state-driven, has its own test below   // 10 Autoduck: listens to another track's sidechain only
 // conditions a parameter needs before it can be heard (Live works the same: L Time only counts with Sync off, R only without Link ...)
 const PRE = {
+  52: { 1: { 0: 0 }, 4: { 0: 0, 1: 0 }, 5: { 0: 0 }, 6: { 0: 0 } },   // Tape Stop: stop controls are heard when Play goes to 0
   17: { 2: { 0: 0 }, 3: { 0: 1 }, 4: { 8: 0, 5: 6 }, 5: { 8: 0 }, 6: { 8: 0, 4: 0 }, 7: { 8: 0 }, 8: { 5: 6 }, 14: { 16: 1 } },
   19: { 14: { 2: 1 } }, 21: { 13: { 0: 2 }, 14: { 6: 1 } }, 22: { 3: { 2: 1 } }, 18: { 5: { 4: 1 }, 15: { 14: 1 }, 25: { 24: 1 } }, 20: { 6: { 5: 1 } },
   28: { 10: { 11: 1 }, 11: { 10: 1 } }, 29: { 8: { 7: 1 }, 9: { 7: 1 } }, 36: { 6: { 4: -1 } }, 37: { 5: { 2: -1 }, 6: { 2: -1 } }, 42: { 3: { 0: 2 } }, 43: { 1: { 0: 1 } },
@@ -71,6 +73,18 @@ for (const t of types) {
     if (!changed && !skip) { if ((TODO[t] || []).includes(k)) console.log(`TODO ${t} ${def.name}: ${p.n} has no audible effect yet`); else issues.push(`${p.n} has no audible effect`); }
   });
   if (issues.length) { bad++; console.log(`FAIL ${t} ${def.name}: ${issues.join('; ')}`); } else console.log(`ok   ${t} ${def.name}`);
+}
+// Tape Stop (52): Play 0 slows the audio to silence within the stop time; Play 1 spins it up and returns to the live input (identical again)
+if (types.includes(52)) {
+  const d = (await import('../js/engine/fx.js')).makeDevice(52, SR); d.setTempo(120); DEVICES[52].params.forEach((p, k) => d.setParam(k, p.def)); d.setParam(3, 0);   // start = 1/8 beat
+  const L = new Float32Array(N), R = new Float32Array(N); let ph = 0; const lv = [];
+  for (let b = 0; b < 400; b++) {
+    if (b === 50) d.setParam(0, 0); if (b === 200) d.setParam(0, 1);
+    const inL = new Float32Array(N); for (let i = 0; i < N; i++) { ph += 2 * Math.PI * 220 / SR; inL[i] = Math.sin(ph) * 0.3; L[i] = inL[i]; R[i] = inL[i]; }
+    d.process(L, R, N); let e = 0, dd = 0; for (let i = 0; i < N; i++) { e += L[i] * L[i]; dd += (L[i] - inL[i]) ** 2; } lv.push({ e, dd });
+  }
+  const live = lv.slice(10, 50).every((x) => x.dd < 1e-9), stopped = lv.slice(150, 200).every((x) => x.e < 1e-9), back = lv.slice(260, 400).every((x) => x.dd < 1e-9), slowing = lv[60].e > 1e-4 && lv[60].dd > 1e-6;
+  if (live && stopped && back && slowing) console.log('ok   52 Tape Stop: live -> slows down -> silent -> spins up -> live again'); else { bad++; console.log('FAIL 52 Tape Stop: ' + JSON.stringify({ live, slowing, stopped, back })); }
 }
 // Looper (45): record 1 s of a tone, play it back with the input muted (Monitor Never), overdub adds to it, Clear empties it
 if (!want.length || want.includes(45)) {
