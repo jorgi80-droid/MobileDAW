@@ -191,7 +191,7 @@ function touchSection() {
     h('div', { class: 'sv' }, 'Berlaku untuk semua editor. Jari yang bergeser lebih jauh dari toleransi sebelum waktu tekan-lama habis dianggap seret / gulir, jadi tekan-lama tidak pernah berubah jadi seret yang tidak disengaja.'),
     toggle('Getar saat gestur dikenali (haptic)', 'haptics', () => haptic(20)),
     toggle('Ketuk klip langsung membuka kontrol klip (FL Studio Mobile)', 'tapClipMenu'),
-    choice('Seret satu jari di latar piano roll / otomasi', 'rollDrag', [['select', 'Pilih not / titik'], ['pan', 'Geser tampilan']]),
+    choice('Seret satu jari di latar piano roll / otomasi', 'rollDrag', [['pan', 'Geser tampilan'], ['select', 'Pilih not / titik']]),
     h('div', { class: 'sv' }, 'Pilih not: seperti FL Studio Mobile, seret di latar membuat kotak seleksi; dua jari menggeser dan zoom. Geser tampilan: satu jari menggulir, tekan lama lalu seret untuk memilih.'),
     pad);
 }

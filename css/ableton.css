@@ -311,18 +311,18 @@
 /* ===== Context menus and action bars (Live 12): a flat dark panel with a hairline border, rows with the check mark on the LEFT
    (not an orange block), separators as thin lines, disabled rows greyed, section titles in small caps, a small arrow on entries
    that open another list or a dialog. The floating clip / note action bar uses the same controls. ===== */
-.menu { min-width: 180px; padding: 3px 0; background: var(--lv-body); border: 1px solid var(--lv-edge); border-radius: var(--r-1); box-shadow: 0 10px 28px rgba(0, 0, 0, .45), 0 0 0 1px rgba(255, 255, 255, .03) inset; }
-.menu .mi { position: relative; height: var(--ctl-l); padding: 0 26px 0 28px; border: 0; border-radius: 0; background: transparent; color: var(--lv-ink); font: 500 12px/1 var(--font); white-space: nowrap; }
+.menu { min-width: 150px; padding: 3px 0; background: var(--lv-body); border: 1px solid var(--lv-edge); border-radius: var(--r-1); box-shadow: 0 10px 28px rgba(0, 0, 0, .45), 0 0 0 1px rgba(255, 255, 255, .03) inset; }
+.menu .mi { position: relative; height: 26px; padding: 0 22px 0 24px; border: 0; border-radius: 0; background: transparent; color: var(--lv-ink); font: 500 12px/1 var(--font); white-space: nowrap; }   /* Live: short rows, small type */
 .menu .mi:active, .menu .mi:hover { background: var(--lv-sel); color: #fff; }
 .menu .mi.ck { background: transparent; color: var(--lv-ink); font-weight: var(--fw-sb); }
 .menu .mi.ck:active, .menu .mi.ck:hover { background: var(--lv-sel); color: #fff; }
 .menu .mi.ck::after { content: none; }
-.menu .mi.ck::before { content: ""; position: absolute; left: 11px; top: 50%; width: 8px; height: 4px; margin-top: -4px; border-left: 2px solid var(--accent); border-bottom: 2px solid var(--accent); transform: rotate(-45deg); }
+.menu .mi.ck::before { content: ""; position: absolute; left: 9px; top: 50%; width: 8px; height: 4px; margin-top: -4px; border-left: 2px solid var(--accent); border-bottom: 2px solid var(--accent); transform: rotate(-45deg); }
 .menu .mi.ck:active::before, .menu .mi.ck:hover::before { border-color: #fff; }
 .menu .mi.dim { color: var(--lv-dim); font-size: var(--fs-4); opacity: .55; pointer-events: none; }
 .menu .mi.hd { height: var(--ctl-s); padding-top: 4px; color: var(--lv-dim); font: 700 9.5px/1 var(--font); letter-spacing: .1em; text-transform: uppercase; pointer-events: none; }
-.menu .mi.sep { height: 1px; margin: 3px 0; padding: 0; background: var(--lv-div); pointer-events: none; }
-.menu .mi.sub::after { content: ""; position: absolute; right: 11px; top: 50%; margin-top: -4px; border-top: 4px solid transparent; border-bottom: 4px solid transparent; border-left: 5px solid currentColor; opacity: .55; }
+.menu .mi.sep { height: 1px; margin: 2px 0; padding: 0; background: var(--lv-div); pointer-events: none; }
+.menu .mi.sub::after { content: ""; position: absolute; right: 9px; top: 50%; margin-top: -4px; border-top: 4px solid transparent; border-bottom: 4px solid transparent; border-left: 5px solid currentColor; opacity: .55; }
 .bar { gap: 1px; padding: 0; background: var(--lv-edge); border: 1px solid var(--lv-edge); border-radius: var(--r-1); box-shadow: 0 8px 22px rgba(0, 0, 0, .42); }
 .bar .b, .selbar .b { height: var(--ctl-l); min-width: 46px; padding: 0 11px; border: 0; border-radius: 0; background: var(--lv-ctl); color: var(--lv-ink); font: 600 11.5px/1 var(--font); box-shadow: none; }
 .bar .b:active, .selbar .b:active { background: var(--lv-sel); color: #fff; scale: 1; }
@@ -885,7 +885,7 @@
 .drk-chb > .drk-note { max-width: 240px; }
 .lk-pcs { align-items: stretch !important; gap: var(--sp-3) !important; }
 /* context menus: the keyboard shortcut right-aligned in a dim column (Live) */
-.menu .mi { display: flex; align-items: center; gap: 24px; }
+.menu .mi { display: flex; align-items: center; gap: 16px; }
 .selbar { align-items: center; background: var(--lv-ctl); border: 1px solid var(--lv-edge); border-radius: var(--r-1); box-shadow: 0 6px 18px rgba(0, 0, 0, .4); }
 .selbar .cnt { padding: 0 12px; color: var(--lv-ink); font: 600 11.5px/1 var(--font); }
 .selbar .b[data-a="menu"] { min-width: 38px; font-size: 16px; border-left: 1px solid var(--lv-edge); }
@@ -952,35 +952,42 @@
 .imp-sec b { display: block; margin-bottom: 4px; color: var(--lv-ink, var(--text)); font-weight: 600; }
 .imp-sec ul { margin: 0; padding-left: 18px; color: var(--lv-dim, var(--dim)); font-size: 11.5px; }
 .imp-sec.warn b { color: #ffb4a8; }
+.imp-opt { display: flex; flex-direction: column; gap: 6px; max-width: 360px; }   /* import options: one switch, one line of help */
+.imp-ck { display: flex; align-items: center; gap: 8px; color: var(--lv-ink, var(--text)); font: 600 12px/1.3 var(--font); }
+.imp-ck input { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
+.imp-opt .sv { color: var(--lv-dim, var(--dim)); font-size: 11px; line-height: 1.35; }
 .dv-miss-chip.sub { background: rgba(255, 167, 34, .2); color: #ffd28a; }
 
-/* ---- FL Studio Mobile instruments (DirectWave / GMS / MiniSynth / SuperSaw): compact Live 12 device layout ----
-   As wide as its content (like a Live device), titled sections packed side by side, two rows of knobs (label / knob / value tight),
-   displays in the middle of their section, nothing stretched into empty space. */
-.card.flm-card { flex: 0 0 auto; width: auto; max-width: calc(100vw - 24px); }
+/* ---- FL Studio Mobile instruments (DirectWave / GMS / MiniSynth / SuperSaw, js/flmpanels.js): Live 12 device layout ----
+   A fixed, compact device width like a Live device (the same on every tab), always full: titled sections side by side, controls in tight
+   two-row columns (label / knob / value), and the displays take all the width the controls leave at the full section height. When the
+   panel is narrower than the controls, the card keeps its content width and the device chain scrolls (nothing is cut or squeezed). */
+#dbody .dev-scroll > .card.flm-card { flex: 0 0 auto; width: min(900px, 100%); min-width: max-content; max-width: none; }
+#dbody .dev-scroll > .card.flm-card.flm-t30 { width: min(1010px, 100%); }   /* DirectWave: + the zone list */
+.fw-fit > .card.flm-card { width: 900px; } .fw-fit > .card.flm-card.flm-t30 { width: 1010px; }
 .lkcard > .lk.lk-flm, .lvcard > .lk.lk-flm { margin-block: 0; flex: 1 1 auto; align-self: stretch; }   /* fills the card's height */
-.inst-row > .lk.lk-flm { margin-block: 0; flex: 0 0 auto; align-self: stretch; }
-.lk.lk-flm { display: flex; flex-direction: column; align-items: stretch; gap: 0; padding: 0 0 4px; min-height: 0; min-width: 0; }
+.inst-row > .lk.lk-flm { margin-block: 0; flex: 1 1 auto; align-self: stretch; }
+.lk.lk-flm { display: flex; flex-direction: column; align-items: stretch; gap: 0; padding: 0; min-height: 0; min-width: 0; }
 .lk-flm > .flm-tabs { align-self: stretch; padding: 3px 6px 0; border-bottom: 1px solid var(--lv-edge); }
-.flm-pg { flex: 1 1 auto; display: flex; align-items: stretch; }
-.flm-sec { flex: 0 0 auto; display: flex; flex-direction: column; min-width: 0; padding: 3px 7px 0; border-left: 1px solid var(--lv-edge); }
+.flm-pg { flex: 1 1 auto; display: flex; align-items: stretch; min-height: 0; }
+.flm-sec { flex: 0 0 auto; display: flex; flex-direction: column; padding: 3px 6px 5px; border-left: 1px solid var(--lv-edge); min-height: 0; }
 .flm-sec:first-child { border-left: 0; }
-.flm-st { margin-bottom: 1px; font: var(--fw-sb) var(--fs-1, 9px)/12px var(--font); color: var(--lv-dim); text-transform: uppercase; letter-spacing: .05em; white-space: nowrap; }
-.flm-g { flex: 1 1 auto; display: grid; grid-auto-flow: column; grid-template-rows: repeat(2, minmax(56px, 1fr)); grid-auto-columns: auto; justify-content: start; align-content: stretch; column-gap: 4px; row-gap: 0; align-items: center; justify-items: center; }
-.flm-g.r1 { grid-template-rows: minmax(56px, 70px); }
-.flm-g > .flm-d, .flm-g > .lk-ch.v { grid-row: span 2; align-self: center; }
-.flm-g > .flm-d { margin: 0 3px; }
+.flm-sec.grow { flex: 1 1 auto; }
+.flm-st { display: flex; align-items: center; gap: 5px; height: 14px; margin-bottom: 2px; font: var(--fw-sb) var(--fs-2, 10px)/14px var(--font); color: var(--lv-ink); white-space: nowrap; }   /* Live: section names in title case */
+.flm-b { flex: 1 1 auto; display: flex; align-items: stretch; gap: 6px; min-height: 0; }
+.flm-g { flex: none; display: grid; grid-auto-flow: column; grid-template-rows: repeat(2, minmax(min-content, 1fr)); grid-auto-columns: max-content; column-gap: 4px; row-gap: 2px; align-items: center; justify-items: center; }
+.flm-g > .flm-span, .flm-g > .lk-ch.v { grid-row: span 2; }
 .flm-c { display: flex; flex-direction: column; align-items: center; gap: 2px; }
 .flm-l { font: var(--fs-2)/12px var(--font); color: var(--lv-ink); white-space: nowrap; }
 .flm-tc { gap: 3px; }
 .flm-tc .lv-btn { width: 100%; }
-.lk-flm .knob.lk-k { width: 50px; } .lk-flm .knob.lk-k svg { width: 34px; height: 34px; }
-.lk-flm .knob.lk-k.big { width: 60px; } .lk-flm .knob.lk-k.big svg { width: 44px; height: 44px; }
-.lk-flm .lk-ch.v .lv-btn { min-width: 72px; }
+.flm-dbox { flex: 1 1 0; min-width: 120px; position: relative; overflow: hidden; border: 1px solid #1b1b1d; border-radius: 4px; background: #262628; }
+.flm-dbox > canvas { position: absolute; left: 0; top: 0; display: block; touch-action: none; }
+.lk-flm .knob.lk-k { width: auto; min-width: 50px; } .lk-flm .knob.lk-k svg { width: 34px; height: 34px; }   /* never a cut label: the column takes the label's width */
+.lk-flm .knob.lk-k.big { width: auto; min-width: 60px; } .lk-flm .knob.lk-k.big svg { width: 44px; height: 44px; }
+.lk-flm .knob.lk-k .k-n { max-width: none; overflow: visible; }
+.lk.lk-flm .lk-ch.v .lv-btn { min-width: 72px; padding: 0 6px; }
 .inst-row:has(> .lk-flm) { flex: 1 1 auto; align-items: stretch; }
 .inst-row:has(> .lk-flm) > .inst-side { flex: 0 0 150px; width: 150px; padding: 5px; border-right: 1px solid var(--lv-edge); overflow: auto; }
 .inst-row:has(> .lk-flm) > .inst-side .zones { display: flex; flex-direction: column; gap: 3px; }
-.flm-st { display: flex; align-items: center; gap: 5px; }
 .lk .lk-t.flm-sw { min-width: 0; width: 13px; height: 13px; padding: 0; border-radius: 1px; }   /* section on / off switch (Live: the square left of a section title) */
-.flm-g > .flm-dbox { grid-row: span 2; align-self: stretch; position: relative; margin: 2px 4px 2px 0; }
-.flm-dbox > canvas { position: absolute; left: 0; top: 0; }

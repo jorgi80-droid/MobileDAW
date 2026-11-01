@@ -19,6 +19,11 @@ const t0 = Date.now();
 const chooser = page.waitForEvent('filechooser');
 await ev(async () => { (await import('./js/import/ui.js')).importDialog(); });
 const fc = await chooser; await fc.setFiles(FILE);
+// the import options (the only place to choose "replace missing modules with stock plugins"): on by default
+await page.waitForSelector('#layer .modal .imp-opt', { timeout: 5000 });
+const opt = await ev(() => { const m = [...document.querySelectorAll('#layer .modal')].pop(), cb = m.querySelector('.imp-opt input[type=checkbox]'); return { text: m.textContent, on: !!(cb && cb.checked) }; });
+ok(/Ganti modul yang hilang dengan stock plugin/.test(opt.text) && opt.on, 'import options: "Ganti modul yang hilang dengan stock plugin" offered while loading, on by default');
+await ev(() => [...document.querySelectorAll('#layer .modal .b')].find((x) => x.textContent === 'Impor').click());
 const seen = new Set();
 for (let k = 0; k < 600; k++) {                                   // poll the progress window
   const st = await ev(() => { const w = document.querySelector('.imp'); return w ? w.querySelector('.imp-row b').textContent + ' ' + w.querySelector('.imp-l').textContent : null; });
@@ -53,21 +58,17 @@ ok(/diterapkan ke plugin stock MobileDAW/.test(rep) && /Modul efek \/ plugin/.te
 const before = await ev(async () => { const P = await import('./js/project.js'); const S = P.state; const all = [S.master, ...S.returns, ...S.tracks].flatMap((c) => c.devices); return { stock: all.filter((d) => !d.missing).length, missing: all.filter((d) => d.missing).length, eq8: all.filter((d) => d.type === 31 && d.from).length }; });
 console.log('     after import', JSON.stringify(before));
 ok(before.eq8 > 0, 'Graphic EQ modules converted to EQ Eight during import (' + before.eq8 + ')');
-// "replace every missing module with stock plugins" (button in the report)
+// modules with a stock equivalent whose parameters cannot be converted exactly were put in bypassed (the option above), the report has no
+// separate "replace" button, and the project menu no longer offers it
 await page.screenshot({ path: path.join(root, 'docs/redesign/55-import-report.png') });
-const hasBtn = await ev(() => !![...document.querySelectorAll('#layer .modal .b')].find((x) => /Ganti seluruh modul/.test(x.textContent)));
-ok(hasBtn, 'report offers "Ganti seluruh modul hilang dengan stock plugin"');
-await ev(() => [...document.querySelectorAll('#layer .modal .b')].find((x) => /Ganti seluruh modul/.test(x.textContent))?.click());
-const seen2 = new Set(); for (let k = 0; k < 200; k++) { const t = await ev(() => { const w = [...document.querySelectorAll('.imp')].pop(); return w ? w.querySelector('.imp-row b').textContent : null; }); if (t) seen2.add(t); else if (k > 4) break; await page.waitForTimeout(100); }
-const rep2 = await ev(() => { const m = [...document.querySelectorAll('#layer .modal')].pop(); return m ? m.textContent : ''; });
-const after = await ev(async () => { const P = await import('./js/project.js'); const S = P.state; const all = [S.master, ...S.returns, ...S.tracks].flatMap((c) => c.devices); return { stock: all.filter((d) => !d.missing).length, missing: all.filter((d) => d.missing).length, bypassedLater: all.filter((d) => d.from && d.from.how === 'later' && d.bypass).length }; });
-console.log('     after replace-all', JSON.stringify(after), 'progress', [...seen2].join(' '));
-ok(/Modul diganti: \d+ diterapkan, \d+ tidak/.test(rep2) && after.stock > before.stock && after.bypassedLater === after.stock - before.stock, 'replace all: ' + (after.stock - before.stock) + ' more modules became stock plugins (bypassed, ready to adjust); ' + after.missing + ' without equivalent stay placeholders');
-await ev(async () => (await import('./js/history.js')).undoOp()); await page.waitForTimeout(300);
-const undone = await ev(async () => { const P = await import('./js/project.js'); const S = P.state; return [S.master, ...S.returns, ...S.tracks].flatMap((c) => c.devices).filter((d) => d.missing).length; });
-ok(undone === before.missing, 'one Undo brings every replaced module back (' + undone + ' placeholders)');
-await ev(async () => (await import('./js/history.js')).redoOp()); await page.waitForTimeout(300);
-await page.evaluate(() => [...document.querySelectorAll('#layer .modal .b')].find((x) => x.textContent === 'OK')?.click()); await page.waitForTimeout(300);
+const later = await ev(async () => { const P = await import('./js/project.js'); const S = P.state; return [S.master, ...S.returns, ...S.tracks].flatMap((c) => c.devices).filter((d) => d.from && d.from.how === 'later' && d.bypass).length; });
+ok(later > 0, 'modules with a stock equivalent but unconvertible parameters became bypassed stock plugins during the import (' + later + ')');
+ok(!/Ganti seluruh modul/.test(rep) && !(await ev(() => [...document.querySelectorAll('#layer .modal .b')].some((x) => /Ganti/.test(x.textContent)))), 'the report has no separate replace button');
+await page.evaluate(() => [...document.querySelectorAll('#layer .modal .b')].find((x) => x.textContent === 'OK')?.click()); await page.waitForTimeout(400);
+await ev(() => document.getElementById('btn-menu').click()); await page.waitForTimeout(450);
+const mm = await ev(() => { const m = [...document.querySelectorAll('.menu')].pop(); return m ? [...m.querySelectorAll('.mi')].map((x) => x.textContent) : []; });
+ok(mm.length > 0 && !mm.some((t) => /Ganti modul/.test(t)) && mm.includes('Impor') && mm.includes('Ekspor'), 'project menu: no "Ganti modul…" entry, imports / exports in submenus (' + mm.filter(Boolean).join(' | ') + ')');
+await ev(() => { const s = [...document.querySelectorAll('.scrim')].pop(); if (s) s.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })); }); await page.waitForTimeout(300);
 await ev(async () => { const P = await import('./js/project.js'); const i = P.state.tracks.findIndex((t) => t.devices.some((d) => d.missing)); P.selectTrack(i); (await import('./js/devices.js')).render(); });
 await page.evaluate(() => [...document.querySelectorAll('#layer .modal .b')].find((x) => x.textContent === 'OK')?.click()); await page.waitForTimeout(500);
 ok(await ev(() => [...document.querySelectorAll('.card.dv-missing h4')].some((x) => /^\[Plugin tidak tersedia\]/.test(x.textContent))), 'device chain shows "[Plugin tidak tersedia] <name>" cards');

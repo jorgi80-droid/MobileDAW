@@ -1,11 +1,11 @@
 # Impor proyek FL Studio Mobile / FL Studio / Ableton ke MDAW
 
-Menu: **Browser → Proyek → Impor proyek FL Studio Mobile / FL Studio / Ableton…** (atau menu ⋮ → Impor proyek FLM / FLP / Ableton).
+Menu: **Browser → Proyek → Impor proyek FL Studio Mobile / FL Studio / Ableton…** (atau menu ⋮ → Impor → Proyek FLM / FLP / Ableton). Setelah file dipilih muncul satu pilihan: **Ganti modul yang hilang dengan stock plugin**.
 Pilih `.flm`, `.flp`, `.als`, atau **ZIP** yang berisi file proyek itu beserta sample-nya (mis. ZIP ekspor FL Studio Mobile dengan folder
 `My Samples` / `My Tracks`). Jendela progres tampil selama konversi; di akhir ada laporan. Hasilnya disimpan sebagai
 `Projects/<nama>.mdaw`. Sample proyek **FL Studio Mobile** disimpan di **`FLM/<nama proyek>/<folder sample aslinya>`** (mis.
 `FLM/Lagu Saya/My Samples/Drums/kick.wav`; folder pembungkus ZIP dibuang), sample FLP / ALS di `Samples/Imports/<nama>/`. Proyek `.mdaw`
-merujuk ke path itu, jadi tetap terbuka offline. **Ekspor ZIP** (menu ⋮) membawa semua sample di dalam ZIP dengan path yang sama
+merujuk ke path itu, jadi tetap terbuka offline. **Ekspor ZIP** (menu ⋮ → Ekspor) membawa semua sample di dalam ZIP dengan path yang sama
 (termasuk sample pad drum); saat ZIP itu dibuka lagi, path folder library (`FLM/...`, `Samples/sub/...`) dipertahankan.
 
 ## Alur (js/import/)
@@ -88,9 +88,11 @@ Sumber nama / parameter modul: panduan FX FL Studio Mobile dari pemilik (30 modu
   - Spacer pada setelan netral → Utility netral (persis); setelan lain tidak ditebak.
   - Modul yang **off** di proyek asli → stock plugin padanannya **dalam keadaan bypass** (suara identik).
   - Analyzer / Tuner → Spectrum / Tuner (tidak mengubah audio).
-- **"Ganti seluruh modul hilang dengan stock plugin"** (tombol di laporan impor, menu ⋮): modul sisa yang punya padanan (Compressor,
-  Autoduck, Multiband Compressor, Tape Delay, Stereoizer, Waveshaper, …) menjadi stock plugin **bypass** — suara tetap seperti sebelumnya,
-  tinggal dinyalakan dan diatur; nilai asli tersimpan di `d.from`. Satu langkah Undo. Ada jendela progres dan laporan jumlah.
+- **"Ganti modul yang hilang dengan stock plugin"** — pilihan yang hanya muncul saat memuat proyek (dialog setelah file dipilih, bawaan
+  dicentang; tidak ada lagi di menu ⋮ maupun di laporan). Dicentang (`fxMode 'all'`): selain padanan persis, modul yang punya padanan
+  (Compressor, Autoduck, Multiband Compressor, Tape Delay, Stereoizer, Waveshaper, …) menjadi stock plugin **bypass** — suara tetap seperti
+  aslinya, tinggal dinyalakan dan diatur; nilai asli tersimpan di `d.from`. Tidak dicentang (`'map'`): hanya padanan persis, sisanya
+  tetap placeholder. Progres "Menyesuaikan dan memproses parameter modul ke plugin bawaan…" ada di jendela impor.
 - **Tidak diterapkan** (dilaporkan): modul tanpa padanan di MobileDAW (Pitcher 2, Tape Stop, Multi FX, Comb Filter) dan tipe yang belum dikenali (`Efek FLM #id`).
 - Identitas tipe: pasti = 1 DirectWave, 7 Graphic EQ, 8 Compressor, 20 Leveller, 29 Autoduck, 34 Spacer, 36 Multiband Compressor,
   43 Wow & Flutter; diduga dari tata letak (tidak pernah diaktifkan otomatis) = 11 Tape Delay, 25 Waveshaper, 44 Stereoizer;

@@ -1,6 +1,6 @@
 // Touch workflow in the real app on an emulated Android phone (Chromium, Pixel 7 landscape): Clip Controls on tap (non-modal), double tap =
 // editor without the menu, Escape cancels a clip drag (no undo step left), Snap switch tap / long-press, Delete Track asks first, piano-roll
-// background drag = note selection, automation rubber band, drum channel Clone / Set MIDI Key, device reorder by long-press + drag, knob fine
+// one-finger background drag = scroll, 1 s long press + drag = note selection / automation rubber band, drum channel Clone / Set MIDI Key, device reorder by long-press + drag, knob fine
 // adjustment, Quick Save swipe with backup, keyboard shortcuts (and not while typing), the Sentuhan settings pad.
 // Touches are pointer events of type "touch" sent to the elements (layout pixels x the UI-scale factor, as the app expects).
 // Usage: node tools/touch-ui-test.mjs   (needs Playwright + Chromium; not part of run-tests)
@@ -64,15 +64,28 @@ p = await at(BAR * 0.5, 1); await tap('arr', p.x, p.y); await wait(90); await ta
 ok(await ev(() => document.getElementById('view-arr').classList.contains('edfull')), 'double tap clip: full-screen editor');
 ok((await menuTexts()).length === 0, 'double tap: no Clip Controls left behind');
 
-// 3. piano roll: one-finger drag on the background = rubber band over the notes (FL Studio Mobile)
+// 3. piano roll: a one-finger drag on the background scrolls (nothing selected); a 1 s long press (vibration) + drag = rubber band
 const edO = await ev(() => { const r = window.__el('ed').getBoundingClientRect(); return { x: r.x, y: r.y }; });
 const edAt = async (t, pi) => { const r = await ev(async ([t, pi]) => (await import('./js/editor.js')).probe(t, pi), [t, pi]); return { x: edO.x + r.x, y: edO.y + r.y }; };
 await ev(async () => { const E = await import('./js/editor.js'); E.setTheory(); });
 let a0 = await edAt(1500, 65), a1 = await edAt(5, 58);
+const EST = () => ev(async () => (await import('./js/editor.js')).testState());
+const v0 = await EST();
+await ptr('ed', 'pointerdown', a0.x, a0.y); await wait(30); await slide('ed', a0.x, a0.y, a0.x, a0.y + 80, 12, false); await wait(150); await ptr('ed', 'pointerup', a0.x, a0.y + 80); await wait(200);
+const v1 = await EST();
+ok(v1.sel === 0 && Math.abs(v1.top - v0.top) > 1, 'piano roll: one-finger drag on the background scrolls the view (' + v0.top.toFixed(1) + ' -> ' + v1.top.toFixed(1) + ' rows) and selects nothing (' + v1.sel + ')');
+await ptr('ed', 'pointerdown', a0.x, a0.y + 80); await wait(30); await slide('ed', a0.x, a0.y + 80, a0.x, a0.y, 12, false); await wait(150); await ptr('ed', 'pointerup', a0.x, a0.y); await wait(200);
+const v2 = await EST();
+ok(Math.abs(v2.top - v0.top) < 0.6, 'dragging back scrolls back (' + v2.top.toFixed(1) + ' rows)');
+a0 = await edAt(1500, 65); a1 = await edAt(5, 58);
 console.log('rubber band from', JSON.stringify(a0), 'to', JSON.stringify(a1), 'editor', JSON.stringify(await ev(() => { const r = window.__el('ed').getBoundingClientRect(); return [r.x, r.y, r.width, r.height]; })));
-await ptr('ed', 'pointerdown', a0.x, a0.y); await wait(30); await slide('ed', a0.x, a0.y, a1.x, a1.y); await wait(500);
-let es = await ev(async () => (await import('./js/editor.js')).testState());
-ok(es.sel === 2, 'piano roll: background drag selected 2 notes (' + es.sel + ')');
+await ptr('ed', 'pointerdown', a0.x, a0.y); await wait(600); await slide('ed', a0.x, a0.y, a0.x, a0.y + 40, 6, false); await wait(150); await ptr('ed', 'pointerup', a0.x, a0.y + 40); await wait(200);
+ok((await EST()).sel === 0, 'a hold shorter than 1 s, then a drag: still a scroll, no selection');
+await ptr('ed', 'pointerdown', a0.x, a0.y + 40); await wait(30); await slide('ed', a0.x, a0.y + 40, a0.x, a0.y, 6, false); await wait(150); await ptr('ed', 'pointerup', a0.x, a0.y); await wait(200);
+a0 = await edAt(1500, 65); a1 = await edAt(5, 58);
+await ptr('ed', 'pointerdown', a0.x, a0.y); await wait(1350); await slide('ed', a0.x, a0.y, a1.x, a1.y); await wait(500);
+let es = await EST();
+ok(es.sel === 2, 'piano roll: long press (1 s) + drag = rubber band, 2 notes selected (' + es.sel + ')');
 ok(await ev(() => [...document.querySelectorAll('#layer .bar:not(.closing) .b')].some((x) => x.textContent === 'Copy')), 'selection bar offers Copy / Del / Snap / More');
 await closeAll();
 // keyboard: Ctrl+A selects all notes, Ctrl+D duplicates them, Escape drops the selection
@@ -141,9 +154,9 @@ await ev(async () => (await import('./js/timeline.js')).openEditor()); await wai
 const eo = await ev(() => { const r = window.__el('ed').getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height }; });
 const ptX = async (t) => ev(async (t) => (await import('./js/editor.js')).probe(t, 60).x, t);
 const xa = eo.x + (await ptX(700)), xb = eo.x + (await ptX(2100));
-await ptr('ed', 'pointerdown', xa, eo.y + 24); await wait(30); await slide('ed', xa, eo.y + 24, xb, eo.y + eo.h - 6); await wait(500);
+await ptr('ed', 'pointerdown', xa, eo.y + 24); await wait(1350); await slide('ed', xa, eo.y + 24, xb, eo.y + eo.h - 6); await wait(500);
 es = await ev(async () => (await import('./js/editor.js')).testState());
-ok(es.aset === 2, 'automation: background drag picked 2 points (' + es.aset + ')');
+ok(es.aset === 2, 'automation: long press (1 s) + drag picked 2 points (' + es.aset + ')');
 ok(await ev(() => [...document.querySelectorAll('#layer .bar:not(.closing) .b')].map((x) => x.textContent).join() === 'Copy,Hapus,Paste,Batal pilih'), 'automation bar: Copy / Hapus / Paste / Batal pilih');
 await ev(() => [...document.querySelectorAll('#layer .bar .b')].find((x) => x.textContent === 'Hapus').click()); await wait(200);
 let np = await ev(async () => (await import('./js/project.js')).selectedClip().clip.pts.length); ok(np === 2, 'Hapus removed the 2 picked points (' + np + ' left)');
@@ -197,15 +210,15 @@ const fine = await ev(async () => {
 });
 ok(fine.coarse > 0.2 && fine.fineD > 0 && fine.fineD < fine.coarse / 4, 'knob: 40 px up = ' + fine.coarse.toFixed(3) + ', with the finger 300 px sideways = ' + fine.fineD.toFixed(3) + ' (fine)');
 
-// 14. Quick Save: first time asks for a name; the swipe on "Simpan proyek…" then overwrites without a dialog and keeps a backup
+// 14. Quick Save: first time asks for a name; the swipe on "Simpan…" then overwrites without a dialog and keeps a backup
 await ev(async () => { const QS = await import('./js/quicksave.js'); const P = await import('./js/project.js'); P.state.projectName = 'Untitled'; QS.quickSave(); }); await wait(200);
 ok(await ev(() => !!document.querySelector('#layer .modal input')), 'Quick Save on a never-saved project asks for a name');
 await page.fill('#layer .modal input', 'TouchTest'); await ev(() => [...document.querySelectorAll('#layer .modal .b')].find((x) => x.textContent === 'OK').click()); await wait(300);
 ok(await ev(async () => { const { eng } = await import('./js/engine.js'); const t = eng.readText('/Projects/TouchTest.mdaw'); return typeof t === 'string' && t.length > 20; }), 'saved as Projects/TouchTest.mdaw');
 await ev(async () => { const P = await import('./js/project.js'); P.setBpm(133); });
 await page.locator('#btn-menu').tap(); await wait(450);
-await ev(() => { window.__mi = [...document.querySelectorAll('#layer .menu .mi')].find((e) => e.textContent.startsWith('Simpan proyek')); });
-ok(await ev(() => !!window.__mi && window.__mi.classList.contains('swp')), 'menu row "Simpan proyek…" is swipeable');
+await ev(() => { window.__mi = [...document.querySelectorAll('#layer .menu .mi')].find((e) => e.textContent.startsWith('Simpan\u2026')); });
+ok(await ev(() => !!window.__mi && window.__mi.classList.contains('swp')), 'menu row "Simpan…" is swipeable');
 await ptr(await page.evaluateHandle(() => window.__mi), 'pointerdown', 100, 100, 5);
 for (let k = 1; k <= 10; k++) { await ptr(await page.evaluateHandle(() => window.__mi), 'pointermove', 100 + k * 12, 101, 5); await wait(16); }
 await ptr(await page.evaluateHandle(() => window.__mi), 'pointerup', 220, 101, 5); await wait(300);
@@ -229,6 +242,7 @@ await closeAll();
 // 16. Audio Effect Rack: long-press a device title inside the rack chain and slide it past the next one
 await ev(async () => { const P = await import('./js/project.js'); P.newProject(false); P.addTrack('midi'); P.selectTrack(0); P.addDevice(0, 51); P.rackAddDevice(0, 0, 0, 3); P.rackAddDevice(0, 0, 0, 2); P.emit('devices'); });
 await ev(async () => { (await import('./js/devices.js')).render(); }); await wait(500);
+await ev(() => { const r = document.querySelector('.lk-rfx'); const card = r && r.closest('.dev-scroll > .card'); if (card) card.scrollIntoView({ inline: 'start', block: 'nearest' }); }); await wait(300);   // the rack sits after the instrument card: scroll the chain to it, as a user would
 const rcards = await ev(() => [...document.querySelectorAll('.lk-rfx')].map((c) => { const r = c.querySelector('h4 > span').getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2, w: c.getBoundingClientRect().width }; }));
 if (rcards.length === 2) {
   await ev(() => { window.__h4 = document.querySelectorAll('.lk-rfx')[0].querySelector('h4'); });

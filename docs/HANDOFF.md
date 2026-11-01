@@ -49,13 +49,14 @@ Dokumen lengkap: **`docs/IMPORT.md`** (format FLM yang dipetakan, aturan placeho
   file, jendela progres, laporan). `P.deserialize` kini menerima `onProgress`.
 - Lokasi sample: FLM -> `/FLM/<proyek>/<folder asli>` (folder library baru: `FOLDERS` di web.js, `TREE` di storage.js, Browser),
   FLP/ALS -> `/Samples/Imports/<proyek>/`. Ekspor ZIP kini juga membawa sample pad drum; impor ZIP mempertahankan path folder library.
-- UI: Browser -> Proyek -> Impor proyek…, menu ⋮ -> Impor proyek FLM / FLP / Ableton. Kartu device `.dv-missing` ("[Plugin tidak
+- UI: Browser -> Proyek -> Impor proyek…, menu ⋮ -> Impor -> Proyek FLM / FLP / Ableton (lalu dialog pilihan modul). Kartu device `.dv-missing` ("[Plugin tidak
   tersedia] <nama>"), chip `.dv-miss-chip` di kartu instrumen.
 - Tes: `tools/import-test.mjs` (run-tests; `FLM_ZIP=` untuk arsip asli), `tools/import-ui-test.mjs` (`IMPORT_FILE=`; Chromium).
-- Migrasi modul -> stock plugin: `js/import/fxmap.js` (`decide`, `migrateJson` saat impor, `replaceAllMissing` di `import/ui.js`),
-  detail di IMPORT.md. Tes: bagian fxmap + null test engine di `import-test`, tombol ganti-seluruh di `import-ui-test`.
+- Migrasi modul -> stock plugin: `js/import/fxmap.js` (`decide`, `migrateJson` saat impor; mode dari dialog pilihan impor
+  `importOptions` di `import/ui.js`: dicentang = 'all', tidak = 'map'), detail di IMPORT.md. Tes: bagian fxmap + null test engine di
+  `import-test`, dialog pilihan + menu tanpa "Ganti modul" di `import-ui-test`.
 - **Belum**: tipe efek FLM 4, 9, 16, 30, 35, 45 belum dikenali; parameter Compressor / Autoduck / Multiband / Tape Delay dll. belum
-  dikonversi (dipasang bypass lewat "ganti seluruh"), routing send / bus FLM dan routing insert FLP, otomasi parameter plugin + otomasi master, FLP diuji hanya
+  dikonversi (dipasang bypass bila "Ganti modul yang hilang" dicentang saat impor), routing send / bus FLM dan routing insert FLP, otomasi parameter plugin + otomasi master, FLP diuji hanya
   dengan file buatan.
 
 ## Sesi sebelumnya (lanjutan prompt FL Studio Mobile): implementasi menyeluruh
@@ -94,7 +95,7 @@ Peta lengkap per layar: **`docs/GESTURES.md`**. Ringkasan teknis:
   ketuk = on/off (`toggleSnap`, `cfg.lastSnap`), tekan lama = menu (`cornerMenu`). Hapus track lewat dialog. Menu klip: Combine with
   Next Clip (`combineNext`). Zoom: Fit seleksi waktu. Saat menyeret klip: `drawDragAids()` (bayangan asal + gelembung posisi/panjang).
   `keyAction(a)` = bagian pintasan keyboard untuk arrangement. `testState()` untuk tes UI.
-- **Editor**: seret 1 jari di latar piano roll = kotak seleksi (pref `rollDrag`: 'select' | 'pan'); batal = not kembali. Editor otomasi:
+- **Editor**: seret 1 jari di latar piano roll / otomasi = scroll (pref `rollDrag` bawaan 'pan', prefs v4 memigrasi), tekan lama 1 dtk (`longMs` per target di gesture.js, getar) + seret = kotak seleksi; 'select' = gaya FLM; batal = not kembali. Editor otomasi:
   pilihan banyak titik (`aset`), kotak seleksi, geser grup, bar Copy / Hapus / Paste / Batal pilih, `aclip` + `autoPaste()` (kurva
   tempelan menggantikan rentangnya). Menu tekan-lama pad drum: Load Sample (`DP.pickPadSample`), Clone (`P.clonePad`), Set MIDI Key
   (`P.setPadKey`: not di semua klip track ikut; dialog + `midi.js learnNote()` dari controller), Hapus pad (konfirmasi).

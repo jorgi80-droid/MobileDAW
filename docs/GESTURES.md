@@ -10,7 +10,7 @@ di Pengaturan. Waktu dan jarak diambil dari **Pengaturan -> Sentuhan** di awal s
 | Jeda ketuk-ganda | 250 / 320 / 420 ms | 320 ms | `dtapMs` |
 | Getar saat gestur dikenali | ya / tidak | ya | `haptics` |
 | Ketuk klip langsung membuka kontrol klip | ya / tidak (Live: ketuk pertama hanya memilih) | ya | `tapClipMenu` |
-| Seret satu jari di latar piano roll / otomasi | Pilih not/titik (FL Studio Mobile) / Geser tampilan | Pilih | `rollDrag` |
+| Seret satu jari di latar piano roll / otomasi | Geser tampilan / Pilih not/titik (FL Studio Mobile) | Geser tampilan | `rollDrag` |
 
 Tombol lain yang punya tekan-lama sendiri (Snap editor, metronom, knob, fader mixer, header device) memakai ambang yang sama.
 Di bawah pengaturan ada **area uji gestur** (ketuk, ketuk-ganda, tekan lama, seret, pinch, geser dua jari) untuk mencoba di HP.
@@ -61,9 +61,9 @@ Di bawah pengaturan ada **area uji gestur** (ketuk, ketuk-ganda, tekan lama, ser
 | Ketuk | not | pilih + bar Copy / Del / Snap / More… (Legato, Snap ke skala, Tebak skala, Humanize, Double up/down, Panjang not, Transpose, ±1) |
 | Tekan lama | not | menu Hapus / Copy (tidak pernah langsung menghapus) |
 | Seret | not / ujung kanan not | pindah waktu & pitch (pilihan ikut, jarak relatif terjaga) / ubah durasi |
-| **Seret 1 jari** | latar kosong | **kotak seleksi** (FL Studio Mobile; bisa diganti ke "Geser tampilan" di Pengaturan) |
-| Tekan lama + seret | latar kosong | kotak seleksi (selalu) |
-| Tekan lama (tanpa geser) | latar kosong | Paste di sini / Pilih semua |
+| **Seret 1 jari** | latar kosong | **geser tampilan** (scroll; bisa diganti ke "Pilih not" gaya FL Studio Mobile di Pengaturan) |
+| **Tekan lama 1 dtk** (getar) + seret | latar kosong | kotak seleksi (selalu; tahan kurang dari 1 dtk lalu seret tetap scroll) |
+| Tekan lama 1 dtk (tanpa geser) | latar kosong | Paste di sini / Pilih semua |
 | Seret | ruler atas | seleksi waktu -> Select / Insert space / Duplicate / Delete space / More (Trim, Tebak skala, Snap ke skala) |
 | Seret | lane velocity/pan/CC | lukis nilai |
 | Seret | tuts kiri | pratinjau (glissando) |
@@ -145,7 +145,7 @@ Arrangement/Mixer · M metronom · R rekam · B browser · F layar penuh. Di tab
 
 ## Mana yang dari FL Studio Mobile, mana tambahan
 Dari manual FL Studio Mobile: ketuk klip = kontrol klip, ketuk-ganda klip = editor, tekan lama ikon track = menu channel, tekan lama
-tempat kosong = Paste, tarik ujung klip, ketuk / tekan lama Snap, ketuk not = kontrol, seret latar piano roll = seleksi, seret ruler =
+tempat kosong = Paste, tarik ujung klip, ketuk / tekan lama Snap, ketuk not = kontrol, seret latar piano roll = seleksi (di sini: tekan lama 1 dtk lalu seret; seret biasa = scroll), seret ruler =
 rentang waktu, tekan lama channel drum = menu channel, ketuk-ganda / tekan lama + seret header modul, geser Save = Quick Save.
 Tambahan aplikasi ini (bukan gestur resmi FL Studio Mobile): pinch zoom, geser dua jari, penyesuaian halus knob, bayangan + gelembung
 posisi saat menyeret, Escape membatalkan gestur, getar, pengaturan ambang gestur, pintasan keyboard.

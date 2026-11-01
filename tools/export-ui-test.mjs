@@ -18,7 +18,8 @@ await ev(async () => { const P = await import('./js/project.js'); P.addTrack('mi
   c.notes = [60, 64, 67].flatMap((p) => [0, 1920, 3840, 5760].map((s) => ({ t: s, d: 1800, p, v: 0.8 }))); P.syncClips(i); P.emit('all'); });
 const expo = async (label) => {
   await ev(() => document.getElementById('btn-menu').click()); await wait(500);
-  await ev(() => [...document.querySelectorAll('#layer .menu .mi')].find((e) => /^Ekspor audio/.test(e.textContent)).click()); await wait(500);
+  await ev(() => [...document.querySelectorAll('#layer .menu .mi')].find((e) => e.textContent === 'Ekspor').click()); await wait(500);   // project menu -> Ekspor submenu
+  await ev(() => [...document.querySelectorAll('#layer .menu .mi')].find((e) => /^Audio/.test(e.textContent)).click()); await wait(500);
   const pre = await ev((l) => { const bt = [...document.querySelectorAll('#layer .modal .xd-row .b')].find((x) => x.textContent === l); if (bt) bt.click(); return !!bt; }, label); await wait(200);
   const rows = await ev(() => [...document.querySelectorAll('#layer .modal .xd-row')].filter((r) => r.style.display !== 'none').map((r) => r.querySelector('.xd-l')?.textContent + '=' + [...r.querySelectorAll('.b.on')].map((x) => x.textContent).join('/')).join(' '));
   const dl = page.waitForEvent('download', { timeout: 60000 }).catch(() => null);

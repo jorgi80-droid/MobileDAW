@@ -88,10 +88,10 @@ export function menu(items, x, y, opts = {}) {
   for (const it of items) {
     if (it.sep) { node.append(h('div', { class: 'mi sep' })); continue; }
     const head = it.dim && !it.fn && /[A-Z]/.test(it.label) && it.label === String(it.label).toUpperCase();   // an all-caps dim entry without an action is a section title
-    const sub = !head && /\u2026$/.test(it.label);                                                              // "…" = opens a list or a dialog (Live: a small arrow)
+    const sub = !head && Array.isArray(it.sub);                                                                 // a submenu (Live: the small arrow; "…" = a dialog, no arrow)
     const el = h('div', {
       class: 'mi' + (it.check ? ' ck' : '') + (head ? ' hd' : it.dim ? ' dim' : '') + (sub ? ' sub' : '') + (it.swipe ? ' swp' : ''),
-      onclick: () => { if (el._swiped) { el._swiped = false; return; } if (!armed(node)) return; close(); if (it.fn) it.fn(); },
+      onclick: () => { if (el._swiped) { el._swiped = false; return; } if (!armed(node)) return; const r = el.getBoundingClientRect(); close(); if (sub) menu(it.sub, r.left + 12, r.top); else if (it.fn) it.fn(); },
     }, it.label);
     if (it.swipe) swipeItem(el, it, () => close());
     node.append(el);

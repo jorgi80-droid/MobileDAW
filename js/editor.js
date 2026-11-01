@@ -1,6 +1,7 @@
 // Clip editor: piano roll (MIDI), step sequencer (drum clips) and a small audio-clip panel.
 // Gestures follow FL Studio Mobile: tap grid = add note, tap note = controls, long-press note = delete menu,
-// long-press + drag on empty = rubber-band select, ruler drag = time selection, drag-up lane = velocity.
+// one-finger drag on empty = scroll, long press (1 s, vibration) + drag on empty = rubber-band select, ruler drag = time selection,
+// drag-up lane = velocity.
 import { C, T } from './theme.js';
 import { attachGestures, gestureTiming, haptic } from './gesture.js';
 import { bar, menu, ask, modal, closeAll, toast, h, clamp } from './ui.js';
@@ -198,6 +199,7 @@ function drawRoll(t, c) {
     if (w > 16 && (s || w > 30)) { ctx.fillStyle = 'rgba(0,0,0,.28)'; ctx.fillRect(x + w - 5, y + 4, 2, Math.max(2, v.keyH - 7)); }   // right edge: resize grip, kept for touch
     if (w > 34 && v.keyH >= 13) { ctx.fillStyle = nInk; ctx.fillText(pName(n.p), x + 4, y + v.keyH / 2 + 1, w - 9); }
   }
+  if (drag && drag.k === 'rect' && drag.pending) { ctx.strokeStyle = 'rgba(170,210,240,.9)'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(drag.x0, drag.y0, 14, 0, 7); ctx.stroke(); }   // long press recognised: the rubber band starts here
   if (drag && drag.k === 'rect' && !drag.pending) { ctx.fillStyle = 'rgba(120,182,230,.14)'; ctx.strokeStyle = 'rgba(170,210,240,.9)'; ctx.lineWidth = 1; ctx.fillRect(drag.x, drag.y, drag.w, drag.h); ctx.strokeRect(drag.x + 0.5, drag.y + 0.5, drag.w, drag.h); }
   ctx.restore();
   // keys: white keys full width, black keys shorter, so the keyboard reads like a keyboard; only the C keys are named (all white keys when zoomed in)
@@ -615,9 +617,11 @@ function laneSet(c, x, y) {
   return true;
 }
 
+const RECT_HOLD = 1000;                                               // ms: deliberate long press before a rubber band on empty space
 function rollHandlers() {
   return {
     hit: (x, y) => (cur() ? hitRoll(x, y) : null),
+    longMs: (t, ms) => (t && t.type === 'grid' ? RECT_HOLD : ms),
     tap(x, y, t) {
       const c = cur().clip;
       if (t.type === 'note') { sel = new Set([t.n]); invalidate(); notePreview(t.n.p, t.n.v); noteBar(t.n, x, y); }
@@ -638,7 +642,7 @@ function rollHandlers() {
         menu([{ label: 'Hapus', fn: () => ops().del() }, { label: 'Copy', fn: () => ops().copy() }], r.left + x, r.top + y);
         return false;
       }
-      if (t.type === 'grid') { drag = { k: 'rect', pending: true, x0: x, y0: y, x, y, w: 0, h: 0, at: t }; return true; }
+      if (t.type === 'grid') { drag = { k: 'rect', pending: true, x0: x, y0: y, x, y, w: 0, h: 0, at: t, keep: new Set(sel) }; invalidate(); return true; }
       return false;
     },
     dragStart(x0, y0, t, fromLong) {
@@ -654,9 +658,9 @@ function rollHandlers() {
       if (t.type === 'lsplit') { drag = { k: 'lsplit' }; return true; }
       if (t.type === 'lane') { checkpoint(); drag = { k: 'lane' }; return true; }
       if (t.type === 'ruler' || t.type === 'rsel') { drag = { k: 'tsel', a: snapT(t.tick) }; tsel = { a: drag.a, b: drag.a }; return true; }
-      // FL Studio Mobile: tap-drag on the background = note selection (two fingers scroll / zoom). Settings -> Sentuhan can switch it back to
-      // one-finger scrolling; a long press + drag always selects.
-      if (t.type === 'grid' && prefs.rollDrag !== 'pan') { drag = { k: 'rect', pending: false, x0, y0, x: x0, y: y0, w: 0, h: 0, at: t, keep: new Set(sel) }; return true; }
+      // a one-finger drag on the background scrolls (default); Settings -> Sentuhan "Pilih not" makes it select like FL Studio Mobile.
+      // A long press (1 s, vibration) + drag always selects.
+      if (t.type === 'grid' && prefs.rollDrag === 'select') { drag = { k: 'rect', pending: false, x0, y0, x: x0, y: y0, w: 0, h: 0, at: t, keep: new Set(sel) }; return true; }
       return false;
     },
     drag(x, y, dx, dy) {
@@ -888,6 +892,7 @@ function autoHandlers() {
   const rectSel = () => { const a = Math.min(drag.x0, drag.x), b = Math.max(drag.x0, drag.x), ya = Math.min(drag.y0, drag.y), yb = Math.max(drag.y0, drag.y); aset = new Set(clipC().pts.filter((q) => { const qx = px(q.t), qy = ay(q.v); return qx >= a && qx <= b && qy >= ya && qy <= yb; })); asel = null; };
   return {
     hit: (x, y) => { if (y < AR) return { type: 'ruler', tick: tk(x) }; const p = find(x, y); return p ? { type: 'pt', p } : { type: 'plot', t: tk(x), v: av(y) }; },
+    longMs: (t, ms) => (t && t.type === 'plot' ? RECT_HOLD : ms),
     tap(x, y, t) {
       const c = clipC();
       if (t.type === 'pt') { if (aset.size && aset.has(t.p)) { autoBar(x, y); return; } aset.clear(); asel = t.p; invalidate(); }
@@ -921,7 +926,7 @@ function autoHandlers() {
         if (aset.size > 1 && aset.has(t.p)) { drag = { k: 'agrp', lead: t.p, base: [...aset].map((q) => ({ q, t: q.t, v: q.v })) }; return true; }
         aset.clear(); drag = { k: 'apt', p: t.p }; return true;
       }
-      if (t.type === 'plot' && x0 > KEYS && prefs.rollDrag !== 'pan') { drag = { k: 'arect', pending: false, x0, y0, x: x0, y: y0, at: t, keep: new Set(aset) }; return true; }
+      if (t.type === 'plot' && x0 > KEYS && prefs.rollDrag === 'select') { drag = { k: 'arect', pending: false, x0, y0, x: x0, y: y0, at: t, keep: new Set(aset) }; return true; }
       return false;
     },
     drag(x, y, dx, dy) {
@@ -1288,7 +1293,7 @@ export function initEditor(container) {
   AE.onPanel(() => buildProps());                     // the audio editor rebuilt its controls: the panel shows the clip's new audio settings
   const R = rollHandlers(), S = stepHandlers(), A = autoHandlers();
   const route = (name) => (...a) => { if (!cur()) return undefined; return (isAuto() ? A : stepsMode() ? S : R)[name]?.(...a); };   // a looped clip is edited as its loop source (no unrolling)
-  attachGestures(ov, Object.fromEntries(['hit', 'tap', 'dtap', 'long', 'dragStart', 'drag', 'dragEnd', 'pan', 'panEnd', 'pinch', 'wheel'].map((k) => [k, route(k)])));
+  attachGestures(ov, Object.fromEntries(['hit', 'tap', 'dtap', 'long', 'longMs', 'dragStart', 'drag', 'dragEnd', 'pan', 'panEnd', 'pinch', 'wheel'].map((k) => [k, route(k)])));
   ov.addEventListener('pointerdown', () => { emo.vx = emo.vy = 0; emo.t = null; }, true);   // a touch stops a fling or a Fit glide where it is
   new ResizeObserver(fit).observe(stage);
   P.onChange((w) => { if (w === 'notes' || w === 'clips' || w === 'tracks' || w === 'all' || w === 'sel') ghostCache = null; if (w === 'clips' || w === 'tracks') updateTitle(); if (w === 'notes' || w === 'clips' || w === 'tracks') invalidate(); if (w === 'devices' && stepsMode()) { toolbar(); invalidate(); } });
@@ -1300,6 +1305,6 @@ export const SCALE_NAMES = Object.keys(SCALES);
 export const getTheory = () => ({ key: cfg.key, scale: cfg.scale });
 export const scaleSteps = () => SCALES[cfg.scale] || null;   // semitones of the Clip View scale from its key, null = chromatic (Keys tab highlight)
 // overlay coordinates of pattern tick t / pitch p in the piano roll (UI tests drive real touches with it)
-export const testState = () => ({ sel: sel.size, aset: aset.size });   // UI tests
+export const testState = () => ({ sel: sel.size, aset: aset.size, x0: v.x0, top: v.top });   // UI tests
 export function probe(t, p) { return { x: px(t), y: py(p) - v.keyH / 2 }; }
 export function setTheory(key, scale) { if (key !== undefined) cfg.key = key; if (scale !== undefined) { cfg.scale = scale; if (SCALES[scale]) cfg.lastScale = scale; } buildProps(); invalidate(); }

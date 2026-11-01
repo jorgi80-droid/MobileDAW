@@ -6,6 +6,8 @@
 //   defer(target)                   -> true: this target has a double-tap action, so its single tap waits for the double-tap window and is
 //                                   NOT fired when a second tap follows (a double tap is never read as two single taps)
 //   long(x, y, target)              long press; return true to keep the finger as a drag (e.g. rubber-band select)
+//   longMs(target, ms)              -> this target's long-press time (default: the preference), e.g. a deliberate 1 s hold before a
+//                                   rubber band on empty space, so a quick one-finger drag there always scrolls
 //   dragStart(x0, y0, target, fromLong) -> true if the handler wants this drag; false -> one-finger pan
 //   drag(x, y, dx, dy, target)      dx/dy measured from the start        dragEnd(x, y, target, cancelled)
 //   pan(ddx, ddy)                   incremental one-finger pan (when dragStart declined) or two-finger pan
@@ -75,9 +77,9 @@ export function attachGestures(el, h) {
         flushPending();
         const keep = h.long ? h.long(g.x, g.y, g.target) === true : false;
         g.mode = keep ? 'longdrag' : 'done';
-        if (h.long) haptic(keep ? 14 : 10);
+        if (h.long) haptic(keep ? 30 : 10);                         // a mode entered (rubber band, lifted item): a clearly felt buzz
         if (keep && h.dragStart) h.dragStart(g.x0, g.y0, g.target, true);
-      }, T.longMs);
+      }, h.longMs ? Math.max(T.longMs, +h.longMs(g.target, T.longMs) || 0) : T.longMs);
     } else if (ptrs.size === 2) {
       flushPending();
       endSingle(true);

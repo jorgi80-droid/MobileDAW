@@ -71,30 +71,33 @@ function wireTransport() {
   $('#btn-browser').onclick = BR.toggleBrowser;
   $('#btn-menu').onclick = (e) => {
     const r = e.currentTarget.getBoundingClientRect();
+    const nm = state.projectName || '', short = nm.length > 16 ? nm.slice(0, 15) + '\u2026' : nm;
+    // Live-style project menu: short rows in groups, imports / exports in submenus (FLM module replacement is offered by the FLM import)
     menu([
       { label: 'Urungkan', dim: !canUndo(), fn: undoOp },
       { label: 'Ulangi', dim: !canRedo(), fn: redoOp },
       { label: 'Ke awal', fn: () => P.seekTo(0) },
       { sep: true },
-      { label: 'Pengaturan\u2026', fn: openSettings },
-      ...(isStandalone() ? [] : [{ label: 'Layar penuh', fn: toggleFullscreen }]),
-      { sep: true },
-      { label: 'Simpan proyek\u2026' + (QS.isDirty() ? ' \u2022' : ''), fn: () => QS.saveAs(), swipe: () => QS.quickSave(), swipeLabel: 'geser \u21E2 simpan cepat' },   // FL Studio Mobile: swipe = Quick Save
-      { label: 'Simpan cepat' + (QS.hasName() ? ' (' + state.projectName + ')' : ''), fn: () => QS.quickSave() },
-      { label: 'Buka proyek\u2026', fn: () => BR.openBrowser('proj') },
-      { label: 'Demo song\u2026', fn: () => BR.openBrowser('proj') },
-      { label: 'Ekspor audio (WAV/MP3/stem)\u2026', fn: exportWav },
-      { label: 'Ekspor MIDI (.mid)', fn: exportMidi },
-      { label: 'Impor MIDI (.mid)\u2026', fn: importMidi },
-      { label: 'Impor proyek FLM / FLP / Ableton (.flm .flp .als .zip)\u2026', fn: () => IMP.importDialog() },
-      { label: 'Ganti modul yang hilang dengan stock plugin\u2026', fn: () => IMP.replaceAllMissing() },
-      { label: 'Ekspor proyek (.mdaw)', fn: exportMdaw },
-      { label: 'Ekspor ZIP (proyek + sample)\u2026', fn: exportZip },
+      { label: 'Simpan\u2026' + (QS.isDirty() ? ' \u2022' : ''), fn: () => QS.saveAs(), swipe: () => QS.quickSave(), swipeLabel: 'geser \u21E2' },   // FL Studio Mobile: swipe = Quick Save
+      { label: 'Simpan cepat' + (QS.hasName() && short ? ' (' + short + ')' : ''), fn: () => QS.quickSave() },
+      { label: 'Buka proyek / demo\u2026', fn: () => BR.openBrowser('proj') },
       { label: 'Proyek baru\u2026', fn: () => PM.newProjectDialog() },
+      { sep: true },
+      { label: 'Impor', sub: [
+        { label: 'Proyek FLM / FLP / Ableton\u2026', fn: () => IMP.importDialog() },
+        { label: 'MIDI (.mid)\u2026', fn: importMidi }] },
+      { label: 'Ekspor', sub: [
+        { label: 'Audio (WAV / MP3 / stem)\u2026', fn: exportWav },
+        { label: 'MIDI (.mid)', fn: exportMidi },
+        { label: 'Proyek (.mdaw)', fn: exportMdaw },
+        { label: 'ZIP (proyek + sample)\u2026', fn: exportZip }] },
       { sep: true },
       { label: 'Tempo\u2026', fn: Tempo.openTempo },
       { label: 'Nama proyek\u2026', fn: () => ask('Nama proyek', state.projectName, (v) => { if (v && v.trim()) state.projectName = v.trim(); }) },
-    ], r.left - 150, r.bottom + 2);
+      { sep: true },
+      { label: 'Pengaturan\u2026', fn: openSettings },
+      ...(isStandalone() ? [] : [{ label: 'Layar penuh', fn: toggleFullscreen }]),
+    ], r.right - 200, r.bottom + 2);
   };
   // BPM: drag vertically to change, tap for options
   const bpm = $('#rd-bpm');

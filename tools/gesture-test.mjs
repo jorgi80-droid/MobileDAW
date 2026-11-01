@@ -82,6 +82,18 @@ Object.assign(prefs, { longMs: 300, touchSlop: 8, dtapMs: 250 });
   const r = rig({ keepLong: true }); r.down(1, 50, 50); await sleep(340); r.move(1, 80, 80); r.up(1, 80, 80);
   ok(r.kinds().join() === 'long,dragStart,drag,dragEnd' && r.log[1][1] === true, 'long press kept as drag: ' + r.kinds().join());
 }
+{ // 8b. a target with its own long-press time (piano roll empty space: a deliberate 1 s hold before the rubber band, a quicker drag scrolls)
+  const r = rig({ keepLong: true, wantDrag: false, h: { longMs: (t, ms) => (t && t.kind === 'empty' ? 700 : ms) } });
+  r.down(1, 50, 50); await sleep(400);
+  ok(!r.kinds().includes('long'), 'per-target long-press time: nothing at 400 ms (default 300 ms not used for this target)');
+  r.move(1, 50, 80); r.up(1, 50, 80);
+  ok(r.kinds()[0] === 'dragStart' && r.kinds().includes('pan') && !r.kinds().includes('long'), 'a drag before the longer hold = scroll: ' + r.kinds().join());
+  const q = rig({ keepLong: true, h: { longMs: (t, ms) => (t && t.kind === 'empty' ? 700 : ms) } });
+  q.down(1, 50, 50); await sleep(760); q.move(1, 80, 80); q.up(1, 80, 80);
+  ok(q.kinds().join() === 'long,dragStart,drag,dragEnd', 'held past its own time: long press kept as the rubber band: ' + q.kinds().join());
+  const c = rig({ h: { longMs: (t, ms) => (t && t.kind === 'empty' ? 700 : ms) } }); c.down(1, 150, 50); await sleep(340);
+  ok(c.kinds().join() === 'long', 'other targets keep the preference time (300 ms)'); c.up(1, 150, 50);
+}
 { // 9. movement before the threshold cancels the long press
   const r = rig(); r.down(1, 50, 50); r.move(1, 70, 50); await sleep(360); r.up(1, 70, 50);
   ok(!r.kinds().includes('long'), 'a drag started before the threshold never turns into a long press');

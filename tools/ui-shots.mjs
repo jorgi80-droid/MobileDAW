@@ -86,7 +86,8 @@ if (go('win')) {                                         // global windows: temp
   await ev(async () => { const U = await import('./js/ui.js'); U.modal('Proyek baru', 'Perubahan yang belum disimpan akan hilang.', [{ label: 'Batal' }, { label: 'Buat baru', go: true }]); }); await shot('win-modal'); await close();
   await ev(async () => { const U = await import('./js/ui.js'); U.ask('Nama proyek', 'Lagu baru', () => {}); }); await shot('win-ask'); await close();
   await ev(() => document.getElementById('btn-menu').click()); await shot('win-menu');
-  await ev(() => [...document.querySelectorAll('.menu .mi')].find((m) => /^Ekspor audio/.test(m.textContent)).click()); await shot('win-export'); await close();
+  await ev(() => [...document.querySelectorAll('.menu .mi')].find((m) => m.textContent === 'Ekspor').click()); await page.waitForTimeout(450);
+  await ev(() => [...document.querySelectorAll('.menu .mi')].find((m) => /^Audio/.test(m.textContent)).click()); await shot('win-export'); await close();
   await ev(async () => { const U = await import('./js/ui.js'); U.toast('Tersimpan: /MobileDAW/Lagu baru.mdaw', 9000); const c = U.h('div', { class: 'pwa-card', role: 'dialog' }, U.h('b', {}, 'Pasang MobileDAW'), U.h('div', { class: 'sv' }, 'Pasang sebagai aplikasi: layar penuh tanpa bilah browser, tetap jalan offline, dan ikon di layar utama.'), U.h('div', { class: 'acts' }, U.h('button', { class: 'b' }, 'Nanti'), U.h('button', { class: 'b go' }, 'Pasang'))); document.getElementById('layer').append(c); }); await shot('win-toast-pwa'); await close();
   await ev(async () => { const P = await import('./js/project.js'), D = await import('./js/devices.js'); D.openDeviceWindow(P.state.tracks[1].devices[0].id); }); await shot('win-float'); await close();
 }

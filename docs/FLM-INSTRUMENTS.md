@@ -1,7 +1,7 @@
 # Instrumen FL Studio Mobile di MobileDAW (DirectWave, GMS, MiniSynth, SuperSaw)
 
 Sumber: screenshot modul FLM dari pemilik (26 gambar, semua tab) dan "Panduan Lengkap Instrumen FL Studio Mobile" (PDF pemilik, berdasar
-dokumentasi Image-Line). Mesin: `js/engine/flmsyn.js`. Parameter: `js/defs.js` (INSTRUMENTS 30–33). Panel: `js/fxkit.js` (VI[30..33]),
+dokumentasi Image-Line). Mesin: `js/engine/flmsyn.js`. Parameter: `js/defs.js` (INSTRUMENTS 30–33). Panel: `js/flmpanels.js` (VI[30..33], didaftarkan dari `js/fxkit.js`),
 desain Ableton Live 12 (tab, knob dengan label + nilai, layar gelap dengan kurva cyan / oranye, tombol oranye).
 
 | Tipe | Nama | Tab (sama dengan FLM) |
@@ -21,10 +21,16 @@ knob 0..100, waktu envelope sama, gain → Level, oscillator GMS 1 / 2 (atau 3) 
 Res, envelope filter 4 oktaf → Flt Amount; SuperSaw 7 suara → Unison 7, detune (cent) sama. Arpeggiator GMS lama tidak punya padanan di GMS
 FLM (preset Arp dimainkan tertahan). `presets-test` merender setiap preset (tidak NaN, tidak terlalu pelan / keras).
 
-**Tata letak panel** (Live 12): tab di atas; di bawahnya section berjudul (Pitch, Amp Envelope, Filter, Unison …) dengan dua baris kontrol
-rapat (label / knob / nilai); display mengisi seluruh tinggi section dan membesar mengikuti tinggi panel (digambar ulang tajam), menyempit
-bila halaman akan melebihi layar; saklar on / off efek ada di judul section. Lebar kartu mengikuti isi tab. Panel efek dan instrumen Live
-lain disesuaikan tingginya otomatis (zoom 0,7–1,15×) supaya tidak terpotong dan tidak menyisakan ruang kosong.
+**Tata letak panel** (Live 12, `js/flmpanels.js`): kartu selebar device Live yang tetap — 900 px (DirectWave 1010 px bersama daftar
+zona), sama di setiap tab — dan selalu penuh. Tab di atas; di bawahnya section berjudul (huruf biasa seperti Live: Pitch, Amp Envelope,
+Unison …); kontrol dalam kolom dua baris yang rapat (label / knob / nilai; envelope: Attack Decay di atas, Sustain Release di bawah) dan
+grafik mengisi seluruh lebar sisa setinggi section. Setiap tab punya grafik yang dihitung dengan rumus engine yang sama: respons filter
+(dB; geser = cutoff / resonance), envelope (geser titik = waktu / sustain; Amount tertulis, Frq Env dalam semitone), LFO (rate, attack, One
+Shot), output oscillator GMS dengan jenis modulasi (Mix / FM / Ring / Sync), gelombang MiniSynth / SuperSaw, sample + peta zona DirectWave,
+suara unison / chorus di bidang stereo (+ keyboard nada yang dimainkan GMS), pola arpeggiator atau glide, ketukan delay, distorsi +
+decimator, chorus, respons phaser, pad X / Y efek GMS (geser = X / Y). Panel yang jauh lebih tinggi (mode maksimal) diperbesar sampai
+1,35×, panel yang lebih pendek dari kontrol diperkecil (min 0,75×) agar tidak terpotong; bila layar lebih sempit dari kontrol, kartu tetap
+selebar isinya dan rantai device digeser. Panel efek dan instrumen Live lain disesuaikan tingginya otomatis (zoom 0,7–1,15×).
 
 ## Alur sinyal (seperti FLM)
 not → voice manager (Poly dengan batas voice / Mono / Legato / Slide) → oscillator atau zona sample → filter (cutoff, resonance, key
