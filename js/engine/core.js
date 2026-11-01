@@ -16,6 +16,7 @@ function newStrip() {
     silent: 0, wasAudible: true, pitch: 0, bend: 0, ccl: null, ccG: 1, ccP: 0, tpMap: Uint8Array.from({ length: 128 }, (_, i) => i), active: false, pre: [], bufL: new Float32Array(BLOCK), bufR: new Float32Array(BLOCK), peakL: 0, peakR: 0,
     sevT: new Int32Array(512), sevP: new Uint8Array(512), sevV: new Float32Array(512), sevOn: new Uint8Array(512), sevPn: new Float32Array(512), nPan: 0,
     lat: 0, pd: 0, pdl: new PdcLine(),   // PDC: latency of this strip's chain, compensation delay applied after it, its delay ring
+    width: 1, sw: 1, inv: 0, pL: 1, pR: 1,   // stereo width (0 mono .. 1 .. 2 wide, smoothed sw) and phase invert (bit 0 L, bit 1 R; ramped polarity pL / pR)
   };
 }
 
@@ -115,6 +116,21 @@ export class Engine {
   trackSolo(t, m) { if (this.ok(t)) this.s[t].solo = !!m; }
   trackSend(t, k, v) { if (this.ok(t) && t < MASTER && (k === 0 || k === 1)) this.s[t].send[k] = clamp(v, 0, 1.5); }
   // where a track's main output goes: -1 = master, 0..NFX-1 = that effect track (group routing; the effect track's own output always goes to the master)
+  trackWidth(t, w) { if (this.ok(t)) this.s[t].width = clamp(+w || 0, 0, 2); }
+  trackInvert(t, f) { if (this.ok(t)) this.s[t].inv = (f | 0) & 3; }
+  // channel stereo stage (after the chain and PDC, before the fader): polarity per side, then mid / side width. Both glide (no clicks);
+  // width 1 without inversion leaves the audio untouched.
+  stereo(s, L, R, n) {
+    const w = s.width, tL = s.inv & 1 ? -1 : 1, tR = s.inv & 2 ? -1 : 1;
+    if (w === 1 && s.sw === 1 && tL === 1 && tR === 1 && s.pL === 1 && s.pR === 1) return;   // identity: untouched
+    let sw = s.sw, pL = s.pL, pR = s.pR; const k = this.mgK;
+    for (let i = 0; i < n; i++) {
+      sw += (w - sw) * 0.0021; pL += (tL - pL) * k; pR += (tR - pR) * k;
+      const l = L[i] * pL, r = R[i] * pR, m = (l + r) * 0.5, d = (l - r) * 0.5 * sw;
+      L[i] = m + d; R[i] = m - d;
+    }
+    s.sw = Math.abs(sw - w) < 1e-6 ? w : sw; s.pL = Math.abs(pL - tL) < 1e-6 ? tL : pL; s.pR = Math.abs(pR - tR) < 1e-6 ? tR : pR;
+  }
   trackOut(t, k) { if (this.ok(t) && t < MASTER) this.s[t].out = (k >= 0 && k < NFX) ? k | 0 : -1; }
   trackInst(t, type) {
     if (!this.ok(t) || t >= MASTER) return;
@@ -289,6 +305,7 @@ export class Engine {
         case 0: s.vol = Math.max(0, v); break; case 1: s.pan = clamp(v, -1, 1); break;
         case 2: if (l.track < MASTER) s.send[0] = clamp(v, 0, 1.5); break; case 3: if (l.track < MASTER) s.send[1] = clamp(v, 0, 1.5); break;
         case 4: if (s.dev[l.dev]) s.dev[l.dev].setParam(l.param, v); break; case 5: if (l.param === 90) this.setPitch(l.track, v); else if (s.inst) s.inst.setParam(l.param, v); break;
+        case 7: s.width = clamp(v, 0, 2); break;   // stereo width (6 = tempo, handled by the project)
       }
     }
   }
@@ -309,6 +326,7 @@ export class Engine {
     if (m.pd > 0) m.pdl.run(mL, mR, n, m.pd); else m.pdl.clear();   // PDC: the direct bus waits for the slowest return
     for (let k = 0; k < NFX; k++) this.ret(k, n);
     this.runChain(m, MASTER, mL, mR, n);
+    this.stereo(m, mL, mR, n);
     let pl = 0, pr = 0;
     for (let i = 0; i < n; i++) {
       m.gl += (m.vol - m.gl) * 0.0021; mL[i] *= m.gl; mR[i] *= m.gl;
@@ -391,6 +409,7 @@ export class Engine {
     if (!active && s.silent > this.tailFrames) { this.sc[idx] = 0; s.peakL *= 0.99; s.peakR *= 0.99; s.pdl.clear(); this.runMods(s, n); return; }
     this.runChain(s, idx, L, R, n);
     if (s.pd > 0) s.pdl.run(L, R, n, s.pd); else s.pdl.clear();   // PDC: line up with the slowest track (the sidechain level below is the aligned signal)
+    this.stereo(s, L, R, n);
     const pn = s.ccP ? clamp(s.pan + s.ccP, -1, 1) : s.pan, vg = s.vol * s.ccG, a = (pn + 1) * Math.PI * 0.25, tl = vg * Math.cos(a) * 1.41421356, tr = vg * Math.sin(a) * 1.41421356, s0 = s.send[0], s1 = s.send[1];
     const mt = audible ? 1 : 0, mk = this.mgK;                     // mute / solo: ramp instead of a cut (click-free in and out)
     if (s0 > 0 || s.sg0 > 0) this.retActive[0] = true; if (s1 > 0 || s.sg1 > 0) this.retActive[1] = true;
@@ -420,6 +439,7 @@ export class Engine {
     if (s.silent > this.tailFrames) { s.peakL *= 0.995; s.peakR *= 0.995; this.sc[RET0 + k] = 0; s.pdl.clear(); this.runMods(s, n); return; }
     this.runChain(s, RET0 + k, L, R, n);
     if (s.pd > 0) s.pdl.run(L, R, n, s.pd); else s.pdl.clear();   // PDC: line up with the slowest return
+    this.stereo(s, L, R, n);
     const target = s.mute ? 0 : s.vol, a = (s.pan + 1) * Math.PI * 0.25, tl = target * Math.cos(a) * 1.41421356, tr = target * Math.sin(a) * 1.41421356;
     let pl = 0, pr = 0;
     for (let i = 0; i < n; i++) {

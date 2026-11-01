@@ -14,6 +14,7 @@ const { state } = P;
 const STRIP_W = 104, VMAX = 1.4, W_MIN = 92, W_MAX = 168;
 let stripW = clamp(+prefs.mixW || STRIP_W, W_MIN, W_MAX);          // strip width: drag the grip at the right end of any title bar (Live: drag a strip's edge), double-tap = default
 const PAN = { n: 'Pan', min: -1, max: 1, def: 0, fmt: 'pan' };
+const WIDTH = { n: 'Width', min: 0, max: 2, def: 1, unit: '%' };   // stereo width: 0 % mono, 100 % as is, 200 % wide
 const SEND = (k) => ({ n: 'Send ' + 'AB'[k], min: 0, max: 1, def: 0, unit: '%' });
 let root = null, strips = [];
 const volToPos = (v) => Math.sqrt(clamp(v / VMAX, 0, 1));
@@ -57,6 +58,10 @@ function strip(i, pos) {
   if (!master) {
     const pk = knob(PAN, () => t.pan, (v) => P.setPan(i, v), fmtParam, C('#ffa722'), (r) => offerAutomation(r, { kind: 1, strip: P.stripOf(i), param: 0, def: P.AUTO_PAN }, `${label} • Pan`));
     pk.classList.add('sm'); pan.append(pk); knobs.push(pk);
+  }
+  {
+    const wk = knob(WIDTH, () => t.width ?? 1, (v) => P.setWidth(i, Math.abs(v - 1) < 0.02 ? 1 : v), fmtParam, C('#5ac8fa'), (r) => offerAutomation(r, { kind: 7, strip: P.stripOf(i), param: 0, def: P.AUTO_WIDTH }, `${label} • Width`));
+    wk.classList.add('sm', 'wd'); pan.append(wk); knobs.push(wk);
   }
   // volume and peak fields (Live: above the meter), then the meter + fader
   const vbox = h('button', { class: 'vbox', 'aria-label': 'Volume (dB), ketuk untuk mengetik nilai' }, dbText(t.vol));
@@ -102,6 +107,14 @@ function strip(i, pos) {
     m = h('button', { class: 'b m' + (t.mute ? ' on' : ''), onclick: () => P.toggleReturnMute(i - RET0), 'aria-label': 'Aktivator / Mute' }, (i - RET0 < 2 ? String.fromCharCode(65 + (i - RET0)) : 'F' + (i - RET0 - 1)));
     btns.append(m);
   }
+  // phase invert: tap = both sides, long press = left / right only
+  const ph = h('button', { class: 'b ph' + ((t.inv | 0) ? ' on' : ''), 'aria-label': 'Balik fase (polaritas)', title: 'Balik fase' }, '\u00d8');
+  { let tm = 0, held = false;
+    ph.addEventListener('pointerdown', () => { held = false; tm = setTimeout(() => { held = true; const r = ph.getBoundingClientRect(), f = t.inv | 0;
+      menu([['Mati', 0], ['Kiri saja', 1], ['Kanan saja', 2], ['Kiri + kanan', 3]].map(([l, v]) => ({ label: 'Balik fase: ' + l, check: f === v, fn: () => P.setInvert(i, v) })), r.left, r.bottom + 2); }, 450); });
+    ph.addEventListener('pointerup', () => { clearTimeout(tm); if (!held) P.setInvert(i, (t.inv | 0) ? 0 : 3); });
+    ph.addEventListener('pointercancel', () => clearTimeout(tm)); }
+  btns.append(ph);
   let inp = null;
   if (ret) {                                                         // a return has no sends of its own: show who feeds it (Live shows the incoming sends on the return)
     const k = i - RET0, nn = h('span', { class: 'mx-inn' }), nl = h('span', { class: 'mx-inl' });
@@ -111,7 +124,7 @@ function strip(i, pos) {
   const grip = h('div', { class: 'mx-grip', 'aria-label': 'Lebar strip' });
   gripDrag(grip);
   const el = h('div', { class: 'mxs' + (master ? ' master' : ret ? ' ret' : '') + (ret && i === RET0 ? ' ret0' : ''), style: `width:${stripW}px` }, name, io, ld, sends, pan, vals, fader, btns, grip);
-  return { i, pos, el, c, m, s, a, name, t, master, ret, vbox, pbox, st, knobs, ob, ld, fader, inp };
+  return { i, pos, el, c, m, s, a, ph, name, t, master, ret, vbox, pbox, st, knobs, ob, ld, fader, inp };
 }
 
 function setWidth(w) { stripW = clamp(Math.round(w), W_MIN, W_MAX); for (const s of strips) s.el.style.width = stripW + 'px'; root && root.classList.toggle('mx-wide', stripW >= 132); }
@@ -147,6 +160,7 @@ export function update() {
     if (s.master) continue;
     if (s.m) s.m.classList.toggle('on', !!s.t.mute);
     if (s.s) s.s.classList.toggle('on', !!s.t.solo);
+    if (s.ph) { const f = s.t.inv | 0; s.ph.classList.toggle('on', !!f); s.ph.textContent = f === 1 ? '\u00d8L' : f === 2 ? '\u00d8R' : '\u00d8'; }
     if (s.a) s.a.classList.toggle('on', !!s.t.arm);
     s.name.textContent = s.t.name;
     if (s.ob) s.ob.firstChild.textContent = P.outLabel(s.t.out);

@@ -64,7 +64,8 @@ struct Strip {
   double peakL = 0, peakR = 0;
   int32_t sevT[512]; uint8_t sevP[512]; float sevV[512]; uint8_t sevOn[512]; float sevPn[512];
   double nPan = 0;
-  int lat = 0, pd = 0; PdcLine pdl;   // PDC: chain latency, compensation delay, its ring (storage owned by the engine)
+  int lat = 0, pd = 0; PdcLine pdl;
+  double width = 1, sw = 1, pL = 1, pR = 1; int inv = 0;   // core.js stereo stage: width (smoothed sw), phase invert (bit 0 L, bit 1 R)   // PDC: chain latency, compensation delay, its ring (storage owned by the engine)
   void init(double v);
 };
 
@@ -115,6 +116,9 @@ class Engine {
   void trackSolo(int t, bool m) { if (ok(t)) s[t].solo = m; }
   void trackSend(int t, int k, double v) { if (ok(t) && t < MASTER && (k == 0 || k == 1)) s[t].send[k] = clamp(v, 0, 1.5); }
   void trackOut(int t, double k);
+  void trackWidth(int t, double w) { if (ok(t)) { double x = (w == w && w != 0) ? w : 0; s[t].width = clamp(x, 0, 2); } }
+  void trackInvert(int t, double f) { if (ok(t)) s[t].inv = toInt32(f) & 3; }
+  void stereo(Strip& st, float* L, float* R, int n);
   void trackInst(int t, Instrument* prepared);
   void setPitch(int t, double v);
   void instParam(int t, int i, double v);

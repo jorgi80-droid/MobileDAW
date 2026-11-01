@@ -388,7 +388,7 @@ export function syncTrackFull(i) {
   syncPads(i);
   syncSoundFont(i);
   syncDevices(i);
-  eng.trackVol(i, t.vol); eng.trackPan(i, t.pan); eng.trackMute(i, t.mute); eng.trackSolo(i, t.solo);
+  eng.trackVol(i, t.vol); eng.trackPan(i, t.pan); eng.trackMute(i, t.mute); eng.trackSolo(i, t.solo); eng.trackWidth(i, t.width ?? 1); eng.trackInvert(i, t.inv | 0);
   eng.send(i, 0, t.send ? t.send[0] : 0); eng.send(i, 1, t.send ? t.send[1] : 0);
   eng.trackOut(i, t.out >= 0 && t.out < state.returns.length ? t.out : -1);
   syncClips(i);
@@ -400,11 +400,11 @@ export function syncAll() {
   }
   eng.resetTrack(MASTER);
   syncDevices(MASTER);
-  eng.trackVol(MASTER, state.master.vol);
+  eng.trackVol(MASTER, state.master.vol); eng.trackWidth(MASTER, state.master.width ?? 1); eng.trackInvert(MASTER, state.master.inv | 0);
   state.returns.forEach((r, k) => {
     eng.resetTrack(RET0 + k);
     syncDevices(RET0 + k);
-    eng.trackVol(RET0 + k, r.vol); eng.trackPan(RET0 + k, r.pan); eng.trackMute(RET0 + k, r.mute);
+    eng.trackVol(RET0 + k, r.vol); eng.trackPan(RET0 + k, r.pan); eng.trackMute(RET0 + k, r.mute); eng.trackWidth(RET0 + k, r.width ?? 1); eng.trackInvert(RET0 + k, r.inv | 0);
   });
   for (let k = state.returns.length; k < MAX_FX; k++) eng.resetTrack(RET0 + k);   // effect tracks that no longer exist
   syncAutomation();
@@ -581,6 +581,9 @@ export function renameTrack(i, name) { if (HK.on && name !== state.tracks[i].nam
 export function noteColor(strip, before) { if (HK.on) HK.add({ t: 'color', s: strip, v: before }); }   // the colour picker edits live, so it reports the old colour when it closes
 export function setVol(i, v) { const t = tr(i); if (HK.on && t.vol !== v && !HK.hit('vol' + stripOf(i))) HK.add({ t: 'val', k: 'vol', s: stripOf(i), v: t.vol }); t.vol = v; eng.trackVol(i, v); }
 export function setPan(i, v) { const t = tr(i); if (HK.on && t.pan !== v && !HK.hit('pan' + stripOf(i))) HK.add({ t: 'val', k: 'pan', s: stripOf(i), v: t.pan }); t.pan = v; eng.trackPan(i, v); }
+// channel stereo width (0 mono .. 1 normal .. 2 wide) and phase invert (bit 0 left, bit 1 right): tracks, returns and master
+export function setWidth(i, v) { const t = tr(i); v = Math.max(0, Math.min(2, +v)); const old = t.width ?? 1; if (HK.on && old !== v && !HK.hit('wid' + stripOf(i))) HK.add({ t: 'val', k: 'width', s: stripOf(i), v: old }); if (v === 1) delete t.width; else t.width = v; eng.trackWidth(i, v); }
+export function setInvert(i, f) { const t = tr(i); f = (f | 0) & 3; const old = t.inv | 0; if (HK.on && old !== f) HK.add({ t: 'val', k: 'inv', s: stripOf(i), v: old }); if (f) t.inv = f; else delete t.inv; eng.trackInvert(i, f); emit('mix'); }
 export function setSend(i, k, v) { const t = state.tracks[i]; t.send = t.send || [0, 0]; if (HK.on && t.send[k] !== v && !HK.hit('snd' + stripOf(i) + k)) HK.add({ t: 'val', k: 'send', s: stripOf(i), p: k, v: t.send[k] }); t.send[k] = v; eng.send(i, k, v); }
 // Arm = the track the record button records into (one at a time); Monitor = whether live input (keys, pads, MIDI) sounds on a MIDI / drum track. Fields t.arm / t.mon, default off / on.
 const REC_KINDS = ['audio', 'midi', 'drum'];
@@ -1280,6 +1283,7 @@ async function deserializeInner(text) {
 //   kind: 0 volume, 1 pan, 2 send A, 3 send B, 4 device parameter, 5 instrument parameter
 //   strip: a track id, or 'master' / 'ret0' / 'ret1'.   def: { min, max, curve?, step? } of the parameter.
 // Clip points are { t: ticks inside the clip, v: 0..1 }; the engine receives real parameter values.
+export const AUTO_WIDTH = { n: 'Width', min: 0, max: 2, unit: '%', def: 1 };
 export const AUTO_VOL = { n: 'Volume', min: 0, max: 1.4, fmt: 'gain' }, AUTO_PAN = { n: 'Pan', min: -1, max: 1, fmt: 'pan' }, AUTO_SEND = { n: 'Send', min: 0, max: 1, unit: '%' };
 
 export function stripIndex(strip) {
@@ -1314,6 +1318,7 @@ export function autoCurrent(t) {
     case 1: v = o.pan || 0; break;
     case 2: case 3: v = (o.send || [0, 0])[tg.kind - 2]; break;
     case 4: v = o.devices[r.dev].params[tg.param]; break;
+    case 7: v = o.width ?? 1; break;
     default: { const x = tg.param === 90 ? (o.inst.pitch || 0) : o.inst.params[tg.param]; v = x === undefined ? tg.def.def ?? tg.def.min : x; }
   }
   return normOf(tg.def, v ?? tg.def.min);
@@ -1749,6 +1754,7 @@ export function applyTargetValue(target, v) {
     case 1: setPan(r.track, v); break;
     case 2: case 3: if (r.track < MASTER) setSend(r.track, target.kind - 2, v); break;
     case 4: setDeviceParam(r.track, r.dev, target.param, v); break;
+    case 7: setWidth(r.track, v); break;
     default: setInstParam(r.track, target.param, v);
   }
   scheduleRefresh();
@@ -1780,6 +1786,8 @@ export function swapRec(e) {
       let cur;
       if (e.k === 'vol') { cur = t.vol; setVol(i, e.v); }
       else if (e.k === 'pan') { cur = t.pan; setPan(i, e.v); }
+      else if (e.k === 'width') { cur = t.width ?? 1; setWidth(i, e.v); }
+      else if (e.k === 'inv') { cur = t.inv | 0; setInvert(i, e.v); }
       else if (e.k === 'send') { cur = t.send ? t.send[e.p] : 0; setSend(i, e.p, e.v); }
       else if (e.k === 'dev') { const di = t.devices.findIndex((x) => x.id === e.d); if (di < 0) return; cur = t.devices[di].params[e.p]; setDeviceParam(i, di, e.p, e.v); }
       else if (e.k === 'inst') { if (!t.inst) return; const had = e.p in t.inst.params; cur = instVal(t, e.p); setInstParam(i, e.p, e.v); if (e.u) delete t.inst.params[e.p]; e.u = !had; }   // a parameter that was never touched goes back to "not stored", so saved files stay the same

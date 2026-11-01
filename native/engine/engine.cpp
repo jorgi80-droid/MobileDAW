@@ -27,7 +27,7 @@ void Strip::init(double v) {
   vol = v; pan = 0; gl = 0; gr = 0; send[0] = send[1] = 0; out = -1; mute = false; solo = false; mg = 1; sg0 = 0; sg1 = 0;
   silent = 0; wasAudible = true; pitch = 0; bend = 0; ccl = nullptr; ccG = 1; ccP = 0;
   for (int i = 0; i < 128; i++) tpMap[i] = (uint8_t)i;
-  lat = 0; pd = 0; pdl.n = 0; pdl.w = 0; pdl.used = false;   // core.js newStrip(): a fresh PdcLine (same storage)
+  lat = 0; pd = 0; pdl.n = 0; pdl.w = 0; pdl.used = false; width = 1; sw = 1; pL = 1; pR = 1; inv = 0;   // core.js newStrip(): a fresh PdcLine (same storage)
   active = false; npre = 0; std::memset(bufL, 0, sizeof bufL); std::memset(bufR, 0, sizeof bufR); peakL = 0; peakR = 0; nPan = 0;
 }
 
@@ -172,6 +172,17 @@ void Engine::rackCmd(int t, double d, int op, double c, double j, double a, doub
   Device* removed[RACK_MAX_REMOVED]; int nr = r->rackCmd(op, c, j, a, b, prep, removed);
   for (int k = 0; k < nr; k++) retire.put(removed[k]);
 }
+void Engine::stereo(Strip& st, float* L, float* R, int n) {
+  double w = st.width, tL = st.inv & 1 ? -1 : 1, tR = st.inv & 2 ? -1 : 1;
+  if (w == 1 && st.sw == 1 && tL == 1 && tR == 1 && st.pL == 1 && st.pR == 1) return;
+  double sw = st.sw, pL = st.pL, pR = st.pR, k = mgK;
+  for (int i = 0; i < n; i++) {
+    sw += (w - sw) * 0.0021; pL += (tL - pL) * k; pR += (tR - pR) * k;
+    double l = L[i] * pL, r = R[i] * pR, m = (l + r) * 0.5, d = (l - r) * 0.5 * sw;
+    L[i] = (float)(m + d); R[i] = (float)(m - d);
+  }
+  st.sw = std::fabs(sw - w) < 1e-6 ? w : sw; st.pL = std::fabs(pL - tL) < 1e-6 ? tL : pL; st.pR = std::fabs(pR - tR) < 1e-6 ? tR : pR;
+}
 void Engine::bend(int t, double st0) {
   if (!ok(t) || t >= MASTER) return;
   Strip& st = s[t]; double x = (st0 == st0 && st0 != 0) ? st0 : 0; x = clamp(x, -12, 12);
@@ -295,6 +306,7 @@ void Engine::applyAuto(double tick) {
       case 3: if (l.track < MASTER) st.send[1] = clamp(v, 0, 1.5); break;
       case 4: if (l.dev >= 0 && l.dev < st.ndev) st.dev[l.dev]->setParam(l.param, v); break;
       case 5: if (l.param == 90) setPitch(l.track, v); else if (st.inst) st.inst->setParam(l.param, v); break;
+      case 7: st.width = clamp(v, 0, 2); break;
     }
   }
 }
@@ -314,6 +326,7 @@ void Engine::chunk(int n, double sp) {
   if (m.pd > 0) m.pdl.run(mixL, mixR, n, m.pd); else m.pdl.clear();
   for (int k = 0; k < NFX; k++) ret(k, n);
   runChain(m, MASTER, mixL, mixR, n);
+  stereo(m, mixL, mixR, n);
   double pl = 0, pr = 0;
   for (int i = 0; i < n; i++) {
     m.gl += (m.vol - m.gl) * 0.0021; mixL[i] = (float)(mixL[i] * m.gl); mixR[i] = (float)(mixR[i] * m.gl);
@@ -403,6 +416,7 @@ void Engine::track(Strip& st, int idx, double p0, int n, double sp, bool anySolo
   if (!active && st.silent > tailFrames) { sc[idx] = 0; st.peakL *= 0.99; st.peakR *= 0.99; st.pdl.clear(); runMods(st, n); return; }
   runChain(st, idx, L, R, n);
   if (st.pd > 0) st.pdl.run(L, R, n, st.pd); else st.pdl.clear();
+  stereo(st, L, R, n);
   double pn = st.ccP ? clamp(st.pan + st.ccP, -1, 1) : st.pan, vg = st.vol * st.ccG, a = (pn + 1) * PI * 0.25;
   double tl = vg * std::cos(a) * 1.41421356, tr = vg * std::sin(a) * 1.41421356, s0 = st.send[0], s1 = st.send[1];
   double mt = audible ? 1 : 0, mk = mgK;
@@ -434,6 +448,7 @@ void Engine::ret(int k, int n) {
   if (st.silent > tailFrames) { st.peakL *= 0.995; st.peakR *= 0.995; sc[RET0 + k] = 0; st.pdl.clear(); runMods(st, n); return; }
   runChain(st, RET0 + k, L, R, n);
   if (st.pd > 0) st.pdl.run(L, R, n, st.pd); else st.pdl.clear();
+  stereo(st, L, R, n);
   double target = st.mute ? 0 : st.vol, a = (st.pan + 1) * PI * 0.25, tl = target * std::cos(a) * 1.41421356, tr = target * std::sin(a) * 1.41421356;
   double pl = 0, pr = 0;
   for (int i = 0; i < n; i++) {

@@ -5,7 +5,7 @@ import { RingReader, PollWriter, pollViews, POLL_WATCH, POLL_DEVMAX } from './sa
 
 JOBS.sync = false;   // wavetables are built in slices between render quanta instead of in one go (see dsp.js)
 
-const CMDS = new Set(['play', 'playCountIn', 'stop', 'seek', 'tempo', 'tempoMap', 'setSig', 'setMeter', 'loop', 'setMetro', 'setMetroVol', 'masterLimit', 'setPdc', 'trackVol', 'trackPan', 'trackMute', 'trackSolo', 'trackSend', 'trackOut', 'trackLoad', 'trackInst', 'instParam', 'resetTrack',
+const CMDS = new Set(['play', 'playCountIn', 'stop', 'seek', 'tempo', 'tempoMap', 'setSig', 'setMeter', 'loop', 'setMetro', 'setMetroVol', 'masterLimit', 'setPdc', 'trackVol', 'trackPan', 'trackWidth', 'trackInvert', 'trackMute', 'trackSolo', 'trackSend', 'trackOut', 'trackLoad', 'trackInst', 'instParam', 'resetTrack',
   'insertDevice', 'removeDevice', 'devParam', 'devBypass', 'rackCmd', 'preview', 'bend', 'trackNotes', 'trackClips', 'trackCC', 'automation']);
 
 class DawProcessor extends AudioWorkletProcessor {

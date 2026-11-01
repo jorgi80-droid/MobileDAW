@@ -232,6 +232,16 @@ export const SCENARIOS = [
       e.rackCmd(0, -1, 3, 8, 0, 1, 0); play(e, 0.5); e.rackCmd(0, -1, 7, 8, 0, 0, 0); play(e, 0.5); e.rackCmd(0, -1, 0, 0, 0, 0, 0);
       e.stop(); play(e, 1);
     } },
+  { name: 'core-width-invert', info: 'channel stereo width (0 / 0.4 / 2, smoothed) and phase invert (L, R, both; ramped) on tracks, a return and the master, plus width automation (lane kind 7)',
+    run(e) {
+      samples(e); e.tempo(120); e.trackClips(0, clipsA, 3); e.trackClips(1, clipsB, 3); e.trackSend(0, 0, 0.5); e.insertDevice(65, 0, 7);
+      e.automation([7, 1, 0, 0, 3, 0, 0, PPQ * 4, 2, PPQ * 8, 0.3], 11);
+      e.play(); play(e, 1, [128, 77]);
+      e.trackWidth(0, 0); play(e, 0.4); e.trackWidth(0, 2); play(e, 0.4); e.trackWidth(0, 0.4); e.trackInvert(0, 1); play(e, 0.4);
+      e.trackInvert(0, 2); play(e, 0.3); e.trackInvert(0, 3); play(e, 0.3); e.trackInvert(0, 0); e.trackWidth(0, 1); play(e, 0.3);
+      e.trackWidth(65, 1.8); e.trackInvert(65, 1); play(e, 0.5); e.trackWidth(64, 0.2); e.trackInvert(64, 2); play(e, 1.2, [128, 333]);
+      e.trackWidth(64, 1); e.trackInvert(64, 0); play(e, 0.5); e.stop(); play(e, 0.5);
+    } },
   ...fxScenarios(),
   { name: 'fx-autoduck-sc', info: 'Autoduck: track 2 (short bass notes) ducks the pad on track 1; source / threshold / amount / attack / release changes while playing',
     run(e) {

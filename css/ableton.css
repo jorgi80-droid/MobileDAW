@@ -896,3 +896,10 @@
 #dtabs #btn-edclose { width: 30px; min-width: 30px; height: 26px; padding: 0; background: transparent; border-color: transparent; }
 #view-arr.edfull #btn-max, #view-arr.edfull #btn-shut, #view-arr.edfull #split { display: none; }
 #view-arr.edfull #dtitle { color: var(--text); }
+
+/* mixer: stereo width knob next to pan, phase invert button */
+.mx-pan .knob.wd { margin-left: 2px; }
+.mx-btns .b.ph { background: var(--lv-ctl, var(--raise)); color: var(--lv-ink, var(--text)); font-size: 10px; }
+.mx-btns .b.ph.on { background: #5ac8fa; color: #0b0b0c; }
+.mx-btns:has(.b.a) { gap: 2px; padding: 0 3px; }
+.mx-btns:has(.b.a) .b { width: 24px; min-width: 24px; }

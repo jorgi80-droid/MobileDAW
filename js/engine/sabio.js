@@ -13,7 +13,7 @@
 
 // commands the ring may carry (all arguments numbers / booleans); the index is the opcode
 export const RING_CMDS = ['play', 'stop', 'seek', 'tempo', 'loop', 'setMetro', 'setMetroVol', 'masterLimit', 'setPdc', 'playCountIn', 'trackVol', 'trackPan', 'trackMute', 'trackSolo',
-  'trackSend', 'trackOut', 'trackLoad', 'instParam', 'devParam', 'devBypass', 'preview', 'bend', 'rackCmd', 'resetTrack', 'removeDevice', 'insertDevice', 'trackInst'];
+  'trackSend', 'trackOut', 'trackLoad', 'instParam', 'devParam', 'devBypass', 'preview', 'bend', 'rackCmd', 'resetTrack', 'removeDevice', 'insertDevice', 'trackInst', 'trackWidth', 'trackInvert'];
 const OPS = new Map(RING_CMDS.map((c, i) => [c, i]));
 export const RING_CAP = 1 << 16;                 // Float64 slots
 export const POLL_WATCH = 8, POLL_DEVMAX = 4096, POLL_HEAD = 8;

@@ -162,7 +162,7 @@ class OfflineTarget {
   constructor(sr, bank, sfs) { this.e = new Engine(sr); for (let i = 0; i < bank.length; i++) if (bank[i]) this.e.bank[i] = { l: bank[i].l, r: bank[i].r, frames: bank[i].l.length, rate: sr }; for (let i = 0; i < sfs.length; i++) this.e.sfs[i] = sfs[i]; }
   play() { this.e.play(); } playCountIn() { this.e.play(); } stop() { this.e.stop(); } seek(t) { this.e.seek(t); } tempo(b) { this.e.tempo(b); } tempoMap(on, f) { this.e.tempoMap(on, f); } sig(bt, n) { this.e.setSig(bt, n); } meter(f) { this.e.setMeter(f); }
   loop(on, s, e) { this.e.loop(on, s, e); } metro(on) { this.e.setMetro(on); } metroVol(v) { this.e.setMetroVol(v); } masterLimit(on) { this.e.masterLimit(on); } pdc(on) { this.e.setPdc(on); }
-  trackVol(t, v) { this.e.trackVol(t, v); } trackPan(t, v) { this.e.trackPan(t, v); } trackMute(t, m) { this.e.trackMute(t, m); } trackSolo(t, m) { this.e.trackSolo(t, m); }
+  trackVol(t, v) { this.e.trackVol(t, v); } trackPan(t, v) { this.e.trackPan(t, v); } trackWidth(t, v) { this.e.trackWidth(t, v); } trackInvert(t, f) { this.e.trackInvert(t, f); } trackMute(t, m) { this.e.trackMute(t, m); } trackSolo(t, m) { this.e.trackSolo(t, m); }
   trackInst(t, ty) { this.e.trackInst(t, ty); } instParam(t, i, v) { this.e.instParam(t, i, v); }
   trackNotes(t, f, n) { this.e.trackNotes(t, f, n); } trackClips(t, f, n) { this.e.trackClips(t, f, n); } trackCC(t, f, n) { this.e.trackCC(t, f, n); } resetTrack(t) { this.e.resetTrack(t); }
   insertDevice(t, i, ty) { this.e.insertDevice(t, i, ty); } removeDevice(t, i) { this.e.removeDevice(t, i); } devParam(t, d, p, v) { this.e.devParam(t, d, p, v); } devBypass(t, d, b) { this.e.devBypass(t, d, b); } rackCmd(t, d, op, c, j, a, b) { this.e.rackCmd(t, d, op, c, j, a, b); }
@@ -326,7 +326,7 @@ export function createWebBackend() {
   const cmd = (name, wire = name) => (...a) => post(wire, ...a);
   Object.assign(me, {
     play: () => { if (st.ctx) st.ctx.resume().catch(() => {}); post('play'); }, playCountIn: (b) => { if (st.ctx) st.ctx.resume().catch(() => {}); post('playCountIn', b); }, stop: cmd('stop'), seek: cmd('seek'), tempo: cmd('tempo'), tempoMap: cmd('tempoMap'), sig: cmd('setSig'), meter: cmd('setMeter'), loop: cmd('loop'), metro: cmd('metro', 'setMetro'), metroVol: cmd('metroVol', 'setMetroVol'),
-    trackVol: cmd('trackVol'), trackPan: cmd('trackPan'), trackMute: cmd('trackMute'), trackSolo: cmd('trackSolo'), trackInst: cmd('trackInst'), instParam: cmd('instParam'),
+    trackVol: cmd('trackVol'), trackPan: cmd('trackPan'), trackWidth: cmd('trackWidth'), trackInvert: cmd('trackInvert'), trackMute: cmd('trackMute'), trackSolo: cmd('trackSolo'), trackInst: cmd('trackInst'), instParam: cmd('instParam'),
     trackNotes: cmd('trackNotes'), trackCC: cmd('trackCC'), trackClips: cmd('trackClips'), resetTrack: cmd('resetTrack'), insertDevice: cmd('insertDevice'), removeDevice: cmd('removeDevice'),
     devParam: cmd('devParam'), devBypass: cmd('devBypass'), rackCmd: cmd('rackCmd'), preview: cmd('preview'), bend: cmd('bend'), send: cmd('trackSend'), trackOut: cmd('trackOut'), trackLoad: cmd('trackLoad'), automation: cmd('automation'),
     masterLimit: (on) => { st.limOn = !!on; post('masterLimit', !!on); },   // output-stage safety limiter (also used by the mix export)
