@@ -85,6 +85,7 @@ const webApi = web && {
   ...web,
   exportWav: (path, endTick, bpm, bits) => web.exportWav(path, endTick, bpm, bits, (off) => { target = off; try { hooks.replay && hooks.replay(); } finally { target = webApi; } }),
   exportJob: (job) => web.exportJob(job, (off) => { target = off; try { hooks.replay && hooks.replay(); } finally { target = webApi; } }),
+  renderTrack: (strip, secs, onProgress) => web.renderTrack(strip, secs, (off) => { target = off; try { hooks.replay && hooks.replay(); } finally { target = webApi; } }, onProgress),
 };
 if (webApi) target = webApi;
 if (web && web.setReplay) web.setReplay(() => { if (hooks.replay) hooks.replay(); });   // Android: brings the native engine up to date when it is switched on

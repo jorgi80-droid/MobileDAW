@@ -170,6 +170,13 @@ class OfflineTarget {
   // konfigurasi stem: track = hanya track itu (tanpa send, tanpa rantai master); return = hanya bus efek k (track tidak langsung ke master)
   stemTrack(t) { const e = this.e; this.rawMaster(); e.s[t].solo = true; e.s[t].send[0] = 0; e.s[t].send[1] = 0; e.lanes = e.lanes.filter((l) => !((l.kind === 2 || l.kind === 3) && l.track === t)); }
   stemReturn(k) { const e = this.e; this.rawMaster(); e.noDirect = true; for (let j = 0; j < NFX; j++) if (j !== k) e.s[RET0 + j].mute = true; }
+  // Track Freeze: only track t, before its fader (volume 1, centre, width 100 %, no inversion, no sends, straight to the master), without
+  // the automation of its mixer controls (those keep working live on the frozen audio); the master chain and the output limiter are off
+  freezeTrack(t) {
+    const e = this.e, s = e.s[t]; this.rawMaster(); s.solo = true; s.send[0] = s.send[1] = 0; s.vol = 1; s.pan = 0; s.width = 1; s.inv = 0; s.out = -1;
+    const a = Math.PI * 0.25; s.gl = Math.cos(a) * 1.41421356; s.gr = Math.sin(a) * 1.41421356;   // fader already at its target: no ramp in the first milliseconds
+    e.lanes = e.lanes.filter((l) => !(l.track === t && [0, 1, 2, 3, 7].includes(l.kind)));
+  }
   rawMaster() { const e = this.e, m = e.s[MASTER]; for (const d of m.dev) d.bypass = true; m.vol = 1; m.gl = 1; e.lanes = e.lanes.filter((l) => l.track !== MASTER); }
   preview() {} bend(t, st) { this.e.bend(t, st); } devOut() { return []; } poll() { return null; } start() { return this.e.sr; }
 }
@@ -617,6 +624,16 @@ export function createWebBackend() {
     let k = off.e.pdcLatency(); const l = new Float32Array(4096), r = new Float32Array(4096);
     while (k > 0) { const n = Math.min(4096, k); off.e.render(l, r, n); k -= n; }
   }
+  // Track Freeze render (project.js freezeTrack): the track's instrument + devices + automation offline, frame 0 = song start (PDC pre-roll)
+  me.renderTrack = async (strip, secs, replay, onProgress) => {
+    await me.start();
+    const sr = st.ctx.sampleRate, off = new OfflineTarget(sr, st.bank, st.sfs);
+    replay(off); off.masterLimit(false); off.pdc(st.pdcOn !== false); off.freezeTrack(strip);
+    off.loop(false, 0, 0); off.metro(false); off.seek(0); off.e.settle(); off.play(); preroll(off);
+    const total = Math.max(1, Math.floor(secs * sr)), L = new Float32Array(total), R = new Float32Array(total); let done = 0, t0 = Date.now();
+    while (done < total) { const n = Math.min(4096, total - done); off.e.render(L.subarray(done, done + n), R.subarray(done, done + n), n); done += n; if (Date.now() - t0 > 50) { onProgress && onProgress(done / total); await new Promise((r) => setTimeout(r, 0)); t0 = Date.now(); } }
+    return { l: L, r: R, sr };
+  };
   me.exportWav = (path, endTick, bpm, bits, replay) => {
     if (st.exporting) return false;
     st.exporting = true; st.cancel = false;
@@ -626,7 +643,7 @@ export function createWebBackend() {
         await me.start();
         const sr = st.ctx.sampleRate, off = new OfflineTarget(sr, st.bank, st.sfs);
         replay(off); off.masterLimit(st.limOn !== false); off.pdc(st.pdcOn !== false);   // the export sounds like playback
-        off.loop(false, 0, 0); off.metro(false); off.seek(0); off.play(); preroll(off);
+        off.loop(false, 0, 0); off.metro(false); off.seek(0); off.e.settle(); off.play(); preroll(off);
         const total = Math.floor(((globalThis.__exportSecs > 0 ? globalThis.__exportSecs : endTick / 960 * 60 / bpm) + 3) * sr), chunk = 4096, L = [], R = [];
         let done = 0, lastYield = Date.now();
         while (done < total && !st.cancel) {
@@ -667,7 +684,7 @@ export function createWebBackend() {
           const off = new OfflineTarget(sr, st.bank, st.sfs);
           replay(off); off.masterLimit(it.kind === 'mix' && st.limOn !== false); off.pdc(st.pdcOn !== false);   // stems stay raw (no master limiter), the mix sounds like playback
           if (it.kind === 'track') off.stemTrack(it.idx); else if (it.kind === 'return') off.stemReturn(it.idx);
-          off.loop(false, 0, 0); off.metro(false); off.seek(job.startTick); off.play(); preroll(off);
+          off.loop(false, 0, 0); off.metro(false); off.seek(job.startTick); off.e.settle(); off.play(); preroll(off);
           let L = [], R = [], done = 0, peak = 0, lastYield = Date.now();
           while (done < total && !st.cancel) {
             const c = Math.min(4096, total - done), l = new Float32Array(c), r = new Float32Array(c);

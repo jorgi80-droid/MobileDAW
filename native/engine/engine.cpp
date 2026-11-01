@@ -394,7 +394,7 @@ void Engine::track(Strip& st, int idx, double p0, int n, double sp, bool anySolo
   }
   if (playing && hasClips) {
     for (const Clip& c : st.clips->c) {
-      double FI = c.fadeIn > 0 ? jsMax(2, jsRound(c.fadeIn * sr)) : 64, FO = c.fadeOut > 0 ? jsMax(2, jsRound(c.fadeOut * sr)) : 64;
+      double FI = c.fadeIn > 0 ? jsMax(2, jsRound(c.fadeIn * sr)) : c.fadeIn < 0 ? 1 : 64, FO = c.fadeOut > 0 ? jsMax(2, jsRound(c.fadeOut * sr)) : c.fadeOut < 0 ? 1 : 64;
       double cs = std::ceil(t2f(c.start));
       if (cs >= p0 + n) break;
       double ce = std::ceil(t2f(c.start + c.len));

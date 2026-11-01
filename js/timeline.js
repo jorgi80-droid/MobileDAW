@@ -505,7 +505,7 @@ function drawHeads() {
     foldTri(hx + 12, y + r.th / 2, !!t.fold, ik);
     ctx.fillStyle = ik; ctx.font = FONT(on ? 700 : 600, 11); ctx.textBaseline = 'middle';
     const nameR = h < 46 ? r.mute.x - 4 : hx + HEAD - METW - 6;
-    ctx.fillText(cut2(t.name, nameR - hx - 28), hx + 24, y + r.th / 2 + 0.5);                           // one line + ellipsis, never split mid-word (as Live's track names)
+    ctx.fillText(cut2((P.isFrozen(i) ? '\u2744 ' : '') + t.name, nameR - hx - 28), hx + 24, y + r.th / 2 + 0.5);   // \u2744 = frozen                           // one line + ellipsis, never split mid-word (as Live's track names)
     if (h < 46) { drawBtn(r.mute, auto ? 'On' : String(i + 1), !t.mute, T('--mute')); }
     else {
       drawBtn(r.mute, auto ? 'On' : String(i + 1), !t.mute, T('--mute'));
@@ -774,6 +774,8 @@ function headMenu(i, x, y) {
     ...(t.kind === 'audio' || t.kind === 'midi' || t.kind === 'drum' ? [{ label: t.arm ? 'Matikan Arm rekam' : 'Arm untuk rekam', fn: () => P.toggleArm(i) }] : []),
     ...(t.kind === 'midi' || t.kind === 'drum' ? [{ label: 'Monitor input: ' + (t.mon === false ? 'mati' : 'nyala'), fn: () => P.toggleMonitor(i) }] : []),
     ...(t.kind !== 'auto' ? [{ label: 'Lane otomasi\u2026', fn: () => laneMenu(i, x, y) }] : []),
+    ...(t.kind !== 'auto' ? [P.isFrozen(i) ? { label: 'Lepas freeze (Unfreeze)', fn: () => { P.unfreezeTrack(i); toast('Track kembali live.'); } }
+      : { label: 'Freeze track', fn: async () => { toast('Membekukan track\u2026', 20000); const r = await P.freezeTrack(i); toast(r.error || `Track dibekukan (${r.secs.toFixed(1)} dtk audio). Instrumen dan efeknya tidak lagi memakai CPU.`, 4000); invalidate(); } }] : []),
     { label: 'Ganti nama', fn: () => ask('Nama track', t.name, (v) => v && P.renameTrack(i, v.trim())) },
     { label: 'Warna', fn: () => { const before = t.color; pickColor({ title: 'Warna track', name: t.name, color: t.color, swatches: SWATCHES, onChange: (c) => { t.color = c; invalidate(); }, onDone: (c) => { if (c !== before) { P.noteColor(t.id, before); P.emit('tracks'); } } }); } },
     { label: t.fold ? 'Buka track' : 'Lipat track', fn: () => toggleFold(i) },

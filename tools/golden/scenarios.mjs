@@ -242,6 +242,8 @@ export const SCENARIOS = [
       e.trackWidth(65, 1.8); e.trackInvert(65, 1); play(e, 0.5); e.trackWidth(64, 0.2); e.trackInvert(64, 2); play(e, 1.2, [128, 333]);
       e.trackWidth(64, 1); e.trackInvert(64, 0); play(e, 0.5); e.stop(); play(e, 0.5);
     } },
+  { name: 'core-clip-nofade', info: 'audio clips with fade -1 (no fade at all: frozen tracks), next to the default 64-frame fade and real fades',
+    run(e) { samples(e); e.tempo(126); e.trackClips(0, [0, BAR, 0, 0.8, 0, -1, -1, BAR, BAR, 2, 0.9, 0.3, 0, 0, BAR * 2, BAR, 1, 1, 0, 0.02, -1], 3); e.play(); play(e, 6, [128, 77]); } },
   ...fxScenarios(),
   { name: 'fx-autoduck-sc', info: 'Autoduck: track 2 (short bass notes) ducks the pad on track 1; source / threshold / amount / attack / release changes while playing',
     run(e) {

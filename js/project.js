@@ -3,6 +3,8 @@
 import { eng, MASTER, RET0, hooks } from './engine.js';
 import { processBuffers, detectBpm } from './engine/audioops.js';
 import { valueAt as curveAt, densify } from './autocurve.js';
+import { encodeWav } from './engine/wav.js';
+import { log } from './log.js';
 import { INSTRUMENTS, DEVICES, DRUM_PADS, INST, PRESETS, normOf, valOf, MOD_MAP, IRACK_DEF } from './defs.js';
 
 export const PPQ = 960, MAX_TRACKS = 64;
@@ -27,7 +29,7 @@ let _id = 1;
 const uid = () => _id++;
 const listeners = new Set();
 export const onChange = (fn) => { listeners.add(fn); return () => listeners.delete(fn); };
-export const emit = (what) => { if (what === 'devices' || what === 'tracks' || what === 'all') fixMods(); listeners.forEach((f) => f(what)); };
+export const emit = (what) => { if (what === 'devices' || what === 'tracks' || what === 'all') fixMods(); if (what !== 'mix' && what !== 'transport' && state.tracks.some((t) => t.frozen)) state.tracks.forEach((t, i) => { if (t.frozen) checkFrozen(i); }); listeners.forEach((f) => f(what)); };
 // Undo hook, filled in by js/history.js. hit(key) = true when this change belongs to the gesture already recorded (a knob being dragged); add(entry) stores
 // a small "before" entry. on is false while an undo / redo / project load runs, so replayed changes are not recorded again.
 export const HK = { on: true, hit: () => false, add: () => {}, group: (f) => f(), barrier: () => {} };
@@ -300,6 +302,7 @@ export function setClipsMuted(list, m) {
 export function syncClips(i) {
   const t = state.tracks[i];
   if (!t) return;
+  if (t.frozen) { checkFrozen(i); if (frozenLive(i)) { syncFrozen(i); return; } }
   if (t.kind === 'auto') { syncAutomation(); return; }
   const f = [];
   let n = 0;
@@ -373,8 +376,60 @@ function syncDevices(i) {
   });
 }
 
+// ---- Track Freeze: the track's instrument + devices (+ their automation) rendered offline once, then played as audio through the same
+// channel (fader, pan, width, sends, routing stay live). Saves the CPU of the instrument and effects. t.frozen = { path, len, key }:
+// the audio is a WAV in the library (/Frozen/<track id>.wav) so it survives reload; key = what the render depended on. Any change to it
+// (notes, instrument, devices, tempo, signature...) unfreezes the track by itself, so a frozen track never plays stale audio.
+const frozenSmp = new Map();                 // track id -> sample object of the frozen audio (engine bank slot)
+let freezing = -1;                           // the track being rendered: replayed live (not frozen) into the offline engine
+const FREEZE_SKIP = new Set(['sample', 'dsample', 'peaks', 'pyr', 'frozen', 'vol', 'pan', 'mute', 'solo', 'send', 'out', 'width', 'inv', 'name', 'color', 'fold', 'hx', 'arm', 'mon']);
+function freezeKey(i) {
+  const t = state.tracks[i], laneT = state.tracks.filter((a) => a.kind === 'auto' && a.target && a.target.strip === stripOf(i) && ![0, 1, 2, 3, 7].includes(a.target.kind)).map((a) => [a.target, a.mute, a.clips]);
+  return JSON.stringify([t, laneT, state.bpm, tmKey, state.sig, state.sigs, state.groove], (k, v) => (FREEZE_SKIP.has(k) ? (k === 'sample' && v && v.path ? v.path : undefined) : v));
+}
+export const isFrozen = (i) => { const t = state.tracks[i]; return !!(t && t.frozen && frozenSmp.has(t.id)); };
+const frozenLive = (i) => isFrozen(i) && freezing !== i;
+// a frozen track whose inputs changed goes back to live
+function checkFrozen(i) { const t = state.tracks[i]; if (!t || !t.frozen || freezing === i) return; if (!frozenSmp.has(t.id) || t.frozen.key !== freezeKey(i)) unfreezeTrack(i, true); }
+export async function freezeTrack(i, onProgress) {
+  const t = state.tracks[i]; if (!t || t.kind === 'auto') return { error: 'Track ini tidak bisa dibekukan.' };
+  if (!eng.renderTrack) return { error: 'Freeze butuh engine Web (AudioWorklet).' };
+  let end = 0; for (const c of t.clips) if (!c.muted) end = Math.max(end, c.start + c.len);
+  if (!end) return { error: 'Track kosong.' };
+  const secs = tickToSec(end) + 6;                                  // + the tail of the effects (trimmed below)
+  freezing = i;
+  let r; try { r = await eng.renderTrack(i, secs, onProgress); } finally { freezing = -1; }
+  if (!r || !r.l) return { error: 'Render gagal.' };
+  let last = Math.ceil(tickToSec(end) * r.sr);                      // keep the clips' length, then the tail while it is above -140 dBFS
+  for (let k = r.l.length - 1; k > last; k--) if (Math.abs(r.l[k]) > 1e-7 || Math.abs(r.r[k]) > 1e-7) { last = k + 1; break; }   // -140 dBFS
+  last = Math.min(last, r.l.length);
+  const L = r.l.slice(0, last), R = r.r.slice(0, last), path = `/Frozen/${t.id}.wav`;
+  await eng.saveBytes(path, encodeWav([L], [R], L.length, r.sr, 32));
+  delete state.samples[path];                                       // a re-freeze must not reuse the previous decode
+  const s = await loadSampleObj(path); if (!s) return { error: deriveErr || 'Audio freeze tidak bisa dimuat.' };
+  frozenSmp.set(t.id, s);
+  t.frozen = { path, len: Math.max(1, Math.round(secToTick(L.length / r.sr))), key: freezeKey(i) };
+  syncTrackFull(i); emit('tracks');
+  return { ok: true, secs: L.length / r.sr };
+}
+export function unfreezeTrack(i, auto = false) {
+  const t = state.tracks[i]; if (!t || !t.frozen) return;
+  delete t.frozen; frozenSmp.delete(t.id); syncTrackFull(i); emit('tracks');
+  if (auto) log('info', `freeze "${t.name}" dilepas: isi track berubah`);
+}
+function syncFrozen(i) {
+  const t = state.tracks[i], s = frozenSmp.get(t.id);
+  eng.resetTrack(i);
+  eng.trackVol(i, t.vol); eng.trackPan(i, t.pan); eng.trackMute(i, t.mute); eng.trackSolo(i, t.solo); eng.trackWidth(i, t.width ?? 1); eng.trackInvert(i, t.inv | 0);
+  eng.send(i, 0, t.send ? t.send[0] : 0); eng.send(i, 1, t.send ? t.send[1] : 0);
+  eng.trackOut(i, t.out >= 0 && t.out < state.returns.length ? t.out : -1);
+  eng.trackClips(i, [0, t.frozen.len, s.id, 1, 0, -1, -1], 1);   // fades -1 = none (0 would mean the default 64-frame clip fade)
+}
+
 export function syncTrackFull(i) {
   const t = state.tracks[i];
+  checkFrozen(i);
+  if (frozenLive(i)) { syncFrozen(i); return; }
   eng.resetTrack(i);
   if (t.inst) {
     eng.trackInst(i, t.inst.type);
@@ -698,7 +753,7 @@ function instVal(t, pi) {
   return pad ? [pad.gain, pad.pit, pad.dec][pi % 3] : undefined;
 }
 export function setInstParam(i, pi, v) {
-  const t = state.tracks[i];
+  const t = state.tracks[i]; if (t.frozen) unfreezeTrack(i, true);
   if (HK.on) { const old = instVal(t, pi); if (old !== undefined && old !== v && !HK.hit('ip' + t.id + '.' + pi)) HK.add({ t: 'val', k: 'inst', s: t.id, p: pi, v: old, u: !(pi in t.inst.params) }); }
   t.inst.params[pi] = v; eng.instParam(i, pi, v); if (modsMapped) fixMods();
   if (t.kind === 'drum' && pi >= 0 && pi < MAX_PADS * 3 && t.inst.pads) {   // automation of the original pad parameters: keep the pad data equal
@@ -853,7 +908,7 @@ export function addDevice(i, type) {
   emit('devices');
 }
 export function removeDevice(i, di) { const d0 = tr(i).devices[di]; if (HK.on && d0) HK.add({ t: 'dpres', s: stripOf(i), d: d0, di, present: false }); tr(i).devices.splice(di, 1); eng.removeDevice(i, di); emit('devices'); }
-export function setDeviceParam(i, di, pi, v) { const d = tr(i).devices[di]; if (HK.on && d.params[pi] !== v && !HK.hit('dp' + stripOf(i) + '.' + d.id + '.' + pi)) HK.add({ t: 'val', k: 'dev', s: stripOf(i), d: d.id, p: pi, v: d.params[pi] }); tr(i).devices[di].params[pi] = v; eng.devParam(i, di, pi, v);  if (modsMapped) fixMods(); }
+export function setDeviceParam(i, di, pi, v) { if (i < MAX_TRACKS && state.tracks[i] && state.tracks[i].frozen) unfreezeTrack(i, true); const d = tr(i).devices[di]; if (HK.on && d.params[pi] !== v && !HK.hit('dp' + stripOf(i) + '.' + d.id + '.' + pi)) HK.add({ t: 'val', k: 'dev', s: stripOf(i), d: d.id, p: pi, v: d.params[pi] }); tr(i).devices[di].params[pi] = v; eng.devParam(i, di, pi, v);  if (modsMapped) fixMods(); }
 export function toggleBypass(i, di) {
   const d = tr(i).devices[di];
   if (HK.on) HK.add({ t: 'tog', k: 'byp', s: stripOf(i), d: d.id });
@@ -1234,6 +1289,11 @@ async function deserializeInner(text) {
       } else missing.push(c.sample.path);
     }
     t.clips = t.clips.filter((c) => !missing.includes(c.sample.path) || state.samples[c.sample.path]);
+  }
+  frozenSmp.clear();
+  for (const t of state.tracks) {                                  // frozen tracks: their audio from the library; missing = the track plays live again
+    if (!t.frozen || !t.frozen.path) { delete t.frozen; continue; }
+    const s = await loadSampleObj(t.frozen.path); if (s) frozenSmp.set(t.id, s); else delete t.frozen;
   }
   const chains = [state.master, ...state.returns, ...state.tracks];
   for (let i = 0; i < state.tracks.length; i++) {

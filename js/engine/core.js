@@ -116,6 +116,15 @@ export class Engine {
   trackSolo(t, m) { if (this.ok(t)) this.s[t].solo = !!m; }
   trackSend(t, k, v) { if (this.ok(t) && t < MASTER && (k === 0 || k === 1)) this.s[t].send[k] = clamp(v, 0, 1.5); }
   // where a track's main output goes: -1 = master, 0..NFX-1 = that effect track (group routing; the effect track's own output always goes to the master)
+  // offline renders (export, freeze) start with every smoothed mixer value at its target: no fade-in of the faders / sends at frame 0
+  settle() {
+    for (let t = 0; t < NSTRIPS; t++) {
+      const s = this.s[t], ret = t >= RET0, vol = ret && s.mute ? 0 : s.vol, pn = t === MASTER ? 0 : s.pan, a = (pn + 1) * Math.PI * 0.25;
+      if (t === MASTER) { s.gl = s.vol; s.gr = s.vol; } else { s.gl = vol * Math.cos(a) * 1.41421356; s.gr = vol * Math.sin(a) * 1.41421356; }
+      if (t < MASTER) { s.sg0 = s.send[0]; s.sg1 = s.send[1]; }
+      s.sw = s.width; s.pL = s.inv & 1 ? -1 : 1; s.pR = s.inv & 2 ? -1 : 1;
+    }
+  }
   trackWidth(t, w) { if (this.ok(t)) this.s[t].width = clamp(+w || 0, 0, 2); }
   trackInvert(t, f) { if (this.ok(t)) this.s[t].inv = (f | 0) & 3; }
   // channel stereo stage (after the chain and PDC, before the fader): polarity per side, then mid / side width. Both glide (no clicks);
@@ -388,7 +397,7 @@ export class Engine {
     }
     if (this.playing && s.clips.length) {
       for (const c of s.clips) {
-        const FI = c.fadeIn > 0 ? Math.max(2, Math.round(c.fadeIn * this.sr)) : 64, FO = c.fadeOut > 0 ? Math.max(2, Math.round(c.fadeOut * this.sr)) : 64;
+        const FI = c.fadeIn > 0 ? Math.max(2, Math.round(c.fadeIn * this.sr)) : c.fadeIn < 0 ? 1 : 64, FO = c.fadeOut > 0 ? Math.max(2, Math.round(c.fadeOut * this.sr)) : c.fadeOut < 0 ? 1 : 64;   // < 0: no fade at all (frozen tracks)
         const cs = Math.ceil(this.t2f(c.start));
         if (cs >= pos + n) break;
         const ce = Math.ceil(this.t2f(c.start + c.len));
