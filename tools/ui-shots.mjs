@@ -62,7 +62,7 @@ if (go('clip')) {
   await sel(1); await ev(async () => (await import('./js/timeline.js')).openEditor()); await shot('clip');
   await sel(2); await ev(async () => (await import('./js/editor.js')).setTheory(0, 'Minor')); await shot('clip-midi');
   await sel(0); await shot('clip-drum');
-  await ev(async () => { const P = await import('./js/project.js'); const i = P.state.tracks.findIndex((t) => t.kind === 'auto'); P.selectTrack(i); P.selectClip(i, P.state.tracks[i].clips[0].id); }); await shot('clip-auto');
+  await ev(async (cv) => { const P = await import('./js/project.js'); const i = P.state.tracks.findIndex((t) => t.kind === 'auto'); P.selectTrack(i); P.selectClip(i, P.state.tracks[i].clips[0].id); const c = P.state.tracks[i].clips[0]; if (cv) { c.pts[0].s = 2; c.pts[1].s = 3; c.pts[1].k = 0.6; c.pts[2].s = 4; P.syncAutomation(); P.emit('notes'); } }, !!process.env.CURVES); await shot('clip-auto');
   await ev(async () => { const P = await import('./js/project.js'); const i = P.state.tracks.findIndex((t) => t.kind === 'audio'); P.selectTrack(i); P.selectClip(i, P.state.tracks[i].clips[0].id); }); await shot('clip-audio');
   await btn('btn-edclose');
 }

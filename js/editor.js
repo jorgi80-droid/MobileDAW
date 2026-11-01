@@ -8,6 +8,7 @@ import { checkpoint } from './history.js';
 import * as AE from './audioedit.js';
 import { eng } from './engine.js';
 import { fmtParam, valOf } from './defs.js';
+import { SHAPES, shapeOf, densify } from './autocurve.js';
 import * as DP from './drumpad.js';
 import * as P from './project.js';
 import * as TL from './timeline.js';
@@ -757,7 +758,7 @@ function drawAuto(t, c) {
   const pts = [...c.pts].sort((a, b) => a.t - b.t);
   ctx.strokeStyle = t.color; ctx.lineWidth = 2; ctx.beginPath();
   ctx.moveTo(px(0), ay(pts[0].v));
-  for (const p of pts) ctx.lineTo(px(p.t), ay(p.v));
+  for (const [pt, pv] of densify(pts)) ctx.lineTo(px(pt), ay(pv));      // the shapes as the engine plays them (autocurve.js)
   ctx.lineTo(px(c.len), ay(pts[pts.length - 1].v)); ctx.stroke();
   ctx.fillStyle = 'rgba(255,255,255,.06)'; ctx.lineTo(px(c.len), H); ctx.lineTo(px(0), H); ctx.closePath(); ctx.fill();
   for (const p of pts) {
@@ -793,7 +794,14 @@ function autoHandlers() {
       if (t.type !== 'pt') return false;
       asel = t.p; invalidate();
       const r = canvas.getBoundingClientRect(), c = clipC();
-      menu([{ label: 'Hapus titik', fn: () => { if (c.pts.length < 2) return toast('Klip otomasi butuh minimal dua titik.'); checkpoint(); c.pts = c.pts.filter((q) => q !== t.p); asel = null; changed(); } }], r.left + x, r.top + y);
+      const p = t.p, setShape = (s, k) => { checkpoint(); if (s) p.s = s; else delete p.s; if (k !== undefined) p.k = k; else delete p.k; changed(); };
+      const cur = shapeOf(p), kk = +p.k || 0;
+      menu([
+        ...SHAPES.filter(([, s]) => s !== 3).map(([label, s]) => ({ label: 'Kurva ke titik berikut: ' + label, check: cur === s, fn: () => setShape(s) })),
+        { label: 'Kurva: lengkung cembung (lambat lalu cepat)', check: cur === 3 && kk > 0, fn: () => setShape(3, cur === 3 && kk > 0 ? Math.min(1, kk + 0.25) : 0.5) },
+        { label: 'Kurva: lengkung cekung (cepat lalu lambat)', check: cur === 3 && kk < 0, fn: () => setShape(3, cur === 3 && kk < 0 ? Math.max(-1, kk - 0.25) : -0.5) },
+        { label: 'Hapus titik', fn: () => { if (c.pts.length < 2) return toast('Klip otomasi butuh minimal dua titik.'); checkpoint(); c.pts = c.pts.filter((q) => q !== t.p); asel = null; changed(); } },
+      ], r.left + x, r.top + y);
       return false;
     },
     dragStart(x0, y0, t) { if (t.type === 'pt') { checkpoint(); asel = t.p; drag = { k: 'apt', p: t.p }; return true; } return false; },
@@ -1008,7 +1016,7 @@ function buildProps() {
     const spark = (a) => {
       const cv = h('canvas', { class: 'cp-env', width: 200, height: 36 }), g = cv.getContext('2d'), W2 = 200, H2 = 36, s0 = cl.start, span = Math.max(1, cl.len);
       g.fillStyle = T('--lv-well'); g.fillRect(0, 0, W2, H2);
-      const valAt = (tt) => { for (const ac of a.clips) { if (tt < ac.start || tt > ac.start + ac.len || !ac.pts || !ac.pts.length) continue; const r = tt - ac.start, ps = ac.pts; if (r <= ps[0].t) return ps[0].v; for (let k = 1; k < ps.length; k++) if (r <= ps[k].t) { const p0 = ps[k - 1], p1 = ps[k]; return p0.v + (p1.v - p0.v) * ((r - p0.t) / Math.max(1, p1.t - p0.t)); } return ps[ps.length - 1].v; } return null; };
+      const valAt = (tt) => { for (const ac of a.clips) { if (tt < ac.start || tt > ac.start + ac.len || !ac.pts || !ac.pts.length) continue; return P.autoValueAt(ac, tt - ac.start); } return null; };
       g.strokeStyle = a.color || T('--accent'); g.lineWidth = 1.5; g.beginPath(); let pen = false;
       for (let x = 0; x <= W2; x += 2) { const v = valAt(s0 + span * x / W2); if (v == null) { pen = false; continue; } const y = 3 + (1 - v) * (H2 - 6); if (pen) g.lineTo(x, y); else { g.moveTo(x, y); pen = true; } }
       g.stroke(); return cv;

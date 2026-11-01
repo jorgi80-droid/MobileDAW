@@ -1,6 +1,7 @@
 // Arrangement view: ruler, track headers, clips, playhead. One canvas, all hit-testing by hand.
 // Gestures follow FL Studio Mobile (tap clip = controls, double-tap = editor, long-tap = menus,
 // right-edge handle = resize, ruler drag = time selection) on an Ableton-style layout.
+import { densify } from './autocurve.js';
 import { C, T } from './theme.js';
 import { attachGestures } from './gesture.js';
 import { menu, ask, modal, toast, clamp } from './ui.js';
@@ -169,7 +170,7 @@ function drawClip(t, c, y, hh) {
     const pts = [...c.pts].sort((a, b) => a.t - b.t), yy = (v) => by + bh - v * bh;
     ctx.fillStyle = washRgba(t.color, 0.35); ctx.strokeStyle = INK; ctx.lineWidth = 1.5; ctx.beginPath();
     ctx.moveTo(x, yy(pts[0].v));
-    for (const p of pts) ctx.lineTo(x + p.t * view.ppt, yy(p.v));
+    for (const [pt, pv] of densify(pts)) ctx.lineTo(x + pt * view.ppt, yy(pv));   // with the segment shapes (autocurve.js)
     ctx.lineTo(x + w, yy(pts[pts.length - 1].v)); ctx.stroke();
     ctx.lineTo(x + w, by + bh); ctx.lineTo(x, by + bh); ctx.closePath(); ctx.fill();
     ctx.fillStyle = INK; for (const p of pts) { const px = x + p.t * view.ppt; if (px >= xs - 3 && px <= xe + 3) ctx.fillRect(px - 2, yy(p.v) - 2, 4, 4); }   // breakpoints, as in Live's automation

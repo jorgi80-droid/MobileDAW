@@ -2,6 +2,7 @@
 // The UI edits `state`; this module mirrors changes into the native engine.
 import { eng, MASTER, RET0, hooks } from './engine.js';
 import { processBuffers, detectBpm } from './engine/audioops.js';
+import { valueAt as curveAt, densify } from './autocurve.js';
 import { INSTRUMENTS, DEVICES, DRUM_PADS, INST, PRESETS, normOf, valOf, MOD_MAP, IRACK_DEF } from './defs.js';
 
 export const PPQ = 960, MAX_TRACKS = 64;
@@ -103,7 +104,7 @@ export function tempoPts() {
     if (c.muted || !c.pts || !c.pts.length) continue;
     const sorted = [...c.pts].sort((a, b) => a.t - b.t);
     if (last !== null && c.start > last.tick) flat.push(c.start - 1, last.value);
-    for (const q of sorted) flat.push(c.start + q.t, valOf(TEMPO_DEF, q.v));
+    for (const [qt, qv] of densify(sorted)) flat.push(c.start + qt, valOf(TEMPO_DEF, qv));   // curve shapes (autocurve.js) as dense breakpoints
     last = { tick: c.start + c.len, value: valOf(TEMPO_DEF, sorted[sorted.length - 1].v) };
   }
   return flat;
@@ -1096,8 +1097,8 @@ export function splitClip(i, id, tick) {
     return;
   }
   if (t.kind === 'auto') {
-    const at = autoValueAt(c, cut);
-    const right = { id: uid(), start: tick, len: c.len - cut, name: c.name, pts: [{ t: 0, v: at }, ...c.pts.filter((p) => p.t > cut).map((p) => ({ t: p.t - cut, v: p.v }))] };
+    const at = autoValueAt(c, cut), seg = [...c.pts].sort((x, y) => x.t - y.t).filter((p) => p.t < cut).pop() || {}, sh = seg.s ? { s: seg.s, k: seg.k } : {};   // the cut keeps the segment's shape
+    const right = { id: uid(), start: tick, len: c.len - cut, name: c.name, pts: [{ t: 0, v: at, ...sh }, ...c.pts.filter((p) => p.t > cut).map((p) => ({ ...p, t: p.t - cut }))] };
     c.pts = [...c.pts.filter((p) => p.t < cut), { t: cut, v: at }];
     c.len = cut;
     t.clips.push(right);
@@ -1318,14 +1319,7 @@ export function autoCurrent(t) {
   return normOf(tg.def, v ?? tg.def.min);
 }
 
-export function autoValueAt(c, t) {
-  const p = c.pts;
-  if (!p.length) return 0.5;
-  if (t <= p[0].t) return p[0].v;
-  if (t >= p[p.length - 1].t) return p[p.length - 1].v;
-  for (let k = 1; k < p.length; k++) if (t <= p[k].t) { const a = p[k - 1], b = p[k], d = b.t - a.t; return d <= 0 ? b.v : a.v + (b.v - a.v) * (t - a.t) / d; }
-  return p[p.length - 1].v;
-}
+export function autoValueAt(c, t) { return curveAt([...c.pts].sort((a, b) => a.t - b.t), t); }   // with the segment shapes (autocurve.js)
 
 export function syncAutomation() {
   const flat = [];
@@ -1340,7 +1334,7 @@ export function syncAutomation() {
       if (c.muted || !c.pts.length) continue;
       const sorted = [...c.pts].sort((a, b) => a.t - b.t);
       if (last !== null && c.start > last.tick) pts.push([c.start - 1, last.value]);   // hold the previous value across the gap
-      for (const p of sorted) pts.push([c.start + p.t, valOf(t.target.def, p.v)]);
+      for (const [pt, pv] of densify(sorted)) pts.push([c.start + pt, valOf(t.target.def, pv)]);   // linear segments as before, curves as dense breakpoints
       last = { tick: c.start + c.len, value: valOf(t.target.def, sorted[sorted.length - 1].v) };
     }
     if (!pts.length) continue;

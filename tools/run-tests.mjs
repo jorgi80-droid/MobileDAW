@@ -31,6 +31,7 @@ run('pdc-test (plugin delay compensation: tracks, sends, groups, racks, metronom
 run('export-test (mono, sample rate, normalise, WAV formats, PDC pre-roll)', ['tools/export-test.mjs']);
 run('stretch-test (warp modes Beats / Tones / Re-Pitch: pitch, length, flutter, chords, transients, stereo)', ['tools/stretch-test.mjs']);
 run('sab-test (SharedArrayBuffer command ring + poll block: order, wrap, overflow, seqlock)', ['tools/sab-test.mjs']);
+run('autocurve-test (automation shapes: linear / step / smooth / curved / Bezier, engine follows the drawn curve)', ['tools/autocurve-test.mjs']);
 run('alias-test (synth oscillators: aliasing below -80 dB)', ['tools/alias-test.mjs', '--check']);
 run('fx-test (every effect: no dummy parameters, no NaN)', ['tools/fx-test.mjs']);
 run('inst-test (every Live 12 instrument: no dummy parameters, no NaN)', ['tools/inst-test.mjs']);
