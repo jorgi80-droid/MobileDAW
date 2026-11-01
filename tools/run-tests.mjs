@@ -29,6 +29,7 @@ run('drum-punch (drum kit + DirectWave: level, transient, punch on small speaker
 run('click-test (mute / solo / send / voice steal: no clicks)', ['tools/click-test.mjs', '--check']);
 run('pdc-test (plugin delay compensation: tracks, sends, groups, racks, metronome line up to the frame)', ['tools/pdc-test.mjs']);
 run('export-test (mono, sample rate, normalise, WAV formats, PDC pre-roll)', ['tools/export-test.mjs']);
+run('stretch-test (warp modes Beats / Tones / Re-Pitch: pitch, length, flutter, chords, transients, stereo)', ['tools/stretch-test.mjs']);
 run('alias-test (synth oscillators: aliasing below -80 dB)', ['tools/alias-test.mjs', '--check']);
 run('fx-test (every effect: no dummy parameters, no NaN)', ['tools/fx-test.mjs']);
 run('inst-test (every Live 12 instrument: no dummy parameters, no NaN)', ['tools/inst-test.mjs']);

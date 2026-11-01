@@ -38,12 +38,19 @@ const r = await page.evaluate(async () => {
   const bytes = res.ok ? await eng.readBytes(res.path) : null;
   let hdr = null;
   if (bytes) { const d = new DataView(bytes.buffer || bytes); hdr = { ch: d.getUint16(22, true), sr: d.getUint32(24, true), bits: d.getUint16(34, true), data: d.getUint32(40, true) }; }
-  return { ctxRate, lat, started, res, hdr, secs: job.secs };
+  const c = P.state.tracks[ai].clips[0], warps = {};
+  for (const mode of ['tones', 'repitch', 'beats']) {
+    const t0 = performance.now(), o = await P.setClipAudio(ai, c.id, { mode, beats: 2 });
+    const d = c.dsample, buf = d && eng.sampleBuffers(d.id);
+    warps[mode] = { error: o.error || '', mode: c.warp.mode || 'beats', dur: d ? +d.duration.toFixed(3) : 0, frames: buf ? buf.l.length : 0, ms: Math.round(performance.now() - t0) };
+  }
+  return { ctxRate, lat, started, res, hdr, secs: job.secs, warps, bpm: P.state.bpm };
 });
 const la = Math.max(8, Math.round(r.ctxRate * 0.0015));
 ok(r.lat === 3 * la, `worklet reports the PDC output latency while playing: ${r.lat} frames at ${r.ctxRate} Hz (= track Limiter + the new project's master Limiter + output limiter, 3 x ${la})`);
 ok(r.started === true && r.res && r.res.ok, `export job ran: ${JSON.stringify(r.res)}`);
 ok(r.hdr && r.hdr.ch === 1 && r.hdr.sr === 44100 && r.hdr.bits === 24 && Math.abs(r.hdr.data / 3 - r.secs * 44100) < 400, `exported WAV: ${JSON.stringify(r.hdr)} (mono, 44.1 kHz, 24-bit, ${r.secs.toFixed(2)} s)`);
+for (const [m, w] of Object.entries(r.warps)) { const want = 2 * 60 / r.bpm; ok(!w.error && w.mode === m && Math.abs(w.dur - want) < 0.01, `warp mode ${m} in the stretch worker: 2 s tone -> 2 beats = ${w.dur} s (${want.toFixed(3)} expected) in ${w.ms} ms${w.error ? ' ERROR ' + w.error : ''}`); }
 ok(!errs.length, 'no page errors' + (errs.length ? ': ' + errs.slice(0, 3).join(' | ') : ''));
 await browser.close(); server.close();
 console.log(bad ? `\n${bad} FAILED` : '\nALL OK');

@@ -82,6 +82,9 @@ function draw() {
   setInfo(c, e0, D, o, e, fi, fo);
 }
 const stOf = (p) => Math.round(p || 0), ctOf = (p) => Math.round(((p || 0) - Math.round(p || 0)) * 100), pitchOf = (st, ct) => Math.round((st + ct / 100) * 100) / 100;
+// warp algorithms (audioops.js): the clip keeps its mode; the derived audio is rendered again when it changes
+const WARP_NAMES = { beats: 'Beats', tones: 'Tones', repitch: 'Re-Pitch' };
+const WARP_HINT = { beats: 'drum, loop ritmis (WSOLA)', tones: 'nada, vokal, pad (phase vocoder)', repitch: 'pitch ikut tempo (resample)' };
 const gainDb = (g) => (g > 0.0001 ? (g > 1.0005 ? '+' : '') + (20 * Math.log10(g)).toFixed(1) : '-\u221E') + ' dB';
 let infoKey = '';
 function setInfo(c, e0, D, o, e, fi, fo) {                     // name in bold, then dim label + bright value pairs; rebuilt only when something changed
@@ -92,7 +95,7 @@ function setInfo(c, e0, D, o, e, fi, fo) {                     // name in bold, 
   if (w.pitch) items.push(['Pitch', (stOf(w.pitch) > 0 ? '+' : '') + stOf(w.pitch) + ' st' + (ctOf(w.pitch) ? ' ' + (ctOf(w.pitch) > 0 ? '+' : '') + ctOf(w.pitch) + ' ct' : ''), 1]);
   if (P.loopOf(c)) items.push(['Loop', Math.round(c.len / c.ll * 100) / 100 + 'x', 1]);
   items.push(['Akhir', e.toFixed(2)]);
-  if (w.ratio && w.ratio !== 1 || w.pitch) items.push(['Mode warp', 'WSOLA']);
+  if (w.ratio && w.ratio !== 1 || w.pitch) items.push(['Mode warp', WARP_NAMES[w.mode] || WARP_NAMES.beats]);
   if (c.srcBpm) items.push(['BPM', c.srcBpm + (c.warpAuto ? ' \u2192 ' + state.bpm : ''), 1]);
   const key = (c.name || e0.name) + '|' + items.map((x) => x[1]).join('|');
   if (key === infoKey) return; infoKey = key;
@@ -180,6 +183,7 @@ export function panel(ui) {
       ui.row('Detune', ui.ch(sgn(ct) + ' ct', (x, y) => menu([-50, -25, -10, -5, 0, 5, 10, 25, 50].map((v) => ({ label: sgn(v) + ' cent', check: ct === v, fn: () => run(r, { pitch: pitchOf(st, v) }, `Detune ${sgn(v)} cent.`) })), x, y)))),
     ui.sec('Warp',
       h('div', { class: 'cp-line' }, ui.sw('Sync', !!c.warpAuto, () => quickSync(r)), ui.btn(c.srcBpm ? (+c.srcBpm.toFixed(2)) + ' BPM' : 'BPM…', () => bpmPanel(r))),
+      ui.row('Mode', ui.ch(WARP_NAMES[w.mode] || WARP_NAMES.beats, (x, y) => menu(P.WARP_MODES.map((m) => ({ label: WARP_NAMES[m] + ' \u2014 ' + WARP_HINT[m], check: (w.mode || 'beats') === m, fn: () => run(r, { mode: m }, `Mode warp: ${WARP_NAMES[m]}.`) })), x, y))),
       ui.row('Regangkan', ui.ch(w.beats ? w.beats + ' beat' : 'Mati', (x, y) => menu([1, 2, 4, 8, 16].map((b) => ({ label: `Regangkan ke ${b} beat`, check: w.beats === b, fn: () => run(r, { beats: b }, `Di-warp ke ${b} beat pada ${state.bpm} BPM.`) })), x, y))),
       w.beats && !c.warpAuto ? h('div', { class: 'cp-line' }, ui.btn('Sesuaikan tempo', () => { checkpoint(); P.retempoClip(r.track, c.id).then((q) => { toast(q.error || 'Warp disesuaikan dengan tempo sekarang.'); fitView(c); dirty = true; build(); }); })) : null,
       P.gridLocked(c) ? ui.row('Groove', ui.ch(Math.round(P.swingOf(c) * 100) + '%' + (own ? '' : ' global'), (x, y) => menu([{ label: 'Ikuti swing global (' + Math.round(state.groove.amt * 100) + '%)', check: !own, fn: () => setSw(null) },

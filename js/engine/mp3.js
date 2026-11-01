@@ -225,8 +225,16 @@ export class Resampler {
     if (!this.kt) return 0.5 + 0.5 * Math.cos(Math.PI * d / T);
     const r = (d < 0 ? -d : d) / T * KT_N; if (r >= KT_N) return 0; const i = r | 0, f = r - i, t = this.kt; return t[i] + (t[i + 1] - t[i]) * f;
   }
+  // hq: polyphase table (PH fractional phases x 2T taps of sinc * window * fc), linear interpolation between neighbouring phases
+  table() {
+    if (this.tb) return this.tb;
+    const T = this.taps, W = 2 * T, PH = 1024, tb = new Float64Array((PH + 1) * W);
+    for (let j = 0; j <= PH; j++) { const f = j / PH; for (let k = -T + 1; k <= T; k++) { const d = k - f, a = Math.PI * d * this.fc, sinc = Math.abs(a) < 1e-9 ? 1 : Math.sin(a) / a; tb[j * W + k + T - 1] = sinc * this.win(d, T) * this.fc; } }
+    this.PH = PH; return (this.tb = tb);
+  }
   process(x) {
     const buf = new Float32Array(this.hist.length + x.length); buf.set(this.hist); buf.set(x, this.hist.length);
+    if (this.kt) return this.processHq(buf);
     const T = this.taps, out = []; let p = this.pos;
     while (p + T < buf.length) {
       const c = Math.floor(p), f = p - c; let s = 0;
@@ -235,6 +243,19 @@ export class Resampler {
     }
     const keep = Math.max(0, Math.floor(p) - T); this.hist = buf.slice(keep); this.pos = p - keep;
     return Float32Array.from(out);
+  }
+  processHq(buf) {
+    const T = this.taps, W = 2 * T, tb = this.table(), PH = this.PH, n = buf.length;
+    let p = this.pos; const cnt = Math.max(0, Math.ceil((n - T - p) / this.step)), out = new Float32Array(cnt + 1); let o = 0;
+    while (p + T < n) {
+      const c = Math.floor(p), q = (p - c) * PH, j = q | 0, fr = q - j, A = j * W, Bq = A + W, i0 = c - T + 1;
+      let s = 0;
+      if (i0 >= 0) for (let k = 0; k < W; k++) { const h = tb[A + k] + (tb[Bq + k] - tb[A + k]) * fr; s += buf[i0 + k] * h; }
+      else for (let k = 0; k < W; k++) { const i = i0 + k; if (i < 0) continue; const h = tb[A + k] + (tb[Bq + k] - tb[A + k]) * fr; s += buf[i] * h; }
+      out[o++] = s; p += this.step;
+    }
+    const keep = Math.max(0, Math.floor(p) - T); this.hist = buf.slice(keep); this.pos = p - keep;
+    return out.subarray(0, o);
   }
 }
 

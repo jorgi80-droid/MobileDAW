@@ -1380,7 +1380,8 @@ export function autoLabel(t) {
 
 
 // ------------------------------------------------------------------ audio clip operations (web engine)
-// c.warp = { beats, ratio, rev }: ratio = stretched length / original length. c.dsample is the derived buffer actually played.
+// c.warp = { beats, ratio, rev, pitch, mode }: ratio = stretched length / original length. c.dsample is the derived buffer actually played.
+// mode = warp algorithm (audioops.js): 'beats' WSOLA (default, also every clip saved before modes existed), 'tones' phase vocoder, 'repitch'.
 const SAMPLE_MAX = 256, SAMPLE_FULL = 'Slot sample penuh (256). Simpan proyek lalu buka ulang untuk membersihkan hasil stretch lama.';
 let deriveErr = '';
 // Offline audio rendering (reverse / pitch / stretch) runs in a module Worker so the UI stays smooth; if workers are not
@@ -1408,14 +1409,14 @@ async function renderAudio(l, r, opts) {
 }
 export async function deriveSample(base, warp) {
   deriveErr = '';
-  const ratio = warp.ratio || 1, rev = !!warp.rev, pitch = warp.pitch || 0;
+  const ratio = warp.ratio || 1, rev = !!warp.rev, pitch = warp.pitch || 0, mode = WARP_MODES.includes(warp.mode) ? warp.mode : 'beats';
   if (ratio === 1 && !rev && !pitch) return base;
-  const key = `${base.path}|${ratio.toFixed(5)}|${rev ? 1 : 0}|${pitch}`;
+  const key = `${base.path}|${ratio.toFixed(5)}|${rev ? 1 : 0}|${pitch}` + (mode !== 'beats' ? '|' + mode : '');
   if (state.samples[key]) return state.samples[key];
   const b = eng.sampleBuffers(base.id);
   if (!b) return null;
   let l, r;
-  try { ({ l, r } = await renderAudio(b.l, b.r || b.l, { rev, pitch, ratio })); }
+  try { ({ l, r } = await renderAudio(b.l, b.r || b.l, { rev, pitch, ratio, mode })); }
   catch (e) { deriveErr = 'Gagal memproses audio: ' + (e && e.message || e); return null; }
   if (state.nextSample >= SAMPLE_MAX) { deriveErr = SAMPLE_FULL; return null; }
   const id = state.nextSample++;
@@ -1425,12 +1426,14 @@ export async function deriveSample(base, warp) {
   state.samples[key] = s;
   return s;
 }
+export const WARP_MODES = ['beats', 'tones', 'repitch'];
 export const canWarp = () => !!eng.sampleBuffers(0) || state.nextSample > 16;
 // opts: { rev?, beats? (stretch the whole sample to this many beats), reset? }
 export async function setClipAudio(i, id, opts) {
   const t = state.tracks[i], c = t && t.clips.find((x) => x.id === id);
   if (!c || t.kind !== 'audio') return { error: 'Klip tidak ditemukan' };
   const w = opts.reset ? { beats: 0, ratio: 1, rev: false, pitch: 0 } : { beats: c.warp ? c.warp.beats : 0, ratio: c.warp ? c.warp.ratio : 1, rev: c.warp ? c.warp.rev : false, pitch: c.warp ? c.warp.pitch || 0 : 0 };
+  const md = opts.mode !== undefined ? opts.mode : !opts.reset && c.warp && c.warp.mode; if (WARP_MODES.includes(md) && md !== 'beats') w.mode = md;
   if (opts.rev !== undefined) w.rev = opts.rev;
   if (opts.pitch !== undefined) w.pitch = opts.pitch;
   if (opts.beats) { w.beats = opts.beats; w.ratio = (opts.beats * 60 / state.bpm) / c.sample.duration; }
@@ -1438,10 +1441,11 @@ export async function setClipAudio(i, id, opts) {
   if (!ds) return { error: deriveErr || 'Operasi audio hanya tersedia di versi web.' };
   w.bpm = state.bpm; c.warp = w; c.dsample = ds === c.sample ? null : ds;
   if (opts.reset || opts.beats) c.warpAuto = false;                       // an explicit warp / reset takes the clip off "follow project tempo"
-  if (opts.pitch === undefined || opts.rev !== undefined || opts.beats || opts.reset) c.offset = 0;   // pitch-only keeps the trimmed start
+  if ((opts.pitch === undefined && opts.mode === undefined) || opts.rev !== undefined || opts.beats || opts.reset) c.offset = 0;   // pitch-only / mode-only keeps the trimmed start
   if (opts.beats) c.len = Math.round(opts.beats * PPQ);
   else if (opts.reset) c.len = Math.max(PPQ / 4, Math.round(c.sample.duration * state.bpm / 60 * PPQ));
   syncClips(i); emit('clips');
+  if (gridLocked(c)) scheduleBake(60);                                    // tempo-map / swing bake uses the clip's warp mode too
   return { ok: true };
 }
 // ---- tempo: detect, sync and free stretch (the clip keeps its trimmed region and its place on the grid)
@@ -1534,7 +1538,7 @@ export const gridLocked = (c) => !!(c && c.warpAuto && c.srcBpm > 0 && c.sample)
 const bakeWanted = (c) => gridLocked(c) && (tmOn || swingOf(c) > 0);
 function bakeKey(c) {
   const w = c.warp || {};
-  return [c.sample.path, c.start, c.len, (c.offset || 0).toFixed(5), c.ll || 0, c.lp || 0, c.srcBpm, w.ratio || 1, w.rev ? 1 : 0, w.pitch || 0, swingOf(c), state.groove.grid || 240, tmOn ? tmKey : 'c' + state.bpm].join('|');
+  return [c.sample.path, c.start, c.len, (c.offset || 0).toFixed(5), c.ll || 0, c.lp || 0, c.srcBpm, w.ratio || 1, w.rev ? 1 : 0, w.pitch || 0, swingOf(c), state.groove.grid || 240, tmOn ? tmKey : 'c' + state.bpm, w.mode || 'beats'].join('|');
 }
 function bakeCurrent(c) { if (!bakeWanted(c)) return null; const b = bakes.get(c.id); return b && b.key === bakeKey(c) ? b : null; }
 // breakpoints (output frame, source frame) of one stretch of the clip: ticks y0..y1 of the timeline, content starting at tick s of the clip's loop
@@ -1554,7 +1558,7 @@ function bakeSeg(c, g, sr, srate, o0beats) {
 }
 async function bakeClip(c) {
   const sr = (eng.info && eng.info().sampleRate) || 48000, w = c.warp || {}, ratio = w.ratio || 1;
-  const base = await deriveSample(c.sample, { ratio: 1, rev: !!w.rev, pitch: w.pitch || 0 });
+  const base = await deriveSample(c.sample, { ratio: 1, rev: !!w.rev, pitch: w.pitch || 0, mode: w.mode });
   if (!base) return { error: deriveErr || 'Gagal menyiapkan audio.' };
   const b = eng.sampleBuffers(base.id); if (!b || !b.l || !base.duration) return { error: 'Buffer sample tidak tersedia.' };
   const srate = b.l.length / base.duration, o0beats = ((c.offset || 0) / ratio) * c.srcBpm / 60;
@@ -1562,7 +1566,7 @@ async function bakeClip(c) {
   const total = Math.max(1, Math.round((tickToSec(c.start + c.len) - tickToSec(c.start)) * sr));
   if (total > sr * 60 * 20) return { error: 'Klip terlalu panjang untuk disesuaikan dengan tempo map.' };
   let out;
-  try { out = await renderAudio(b.l, b.r || b.l, { map: { n: total, segs } }); } catch (e) { return { error: 'Gagal memproses audio: ' + (e && e.message || e) }; }
+  try { out = await renderAudio(b.l, b.r || b.l, { map: { n: total, segs }, mode: w.mode || 'beats' }); } catch (e) { return { error: 'Gagal memproses audio: ' + (e && e.message || e) }; }
   return { l: out.l, r: out.r };
 }
 let bakeTimer = 0, baking = null, bakeAgain = false;
