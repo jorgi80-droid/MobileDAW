@@ -188,7 +188,8 @@ export class DrumSynth extends Base {
       const f0 = Math.min(s.frames - 3, Math.floor(q.start * s.frames)), f1 = Math.max(f0 + 2, Math.min(s.frames - 1, Math.floor(q.end * s.frames)));
       v.lo = f0; v.hi = f1; v.dir = q.rev ? -1 : 1; v.pos = q.rev ? f1 - 1 : f0;
       v.ratio = (s.rate / this.sr) * v.rt;
-      v.ea = Math.max(0.00012, q.a);                       // attack 0 = ~6 samples (no click, the transient stays) v.ed = q.d; v.es = q.s; v.er = q.r;
+      v.ea = Math.max(0.00012, q.a);                       // attack 0 = ~6 samples (no click, the transient stays)
+      v.ed = q.d; v.es = q.s; v.er = q.r;                  // (was hidden in the comment above: pad Decay / Sustain / Release had no effect)
       v.lv = 0; v.st = 0; v.g = this.gain * v.lvl * vel;
     } else {
       v.smp = false; v.held = false; v.kind = q.kind; v.n.seed = 777 + this.counter * 31; v.hp = 0; v.ph2 = 0; v.mp.fill(0);

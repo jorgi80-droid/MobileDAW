@@ -52,12 +52,14 @@ void AudioEffectRack::macros() {
   for (int m = 0; m < RACK_MACROS; m++) {
     int o = RACK_MAP0 + m * 8; double c = jsRound(p[o]); if (c < 0) continue;
     int ci; if (!idx(c, RACK_CHAINS, ci)) continue;
-    double j = jsRound(p[o + 1]); int jj; if (j < 0 || !idx(j, ch[ci].n, jj)) continue;   // j = -1 (chain instrument) only exists in the Instrument Rack
-    Device* d = ch[ci].dev[jj];
+    double j = jsRound(p[o + 1]);
+    Device* d = nullptr; Instrument* in = nullptr;
+    if (j < 0) { in = chainInst[ci]; if (!in) continue; }                    // j = -1: the chain's instrument (Instrument Rack)
+    else { int jj; if (!idx(j, ch[ci].n, jj)) continue; d = ch[ci].dev[jj]; }
     double lo = p[o + 3], hi = p[o + 4]; bool lg = p[o + 5] > 0.5 && lo > 0 && hi > 0;
     double q = clamp(p[o + 6] + (p[o + 7] - p[o + 6]) * p[33 + m], 0, 1);
     double v = lg ? lo * std::pow(hi / lo, q) : lo + q * (hi - lo);
-    if (v != last[m]) { last[m] = v; d->setParam((int)jsRound(p[o + 2]), v); }
+    if (v != last[m]) { last[m] = v; if (d) d->setParam((int)jsRound(p[o + 2]), v); else in->setParam((int)jsRound(p[o + 2]), v); }
   }
 }
 int AudioEffectRack::chainLat(int c) const { int l = 0; const RackChain& x = ch[c]; for (int q = 0; q < x.n; q++) if (!x.dev[q]->bypass) l += x.dev[q]->lat(); return l; }
@@ -85,6 +87,59 @@ void AudioEffectRack::process(float* Lx, float* Rx, int n) {
     pk[c] = (float)jsMax(pkv, pk[c] * 0.95);
   }
   for (int i = 0; i < n; i++) { Lx[i] = sL[i]; Rx[i] = sR[i]; }
+}
+
+// ================================================================ Instrument Rack
+InstrumentRack::InstrumentRack(double r) : core(r), sr(r) {
+  isRack = true; pitchNative = false;
+  for (int c = 0; c < RACK_CHAINS; c++) { core.p[122 + c * 2] = 0; core.p[123 + c * 2] = 127; core.p[138 + c * 2] = 1; core.p[139 + c * 2] = 127; }
+}
+bool InstrumentRack::plays(int c, int pitch, double v) const {
+  const double* q = core.p; double vel = jsMax(1, jsRound(v * 127)), sel = q[105];
+  return q[c * 4 + 2] > 0.5 && pitch >= q[122 + c * 2] && pitch <= q[123 + c * 2] && vel >= q[138 + c * 2] && vel <= q[139 + c * 2] && sel >= q[106 + c * 2] && sel <= q[107 + c * 2];
+}
+void InstrumentRack::noteOn(int pitch, double vel) {
+  int cnt = (int)clamp(jsRound(core.p[32]), 0, RACK_CHAINS), mask = 0;
+  for (int c = 0; c < cnt; c++) if (core.chainInst[c] && plays(c, pitch, vel)) { core.chainInst[c]->noteOn(pitch, vel); mask |= 1 << c; }
+  held[pitch & 127] |= (uint8_t)mask;
+}
+void InstrumentRack::noteOff(int pitch) {
+  int mask = held[pitch & 127];
+  for (int c = 0; c < RACK_CHAINS; c++) if ((mask & (1 << c)) && core.chainInst[c]) core.chainInst[c]->noteOff(pitch);
+  held[pitch & 127] = 0;
+}
+void InstrumentRack::render(float*, float*, int from, int to) {
+  int cnt = (int)clamp(jsRound(core.p[32]), 0, RACK_CHAINS);
+  for (int c = 0; c < cnt; c++) if (core.chainInst[c]) core.chainInst[c]->render(cL[c], cR[c], from, to);
+}
+void InstrumentRack::endBlock(float* L, float* R, int n) {
+  core.macros();
+  const double* p = core.p; int cnt = (int)clamp(jsRound(p[32]), 0, RACK_CHAINS), M = core.lat();
+  bool solo = false; for (int c = 0; c < cnt; c++) if (p[c * 4 + 3] > 0.5 && p[c * 4 + 2] > 0.5) solo = true;
+  for (int c = 0; c < cnt; c++) {
+    int o = c * 4; float* bl = cL[c]; float* br = cR[c]; RackChain& x = core.ch[c];
+    if (p[o + 2] > 0.5 && !(solo && p[o + 3] < 0.5)) {
+      for (int q = 0; q < x.n; q++) if (!x.dev[q]->bypass) x.dev[q]->process(bl, br, n);
+      core.align(c, bl, br, n, M);
+      double g = p[o] <= -60 ? 0 : std::pow(10, p[o] / 20), pan = p[o + 1], gl = g * jsMin(1, 1 - pan), gr = g * jsMin(1, 1 + pan), pk = 0;
+      for (int i = 0; i < n; i++) { double l = bl[i] * gl, r = br[i] * gr; L[i] = (float)(L[i] + l); R[i] = (float)(R[i] + r); double a = jsMax(std::fabs(l), std::fabs(r)); if (a > pk) pk = a; }
+      core.pk[c] = (float)jsMax(pk, core.pk[c] * 0.95);
+    } else { core.pk[c] = (float)(core.pk[c] * 0.9); x.pdl.clear(); }
+    for (int i = 0; i < n; i++) { bl[i] = 0; br[i] = 0; }
+  }
+}
+void InstrumentRack::rackCmd(int op, double c, double j, double a, double b, Device* prepD, Instrument* prepI, Device** rmD, int& nD, Instrument** rmI, int& nI) {
+  nD = 0; nI = 0;
+  if (op == 0) { for (auto*& x : core.chainInst) { if (x) { x->allOff(); rmI[nI++] = x; } x = nullptr; } for (auto& h : held) h = 0; }
+  int ci; bool has = c >= 0 && c < RACK_CHAINS && c == std::floor(c); ci = has ? (int)c : 0;
+  if (op == 5) {
+    if (has) { if (core.chainInst[ci]) rmI[nI++] = core.chainInst[ci]; core.chainInst[ci] = a > 0 ? prepI : nullptr; if (core.chainInst[ci]) core.chainInst[ci]->setTempo(core.bpm); else if (prepI) rmI[nI++] = prepI; for (auto& v : core.last) v = NAN; }
+    else if (prepI) rmI[nI++] = prepI;
+    if (prepD) rmD[nD++] = prepD; return;
+  }
+  if (prepI) rmI[nI++] = prepI;
+  if (op == 6) { if (has && core.chainInst[ci]) core.chainInst[ci]->setParam((int)a, b); if (prepD) rmD[nD++] = prepD; return; }
+  nD = core.rackCmd(op, c, j, a, b, prepD, rmD);
 }
 
 }  // namespace mdaw

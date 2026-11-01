@@ -104,7 +104,7 @@ void Engine::pdcPlan() {
   bool on = pdcOn; int cap = PDC_MAX - 1, mt = 0, mr = 0;
   for (int t = 0; t < MAX_TRACKS; t++) {
     Strip& st = s[t]; int l = 0;
-    if (on && (st.inst || (st.clips && !st.clips->c.empty()))) l = chainLat(st);
+    if (on && (st.inst || (st.clips && !st.clips->c.empty()))) { l = chainLat(st); if (st.inst) l += st.inst->lat(); }
     st.lat = l; if (l > mt) mt = l;
   }
   for (int k = 0; k < NFX; k++) { Strip& st = s[RET0 + k]; int l = on ? chainLat(st) : 0; st.lat = l; if (l > mr) mr = l; }
@@ -153,10 +153,22 @@ void Engine::removeDevice(int t, int i) {
 }
 // core.js rackCmd: d = device index of the rack (d < 0 = the Instrument Rack, not ported: the command is dropped)
 void Engine::rackCmd(int t, double d, int op, double c, double j, double a, double b, Device* prep) {
+  rackCmd(t, d, op, c, j, a, b, prep, nullptr);
+}
+void Engine::rackCmd(int t, double d, int op, double c, double j, double a, double b, Device* prep, Instrument* prepI) {
+  if (prep) prep->setTempo(bpm);
+  if (d < 0) {                                                   // the Instrument Rack (track instrument)
+    Instrument* r = ok(t) ? s[t].inst : nullptr;
+    if (!r || !r->isRack) { retire.put(prep); retire.put(prepI); return; }
+    Device* rmD[RACK_MAX_REMOVED]; Instrument* rmI[8 + 2]; int nD = 0, nI = 0;
+    r->rackCmd(op, c, j, a, b, prep, prepI, rmD, nD, rmI, nI);
+    for (int k = 0; k < nD; k++) retire.put(rmD[k]); for (int k = 0; k < nI; k++) retire.put(rmI[k]);
+    return;
+  }
+  retire.put(prepI);
   Device* r = nullptr;
   if (ok(t) && d >= 0 && d < s[t].ndev && d == std::floor(d)) r = s[t].dev[(int)d];
   if (!r || !r->isRack) { retire.put(prep); return; }
-  if (prep) prep->setTempo(bpm);
   Device* removed[RACK_MAX_REMOVED]; int nr = r->rackCmd(op, c, j, a, b, prep, removed);
   for (int k = 0; k < nr; k++) retire.put(removed[k]);
 }
@@ -362,6 +374,7 @@ void Engine::track(Strip& st, int idx, double p0, int n, double sp, bool anySolo
       } else { int q = tmap[ep[i] & 127]; tmap[ep[i] & 127] = ep[i]; st.inst->noteOff(q); if (midiFx) midiTo(idx, q, 0); }
     }
     if (cur < n) { st.inst->render(L, R, cur, n); balance(L, R, cur, n, st.nPan); }
+    st.inst->endBlock(L, R, n);
     if (st.inst->active()) active = true;
     double chk = (double)L[0] + L[n - 1] + R[n - 1];
     if (!(chk > -1e6 && chk < 1e6)) { retire.put(st.inst); st.inst = nullptr; for (int i = 0; i < n; i++) { L[i] = 0; R[i] = 0; } err(1, idx, -1, "nilai tidak valid"); }

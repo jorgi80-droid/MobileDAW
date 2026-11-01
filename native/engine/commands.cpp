@@ -185,8 +185,9 @@ bool prepare(const std::string& name, const std::vector<Arg>& a, const Engine& e
     case RACKCMD: {             // t, d, op, c, j, a, b; op 1 = insert device type a (built here); op 5 / 6 / 7 = Instrument Rack / Drum Rack chains (not ported)
       for (int k = 0; k < 7; k++) c.a[k] = N(k);
       int op = toInt32(N(2));
-      if (N(1) < 0 || op >= 5) { c.error = "unsupported rack " + std::to_string(op); break; }
+      if (op >= 8 || (op >= 5 && N(1) >= 0)) { c.error = "unsupported rack " + std::to_string(op); break; }   // ops 5..7 only exist for the track instrument (Instrument Rack / Drum Sampler pads)
       if (op == 1) { int ty = toInt32(N(5)); Device* d = makeDevice(ty, eng.sr, const_cast<float*>(eng.sc)); if (!d) c.error = "unsupported device " + std::to_string(ty); else take(c, d); }
+      if (op == 5) { int ty = toInt32(N(5)); if (ty > 0 && ty != 3) { Instrument* in = makeInstrument(ty, eng.sr, const_cast<Bank*>(&eng.bank)); if (!in) c.error = "unsupported inst " + std::to_string(ty); else { c.p2 = in; c.del2 = [](void* q) { delete static_cast<Instrument*>(q); }; } } }
       break;
     }
     case PREVIEW: c.a[0] = N(0); c.a[1] = toInt32(N(1)); c.a[2] = N(2); c.a[3] = B(3); break;
@@ -271,7 +272,7 @@ void apply(Engine& e, Cmd& c) {
     case DEVPARAM: e.devParam(t, toInt32(a[1]), toInt32(a[2]), a[3]); break;
     case DEVBYPASS: e.devBypass(t, toInt32(a[1]), a[2] != 0); break;
     case SOUNDFONT: e.loadSoundFont(toInt32(a[0]), give<SoundFont>(c)); break;
-    case RACKCMD: e.rackCmd(t, a[1], toInt32(a[2]), a[3], a[4], a[5], a[6], give<Device>(c)); break;
+    case RACKCMD: { Instrument* in = static_cast<Instrument*>(c.p2); c.p2 = nullptr; c.del2 = nullptr; e.rackCmd(t, a[1], toInt32(a[2]), a[3], a[4], a[5], a[6], give<Device>(c), in); break; }
     case PREVIEW: e.preview(t, (int)a[1], a[2], a[3] != 0); break;
     case BEND: e.bend(t, a[1]); break;
     case TRACKNOTES: e.trackNotes(t, give<NoteData>(c)); break;

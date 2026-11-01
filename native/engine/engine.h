@@ -123,6 +123,7 @@ class Engine {
   void removeDevice(int t, int i);
   void devParam(int t, int d, int p, double v) { if (ok(t) && d >= 0 && d < s[t].ndev) s[t].dev[d]->setParam(p, v); }
   void rackCmd(int t, double d, int op, double c, double j, double a, double b, Device* prepared);
+  void rackCmd(int t, double d, int op, double c, double j, double a, double b, Device* prepared, Instrument* preparedInst);
   void devBypass(int t, int d, bool b) { if (ok(t) && d >= 0 && d < s[t].ndev) s[t].dev[d]->bypass = b; }
   void bend(int t, double st);
   void preview(int t, int pitch, double vel, bool on);
@@ -139,6 +140,7 @@ class Engine {
   void fillLoad(int32_t* out) const;    // 2 * MAX_TRACKS: voices, load per mille (load not measured here: 0)
   double tickPos() const { return f2t(pos); }
   int devOut(int t, int d, float* out) {
+    if ((d == 999 || d >= 2000) && ok(t)) { Instrument* r = s[t].inst; if (!r || !r->isRack) return 0; if (d == 999) return r->readOut(out); Device* x = r->sub(((d - 2000) >> 4) & 15, (d - 2000) & 15); return x ? x->readOut(out) : 0; }   // Instrument Rack: 999 = chain meters, 2000 + chain * 16 + j
     if (d >= 1000 && d < 2000 && ok(t)) { int q = d - 1000, r = q >> 8; Device* x = r < s[t].ndev && s[t].dev[r]->isRack ? s[t].dev[r]->sub((q >> 4) & 15, q & 15) : nullptr; return x ? x->readOut(out) : 0; }   // a device inside a rack
     return ok(t) && d >= 0 && d < s[t].ndev ? s[t].dev[d]->readOut(out) : 0;
   }

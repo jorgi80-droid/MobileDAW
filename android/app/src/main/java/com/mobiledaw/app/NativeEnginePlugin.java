@@ -9,6 +9,7 @@ import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
+import org.json.JSONArray;
 
 // Bridge between the web app (js/engine/nativesink.js) and the C++ audio engine (native/ + src/main/cpp/bridge.cpp, Oboe output).
 // Plugin calls run one after another on Capacitor's plugin thread, so commands reach the engine in the order the UI sent them.
@@ -30,9 +31,24 @@ public class NativeEnginePlugin extends Plugin {
     static native boolean nPoll(double[] out);
     static native String nErrors();
     static native void nStats(double[] out, boolean reset);
+    static native void nWatch(int[] pairs);
+    static native int nDevOut(int k, float[] out, long[] key);
 
     private static final int NSTRIPS = 73;
     private final double[] snap = new double[7 + NSTRIPS * 2];   // bridge.cpp NSNAP
+    private final float[] devBuf = new float[4096]; private final long[] devKey = new long[1];
+    private volatile int nWatched = 0;
+
+    // devices whose displays are open: list = [[strip, device], ...] (same as the worklet's 'watch')
+    @PluginMethod
+    public void watch(PluginCall call) {
+        JSArray l = call.getArray("list"); int n = l == null ? 0 : Math.min(8, l.length());
+        int[] p = new int[n * 2];
+        try { for (int k = 0; k < n; k++) { JSONArray q = l.getJSONArray(k); p[k * 2] = q.getInt(0); p[k * 2 + 1] = q.getInt(1); } } catch (Exception e) { n = 0; p = new int[0]; }
+        if (loaded) nWatch(p);
+        nWatched = n;
+        call.resolve();
+    }
     private HandlerThread pollThread;
     private Handler poller;
     private volatile boolean polling = false;
@@ -119,6 +135,15 @@ public class NativeEnginePlugin extends Plugin {
                     JSArray m = new JSArray();
                     for (int i = 0; i < NSTRIPS * 2; i++) m.put((int) snap[6 + i]);
                     o.put("m", m); o.put("lat", (int) snap[6 + NSTRIPS * 2]);   // PDC: frames the output trails the song
+                    if (nWatched > 0) {
+                        JSObject dev = new JSObject();
+                        for (int k = 0; k < nWatched; k++) {
+                            int n = nDevOut(k, devBuf, devKey); if (n <= 0) continue;
+                            JSArray a = new JSArray(); for (int i = 0; i < n; i++) { float f = devBuf[i]; a.put(Float.isFinite(f) ? (double) f : 0.0); }
+                            dev.put((devKey[0] >> 16) + "," + (devKey[0] & 0xffff), a);
+                        }
+                        o.put("dev", dev);
+                    }
                     String err = nErrors();
                     if (!err.isEmpty()) o.put("errors", err);
                     notifyListeners("poll", o);

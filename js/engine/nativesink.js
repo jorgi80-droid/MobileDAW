@@ -26,7 +26,10 @@ export function createNativeSink() {
     P.addListener('poll', (d) => { if (s.onPoll) s.onPoll(d); if (d.errors && s.onErrors) s.onErrors('engine: ' + d.errors); });
     return r;
   }));
-  s.send = (name, args) => { lines.push(encode(name, args)); if (!queued) { queued = true; queueMicrotask(flush); } };
+  s.send = (name, args) => {
+    if (name === 'watch') { flush(); const list = Array.isArray(args[0]) ? args[0] : []; run(() => P.watch({ list })); return; }   // device read-outs for the open displays
+    lines.push(encode(name, args)); if (!queued) { queued = true; queueMicrotask(flush); }
+  };
   s.sample = (id, l, r) => {
     flush();
     const stereo = !!(r && r !== l);

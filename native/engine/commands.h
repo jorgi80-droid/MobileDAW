@@ -24,8 +24,9 @@ struct Cmd {
   double a[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
   void* p = nullptr;                  // prepared object (taken over by apply; deleted if the command is dropped)
   void (*del)(void*) = nullptr;
+  void* p2 = nullptr; void (*del2)(void*) = nullptr;   // a second prepared object (rackCmd op 5: the chain instrument)
   std::string error;                  // set when the command cannot run here (e.g. "unsupported inst 7")
-  ~Cmd() { if (p && del) del(p); }
+  ~Cmd() { if (p && del) del(p); if (p2 && del2) del2(p2); }
 };
 
 bool parseLine(const std::string& line, std::string& name, std::vector<Arg>& args, const float* blob, size_t blobLen);

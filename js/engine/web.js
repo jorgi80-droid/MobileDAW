@@ -195,7 +195,10 @@ export function createWebBackend() {
     const t = a[0] | 0; if (t < 0 || t >= NSTRIPS) return;
     if (c === 'trackInst') nat.inst[t] = a[1] | 0;
     else if (c === 'resetTrack') { nat.inst[t] = 0; nat.dev[t] = []; nat.rk[t].clear(); }
-    else if (c === 'rackCmd') { const op = a[2] | 0; if (op === 1 && a[1] >= 0) nat.rk[t].add(a[5] | 0); else if (op >= 5 || a[1] < 0) { if (nat.rk[t].has(-1)) return; nat.rk[t].add(-1); } else return; }   // -1: an Instrument / Drum Rack chain (not ported)
+    else if (c === 'rackCmd') {                            // device / instrument types put into racks (instruments as 1000 + type); -1 = a chain op on an effect rack (unknown)
+      const op = a[2] | 0, k = op === 1 ? a[5] | 0 : op === 5 && a[1] < 0 && a[5] > 0 ? 1000 + (a[5] | 0) : op >= 5 && a[1] >= 0 ? -1 : null;
+      if (k === null || nat.rk[t].has(k)) return; nat.rk[t].add(k);
+    }
     else if (c === 'insertDevice') { const d = nat.dev[t]; if (d.length < 16) d.splice(Math.max(0, Math.min(d.length, a[1] | 0)), 0, a[2] | 0); }
     else if (c === 'removeDevice') { const d = nat.dev[t], i = a[1] | 0; if (i >= 0 && i < d.length) d.splice(i, 1); }
     else return;
@@ -207,7 +210,7 @@ export function createWebBackend() {
     for (let t = 0; t < NSTRIPS; t++) {
       if (nat.inst[t] && !nat.sink.inst.has(nat.inst[t])) return { strip: t, inst: nat.inst[t] };
       for (const d of nat.dev[t]) if (!nat.sink.dev.has(d)) return { strip: t, dev: d };
-      for (const d of nat.rk[t]) if (!nat.sink.dev.has(d)) return { strip: t, dev: d };
+      for (const d of nat.rk[t]) if (d >= 1000 ? !nat.sink.inst.has(d - 1000) : !nat.sink.dev.has(d)) return d >= 1000 ? { strip: t, inst: d - 1000 } : { strip: t, dev: d };
     }
     return null;
   }
@@ -243,6 +246,7 @@ export function createWebBackend() {
     try { if (nat.replay) nat.replay(); } finally { nat.only = false; }
     st.bank.forEach((b, id) => { if (b) nat.sink.sample(id, b.l, b.r); });
     st.sfs.forEach((sf, id) => { if (sf) nat.sink.soundFont(id, sf); });
+    if (st.watchList) nat.sink.send('watch', [st.watchList]);   // the displays that are open now
     nat.ready = true;
     log('info', `engine native siap: ${r.sr} Hz, instrumen ${[...nat.sink.inst].join(',') || '-'}, efek ${[...nat.sink.dev].join(',') || '-'}`);
   }
@@ -259,7 +263,7 @@ export function createWebBackend() {
   if (nat.sink) {
     nat.sink.onPoll = (d) => {
       if (!nat.on) return;
-      d.rx = performance.now(); d.tl = null; d.dev = {}; st.poll = d; st.dev = {};
+      d.rx = performance.now(); d.tl = null; d.dev = d.dev || {}; st.poll = d; st.dev = d.dev;   // device read-outs of the watched displays (bridge nDevOut)
       if (nat.pending && !d.playing) evaluate();
     };
     nat.sink.onErrors = (msg) => { const m = String(msg).split('\n').filter((x) => x && !/^unsupported/.test(x)); if (m.length) log('warn', 'engine native: ' + m.join('; ')); };
@@ -296,7 +300,7 @@ export function createWebBackend() {
     const now = Date.now(), list = [];
     for (const [k, t] of st.wanted) { if (now - t > 1500) st.wanted.delete(k); else list.push(k.split(',').map(Number)); }
     const key = list.join(';');
-    if (key !== st.watchKey) { st.watchKey = key; post('watch', list); }
+    if (key !== st.watchKey) { st.watchKey = key; st.watchList = list; post('watch', list); }
   }
 
   // ---- engine commands

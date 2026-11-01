@@ -61,6 +61,10 @@ class Host : public oboe::AudioStreamDataCallback, public oboe::AudioStreamError
 
   // snapshots written by the audio thread ~30 times per second
   double snap[2][NSNAP] = {}; std::atomic<int> snapIdx{ 0 }; int snapFrames = 0;
+  // device read-outs (engine devOut) of the watched devices, taken with each snapshot (worklet.js 'watch'): slot k = (strip << 16) | device
+  static constexpr int NWATCH = 8, DEVMAX = 4096;
+  std::atomic<int64_t> watch[NWATCH]; std::atomic<int> nwatch{ 0 };
+  float devBuf[2][NWATCH][DEVMAX]; int devLen[2][NWATCH] = {}; int64_t devKey[2][NWATCH] = {};
   // statistics (audio thread writes, readers tolerate a slightly stale view)
   std::atomic<uint64_t> blocks{ 0 }; std::atomic<uint64_t> hist[HBUCKETS] = {}; double sumCost = 0, maxCost = 0; std::atomic<int64_t> badBlocks{ 0 };
   double cpuWin = 0, cpuBusy = 0, cpuNow = 0; int bad = 0; bool ftz = false;
@@ -101,6 +105,11 @@ class Host : public oboe::AudioStreamDataCallback, public oboe::AudioStreamError
       o[4] = s->getXRunCount().value(); o[5] = (double)badBlocks.load();
       int32_t m[NSTRIPS * 2]; eng.fillMeters(m); for (int i = 0; i < NSTRIPS * 2; i++) o[6 + i] = m[i];
       o[6 + NSTRIPS * 2] = eng.pdcOut;
+      int nw = nwatch.load(std::memory_order_acquire);
+      for (int k = 0; k < NWATCH; k++) {
+        int64_t key = k < nw ? watch[k].load(std::memory_order_relaxed) : -1; devKey[w][k] = key; devLen[w][k] = 0;
+        if (key >= 0) devLen[w][k] = eng.devOut((int)(key >> 16), (int)(key & 0xffff), devBuf[w][k]);   // readOut never writes more than DEVMAX (MiniMeters: 2728)
+      }
       snapIdx.store(w, std::memory_order_release);
     }
     return oboe::DataCallbackResult::Continue;
@@ -230,6 +239,27 @@ JNIEXPORT jboolean JNICALL Java_com_mobiledaw_app_NativeEnginePlugin_nPoll(JNIEn
   const double* s = host->snap[host->snapIdx.load(std::memory_order_acquire)];
   env->SetDoubleArrayRegion(out, 0, NSNAP, s);
   return true;
+}
+// devices whose read-outs the poll carries: pairs [strip, device, ...] (at most 8)
+JNIEXPORT void JNICALL Java_com_mobiledaw_app_NativeEnginePlugin_nWatch(JNIEnv* env, jclass, jintArray pairs) {
+  std::lock_guard<std::mutex> g(hostLock);
+  if (!host) return;
+  jsize n = env->GetArrayLength(pairs) / 2; if (n > Host::NWATCH) n = Host::NWATCH;
+  std::vector<jint> v(n * 2); if (n) env->GetIntArrayRegion(pairs, 0, n * 2, v.data());
+  host->nwatch.store(0, std::memory_order_release);
+  for (int k = 0; k < n; k++) host->watch[k].store(((int64_t)v[k * 2] << 16) | (v[k * 2 + 1] & 0xffff), std::memory_order_relaxed);
+  host->nwatch.store(n, std::memory_order_release);
+}
+// read-out k of the last snapshot -> out; returns its length (0 = none) and the key in key[0] ((strip << 16) | device)
+JNIEXPORT jint JNICALL Java_com_mobiledaw_app_NativeEnginePlugin_nDevOut(JNIEnv* env, jclass, jint k, jfloatArray out, jlongArray key) {
+  std::lock_guard<std::mutex> g(hostLock);
+  if (!host || k < 0 || k >= Host::NWATCH) return 0;
+  int w = host->snapIdx.load(std::memory_order_acquire); int n = host->devLen[w][k]; jlong kk = host->devKey[w][k];
+  env->SetLongArrayRegion(key, 0, 1, &kk);
+  if (n <= 0 || kk < 0) return 0;
+  if (n > env->GetArrayLength(out)) n = env->GetArrayLength(out);
+  env->SetFloatArrayRegion(out, 0, n, host->devBuf[w][k]);
+  return n;
 }
 // engine faults since the last call: "kind,strip,dev;..."
 JNIEXPORT jstring JNICALL Java_com_mobiledaw_app_NativeEnginePlugin_nErrors(JNIEnv* env, jclass) {

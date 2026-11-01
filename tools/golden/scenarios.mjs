@@ -5,7 +5,7 @@ const D = await import(path.join(path.dirname(fileURLToPath(import.meta.url)), '
 
 const PPQ = 960, BAR = PPQ * 4;
 const PARAM_SYNTHS = [13, 14, 15, 17, 18, 16, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29];   // Live 12 instruments with a min / max sweep of every parameter
-const FX_PORTED = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 14, 15, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47];   // effects with a min / max sweep scenario (fx-<name>)
+const FX_PORTED = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47];   // effects with a min / max sweep scenario (fx-<name>)
 const SYNTHS = [1, 2, 5, 7, 8, 11, 13, 14, 15, 17, 16, 19, 20, 21, 22, 23, 24, 25, 26, 27];   // instruments with golden scenarios (presets + playing)
 function lcg(seed) { let s = seed >>> 0; return () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 4294967296 * 2 - 1; }; }
 function tone(sec, hz, sr = 48000, amp = 0.5) { const n = Math.round(sec * sr), a = new Float32Array(n); for (let i = 0; i < n; i++) a[i] = Math.sin(2 * Math.PI * hz * i / sr) * amp * Math.min(1, (n - i) / 2000); return a; }
@@ -200,6 +200,36 @@ export const SCENARIOS = [
       P(33, 1); for (const w of [0, 1, 2, 3, 4]) { P(34, w); P(35, -6); P(36, 7); P(37, 20); play(e, 0.3); } P(38, -12); play(e, 0.4);
       e.instParam(0, 90, 5); P(2, -3); P(3, 30); P(6, 0.5); P(7, 0.9); play(e, 0.5);
       Z(0, [-1]); Z(1, [-1]); Z(2, [-1]); play(e, 0.6);     // no zones: the Osc alone
+      e.stop(); play(e, 1);
+    } },
+  { name: 'inst-irack', info: 'Instrument Rack (12): 3 chains (Mini Synth / SuperSaw + Saturator / GMS + Compressor 10 ms look-ahead), key and velocity zones, chain volume / pan / solo / activator, macros on a chain instrument and on a chain effect, chain instrument swap, reset; PDC between chains',
+    run(e) {
+      e.tempo(120); e.trackInst(0, 12); const R = (op, c, j, a, b) => e.rackCmd(0, -1, op, c, j, a, b), P = (k, v) => e.instParam(0, 100 + k, v);
+      R(0, 0, 0, 0, 0); P(32, 3);
+      R(5, 0, 0, 1, 0); R(6, 0, 0, 1, 3000); R(5, 1, 0, 2, 0); R(6, 1, 0, 2, 0.4); R(5, 2, 0, 5, 0); R(6, 2, 0, 0, 1);
+      R(1, 1, 0, 3, 0); R(2, 1, 0, 0, 10); R(1, 2, 0, 4, 0); R(2, 2, 0, 9, 2); R(2, 2, 0, 0, -30);
+      P(122, 0); P(123, 59); P(124, 55); P(125, 127); P(140, 1); P(141, 100);                                 // chain 0 keys 0..59, chain 1 keys 55..127, chain 1 velocity 1..100
+      [0, -1, 1, 0, 8000, 1, 0, 1].forEach((v, k) => P(41 + k, v)); [1, 0, 0, 0, 24, 0, 0, 1].forEach((v, k) => P(49 + k, v));   // macro 0 -> chain 0 instrument cutoff (log), macro 1 -> chain 1 Saturator drive
+      const f = []; for (let k = 0; k < 32; k++) f.push(k * PPQ / 4, PPQ * 0.35, 36 + ((k * 7) % 48), 0.3 + (k % 4) * 0.22, 0); e.trackNotes(0, f, f.length / 5);
+      e.play(); play(e, 2, [128, 77, 256]);
+      for (let k = 0; k <= 4; k++) { P(33, k / 4); P(34, 1 - k / 4); play(e, 0.25); }
+      P(0, -6); P(5, 0.7); P(7, 1); play(e, 0.5); P(7, 0); P(10, 0); play(e, 0.4); P(10, 1);
+      R(5, 0, 0, 8, 0); play(e, 0.6); R(4, 2, 0, 0, 0); play(e, 0.4); R(0, 0, 0, 0, 0); play(e, 0.4);
+      e.stop(); play(e, 0.8);
+    } },
+  { name: 'inst-drums', info: 'Drum Sampler (3, the drum step sequencer kit): all six built-in sounds, closed hat choking the open hat, level / pitch / decay, sample pads (start / end, reverse, attack / decay / sustain / release, pan), a pad chain (Mini Synth + Saturator), mute, engine Pitch, GM aliases',
+    run(e) {
+      samples(e); testSample(e); e.tempo(124); e.trackInst(0, 3);
+      const S = (pad, f, v) => e.instParam(0, 200 + pad * 16 + f, v);
+      S(6, 0, 3); S(6, 11, 50); S(6, 3, 0.1); S(6, 4, 0.8); S(6, 6, 0.01); S(6, 7, 0.1); S(6, 8, 0.4); S(6, 9, 0.2); S(6, 2, -0.5);   // sample pad with ADSR
+      S(7, 0, 0); S(7, 11, 52); S(7, 5, 1); S(7, 2, 0.6);                                                                       // reversed sample, one-shot
+      S(8, 11, 54); e.rackCmd(0, -1, 5, 8, 0, 1, 0); e.rackCmd(0, -1, 6, 8, 0, 1, 2500); e.rackCmd(0, -1, 1, 8, 0, 3, 0); e.rackCmd(0, -1, 2, 8, 0, 0, 12);   // pad chain
+      e.instParam(0, 1, 3); e.instParam(0, 5, -5); e.instParam(0, 11, 1.6); e.instParam(0, 3, -6);                               // legacy pad level / pitch / decay
+      const pat = [36, 42, 38, 42, 36, 46, 39, 42, 41, 44, 40, 35, 50, 52, 54, 42];
+      const f = []; for (let k = 0; k < 48; k++) f.push(k * PPQ / 4, PPQ * (k % 3 ? 0.2 : 0.6), pat[k % 16], 0.5 + (k % 4) * 0.16, 0); e.trackNotes(0, f, f.length / 5);
+      e.play(); play(e, 3, [128, 77, 256]);
+      e.instParam(0, 90, 4); S(1, 10, 1); play(e, 1); e.instParam(0, 90, -3); S(1, 10, 0); S(3, 1, 4); play(e, 1);
+      e.rackCmd(0, -1, 3, 8, 0, 1, 0); play(e, 0.5); e.rackCmd(0, -1, 7, 8, 0, 0, 0); play(e, 0.5); e.rackCmd(0, -1, 0, 0, 0, 0, 0);
       e.stop(); play(e, 1);
     } },
   ...fxScenarios(),

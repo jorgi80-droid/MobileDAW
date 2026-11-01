@@ -30,6 +30,13 @@ class Instrument {
   virtual void bendSounding(double ratio) {}                    // every voice that is on
   virtual void bendNewest(double ratio) {}                      // voices started by the last noteOn (v.age === counter)
   virtual int voicesOn() { return 0; }
+  virtual int lat() { return 0; }                               // PDC (Instrument Rack: its slowest chain)
+  virtual int readOut(float* out) { return 0; }                 // Instrument Rack: chain meters
+  virtual void endBlock(float* L, float* R, int n) {}           // JS inst.endBlock (Instrument Rack: chain effects + mix once per block)
+  // Instrument Rack (fx7): JS inst.rack / cmd(). Removed devices / instruments are handed back for the retire queue
+  bool isRack = false;
+  virtual void rackCmd(int op, double c, double j, double a, double b, class Device* prepD, Instrument* prepI, class Device** rmD, int& nD, Instrument** rmI, int& nI) {}
+  virtual class Device* sub(int c, int j) { return nullptr; }
 };
 
 class Device {
