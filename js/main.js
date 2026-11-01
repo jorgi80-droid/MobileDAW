@@ -26,6 +26,9 @@ import { startAutosave, restore, saveNow } from './autosave.js';
 import { makeZip } from './zip.js';
 import * as Tempo from './tempo.js';
 import { exportMidi, importMidi } from './midiio.js';
+import * as QS from './quicksave.js';
+import * as KM from './keymap.js';
+import { cancelGestures, gestureTiming } from './gesture.js';
 const { state } = P;
 
 let view = 'arr', tab = 'dev';
@@ -52,7 +55,7 @@ function wireTransport() {
         { label: 'Punch-in/out', check: q.on, fn: () => P.setPunch({ on: !q.on }) },
       ], r.left, r.bottom + 4);
     };
-    b.addEventListener('pointerdown', () => { long = false; clearTimeout(tmr); tmr = setTimeout(openMenu, 450); });
+    b.addEventListener('pointerdown', () => { long = false; clearTimeout(tmr); tmr = setTimeout(openMenu, gestureTiming().longMs); });
     for (const ev of ['pointerup', 'pointerleave', 'pointercancel']) b.addEventListener(ev, () => clearTimeout(tmr));
     b.addEventListener('contextmenu', (e) => e.preventDefault());
     b.onclick = () => { if (long) { long = false; return; } P.toggleMetro(); };
@@ -70,7 +73,8 @@ function wireTransport() {
       { label: 'Pengaturan\u2026', fn: openSettings },
       ...(isStandalone() ? [] : [{ label: 'Layar penuh', fn: toggleFullscreen }]),
       { sep: true },
-      { label: 'Simpan proyek\u2026', fn: () => BR.openBrowser('proj') },
+      { label: 'Simpan proyek\u2026' + (QS.isDirty() ? ' \u2022' : ''), fn: () => QS.saveAs(), swipe: () => QS.quickSave(), swipeLabel: 'geser \u21E2 simpan cepat' },   // FL Studio Mobile: swipe = Quick Save
+      { label: 'Simpan cepat' + (QS.hasName() ? ' (' + state.projectName + ')' : ''), fn: () => QS.quickSave() },
       { label: 'Buka proyek\u2026', fn: () => BR.openBrowser('proj') },
       { label: 'Demo song\u2026', fn: () => BR.openBrowser('proj') },
       { label: 'Ekspor audio (WAV/MP3/stem)\u2026', fn: exportWav },
@@ -405,9 +409,29 @@ globalThis.onEngineError = (e) => {
 const PIANO = { KeyZ: 0, KeyS: 1, KeyX: 2, KeyD: 3, KeyC: 4, KeyV: 5, KeyG: 6, KeyB: 7, KeyH: 8, KeyN: 9, KeyJ: 10, KeyM: 11, Comma: 12,
   KeyQ: 12, Digit2: 13, KeyW: 14, Digit3: 15, KeyE: 16, KeyR: 17, Digit5: 18, KeyT: 19, Digit6: 20, KeyY: 21, Digit7: 22, KeyU: 23, KeyI: 24 };
 const heldKeys = new Map();
+// one place for every keyboard action: the open editor gets editing keys first, then the arrangement
+const editorOpen = () => tab === 'clip' && $('#view-arr').classList.contains('edfull');
+function runKey(a, e) {
+  const edit = (name) => (view === 'arr' && editorOpen() && ED.keyAction(name)) || (view === 'arr' && !editorOpen() && TL.keyAction(name));
+  switch (a) {
+    case 'play': P.togglePlay(); return true;
+    case 'home': P.seekTo(0); return true;
+    case 'save': QS.quickSave(); return true;
+    case 'saveAs': QS.saveAs(); return true;
+    case 'undo': undoOp(); return true;
+    case 'redo': redoOp(); return true;
+    case 'escape': if (cancelGestures() || closeAll()) return true; return !!edit('escape') || closeEditor();
+    case 'tab': showView(view === 'arr' ? 'mix' : 'arr'); return true;
+    case 'metro': P.toggleMetro(); return true;
+    case 'rec': toggleRec(); return true;
+    case 'browser': BR.toggleBrowser(); return true;
+    case 'fullscreen': toggleFullscreen(); return true;
+    default: if (e.repeat && (a === 'delete' || a === 'cut' || a === 'paste')) return true; return !!edit(a);   // a held Delete / Ctrl+V does not repeat
+  }
+}
 function keys() {
   window.addEventListener('keydown', (e) => {
-    if (e.target && /INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) return;
+    if (KM.isTyping(e.target)) return;                                 // a shortcut never cuts into typing
     const mod = e.ctrlKey || e.metaKey;
     if (!mod && tab === 'keys' && view === 'arr' && e.code in PIANO) {   // typing keyboard as piano
       e.preventDefault();
@@ -419,17 +443,9 @@ function keys() {
       P.noteEvent(i, pitch, 0.8, true);
       return;
     }
-    if (e.code === 'Space') { e.preventDefault(); P.togglePlay(); }
-    else if (e.code === 'Home') P.seekTo(0);
-    else if (mod && e.code === 'KeyZ') { e.preventDefault(); e.shiftKey ? redoOp() : undoOp(); }
-    else if (mod && e.code === 'KeyY') { e.preventDefault(); redoOp(); }
-    else if (e.code === 'Delete' || e.code === 'Backspace') { if (!TL.deleteSelected()) { const c = P.selectedClip(); if (c) { checkpoint(); P.removeClip(c.track, c.clip.id); } } }
-    else if (e.code === 'Escape') TL.clearSelection();
-    else if (e.code === 'KeyM') P.toggleMetro();
-    else if (e.code === 'KeyB') BR.toggleBrowser();
-    else if (e.code === 'KeyR') toggleRec();
-    else if (e.code === 'KeyF') toggleFullscreen();
-    else if (e.code === 'Tab') { e.preventDefault(); showView(view === 'arr' ? 'mix' : 'arr'); }
+    const combo = KM.comboOf(e), act = combo && KM.actionFor(combo);   // Settings -> Pintasan: the user's keymap (optional; touch stays the main route)
+    if (!act) return;
+    if (runKey(act, e)) e.preventDefault();
   });
   window.addEventListener('keyup', (e) => {
     const h = heldKeys.get(e.code);
@@ -488,7 +504,7 @@ function boot() {
   if (backendError()) showFatal(backendError());
   Promise.resolve(eng.init ? eng.init() : null).catch(() => {}).then(() => {
     eng.setLatencyMs(prefs.latencyMs); eng.metroVol(prefs.metroVol ?? 1); eng.masterLimit(prefs.masterLimit !== false); if (eng.pdc) eng.pdc(prefs.pdc !== false);
-    restore().then((ok) => { if (!ok) P.newProject(true); }).catch(() => P.newProject(true)).then(() => { showTab('dev'); startAutosave(); });
+    restore().then((ok) => { if (!ok) P.newProject(true); }).catch(() => P.newProject(true)).then(() => { showTab('dev'); startAutosave(); QS.initSaveState(); QS.onSaveState((d) => $('#btn-menu').classList.toggle('unsaved', d)); });
     if (prefs.midiOn && !isNativeApp()) enableMidi(true);   // no Web MIDI in the Android WebView
     if (isNativeApp() && eng.setEngine) {                 // Android: C++ engine when chosen in Pengaturan -> Audio (falls back to Web by itself)
       addEventListener('enginechange', (e) => engineToast(e.detail));

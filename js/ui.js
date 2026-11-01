@@ -1,5 +1,6 @@
 // Small UI toolkit: element helper, icons, popup menus, modals, toasts, knobs.
 import { C } from './theme.js';
+import { gestureTiming, haptic } from './gesture.js';
 export const $ = (s, r = document) => r.querySelector(s);
 export const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 
@@ -55,8 +56,18 @@ function leave(...els) {
   for (const e of els) e.classList.add('closing');
   setTimeout(() => { for (const e of els) e.remove(); }, Math.round(150 * sc) + 30);
 }
-function floating(node, x, y) {
+// passThrough (FL Studio Mobile Clip Controls): no scrim; a touch outside closes the popup AND still reaches what is under the finger, so the
+// next clip can be dragged / tapped at once instead of first dismissing the popup.
+function floating(node, x, y, passThrough = false) {
   born.set(node, performance.now());
+  if (passThrough) {
+    let shut = false;
+    const outside = (e) => { if (!node.contains(e.target)) close(); };
+    const close = () => { if (shut) return; shut = true; removeEventListener('pointerdown', outside, true); leave(node); openers.delete(close); };
+    addEventListener('pointerdown', outside, true);
+    layer().append(node); openers.add(close); place(node, x, y);
+    return close;
+  }
   const scrim = h('div', { class: 'scrim' });
   let shut = false;
   const close = () => { if (shut) return; shut = true; leave(scrim, node); openers.delete(close); };
@@ -67,20 +78,43 @@ function floating(node, x, y) {
   return close;
 }
 
-export function menu(items, x, y) {
+export function menu(items, x, y, opts = {}) {
   const node = h('div', { class: 'menu' });
   let close;
   for (const it of items) {
     if (it.sep) { node.append(h('div', { class: 'mi sep' })); continue; }
     const head = it.dim && !it.fn && /[A-Z]/.test(it.label) && it.label === String(it.label).toUpperCase();   // an all-caps dim entry without an action is a section title
     const sub = !head && /\u2026$/.test(it.label);                                                              // "…" = opens a list or a dialog (Live: a small arrow)
-    node.append(h('div', {
-      class: 'mi' + (it.check ? ' ck' : '') + (head ? ' hd' : it.dim ? ' dim' : '') + (sub ? ' sub' : ''),
-      onclick: () => { if (!armed(node)) return; close(); if (it.fn) it.fn(); },
-    }, it.label));
+    const el = h('div', {
+      class: 'mi' + (it.check ? ' ck' : '') + (head ? ' hd' : it.dim ? ' dim' : '') + (sub ? ' sub' : '') + (it.swipe ? ' swp' : ''),
+      onclick: () => { if (el._swiped) { el._swiped = false; return; } if (!armed(node)) return; close(); if (it.fn) it.fn(); },
+    }, it.label);
+    if (it.swipe) swipeItem(el, it, () => close());
+    node.append(el);
   }
-  close = floating(node, x, y);
+  close = floating(node, x, y, !!opts.passThrough);
   return close;
+}
+
+// A menu item with a second action on a swipe to the right (FL Studio Mobile: swipe the save control = Quick Save). The row slides with the
+// finger, a hint appears behind it, and past the threshold the swipe action runs (a tap still runs the normal action).
+function swipeItem(el, it, close) {
+  const hint = h('span', { class: 'swp-h' }, it.swipeLabel || '\u21E2'); el.append(hint);
+  let d = null; const TH = 64;
+  el.addEventListener('pointerdown', (e) => { d = { x: e.clientX, y: e.clientY, on: false, id: e.pointerId }; });
+  el.addEventListener('pointermove', (e) => {
+    if (!d || e.pointerId !== d.id) return;
+    const dx = e.clientX - d.x, dy = e.clientY - d.y;
+    if (!d.on) { if (Math.abs(dy) > 10 && Math.abs(dy) > Math.abs(dx)) { d = null; return; } if (dx > 10) { d.on = true; try { el.setPointerCapture(e.pointerId); } catch (_) { /* gone */ } } else return; }
+    const k = clamp(dx, 0, TH * 1.6); el.style.setProperty('--swp', k + 'px'); el.classList.toggle('go', k >= TH);
+  });
+  const end = (e, cancel) => {
+    if (!d) return; const on = d.on, dx = e.clientX - d.x; d = null;
+    el.style.removeProperty('--swp'); el.classList.remove('go');
+    if (!on) return; el._swiped = true; setTimeout(() => { el._swiped = false; }, 400);
+    if (!cancel && dx >= TH) { haptic(18); close(); it.swipe(); }
+  };
+  el.addEventListener('pointerup', (e) => end(e, false)); el.addEventListener('pointercancel', (e) => end(e, true));
 }
 
 // Horizontal action bar (clip / note controls).
@@ -167,19 +201,25 @@ export function knob(p, get, set, fmt, color = null, onLong = null) {
   let start = null;
   root.addEventListener('pointerdown', (e) => {
     root.setPointerCapture(e.pointerId);
-    start = { y: e.clientY, n: toNorm(p, get()), moved: false, fired: false, timer: 0 };
+    start = { y: e.clientY, x: e.clientX, ly: e.clientY, n: toNorm(p, get()), moved: false, fired: false, timer: 0 };
     // long press = offer automation for this parameter
-    if (onLong) start.timer = setTimeout(() => { if (start && !start.moved) { start.fired = true; onLong(root.getBoundingClientRect()); } }, 480);
+    if (onLong) start.timer = setTimeout(() => { if (start && !start.moved) { start.fired = true; haptic(10); onLong(root.getBoundingClientRect()); } }, gestureTiming().longMs);
   });
   root.addEventListener('pointermove', (e) => {
     if (!start || start.fired) return;
     const dy = start.y - e.clientY;
-    if (Math.abs(dy) > 3) { start.moved = true; clearTimeout(start.timer); }
-    if (start.moved) { set(fromNorm(p, start.n + dy / 160)); draw(); }
+    if (!start.moved && Math.abs(dy) > 3) { start.moved = true; clearTimeout(start.timer); root.classList.add('act'); }
+    if (start.moved) {
+      // fine adjustment: the further the finger slides sideways away from the knob, the finer the vertical drag (up to 1/8 at ~420 px);
+      // incremental, so moving sideways never makes the value jump
+      const fine = 1 / (1 + Math.abs(e.clientX - start.x) / 60), d = start.ly - e.clientY;
+      start.ly = e.clientY; start.n = clamp(start.n + d / 160 * fine, 0, 1);
+      set(fromNorm(p, start.n)); draw();
+    }
   });
   const end = () => {
     if (!start) return;
-    clearTimeout(start.timer);
+    clearTimeout(start.timer); root.classList.remove('act');
     if (!start.moved && !start.fired) {
       const now = performance.now();
       if (p.step && p.max - p.min <= 4) { const v = get() + p.step; set(v > p.max ? p.min : v); }
@@ -190,7 +230,7 @@ export function knob(p, get, set, fmt, color = null, onLong = null) {
     start = null;
   };
   root.addEventListener('pointerup', end);
-  root.addEventListener('pointercancel', () => { if (start) clearTimeout(start.timer); start = null; });
+  root.addEventListener('pointercancel', () => { if (start) clearTimeout(start.timer); root.classList.remove('act'); start = null; });
   root.update = draw;
   draw();
   return root;

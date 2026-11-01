@@ -65,6 +65,8 @@ export function padPanel(track, k, { onClose, onChange }) {
   return root;
 }
 
+// replace the sound of pad k with a file (drum channel menu: Load Sample)
+export function pickPadSample(track, k, done) { BR.openBrowser('file', { track, pad: k, done }); }
 // "+ Sample" in the step toolbar: a new pad from a file
 export function addPad(track, done) {
   if (P.padsOf(track).length >= P.MAX_PADS) return toast('Batas 16 pad tercapai.');

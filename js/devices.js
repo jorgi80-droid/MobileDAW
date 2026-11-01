@@ -16,6 +16,7 @@ import { buildSuite, minimetersView } from './minimeters.js';
 import { kitView, irackView, instKitView, padChainView } from './fxkit.js';
 import { prefs } from './prefs.js';
 import * as DP from './drumpad.js';
+import { gestureTiming, haptic } from './gesture.js';
 const { state } = P;
 const VIEWS = { ...FXVIEW, 16: minimetersView };   // MiniMeters has its own view module
 
@@ -28,8 +29,58 @@ const isFolded = (k) => folded.has(k);
 function setFolded(k, on) { if (on) folded.add(k); else folded.delete(k); try { localStorage.setItem(FOLD_KEY, JSON.stringify([...folded].slice(-400))); } catch (_) { /* storage unavailable */ } render(); }
 function titleFold(head, k) {                 // Live: double-click a device's title bar folds it; here a double tap on the bar (not on its buttons)
   let last = 0;
-  head.addEventListener('pointerup', (e) => { if (e.target.closest && e.target.closest('button') || head.closest('.fw')) return;   // in a floating window a double tap rolls the window up instead
+  head.addEventListener('pointerup', (e) => { if (head._noTap) { head._noTap = false; last = 0; return; } if (e.target.closest && e.target.closest('button') || head.closest('.fw')) return;   // in a floating window a double tap rolls the window up instead
     const now = performance.now(); if (now - last < 320) { last = 0; setFolded(k, !isFolded(k)); } else last = now; });
+  return head;
+}
+
+// FL Studio Mobile module reorder: long-press a device's title bar (not its buttons), then slide it left / right along the chain. The card lifts,
+// follows the finger, an accent line shows where it will land, the chain scrolls at its edges; lifting the finger moves the device there
+// (one undo step, signal order follows at once). Moving before the long press is recognised scrolls the chain as usual.
+function reorderGrip(head, i, di) {
+  let st = null;
+  const clear = () => { if (!st) return; clearTimeout(st.tm); cancelAnimationFrame(st.raf); if (st.on) { st.card.classList.remove('dv-lift'); st.card.style.transform = ''; for (const o of st.others) o.el.classList.remove('dv-ins-b', 'dv-ins-a'); } st = null; };
+  const target = () => {
+    const sc = st.scroll, mid = st.c0 + (st.x - st.x0) + (sc.scrollLeft - st.sl0);
+    let to = 0; for (const o of st.others) if (o.c < mid) to++;
+    for (const o of st.others) o.el.classList.remove('dv-ins-b', 'dv-ins-a');
+    const o = st.others[to] || null, p = st.others[to - 1] || null;
+    if (to !== di) { if (o) o.el.classList.add('dv-ins-b'); else if (p) p.el.classList.add('dv-ins-a'); }
+    return to;
+  };
+  const begin = () => {
+    const card = head.closest('.card'), scroll = card && card.parentElement; if (!card || !scroll) { st = null; return; }
+    const ids = new Set((P.tr(i) || { devices: [] }).devices.map((d) => String(d.id))), sl = scroll.scrollLeft;   // dataset keys are strings
+    const cx = (el) => { const r = el.getBoundingClientRect(); return r.left + r.width / 2 + sl; };
+    st.on = true; st.card = card; st.scroll = scroll; st.sl0 = sl; st.c0 = cx(card); head._noTap = true;
+    st.others = [...scroll.children].filter((el) => el !== card && ids.has(el.dataset.k)).map((el) => ({ el, c: cx(el) }));
+    card.classList.add('dv-lift'); haptic(14);
+    try { head.setPointerCapture(st.id); } catch (_) { /* pointer gone */ }
+    const edge = () => { if (!st) return; const r = st.scroll.getBoundingClientRect(), M = 40; const v = st.x < r.left + M ? -(r.left + M - st.x) / 3 : st.x > r.right - M ? (st.x - (r.right - M)) / 3 : 0; if (v) { st.scroll.scrollLeft += v; move(); } st.raf = requestAnimationFrame(edge); };
+    st.raf = requestAnimationFrame(edge);
+    move();
+  };
+  const move = () => { if (!st || !st.on) return; st.card.style.transform = `translateX(${st.x - st.x0 + (st.scroll.scrollLeft - st.sl0)}px)`; target(); };
+  head.addEventListener('pointerdown', (e) => {
+    if ((e.target.closest && e.target.closest('button')) || head.closest('.fw') || e.button > 0) return;
+    clear();
+    st = { id: e.pointerId, x0: e.clientX, y0: e.clientY, x: e.clientX, on: false, tm: 0, raf: 0 };
+    st.tm = setTimeout(() => { if (st && !st.on) begin(); }, gestureTiming().longMs);
+  });
+  head.addEventListener('pointermove', (e) => {
+    if (!st || e.pointerId !== st.id) return;
+    st.x = e.clientX;
+    if (!st.on) { if (Math.hypot(e.clientX - st.x0, e.clientY - st.y0) > gestureTiming().slop) clear(); return; }   // moved first = a scroll, not a reorder
+    move();
+  });
+  head.addEventListener('touchmove', (e) => { if (st && st.on && e.cancelable) e.preventDefault(); }, { passive: false });   // the lifted card, not the chain, follows the finger
+  head.addEventListener('pointerup', (e) => {
+    if (!st || e.pointerId !== st.id) return;
+    const on = st.on, to = on ? target() : di; clear();
+    if (on && to !== di) P.moveDevice(i, di, to);
+  });
+  head.addEventListener('pointercancel', clear);
+  head.addEventListener('contextmenu', (e) => e.preventDefault());
   return head;
 }
 const foldBtn = (k, on) => { const b = h('button', { class: 'fold-b', 'aria-label': on ? 'Buka lipatan' : 'Lipat modul', onclick: () => setFolded(k, !on) }, on ? '\u25B8' : '\u25C2'); return b; };
@@ -300,11 +351,12 @@ function fxCard(i, d, di, n, o = {}) {
   if (!o.floating && isFolded(d.id)) { const c = foldedCard(d.id, def.name, pw); if (d.bypass) c.classList.add('off'); return c; }
 
   let view = null;
+  const grip = (hd) => (o.floating || o.nested || n < 2 ? hd : reorderGrip(hd, i, di));
   const knobsDiv = h('div', { class: 'knobs side' });
   const ctx = { i, di, d, def, every: o.every || every, set: (k, v) => P.setDeviceParam(i, di, k, v), refreshKnobs: () => { for (const c of knobsDiv.children) if (c.update) c.update(); } };
   if (def.kit) {                                                                   // Live 12 panel (js/fxkit.js): the panel lays out every control itself
     let kv = null; try { kv = kitView(ctx); } catch (e) { console.error('fxkit', e); }
-    if (kv) return h('div', { class: 'card lkcard' + (d.bypass ? ' off' : '') }, titleFold(h('h4', {}, pw, h('span', {}, def.name), o.floating ? null : popBtn(() => openDeviceWindow(d.id)), more, o.floating ? null : foldBtn(d.id, false)), d.id), kv.el);
+    if (kv) return h('div', { class: 'card lkcard' + (d.bypass ? ' off' : '') }, grip(titleFold(h('h4', {}, pw, h('span', {}, def.name), o.floating ? null : popBtn(() => openDeviceWindow(d.id)), more, o.floating ? null : foldBtn(d.id, false)), d.id)), kv.el);
   }
   if (VIEWS[d.type]) { try { view = VIEWS[d.type](ctx); } catch (e) { console.error('fxviz', e); view = null; } }
   // knobs sit beside the display and flow in columns (the number of rows follows the panel height), so a half-height panel needs no scrolling
@@ -323,7 +375,7 @@ function fxCard(i, d, di, n, o = {}) {
   });
   if (view && view.el) sideLayout(view.el);
   const body = view ? h('div', { class: 'fxv' }, view.el, knobsDiv.children.length ? knobsDiv : null) : knobsDiv;
-  return h('div', { class: 'card' + (d.bypass ? ' off' : '') }, titleFold(h('h4', {}, pw, h('span', {}, def.name), o.floating ? null : popBtn(() => openDeviceWindow(d.id)), more, o.floating ? null : foldBtn(d.id, false)), d.id), body);
+  return h('div', { class: 'card' + (d.bypass ? ' off' : '') }, grip(titleFold(h('h4', {}, pw, h('span', {}, def.name), o.floating ? null : popBtn(() => openDeviceWindow(d.id)), more, o.floating ? null : foldBtn(d.id, false)), d.id)), body);
 }
 
 // Device chain of the selected strip. A re-render of the same strip keeps the scroll position, and cards that moved (reorder, fold,

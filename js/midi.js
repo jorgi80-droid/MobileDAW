@@ -5,7 +5,9 @@ import { toast } from './ui.js';
 import { prefs } from './prefs.js';
 import * as P from './project.js';
 
-let started = false, warned = 0;
+let started = false, warned = 0, learn = null;
+// Set MIDI Key (FL Studio Mobile drum channel menu): the next note-on from a controller is handed to cb instead of being played. Returns a cancel function.
+export function learnNote(cb) { learn = cb; return () => { if (learn === cb) learn = null; }; }
 export const midiNames = () => eng.midiDevices();
 
 function mmc(d) {   // F0 7F <device> 06 <command> F7
@@ -30,6 +32,7 @@ function onMessage(d, name) {
   if (s === 0xFC) { P.stop(); return; }
   const cmd = s & 0xF0;
   if (cmd === 0x90 || cmd === 0x80) {
+    if (learn && cmd === 0x90 && d[2] > 0) { const f = learn; learn = null; f(d[1]); return; }
     const on = cmd === 0x90 && d[2] > 0, i = P.state.sel.track, t = P.state.tracks[i];
     if (!t || (t.kind !== 'midi' && t.kind !== 'drum')) { if (on && performance.now() - warned > 4000) { warned = performance.now(); toast('Pilih track synth atau drum untuk dimainkan dari MIDI.'); } return; }
     P.noteEvent(i, d[1], on ? d[2] / 127 : 0, on);

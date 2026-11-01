@@ -93,7 +93,7 @@
 .prefs .set .b:not(.segc .b)::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--raise2); flex: none; }
 .prefs .set .b.on:not(.segc .b) { background: var(--raise); color: var(--text); }
 .prefs .set .b.on:not(.segc .b)::before { background: var(--accent); box-shadow: 0 0 6px var(--accent); }
-.prefs .set .b.step::before, .prefs .scalebox .b::before { display: none; }
+.prefs .set .b.step::before, .prefs .scalebox .b::before, .prefs .kmap .b::before { display: none; }
 .prefs .sv { line-height: 1.5; max-width: 62ch; }
 .prefs .set > div + div { margin-top: 4px; }
 /* tempo window: time signature + follow row */
@@ -903,3 +903,23 @@
 .mx-btns .b.ph.on { background: #5ac8fa; color: #0b0b0c; }
 .mx-btns:has(.b.a) { gap: 2px; padding: 0 3px; }
 .mx-btns:has(.b.a) .b { width: 24px; min-width: 24px; }
+/* Device reorder (long-press a title bar, then slide): the lifted card follows the finger, an accent line marks where it lands */
+.card.dv-lift { position: relative; z-index: 6; opacity: .94; box-shadow: 0 12px 30px rgba(0, 0, 0, .55), 0 0 0 1px var(--accent); transition: none !important; cursor: grabbing; }
+.card.dv-ins-b { box-shadow: inset 3px 0 0 var(--accent); }
+.card.dv-ins-a { box-shadow: inset -3px 0 0 var(--accent); }
+/* swipeable menu row (Quick Save): the label slides right with the finger, the hint sits behind it and lights up past the threshold */
+.menu .mi.swp { position: relative; overflow: hidden; }
+.menu .mi.swp > .swp-h { margin-left: auto; color: var(--lv-dim); font: 500 11px/1 var(--font); white-space: nowrap; }
+.menu .mi.swp[style*="--swp"] { background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 38%, transparent) var(--swp), transparent var(--swp)); }
+.menu .mi.swp.go > .swp-h { color: var(--accent); font-weight: 700; }
+/* unsaved changes: a small dot on the menu button */
+#btn-menu { position: relative; }
+#btn-menu.unsaved::after { content: ''; position: absolute; top: 5px; right: 5px; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 1.5px var(--panel); }
+/* Settings -> Sentuhan: gesture test pad; Settings -> Pintasan: key fields */
+.gtest { margin-top: 10px; min-height: 120px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 12px; text-align: center; border: 1px dashed var(--lv-edge, var(--line)); border-radius: var(--r-2); background: var(--lv-well, var(--bg)); color: var(--lv-dim, var(--dim)); touch-action: none; user-select: none; -webkit-user-select: none; }
+.gtest b { color: var(--lv-ink, var(--text)); font-weight: 600; }
+.gtest.hit { animation: gtHit var(--d4, .2s) var(--e-out, ease-out); }
+@keyframes gtHit { from { background: color-mix(in srgb, var(--accent) 22%, var(--lv-well, var(--bg))); } }
+.kmap .sline { gap: 8px; }
+.kmap .kmr { display: flex; gap: 6px; align-items: center; }
+.kmap .kmk { min-width: 120px; height: 30px; font-variant-numeric: tabular-nums; }

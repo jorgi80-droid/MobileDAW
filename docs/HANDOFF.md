@@ -1,6 +1,6 @@
 # Serah-terima pekerjaan (untuk sesi berikutnya)
 
-Branch kerja: `claude/gesture-logic-editor-clip-18jqqv` (lanjutan fast-forward dari `ccr-49b1b317-5ba57j` <- `ccr-d4b2cd74-5td2k9`) (repo `jorgi80-droid/MobileDAW`), lanjutan langsung (fast-forward) dari `ccr-591624f7-8xa2wb` <- `ccr-9362ed99-sntgvi`
+Branch kerja terbaru: `ccr-beaae46f-5tn5nu` (fast-forward dari `ccr-b8ee185e-5l32id` <- `claude/gesture-logic-editor-clip-18jqqv`). Sebelumnya: `claude/gesture-logic-editor-clip-18jqqv` (lanjutan fast-forward dari `ccr-49b1b317-5ba57j` <- `ccr-d4b2cd74-5td2k9`) (repo `jorgi80-droid/MobileDAW`), lanjutan langsung (fast-forward) dari `ccr-591624f7-8xa2wb` <- `ccr-9362ed99-sntgvi`
 <- `ccr-34212a29-z1qc7f`. Tidak ada riwayat yang ditulis ulang. Semua pekerjaan sudah di-commit.
 Baca juga `README-ANDROID.md` (build, install, status fase 2).
 
@@ -39,6 +39,39 @@ Baca juga `README-ANDROID.md` (build, install, status fase 2).
 | Ekspor WAV lewat engine native; angka CPU/underrun Web vs Native dari HP | belum |
 | Plugin Delay Compensation (PDC): track, send/return, grup, master, chain paralel rack, metronom + count-in, ekspor, rekaman; JS + C++ identik | selesai (`tools/pdc-test.mjs`, golden `core-pdc`, `tools/engine-e2e.mjs`) |
 | Ekspor: Mono, pilihan sample rate (resampler Kaiser HQ), rentang Area loop | selesai (`tools/export-test.mjs`) |
+| Kontrol sentuh gaya FL Studio Mobile: pengaturan gestur, ketuk-ganda bersih, batal gestur, Kontrol Klip tidak modal, Snap ketuk/tahan, reorder device, seleksi latar, titik otomasi banyak, menu pad drum, Simpan cepat geser + cadangan, pintasan keyboard yang bisa diubah | selesai (`docs/GESTURES.md`, `tools/gesture-test.mjs`, `tools/touch-ui-test.mjs`) |
+
+## Sesi ini: kontrol sentuh disempurnakan (prompt "Workflow FL Studio Mobile Touch")
+Peta lengkap per layar: **`docs/GESTURES.md`**. Ringkasan teknis:
+- **`js/gesture.js` v2**: ambang dari pref (`longMs`, `touchSlop`, `dtapMs`, dibaca per gestur lewat `gestureTiming()`; mouse slop 4 px),
+  `haptic(ms)` (navigator.vibrate, pref `haptics`), handler opsional `defer(target)` = ketukan tunggal ditunda dan TIDAK dikirim bila
+  jadi ketuk-ganda, `cancelGestures()` global (Escape) -> `dragEnd(x, y, t, true)`; attachGestures mengembalikan `{ cancel, pending }`.
+  Tombol tekan-lama lain (Snap editor, metronom, knob `ui.js`, fader mixer, header device) memakai `gestureTiming().longMs`.
+- **`history.js revertLast()`**: membatalkan checkpoint terakhir tanpa meninggalkan redo (dipakai semua drag yang dibatalkan:
+  klip, not, step, titik otomasi).
+- **Arrangement**: ketuk klip = pilih + Kontrol Klip setelah jeda ketuk-ganda (pref `tapClipMenu`); menu klip memakai
+  `menu(..., { passThrough: true })` (`ui.js floating()`: tanpa scrim, sentuhan di luar menutup DAN diteruskan). Saklar Snap kanan atas:
+  ketuk = on/off (`toggleSnap`, `cfg.lastSnap`), tekan lama = menu (`cornerMenu`). Hapus track lewat dialog. Menu klip: Combine with
+  Next Clip (`combineNext`). Zoom: Fit seleksi waktu. Saat menyeret klip: `drawDragAids()` (bayangan asal + gelembung posisi/panjang).
+  `keyAction(a)` = bagian pintasan keyboard untuk arrangement. `testState()` untuk tes UI.
+- **Editor**: seret 1 jari di latar piano roll = kotak seleksi (pref `rollDrag`: 'select' | 'pan'); batal = not kembali. Editor otomasi:
+  pilihan banyak titik (`aset`), kotak seleksi, geser grup, bar Copy / Hapus / Paste / Batal pilih, `aclip` + `autoPaste()` (kurva
+  tempelan menggantikan rentangnya). Menu tekan-lama pad drum: Load Sample (`DP.pickPadSample`), Clone (`P.clonePad`), Set MIDI Key
+  (`P.setPadKey`: not di semua klip track ikut; dialog + `midi.js learnNote()` dari controller), Hapus pad (konfirmasi).
+  `keyAction(a)` untuk piano roll.
+- **Device**: `reorderGrip()` di `devices.js` (tekan lama title bar lalu geser; kelas CSS `dv-lift`, `dv-ins-b/a`; `P.moveDevice`).
+  `head._noTap` mencegah ketuk-ganda lipat setelah reorder. Knob: penyesuaian halus (geser menjauh ke samping, inkremental).
+- **Simpan**: `js/quicksave.js` (Simpan sebagai, Simpan cepat dengan cadangan `_backup_<nama>.mdaw`, indikator belum tersimpan
+  `#btn-menu.unsaved`, `markOpened()` dipanggil Browser saat membuka proyek). Baris menu bisa digeser (`menu` item `swipe`, `swipeLabel`).
+  File berawalan `_` tidak tampil di daftar proyek; cadangan tampil di bagian Cadangan.
+- **Pintasan keyboard**: `js/keymap.js` (`ACTIONS`, `comboOf`, `actionFor`, `bind`, pref `keymap`), dispatcher `runKey()` di `main.js`
+  (editor terbuka -> `ED.keyAction`, lainnya `TL.keyAction`). Pengaturan -> **Pintasan** (ubah / kosongkan / bawaan) dan -> **Sentuhan**
+  (ambang, getar, perilaku ketuk klip / seret latar, area uji gestur).
+- Tes: `tools/gesture-test.mjs` (di run-tests), `tools/touch-ui-test.mjs` (45 cek, Playwright), `tools/pattern-ui-test.mjs` tetap lulus.
+- Android: izin `VIBRATE` ditambahkan ke manifest (izin normal, tanpa dialog) agar `navigator.vibrate` jalan di WebView; build APK hanya
+  diverifikasi CI.
+- **Belum / batas**: audio editor sudah punya pinch berpusat (horizontal) tetapi belum dites di touch-ui-test. Reorder modul di
+  dalam Audio Effect Rack / chain pad masih lewat menu (gestur hanya untuk rantai utama).
 
 ## Sesi lanjutan: port C++ lengkap, warp mode, SharedArrayBuffer, profil performa
 - **Port C++ selesai untuk semua unit** (`native/engine/`): `fx5.*` (Spectral Time/Resonator: STFT + FFT sama dengan dsp.js, `jsHypot` = Math.hypot V8,

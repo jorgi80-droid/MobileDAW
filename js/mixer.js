@@ -9,6 +9,7 @@ import { MASTER, RET0, eng } from './engine.js';
 import { offerAutomation } from './automate.js';
 import { prefs, savePrefs } from './prefs.js';
 import * as P from './project.js';
+import { gestureTiming } from './gesture.js';
 const { state } = P;
 
 const STRIP_W = 104, VMAX = 1.4, W_MIN = 92, W_MAX = 168;
@@ -83,7 +84,7 @@ function strip(i, pos) {
     if (now - last < 300) { P.setVol(i, master ? 1 : 0.85); refreshVol(); last = 0; d = null; return; }   // double tap = reset, and the finger must not drag it away again
     last = now;
     d = { y0: e.clientY, p0: volToPos(t.vol), moved: false, span: Math.max(40, c.getBoundingClientRect().height - 24) };
-    timer = setTimeout(() => { if (d && !d.moved) { d = null; offerAutomation(fader.getBoundingClientRect(), { kind: 0, strip: P.stripOf(i), param: 0, def: P.AUTO_VOL }, `${label} • Volume`); } }, 520);
+    timer = setTimeout(() => { if (d && !d.moved) { d = null; offerAutomation(fader.getBoundingClientRect(), { kind: 0, strip: P.stripOf(i), param: 0, def: P.AUTO_VOL }, `${label} • Volume`); } }, gestureTiming().longMs);
   });
   fader.addEventListener('pointermove', (e) => {
     if (!d) return;

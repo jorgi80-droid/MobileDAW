@@ -79,6 +79,9 @@ function run(e) {
   lastKey = null; pending = false;
 }
 export function undoOp() { if (!undo.length) return; const e = undo.pop(); run(e); redo.push(e); emit('history'); }
+// a cancelled gesture (Escape / a second finger / the system took the pointer): put back the state saved by the checkpoint taken when the
+// gesture started, and leave no undo or redo step behind (nothing happened as far as the user is concerned)
+export function revertLast() { if (!undo.length) return false; const e = undo.pop(); run(e); emit('history'); return true; }
 export function redoOp() { if (!redo.length) return; const e = redo.pop(); run(e); undo.push(e); emit('history'); }
 
 HK.hit = hit; HK.add = add; HK.group = group; HK.barrier = clearHistory;

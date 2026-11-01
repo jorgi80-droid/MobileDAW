@@ -45,6 +45,8 @@
     <!-- microphone recording (getUserMedia in the WebView) -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <!-- haptic feedback for touch gestures (navigator.vibrate in the WebView); a normal permission, no dialog -->
+    <uses-permission android:name="android.permission.VIBRATE" />
     <!-- Documents/MobileDAW on Android 10 and older; newer versions need no permission for files the app creates -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />

@@ -2,9 +2,10 @@
 // Gestures follow FL Studio Mobile: tap grid = add note, tap note = controls, long-press note = delete menu,
 // long-press + drag on empty = rubber-band select, ruler drag = time selection, drag-up lane = velocity.
 import { C, T } from './theme.js';
-import { attachGestures } from './gesture.js';
-import { bar, menu, ask, toast, h, clamp } from './ui.js';
-import { checkpoint } from './history.js';
+import { attachGestures, gestureTiming, haptic } from './gesture.js';
+import { bar, menu, ask, modal, closeAll, toast, h, clamp } from './ui.js';
+import * as MIDI from './midi.js';
+import { checkpoint, revertLast } from './history.js';
 import * as AE from './audioedit.js';
 import { eng } from './engine.js';
 import { fmtParam, valOf } from './defs.js';
@@ -465,6 +466,26 @@ function ops() {
   };
 }
 
+// Physical / Bluetooth keyboard (keymap.js) while the piano roll is open: the editor's share of the shortcuts.
+export function keyAction(a) {
+  const k = cur(); if (!k || isAuto() || stepsMode() || !k.clip.notes) return false;
+  const c = k.clip, o = ops(), playLocal = () => Math.max(0, P.currentTick() - c.start + (winOf(c).lp || 0));
+  switch (a) {
+    case 'copy': if (!sel.size) return false; o.copy(); return true;
+    case 'cut': if (!sel.size) return false; o.copy(); o.del(); return true;
+    case 'paste': if (!clipboard || !clipboard.length) return false; pasteAt(playLocal(), clipboard[0].p); return true;
+    case 'duplicate': { if (!sel.size) return false; const L = selNotes(), a0 = Math.min(...L.map((n) => n.t)), e = notesEnd(L), span = Math.max(snapUnit() || 1, Math.ceil((e - a0) / (snapUnit() || 1)) * (snapUnit() || 1));
+      checkpoint(); const add = L.map((n) => ({ ...n, t: n.t + span })); c.notes.push(...add); sel = new Set(add); grew(c, notesEnd(add)); changed(); return true; }
+    case 'selectAll': sel = new Set(c.notes); invalidate(); return true;
+    case 'delete': if (!sel.size) return false; o.del(); return true;
+    case 'up': case 'down': if (!sel.size) return false; o.shift(a === 'up' ? 1 : -1); return true;
+    case 'left': case 'right': { if (!sel.size) return false; const st = snapUnit() || STEP, d = a === 'left' ? -st : st; if (d < 0 && Math.min(...selNotes().map((n) => n.t)) + d < 0) return true; checkpoint(); for (const n of sel) n.t += d; grew(c, notesEnd(sel)); changed(); return true; }
+    case 'zoomIn': case 'zoomOut': { const cx = KEYS + (W - KEYS) / 2, t = tk(cx); v.ppt *= a === 'zoomIn' ? 1.4 : 1 / 1.4; v.x0 = t - (cx - KEYS) / v.ppt; clampV(c); invalidate(); return true; }
+    case 'escape': if (tsel) { tsel = null; invalidate(); return true; } if (sel.size) { sel.clear(); invalidate(); return true; } return false;
+    default: return false;
+  }
+}
+
 // ---- MIDI Tools: Transform (Live 12). Every tool works on the picked notes, or on all notes of the clip when none are picked; one undo step each.
 const TOOLS = ['Quantize', 'Humanize', 'Strum', 'Arpeggiate', 'Legato'];
 const ARP = ['Up', 'Down', 'Up-Down', 'Converge'];
@@ -606,6 +627,9 @@ function rollHandlers() {
       if (t.type === 'lsplit') { drag = { k: 'lsplit' }; return true; }
       if (t.type === 'lane') { checkpoint(); drag = { k: 'lane' }; return true; }
       if (t.type === 'ruler' || t.type === 'rsel') { drag = { k: 'tsel', a: snapT(t.tick) }; tsel = { a: drag.a, b: drag.a }; return true; }
+      // FL Studio Mobile: tap-drag on the background = note selection (two fingers scroll / zoom). Settings -> Sentuhan can switch it back to
+      // one-finger scrolling; a long press + drag always selects.
+      if (t.type === 'grid' && prefs.rollDrag !== 'pan') { drag = { k: 'rect', pending: false, x0, y0, x: x0, y: y0, w: 0, h: 0, at: t, keep: new Set(sel) }; return true; }
       return false;
     },
     drag(x, y, dx, dy) {
@@ -641,7 +665,14 @@ function rollHandlers() {
       else if (drag.k === 'lsplit') { cfg.velH = clamp(Math.round(H - y), 40, Math.round(H * 0.55)); dims(); clampV(c); }
       invalidate();
     },
-    dragEnd(x, y) {
+    dragEnd(x, y, t, cancel) {
+      if (cancel && drag) {                                        // Escape / system cancel: notes go back, the selection is not changed
+        if (drag.k === 'move' || drag.k === 'resize' || drag.k === 'lane') { revertLast(); sel = new Set([...sel].filter((n) => cur().clip.notes.includes(n))); }
+        else if (drag.k === 'rect') sel = drag.keep || new Set();
+        else if (drag.k === 'tsel') tsel = null;
+        else if (drag.k === 'keys') eng.preview(cur().track, drag.p, 0, false);
+        drag = null; ccLast = null; P.touchClips(cur().track); P.emit('notes'); invalidate(); return;
+      }
       if (drag && drag.k === 'rect' && drag.pending) {
         const r = canvas.getBoundingClientRect(), at = drag.at;
         menu([{ label: 'Paste di sini', dim: !clipboard, fn: () => pasteAt(at.t, at.p) }, { label: 'Pilih semua', fn: () => { sel = new Set(cur().clip.notes); invalidate(); } }], r.left + x, r.top + y);
@@ -689,11 +720,28 @@ function hitStep(x, y) {
 function laneMenu(r, x, y) {
   const c = cur().clip, p = padList()[r].pitch, steps = Math.ceil(contentEnd(c) / STEP), rect = canvas.getBoundingClientRect();
   const fill = (every) => { checkpoint(); c.notes = c.notes.filter((n) => n.p !== p); for (let s = 0; s < steps; s += every) c.notes.push({ t: s * STEP, d: 200, p, v: 0.85 }); changed(); };
+  const tr = cur().track, pads = padList(), q = pads[r];
   menu([
+    { label: 'Load Sample\u2026', fn: () => DP.pickPadSample(tr, r, () => { invalidate(); toolbar(); }) },
+    { label: 'Clone', dim: pads.length >= P.MAX_PADS, fn: () => { checkpoint(); const o = P.clonePad(tr, r); if (o.error) { revertLast(); toast(o.error); } else { toast('Pad di-clone: ' + padList()[o.k].name, 1400); invalidate(); } } },
+    { label: 'Set MIDI Key\u2026 (' + pName(q.pitch) + ' / ' + q.pitch + ')', fn: () => setPadKey(tr, r) },
+    { label: 'Hapus pad\u2026', dim: pads.length < 2, fn: () => { if (pads.length < 2) return toast('Minimal harus ada satu pad.'); modal('Hapus pad \u201c' + q.name + '\u201d?', 'Step pad ini di semua klip track ikut terhapus. Bisa dibatalkan dengan Urungkan.', [{ label: 'Batal' }, { label: 'Hapus', go: true, fn: () => { checkpoint(); P.removePad(tr, r); closePad(); invalidate(); } }]); } },
+    { sep: true },
     { label: 'Isi tiap step', fn: () => fill(1) }, { label: 'Isi tiap 2 step', fn: () => fill(2) }, { label: 'Isi tiap 4 step', fn: () => fill(4) },
     { label: 'Kosongkan', fn: () => { checkpoint(); c.notes = c.notes.filter((n) => n.p !== p); changed(); } },
     { sep: true }, { label: 'Pengaturan pad\u2026', fn: () => openPad(r) },
   ], rect.left + x, rect.top + y);
+}
+// Set MIDI Key: type a note (C3, F#2 ...) or a number 0-127, or play the key on a connected controller while the dialog is open
+const parseNote = (v) => { const t = String(v).trim(), n = +t; if (t !== '' && Number.isFinite(n)) return Math.round(n); const m = /^([A-Ga-g])([#b]?)(-?\d)$/.exec(t); if (!m) return NaN; const k = NAMES.indexOf(m[1].toUpperCase()); return (k + (m[2] === '#' ? 1 : m[2] === 'b' ? -1 : 0)) + (+m[3] + 1) * 12; };
+function setPadKey(tr, r) {
+  const q = padList()[r]; if (!q) return;
+  const apply = (pitch) => { checkpoint(); const o = P.setPadKey(tr, r, pitch); if (o.error) { revertLast(); toast(o.error, 2600); } else { toast(q.name + ' \u2192 ' + pName(pitch) + ' (' + pitch + ')', 1600); invalidate(); } };
+  const stop = MIDI.learnNote((n) => { closeAll(); apply(n); });
+  const input = h('input', { type: 'text', value: pName(q.pitch), inputmode: 'text' });
+  modal('Set MIDI Key: ' + q.name, h('div', {}, input, h('div', { class: 'sv', style: 'margin-top:6px' }, 'Ketik nama nada (mis. C3, F#2) atau angka 0-127, atau tekan tuts di controller MIDI yang tersambung.')),
+    [{ label: 'Batal', fn: () => { stop(); } }, { label: 'OK', go: true, fn: () => { stop(); const n = parseNote(input.value); if (!Number.isFinite(n)) { toast('Nada tidak dikenali.'); return; } apply(n); } }]);
+  setTimeout(() => { input.focus(); input.select(); }, 30);
 }
 function laneVel(x, y) {                           // set the velocity of the step under the finger in the lane (only steps that are on)
   const LH = stepLaneH(), c = cur().clip, p = padList()[laneRow()].pitch, s = Math.floor((x - LANE_HEAD + sv.x0) / sv.stepW);
@@ -732,7 +780,10 @@ function stepHandlers() {
       if (drag && drag.k === 'vlane') { laneVel(x, y); return; }
       if (drag && drag.k === 'paint') { const s = Math.floor((x - LANE_HEAD + sv.x0) / sv.stepW), d = s > drag.last ? 1 : -1; for (let k = drag.last; k !== s; k += d) paintStep(drag.r, k + d, drag.add); drag.last = s; return; }
       if (drag && drag.k === 'svel') { drag.n.v = clamp(drag.v0 - dy / sv.rowH, 0.05, 1); P.touchClips(cur().track); P.emit('notes'); invalidate(); } },
-    dragEnd() { if (drag && drag.grew) { P.emit('clips'); buildProps(); } drag = null; invalidate(); },
+    dragEnd(x, y, t, cancel) {
+      if (cancel && drag && (drag.k === 'paint' || drag.k === 'svel' || drag.k === 'vlane')) { revertLast(); drag = null; P.touchClips(cur().track); P.emit('notes'); P.emit('clips'); invalidate(); return; }
+      if (drag && drag.grew) { P.emit('clips'); buildProps(); } drag = null; invalidate();
+    },
     panEnd(vx, vy) { fling(vx, vy); },
     pan(dx, dy) { sv.x0 = sv.x0 - dx; sv.y0 = sv.y0 - dy; clampSteps(); invalidate(); },
     pinch(cx, cy, sx, sy) { svAuto = false; const s = (cx - LANE_HEAD + sv.x0) / sv.stepW; sv.stepW = clamp(sv.stepW * sx, 14, 80); sv.x0 = s * sv.stepW - (cx - LANE_HEAD); sv.rowH = sv.rowH * sy; clampSteps(); invalidate(); },
@@ -762,10 +813,11 @@ function drawAuto(t, c) {
   ctx.lineTo(px(c.len), ay(pts[pts.length - 1].v)); ctx.stroke();
   ctx.fillStyle = 'rgba(255,255,255,.06)'; ctx.lineTo(px(c.len), H); ctx.lineTo(px(0), H); ctx.closePath(); ctx.fill();
   for (const p of pts) {
-    const on = p === asel;
+    const on = p === asel || aset.has(p);
     ctx.beginPath(); ctx.arc(px(p.t), ay(p.v), on ? 6 : 4.5, 0, 6.2832); ctx.fillStyle = on ? C('#ffffff') : t.color; ctx.fill();
     ctx.strokeStyle = on ? t.color : shadeC(t.color, 0.6); ctx.lineWidth = on ? 2 : 1; ctx.stroke();
   }
+  if (drag && drag.k === 'arect') { const x = Math.min(drag.x0, drag.x), y = Math.min(drag.y0, drag.y); ctx.fillStyle = 'rgba(120,182,230,.16)'; ctx.fillRect(x, y, Math.abs(drag.x - drag.x0), Math.abs(drag.y - drag.y0)); ctx.strokeStyle = 'rgba(160,205,240,.9)'; ctx.lineWidth = 1; ctx.strokeRect(x + 0.5, y + 0.5, Math.abs(drag.x - drag.x0), Math.abs(drag.y - drag.y0)); }
   const shown = asel || (drag && drag.k === 'apt' ? drag.p : null);
   if (shown) { ctx.fillStyle = C('#fff'); ctx.font = '600 12px system-ui'; ctx.textBaseline = 'middle'; const lx = Math.min(W - 70, px(shown.t) + 10); ctx.fillText(autoFmt(t, shown.v), lx, Math.max(AR + 12, ay(shown.v) - 14)); }
   ctx.restore();
@@ -776,14 +828,38 @@ function drawAuto(t, c) {
   barLinesLocal((q, b) => { if (px(q) >= KEYS - 1) ctx.fillText(String(b + 1), px(q) + 3, AR / 2); });
 }
 
+// Automation points: tap = select one / add one, drag a point = move it (a picked group moves together, timing and shape kept), drag on
+// empty space (or long-press + drag) = rubber band over several points, then Copy / Delete / Paste from the bar that appears.
+let aset = new Set(), aclip = null;
+function autoBar(x, y) {
+  const r = canvas.getBoundingClientRect(), c = cur().clip;
+  bar([
+    { label: 'Copy', fn: autoBarCopy },
+    { label: 'Hapus', fn: () => { if (c.pts.length - aset.size < 2) return toast('Klip otomasi butuh minimal dua titik.'); checkpoint(); c.pts = c.pts.filter((q) => !aset.has(q)); aset.clear(); asel = null; changed(); } },
+    { label: 'Paste', fn: () => autoPaste(P.currentTick() - c.start) },
+    { label: 'Batal pilih', fn: () => { aset.clear(); asel = null; invalidate(); } },
+  ], r.left + clamp(x - 110, 6, Math.max(6, W - 290)), r.top + Math.max(AR, y - 46));
+}
+function autoPaste(at) {
+  const c = cur().clip;
+  if (!aclip || !aclip.length) return toast('Belum ada titik otomasi yang disalin.');
+  const t0 = clamp(snapT(at), 0, c.len), span = aclip[aclip.length - 1].t;
+  checkpoint();
+  c.pts = c.pts.filter((q) => q.t < t0 || q.t > t0 + span);                 // the pasted curve replaces what was in its range (shape and spacing kept)
+  aset = new Set();
+  for (const q of aclip) { const n = { ...q, t: t0 + q.t }; if (n.t <= c.len) { c.pts.push(n); aset.add(n); } }
+  c.pts.sort((a, b) => a.t - b.t); asel = null; changed(); toast(aset.size + ' titik ditempel.', 1000);
+}
 function autoHandlers() {
   const clipC = () => cur().clip;
   const find = (x, y) => clipC().pts.find((p) => Math.hypot(px(p.t) - x, ay(p.v) - y) <= PT + 9);
+  const rectSel = () => { const a = Math.min(drag.x0, drag.x), b = Math.max(drag.x0, drag.x), ya = Math.min(drag.y0, drag.y), yb = Math.max(drag.y0, drag.y); aset = new Set(clipC().pts.filter((q) => { const qx = px(q.t), qy = ay(q.v); return qx >= a && qx <= b && qy >= ya && qy <= yb; })); asel = null; };
   return {
     hit: (x, y) => { if (y < AR) return { type: 'ruler', tick: tk(x) }; const p = find(x, y); return p ? { type: 'pt', p } : { type: 'plot', t: tk(x), v: av(y) }; },
     tap(x, y, t) {
       const c = clipC();
-      if (t.type === 'pt') { asel = t.p; invalidate(); }
+      if (t.type === 'pt') { if (aset.size && aset.has(t.p)) { autoBar(x, y); return; } aset.clear(); asel = t.p; invalidate(); }
+      else if (t.type === 'plot' && aset.size) { aset.clear(); invalidate(); }          // a tap beside a picked group drops the group first (no stray point)
       else if (t.type === 'plot' && x > KEYS) {
         checkpoint();
         const p = { t: clamp(snapT(t.t), 0, c.len), v: t.v };
@@ -791,33 +867,60 @@ function autoHandlers() {
       } else if (t.type === 'ruler') P.seekTo(Math.max(0, c.start + snapT(t.tick)));
     },
     long(x, y, t) {
+      if (t.type === 'plot' && x > KEYS) { drag = { k: 'arect', pending: true, x0: x, y0: y, x, y, at: t }; invalidate(); return true; }
       if (t.type !== 'pt') return false;
       asel = t.p; invalidate();
       const r = canvas.getBoundingClientRect(), c = clipC();
-      const p = t.p, setShape = (s, k) => { checkpoint(); if (s) p.s = s; else delete p.s; if (k !== undefined) p.k = k; else delete p.k; changed(); };
+      const p = t.p, setShape = (s, k) => { checkpoint(); for (const q of aset.size && aset.has(p) ? aset : [p]) { if (s) q.s = s; else delete q.s; if (k !== undefined) q.k = k; else delete q.k; } changed(); };
       const cur = shapeOf(p), kk = +p.k || 0;
       menu([
         ...SHAPES.filter(([, s]) => s !== 3).map(([label, s]) => ({ label: 'Kurva ke titik berikut: ' + label, check: cur === s, fn: () => setShape(s) })),
         { label: 'Kurva: lengkung cembung (lambat lalu cepat)', check: cur === 3 && kk > 0, fn: () => setShape(3, cur === 3 && kk > 0 ? Math.min(1, kk + 0.25) : 0.5) },
         { label: 'Kurva: lengkung cekung (cepat lalu lambat)', check: cur === 3 && kk < 0, fn: () => setShape(3, cur === 3 && kk < 0 ? Math.max(-1, kk - 0.25) : -0.5) },
-        { label: 'Hapus titik', fn: () => { if (c.pts.length < 2) return toast('Klip otomasi butuh minimal dua titik.'); checkpoint(); c.pts = c.pts.filter((q) => q !== t.p); asel = null; changed(); } },
+        { label: 'Copy titik', fn: () => { if (!aset.has(p)) aset = new Set([p]); autoBarCopy(); } },
+        { label: 'Hapus titik', fn: () => { const del = aset.size && aset.has(p) ? aset : new Set([p]); if (c.pts.length - del.size < 2) return toast('Klip otomasi butuh minimal dua titik.'); checkpoint(); c.pts = c.pts.filter((q) => !del.has(q)); aset.clear(); asel = null; changed(); } },
       ], r.left + x, r.top + y);
       return false;
     },
-    dragStart(x0, y0, t) { if (t.type === 'pt') { checkpoint(); asel = t.p; drag = { k: 'apt', p: t.p }; return true; } return false; },
-    drag(x, y) {
-      if (!drag || drag.k !== 'apt') return;
-      drag.p.t = clamp(snapT(tk(x)), 0, clipC().len); drag.p.v = av(y);
-      clipC().pts.sort((a, b) => a.t - b.t);
+    dragStart(x0, y0, t, fromLong) {
+      if (fromLong) return !!drag;
+      if (t.type === 'pt') {
+        checkpoint(); asel = t.p;
+        if (aset.size > 1 && aset.has(t.p)) { drag = { k: 'agrp', lead: t.p, base: [...aset].map((q) => ({ q, t: q.t, v: q.v })) }; return true; }
+        aset.clear(); drag = { k: 'apt', p: t.p }; return true;
+      }
+      if (t.type === 'plot' && x0 > KEYS && prefs.rollDrag !== 'pan') { drag = { k: 'arect', pending: false, x0, y0, x: x0, y: y0, at: t, keep: new Set(aset) }; return true; }
+      return false;
+    },
+    drag(x, y, dx, dy) {
+      if (!drag) return;
+      if (drag.k === 'arect') { drag.x = x; drag.y = y; if (Math.hypot(x - drag.x0, y - drag.y0) > 6) drag.pending = false; rectSel(); invalidate(); return; }
+      const c = clipC();
+      if (drag.k === 'agrp') {
+        const lead = drag.base.find((b) => b.q === drag.lead), minT = Math.min(...drag.base.map((b) => b.t)), maxT = Math.max(...drag.base.map((b) => b.t));
+        const dt = clamp(snapT(lead.t + dx / v.ppt) - lead.t, -minT, c.len - maxT), dv = -dy / (H - AR - 16);
+        for (const b of drag.base) { b.q.t = b.t + dt; b.q.v = clamp(b.v + dv, 0, 1); }
+      } else if (drag.k === 'apt') { drag.p.t = clamp(snapT(tk(x)), 0, c.len); drag.p.v = av(y); }
+      else return;
+      c.pts.sort((a, b) => a.t - b.t);
       P.touchClips(cur().track); P.emit('notes'); invalidate();
     },
-    dragEnd() { drag = null; invalidate(); },
+    dragEnd(x, y, t, cancel) {
+      const d = drag; drag = null;
+      if (cancel && d) { if (d.k === 'apt' || d.k === 'agrp') revertLast(); else if (d.k === 'arect') aset = d.keep || new Set(); P.touchClips(cur().track); P.emit('notes'); invalidate(); return; }
+      if (d && d.k === 'arect') {
+        if (d.pending) { const r = canvas.getBoundingClientRect(); menu([{ label: 'Paste di sini', dim: !aclip, fn: () => autoPaste(d.at.t) }, { label: 'Pilih semua titik', fn: () => { aset = new Set(clipC().pts); invalidate(); } }], r.left + x, r.top + y); }
+        else if (aset.size) autoBar(x, y);
+      }
+      invalidate();
+    },
     pan(dx) { emo.t = null; v.x0 -= dx / v.ppt; clampV(clipC()); invalidate(); },
     panEnd(vx) { fling(vx, 0); },
     pinch(cx, cy, sx) { const t = tk(cx); v.ppt *= sx; v.x0 = t - (cx - KEYS) / v.ppt; clampV(clipC()); invalidate(); },
     wheel(e) { if (e.ctrlKey) v.ppt *= Math.exp(-e.deltaY * 0.002); else v.x0 += e.deltaY / v.ppt; clampV(clipC()); invalidate(); },
   };
 }
+function autoBarCopy() { const L = [...aset].sort((a, b) => a.t - b.t); if (!L.length) return; const t0 = L[0].t; aclip = L.map((q) => ({ ...q, t: q.t - t0 })); toast(L.length + ' titik disalin.', 1000); }
 
 // ------------------------------------------------------------------ chrome
 // Snap: short tap switches the grid snap on/off, long-press opens the snap options (FL Studio Mobile behaviour).
@@ -825,7 +928,7 @@ function snapButton() {
   const el = h('button', { class: 'b' + (cfg.snapOn ? ' on' : '') }, snapLabel());
   let timer = 0, fired = false;
   const open = () => { fired = true; const r = el.getBoundingClientRect(); menu(SNAPS.map((s2, k) => ({ label: s2[0], check: cfg.snapOn && cfg.snap === k, fn: () => { cfg.snap = k; cfg.snapOn = true; toolbar(); } })), r.left, r.bottom + 2); };
-  el.addEventListener('pointerdown', () => { fired = false; clearTimeout(timer); timer = setTimeout(open, 430); });
+  el.addEventListener('pointerdown', () => { fired = false; clearTimeout(timer); timer = setTimeout(() => { haptic(10); open(); }, gestureTiming().longMs); });
   el.addEventListener('pointerup', () => { clearTimeout(timer); if (!fired) { cfg.snapOn = !cfg.snapOn; toolbar(); } });
   el.addEventListener('pointercancel', () => clearTimeout(timer)); el.addEventListener('pointerleave', () => clearTimeout(timer));
   return el;
@@ -1165,5 +1268,6 @@ export const SCALE_NAMES = Object.keys(SCALES);
 export const getTheory = () => ({ key: cfg.key, scale: cfg.scale });
 export const scaleSteps = () => SCALES[cfg.scale] || null;   // semitones of the Clip View scale from its key, null = chromatic (Keys tab highlight)
 // overlay coordinates of pattern tick t / pitch p in the piano roll (UI tests drive real touches with it)
+export const testState = () => ({ sel: sel.size, aset: aset.size });   // UI tests
 export function probe(t, p) { return { x: px(t), y: py(p) - v.keyH / 2 }; }
 export function setTheory(key, scale) { if (key !== undefined) cfg.key = key; if (scale !== undefined) { cfg.scale = scale; if (SCALES[scale]) cfg.lastScale = scale; } buildProps(); invalidate(); }

@@ -882,6 +882,30 @@ export function resetPadSound(i, k) {           // back to the built-in synth so
   return true;
 }
 export const padHasSynth = (i, k) => { const q = padsOf(i)[k]; return !!q && q.kind >= 0; };
+// Drum channel menu (FL Studio Mobile): Clone = the same sound and settings on a new pad (next free MIDI key, no steps);
+// Set MIDI Key = the pad answers another note; its steps in every clip of the track move with it. Callers take the undo checkpoint.
+export function clonePad(i, k) {
+  const ps = padsOf(i), q = ps[k];
+  if (!q) return { error: 'Pad tidak ada.' };
+  if (ps.length >= MAX_PADS) return { error: 'Batas 16 pad tercapai.' };
+  const used = new Set(ps.map((x) => x.pitch)), pitch = PAD_FREE.find((x) => !used.has(x));
+  if (pitch === undefined) return { error: 'Tidak ada nada kosong untuk pad baru.' };
+  ps.splice(k + 1, 0, { ...q, pitch, name: (q.name + ' 2').slice(0, 14), mute: false, solo: false, chain: cloneChain(q.chain) });
+  syncPads(i); emit('devices');
+  return { k: k + 1 };
+}
+export function setPadKey(i, k, pitch) {
+  const ps = padsOf(i), q = ps[k];
+  pitch = Math.round(+pitch);
+  if (!q) return { error: 'Pad tidak ada.' };
+  if (!(pitch >= 0 && pitch <= 127)) return { error: 'Nada MIDI harus 0-127.' };
+  if (pitch === q.pitch) return { ok: true };
+  if (ps.some((x) => x !== q && x.pitch === pitch)) return { error: 'Nada itu sudah dipakai pad lain.' };
+  const old = q.pitch; q.pitch = pitch;
+  for (const c of state.tracks[i].clips) if (c.notes) for (const n of c.notes) if (n.p === old) n.p = pitch;
+  syncPads(i); syncClips(i); emit('devices'); emit('clips');
+  return { ok: true };
+}
 export function removePad(i, k) {
   const ps = padsOf(i), q = ps[k];
   if (!q || ps.length < 2) return false;

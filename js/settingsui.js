@@ -16,6 +16,8 @@ import * as FS from './storage.js';
 import { log, logs, logText, clearLog, setLogLevel } from './log.js';
 import { aboutTabs } from './about.js';
 import { PROFILES, applyProfile, runDeviceTest, effectiveClass, guessClass } from './perf.js';
+import { attachGestures, haptic, GESTURE_DEFAULTS } from './gesture.js';
+import * as KM from './keymap.js';
 
 const SNAP_NAMES = ['Auto', 'Bar', '1 Beat', '1/2 Beat', '1/4 Beat', 'Triplet', 'Off'];
 const section = (title, ...kids) => h('div', { class: 'set' }, h('h4', {}, title), ...kids);
@@ -169,6 +171,55 @@ function logSection() {
     btn('Muat ulang', paint), btn('Bersihkan', () => { clearLog(); paint(); toast('Log dibersihkan.'); }));
 }
 
+
+// Settings -> Sentuhan: gesture timing (used by every editor through gesture.js), haptics, editor behaviour, and a pad to try gestures on
+function touchSection() {
+  const pad = h('div', { class: 'gtest', 'aria-label': 'Area uji gestur' }, h('b', {}, 'Area uji gestur'), h('span', {}, 'Coba ketuk, ketuk-ganda, tekan lama, seret, cubit (pinch) atau geser dua jari di sini.'));
+  const out = pad.lastChild; let pz = 1;
+  const say = (t) => { out.textContent = t; pad.classList.remove('hit'); void pad.offsetWidth; pad.classList.add('hit'); };
+  attachGestures(pad, {
+    hit: () => ({}), tap: () => say('Ketuk'), dtap: () => say('Ketuk-ganda'), long: () => { say('Tekan lama (getar bila aktif)'); return false; },
+    dragStart: () => true, drag: (x, y, dx, dy) => say(`Seret ${Math.round(dx)}, ${Math.round(dy)} px`), dragEnd: (x, y, t, c) => { if (c) say('Gestur dibatalkan'); },
+    pinch: (cx, cy, sx, sy) => { pz *= Math.max(sx, sy) === 1 ? Math.min(sx, sy) : Math.max(sx, sy); say('Pinch zoom ' + pz.toFixed(2) + 'x'); }, pinchEnd: () => { pz = 1; },
+    pan: (dx, dy) => { if (Math.abs(dx) + Math.abs(dy) > 0.5) out.textContent.startsWith('Pinch') || say('Geser dua jari'); },
+  });
+  return section('Sentuhan',
+    choice('Tekan lama (long-press) setelah', 'longMs', [[300, '0,30 dtk'], [GESTURE_DEFAULTS.longMs, '0,43 dtk (normal)'], [600, '0,60 dtk']]),
+    choice('Toleransi gerak jari sebelum dianggap seret', 'touchSlop', [[5, 'Ketat'], [GESTURE_DEFAULTS.slop, 'Normal'], [12, 'Longgar']]),
+    choice('Jeda ketuk-ganda', 'dtapMs', [[250, 'Cepat'], [GESTURE_DEFAULTS.dtapMs, 'Normal'], [420, 'Lambat']]),
+    h('div', { class: 'sv' }, 'Berlaku untuk semua editor. Jari yang bergeser lebih jauh dari toleransi sebelum waktu tekan-lama habis dianggap seret / gulir, jadi tekan-lama tidak pernah berubah jadi seret yang tidak disengaja.'),
+    toggle('Getar saat gestur dikenali (haptic)', 'haptics', () => haptic(20)),
+    toggle('Ketuk klip langsung membuka kontrol klip (FL Studio Mobile)', 'tapClipMenu'),
+    choice('Seret satu jari di latar piano roll / otomasi', 'rollDrag', [['select', 'Pilih not / titik'], ['pan', 'Geser tampilan']]),
+    h('div', { class: 'sv' }, 'Pilih not: seperti FL Studio Mobile, seret di latar membuat kotak seleksi; dua jari menggeser dan zoom. Geser tampilan: satu jari menggulir, tekan lama lalu seret untuk memilih.'),
+    pad);
+}
+// Settings -> Pintasan: optional keys for a physical / Bluetooth keyboard; tap a key field, then press the new key (Esc = keep, Hapus = none)
+function keysSection() {
+  const list = h('div', { class: 'kmap' });
+  let stop = null;
+  const paint = () => {
+    list.replaceChildren(...KM.ACTIONS.map(([id, label]) => {
+      const cur = KM.combosFor(id);
+      const b = h('button', { class: 'b kmk', onclick: () => {
+        if (stop) stop();
+        b.textContent = 'Tekan tombol\u2026'; b.classList.add('on');
+        const f = (e) => {
+          const c = KM.comboOf(e); if (!c) return;
+          e.preventDefault(); e.stopImmediatePropagation();
+          stop(); if (c !== 'Escape') { KM.bind(id, c); toast(label + ': ' + KM.showCombo(c), 1500); } paint();
+        };
+        addEventListener('keydown', f, true);
+        stop = () => { removeEventListener('keydown', f, true); stop = null; };
+      } }, cur.length ? cur.map(KM.showCombo).join('  /  ') : '\u2014');
+      return h('div', { class: 'sline' }, h('span', {}, label), h('span', { class: 'kmr' }, b, h('button', { class: 'b', 'aria-label': 'Hapus pintasan ' + label, onclick: () => { if (stop) stop(); KM.bind(id, ''); paint(); } }, '\u2715')));
+    }));
+  };
+  paint();
+  return section('Pintasan keyboard',
+    h('div', { class: 'sv' }, 'Opsional, untuk keyboard fisik / Bluetooth. Semua fungsi tetap bisa dijalankan dengan sentuhan. Pintasan tidak aktif saat mengetik di kotak teks. Di tab Keys, baris Z\u2013M dan Q\u2013I memainkan piano.'),
+    list, btn('Kembalikan pintasan bawaan', () => { if (stop) stop(); KM.resetKeymap(); paint(); toast('Pintasan bawaan dipulihkan.'); }));
+}
 export function openSettings() {
   const body = h('div', { class: 'settings' });
   const info = eng.info();
@@ -256,6 +307,8 @@ export function openSettings() {
           ...(canInstall() ? [btn('Pasang aplikasi', () => promptInstall())] : [])),
       section('Timeline', snapBtn, follow),
     ],
+    Sentuhan: [touchSection()],
+    Pintasan: [keysSection()],
     Penyimpanan: [
       folderSection(),
       section('Ruang', storage, btn('Minta penyimpanan permanen', () => { eng.requestStorage(); toast('Permintaan dikirim. Browser memutuskan apakah file dijaga permanen.', 3500); })),
@@ -264,7 +317,6 @@ export function openSettings() {
     Log: [logSection()],
     About: aboutTabs(),
     Lainnya: [
-      section('Pintasan keyboard', h('div', { class: 'sv' }, 'Spasi: play/stop \u2022 Home: ke awal \u2022 R: rekam \u2022 M: metronom \u2022 B: browser \u2022 Tab: arrange/mixer \u2022 Ctrl+Z / Ctrl+Y: urungkan/ulangi \u2022 Delete: hapus klip \u2022 F: layar penuh. Di tab Keys, baris Z\u2013M dan Q\u2013I memainkan piano.')),
       section('Reset', btn('Kembalikan pengaturan awal', () => { resetPrefs(); eng.setLatencyMs(0); setLogLevel(prefs.logLevel); applyTimelinePrefs(); applyTheme(prefs.theme); applyViewportMeta(); applyUiPrefs(); relayoutSoon(); scaleSlider.value = Math.round(prefs.uiScale * 100); paintScale(); eng.metroVol(prefs.metroVol ?? 1); toast('Pengaturan dikembalikan.'); })),
     ],
   };

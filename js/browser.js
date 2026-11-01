@@ -11,6 +11,7 @@ import * as PR from './presets.js';
 import { prefs, savePrefs } from './prefs.js';
 import { DEMOS, openDemo } from './demos.js';
 import { isNativeApp } from './native.js';
+import * as QS from './quicksave.js';
 
 const DL = isNativeApp() ? 'Simpan ke Documents & bagikan' : 'Unduh ke perangkat';   // Android app: Documents/MobileDAW + share sheet
 const { state } = P;
@@ -547,13 +548,10 @@ function tabFiles(list, headEl) {
 let demoBusy = false;
 function tabProjects(list) {
   const dir = WEB ? '/Projects' : (home = home || eng.home()) + '/Projects';
-  const save = () => ask('Nama proyek', state.projectName === 'Untitled' ? '' : state.projectName, (n) => {
-    n = (n || '').trim().replace(/[^\w\- ]+/g, '');
-    if (!n) return;
-    state.projectName = n; eng.writeText(dir + '/' + n + '.mdaw', P.serialize()); toast('Tersimpan: ' + n); setTimeout(render, 60);
-  });
+  const save = () => QS.saveAs(() => setTimeout(render, 60));
   list.append(...[
     row('Simpan proyek\u2026', save),
+    row('Simpan cepat' + (QS.hasName() ? ': ' + state.projectName : ' (tanpa dialog)') + (QS.isDirty() ? ' \u2022' : ''), () => { QS.quickSave(); setTimeout(render, 60); }),
     WEB ? row(isNativeApp() ? 'Simpan proyek ke Documents & bagikan' : 'Unduh proyek ke perangkat', () => { const n = (state.projectName || 'Untitled').replace(/[^\w\- ]+/g, '') || 'Untitled'; eng.writeText(dir + '/' + n + '.mdaw', P.serialize()); setTimeout(() => eng.download(dir + '/' + n + '.mdaw'), 80); }) : null,
     WEB ? row('Buka proyek (.mdaw / .zip) dari perangkat\u2026', async () => { const f = await eng.importFiles('.mdaw,.zip'); if (f.length) { toast('Proyek diimpor.'); render(); } }) : null,
     row('Proyek baru (demo)', () => { P.newProject(true); closeBrowser(); }),
@@ -570,16 +568,28 @@ function tabProjects(list) {
     }, d.time)),
     head('Proyek tersimpan')].filter(Boolean));
   const d = eng.listDir(dir);
-  const files = ((d && d.items) || []).filter((x) => !x.dir && /\.mdaw$/i.test(x.name) && !isAutosave(x.name));
+  const files = ((d && d.items) || []).filter((x) => !x.dir && /\.mdaw$/i.test(x.name) && !isAutosave(x.name) && !QS.isHiddenProject(x.name));
+  const backups = ((d && d.items) || []).filter((x) => !x.dir && x.name.startsWith(QS.BACKUP_PREFIX) && /\.mdaw$/i.test(x.name));
   if (!files.length) list.append(h('div', { class: 'hint' }, 'Belum ada proyek tersimpan. Proyek yang sedang dibuka disimpan otomatis setiap 5 detik.'));
   for (const f of files) {
     const full = dir + '/' + f.name;
     list.append(row(f.name.replace(/\.mdaw$/i, ''), async () => {
       try {
         const miss = await P.deserialize(eng.readText(full));
+        QS.markOpened(f.name.replace(/\.mdaw$/i, ''));
         closeBrowser(); toast(miss.length ? miss.length + ' file sample/SoundFont tidak ditemukan.' : 'Proyek dibuka.');
       } catch (e) { toast('Proyek rusak atau tidak bisa dibaca' + (e && e.message ? ': ' + e.message : '.'), 4500); }
     }, kb(f.size), '', WEB ? (rect) => fileMenu(full, rect) : null));
+  }
+  if (backups.length) {                                  // Quick Save keeps the version it overwrote: open one to get it back (Simpan cepat then restores it)
+    list.append(head('Cadangan (versi sebelum Simpan cepat)'));
+    for (const f of backups) {
+      const full = dir + '/' + f.name;
+      list.append(row(f.name.replace(QS.BACKUP_PREFIX, '').replace(/\.mdaw$/i, '') + ' (cadangan)', async () => {
+        try { const miss = await P.deserialize(eng.readText(full)); closeBrowser(); toast('Cadangan dibuka.' + (miss.length ? ' ' + miss.length + ' file sample/SoundFont tidak ditemukan.' : '') + ' Simpan cepat untuk memulihkannya.', 3500); }
+        catch (e) { toast('Cadangan tidak bisa dibaca.', 3500); }
+      }, kb(f.size), '', WEB ? (rect) => fileMenu(full, rect) : null));
+    }
   }
 }
 

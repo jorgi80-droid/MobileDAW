@@ -3,9 +3,9 @@
 // right-edge handle = resize, ruler drag = time selection) on an Ableton-style layout.
 import { densify } from './autocurve.js';
 import { C, T } from './theme.js';
-import { attachGestures } from './gesture.js';
+import { attachGestures, gestureTiming, haptic } from './gesture.js';
 import { menu, ask, modal, toast, clamp } from './ui.js';
-import { checkpoint } from './history.js';
+import { checkpoint, revertLast } from './history.js';
 import { prefs, savePrefs } from './prefs.js';
 import { wavePath, peaksPath } from './waveform.js';
 import * as P from './project.js';
@@ -299,10 +299,33 @@ function draw() {
     ctx.save(); ctx.beginPath(); ctx.rect(0, RULER, CW, LB - RULER); ctx.clip();
     ctx.fillStyle = 'rgba(120,182,230,.16)'; ctx.fillRect(x, y, w, hh); ctx.strokeStyle = 'rgba(160,205,240,.9)'; ctx.lineWidth = 1; ctx.strokeRect(x + 0.5, y + 0.5, w, hh); ctx.restore();
   }
+  if (drag) drawDragAids();
   drawRuler(g);
   drawTimeRuler();
   drawHeads();
   if (msel.size) placeBar();
+}
+
+// While a clip is dragged: a dashed ghost where it started (where it goes back to when the drag is cancelled) and a small bubble with
+// the snapped position (move) or length (resize / stretch) next to the finger, so the drop point is known before the finger lifts.
+const posTxt = (tick) => { const b = P.barAt(tick), r = tick - P.barStart(b), bl = P.beatLenAt(tick); return `${b + 1}.${Math.floor(r / bl) + 1}.${Math.floor((r % bl) / (bl / 4)) + 1}`; };
+const lenTxt = (len, at) => { const bl = P.barLenAt(at), bt = P.beatLenAt(at), bars = Math.floor(len / bl), r = len - bars * bl; return `${bars}.${Math.floor(r / bt)}.${Math.floor((r % bt) / (bt / 4))}`; };
+function drawDragAids() {
+  const d = drag, single = d.k === 'move' || d.k === 'resize' || d.k === 'resizeL' || d.k === 'stretch', group = d.k === 'gmove' || d.k === 'gresize';
+  if (!single && !group) return;
+  const LB = H - BOT, ghosts = single ? [{ i: d.i0 ?? d.i, start: d.start, len: d.len }] : d.items.map((it) => ({ i: it.i, start: it.start, len: it.len }));
+  ctx.save(); ctx.beginPath(); ctx.rect(0, RULER, CW, LB - RULER); ctx.clip();
+  ctx.setLineDash([4, 3]); ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(255,255,255,.55)';
+  for (const q of ghosts) { if (!state.tracks[q.i]) continue; const y = rowY(q.i), h = rh(q.i), x = tx(q.start), w = tx(q.start + q.len) - x; if (w > 2 && y < LB && y + h > RULER) ctx.strokeRect(Math.round(x) + 0.5, y + 2.5, Math.max(2, Math.round(w) - 1), h - 5); }
+  ctx.setLineDash([]); ctx.restore();
+  const c = single ? d.c : (d.items.find((it) => it.c.id === state.sel.clip) || d.items[0]).c, ti = single ? d.i : (d.items.find((it) => it.c === c) || d.items[0]).cur;
+  if (!c || !state.tracks[ti]) return;
+  const moving = d.k === 'move' || d.k === 'gmove' || d.k === 'resizeL';
+  const txt = moving ? posTxt(c.start) : (d.k === 'stretch' ? '\u2194 ' : '') + lenTxt(c.len, c.start) + (d.k === 'stretch' && d.len ? '  ' + (c.len / d.len).toFixed(2) + 'x' : '');
+  ctx.font = FONT(600, 11); const tw = ctx.measureText(txt).width + 12, bh = 18;
+  const ax = moving ? tx(c.start) : tx(c.start + c.len), y = Math.max(RULER + 2, rowY(ti) - bh - 3), x = clamp(ax - tw / 2, 2, CW - tw - 2);
+  ctx.fillStyle = 'rgba(14,14,16,.92)'; ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(x, y, tw, bh, 4); else ctx.rect(x, y, tw, bh); ctx.fill();
+  ctx.fillStyle = '#f2f2f2'; ctx.textBaseline = 'middle'; ctx.textAlign = 'center'; ctx.fillText(txt, x + tw / 2, y + bh / 2 + 0.5); ctx.textAlign = 'left';
 }
 
 let loopA = 0;                                                   // drawn brightness of the loop brace (eases to 1 when the loop is on)
@@ -708,10 +731,18 @@ function clipMenu(i, c, tick, sx, sy) {
     { label: 'Rename', fn: () => renameClip(i, c) },
     { label: 'Split', fn: () => { checkpoint(); P.splitClip(i, c.id, snapT(tick)); } },
     { label: 'Snap Edges to Grid', fn: () => snapClip(i, c) },
+    ...(c.notes ? [{ label: 'Combine with Next Clip', dim: !nextClip(i, c), fn: () => combineNext(i, c) }] : []),
     { label: c.muted ? 'Activate Clip' : 'Deactivate Clip', fn: () => { checkpoint(); P.setClipsMuted([{ i, c }], !c.muted); invalidate(); } },
     ...(c.notes && P.loopOf(c) ? [{ label: 'Unlink Loop', fn: () => { checkpoint(); P.bakeLoop(c, i); P.emit('clips'); invalidate(); toast('Pengulangan jadi not biasa.', 1600); } }] : []),
     ...(t.kind === 'audio' ? [{ label: 'Stretch Mode', check: stretchMode, fn: () => { stretchMode = !stretchMode; toast(stretchMode ? 'Mode stretch: tarik ujung kanan klip audio untuk meregangkan (pitch tetap).' : 'Mode stretch mati: tarik ujung kanan untuk memotong.', 3200); invalidate(); } }] : []),
-  ], sx != null ? sx : r.left + clamp(tx(c.start), 0, Math.max(0, CW - 220)), sy != null ? sy : r.top + Math.max(RULER, rowY(i)) + 20);
+  ], sx != null ? sx : r.left + clamp(tx(c.start), 0, Math.max(0, CW - 220)), sy != null ? sy : r.top + Math.max(RULER, rowY(i)) + 20, { passThrough: true });
+}
+const nextClip = (i, c) => state.tracks[i].clips.filter((x) => x !== c && x.notes && x.start >= c.start).sort((a, b) => a.start - b.start)[0] || null;
+function combineNext(i, c) {                                                // FL Studio Mobile "Combine" from the clip's own menu: this clip + the next one on the track
+  const n = nextClip(i, c); if (!n) return toast('Tidak ada klip berikutnya di track ini.');
+  checkpoint(); const r = P.combineClips(i, [c.id, n.id]);
+  if (r.error) { revertLast(); return toast(r.error); }
+  P.selectClip(i, r.id); invalidate(); toast('2 klip digabung jadi satu.', 1400);
 }
 function renameClip(i, c) { ask('Nama klip', c.name || '', (v) => { checkpoint(); c.name = String(v || '').trim().slice(0, 40); P.emit('clips'); invalidate(); }); }
 function snapClip(i, c) {
@@ -782,7 +813,7 @@ function headMenu(i, x, y) {
     { label: 'Pindah ke atas', fn: () => swapTrack(i, i - 1) },
     { label: 'Pindah ke bawah', fn: () => swapTrack(i, i + 1) },
     { sep: true },
-    { label: 'Hapus track', fn: () => { P.removeTrack(i); } },
+    { label: 'Hapus track\u2026', fn: () => modal('Hapus track', `Track \u201c${t.name}\u201d beserta semua klip, instrumen dan efeknya dihapus. Bisa dibatalkan dengan Urungkan.`, [{ label: 'Batal' }, { label: 'Hapus', go: true, fn: () => { P.removeTrack(i); haptic(16); } }]) },
   ], r.left + x, r.top + y);
 }
 // Automation lane chooser (Live: the A button of a track): pick a parameter; its lane (an automation track) is created right below this track,
@@ -862,6 +893,7 @@ function placeBar() {
 function clearSel() { if (!msel.size) return; msel.clear(); marq = null; updateBar(); invalidate(); }
 // canvas coordinates of a tick on track row i (UI tests drive real touches with it)
 export function probe(tick, i) { return { x: tx(tick), y: rowY(i) + rh(i) / 2, top: rowY(i) }; }
+export const testState = () => ({ snap: SNAPS[cfg.snap][0], picked: msel.size, sel: sel ? { a: sel.a, b: sel.b } : null, dragging: !!drag });   // UI tests
 export function openEditor() { if (hooks.openEditor) hooks.openEditor(); }   // the selected clip's editor (full screen)
 export function clearSelection() { const had = msel.size > 0; clearSel(); return had; }
 function selAll() {
@@ -900,6 +932,25 @@ function selDup() {
   msel.clear(); for (const id of fresh) msel.add(id);
   P.emit('clips'); updateBar(); invalidate();
 }
+// Physical / Bluetooth keyboard (keymap.js): the arrangement's share of the shortcuts. Works on the picked clips, or on the selected clip.
+// Returns false when the action does not apply here, so the caller can let the key through.
+export function keyAction(a) {
+  const L = selList().length ? selList() : (() => { const s = P.selectedClip(); return s ? [{ i: s.track, c: s.clip }] : []; })();
+  switch (a) {
+    case 'copy': if (!L.length) return false; copyList(L); return true;
+    case 'cut': if (!L.length) return false; copyList(L); checkpoint(); for (const { i, c } of L) P.removeClip(i, c.id); msel.clear(); updateBar(); invalidate(); return true;
+    case 'paste': selPaste(); return true;
+    case 'duplicate': if (!L.length) return false; if (selList().length) selDup(); else { checkpoint(); P.duplicateClip(L[0].i, L[0].c.id); invalidate(); } return true;
+    case 'selectAll': selAll(); return true;
+    case 'delete': if (!L.length) return false; if (selList().length) selDelete(); else { checkpoint(); P.removeClip(L[0].i, L[0].c.id); } invalidate(); return true;
+    case 'zoomIn': zoomAt(1.4); return true;
+    case 'zoomOut': zoomAt(1 / 1.4); return true;
+    case 'left': case 'right': { const st = snapTicks() > 0 ? snapTicks() : BEAT; P.seekTo(Math.max(0, snapT(P.currentTick()) + (a === 'left' ? -st : st))); return true; }
+    case 'up': case 'down': { const n = state.tracks.length; if (!n) return false; const i = clamp((state.sel.track >= 0 && state.sel.track < n ? state.sel.track : 0) + (a === 'up' ? -1 : 1), 0, n - 1); state.sel.clip = null; P.selectTrack(i); invalidate(); return true; }
+    case 'escape': return clearSelection() || (sel ? ((sel = null), invalidate(), true) : false);
+    default: return false;
+  }
+}
 function selMute() {
   const L = selList(); if (!L.length) return;
   const m = !L.every(({ c }) => c.muted);               // all muted -> unmute, otherwise mute everything picked
@@ -932,7 +983,7 @@ function buildSelBar(host) {
 }
 // double tap on empty space (FL Studio Mobile): a 1-bar clip starting at the bar under the finger, shortened so it never runs into the
 // next clip. Audio tracks open the sample picker at that bar instead (an audio clip needs a file).
-const DTAP_MS = 330;                                             // a little longer than the recogniser's double-tap window (320 ms)
+const dtapMs = () => gestureTiming().dtapMs + 10;               // a little longer than the recogniser's double-tap window (Settings -> Sentuhan)
 let menuWait = 0;
 function newClipAt(i, tick) {
   const tk = state.tracks[i]; if (!tk) return;
@@ -962,6 +1013,7 @@ function zoomMenu() {
   menu([
     { label: 'Fit proyek', dim: !end, fn: () => fitTo(0, end) },
     { label: 'Fit klip terpilih', dim: !sc, fn: () => fitTo(sc.clip.start, sc.clip.start + sc.clip.len) },
+    { label: 'Fit seleksi waktu', dim: !(sel && sel.b > sel.a), fn: () => fitTo(sel.a, sel.b) },
     { label: 'Reset zoom (1.00x)', fn: () => glideTo(centreTick() - CW / (2 * 0.06), 0.06) },
     { label: 'Zoom in', fn: () => zoomAt(1.7) },
     { label: 'Zoom out', fn: () => zoomAt(1 / 1.7) },
@@ -1007,13 +1059,20 @@ export function sigDialog(bar) {
 
 // ------------------------------------------------------------------ gestures
 let drag = null;
+const CLIP_EDITS = new Set(['move', 'resize', 'resizeL', 'stretch', 'gmove', 'gresize', 'fadeIn', 'fadeOut']);   // drags that took a checkpoint
+function toggleSnap() {                                   // FL Studio Mobile: tap the Snap switch = on / off (the last grid comes back), long-press = options
+  const OFF = SNAPS.length - 1;
+  if (cfg.snap !== OFF) { cfg.lastSnap = cfg.snap; cfg.snap = OFF; } else cfg.snap = cfg.lastSnap != null && cfg.lastSnap !== OFF ? cfg.lastSnap : 0;
+  haptic(8); toast('Snap ' + (cfg.snap === OFF ? 'mati' : SNAPS[cfg.snap][0]) + '.', 900); invalidate();
+}
 function setup() {
   attachGestures(ov, {
     hit,
     tap(x, y, t) {
       touchedAt = performance.now();
       switch (t.type) {
-        case 'corner': return menu([...SNAPS.map((s, k) => ({ label: s[0], check: cfg.snap === k, fn: () => { cfg.snap = k; invalidate(); } })), { sep: true }, { label: 'Ikuti playhead', check: cfg.follow, fn: () => { cfg.follow = !cfg.follow; } }, { label: 'Pilih semua klip', fn: () => selAll() }, { label: 'Batal pilihan', dim: !msel.size, fn: () => clearSel() }, { sep: true }, { label: 'Lipat semua track', fn: () => foldAll(true) }, { label: 'Buka semua track', fn: () => foldAll(false) }], canvasOrigin().left + Math.max(0, CW - 20), canvasOrigin().top + RULER);
+        case 'corner': return toggleSnap();
+        case 'cornerMenu': return menu([...SNAPS.map((s, k) => ({ label: s[0], check: cfg.snap === k, fn: () => { cfg.snap = k; invalidate(); } })), { sep: true }, { label: 'Ikuti playhead', check: cfg.follow, fn: () => { cfg.follow = !cfg.follow; } }, { label: 'Pilih semua klip', fn: () => selAll() }, { label: 'Batal pilihan', dim: !msel.size, fn: () => clearSel() }, { sep: true }, { label: 'Lipat semua track', fn: () => foldAll(true) }, { label: 'Buka semua track', fn: () => foldAll(false) }], canvasOrigin().left + Math.max(0, CW - 20), canvasOrigin().top + RULER);
         case 'gridbtn': { const o = canvasOrigin(); return menu(SNAPS.map((s, k) => ({ label: s[0], check: cfg.snap === k, fn: () => { cfg.snap = k; invalidate(); } })), o.left + CW - 150, o.top + H - BOT); }
         case 'zoombtn': return zoomMenu();
         case 'marker': return markerMenu(t.m, x, y);
@@ -1031,9 +1090,12 @@ function setup() {
         case 'clip':
           if (msel.size) { if (msel.has(t.c.id)) msel.delete(t.c.id); else msel.add(t.c.id); P.selectClip(t.i, t.c.id); updateBar(); return invalidate(); }   // a selection exists: taps add / remove clips
           if (t.zone === 'menu') { const r = canvasOrigin(); clipMenu(t.i, t.c, t.tick, r.left + x, r.top + y); return invalidate(); }   // its ⋯ = the context menu at once
-          if (state.sel.clip === t.c.id) {                 // tap the selected clip = its context menu, held back for the double-tap window (a double tap opens the editor instead)
+          // FL Studio Mobile: a tap selects the clip at once and opens its Clip Controls, held back for the double-tap window (a double tap
+          // opens the editor instead). Settings -> Sentuhan can make the first tap select only (Live: then tap the selected clip again).
+          if (state.sel.clip === t.c.id || prefs.tapClipMenu !== false) {
+            P.selectClip(t.i, t.c.id);
             const r = canvasOrigin(), sx = r.left + x, sy = r.top + y, { i, c, tick } = t;
-            clearTimeout(menuWait); menuWait = setTimeout(() => { menuWait = 0; if (state.sel.clip === c.id) clipMenu(i, c, tick, sx, sy); }, DTAP_MS);
+            clearTimeout(menuWait); menuWait = setTimeout(() => { menuWait = 0; if (state.sel.clip === c.id && !drag) clipMenu(i, c, tick, sx, sy); }, dtapMs());
             return invalidate();
           }
           P.selectClip(t.i, t.c.id); return invalidate();                                  // first tap only selects, as in Live
@@ -1049,6 +1111,8 @@ function setup() {
     long(x, y, t) {
       touchedAt = performance.now();
       const r = canvasOrigin();
+      if (t.type === 'corner') { this.tap(x, y, { type: 'cornerMenu' }); return false; }      // FL Studio Mobile: long-press Snap = the snap options
+      if (t.type === 'gridbtn' || t.type === 'zoombtn') { this.tap(x, y, t); return false; }
       if (t.type === 'mrow') { const m = P.addMarker(snapT(t.tick)); toast('Marker \u201c' + m.name + '\u201d ditambahkan.', 1600); invalidate(); return false; }
       if (t.type === 'marker') { drag = { k: 'marker', id: t.m.id }; return true; }
       if (t.type === 'xhead') xheadMenu(t.x, x, y);
@@ -1088,7 +1152,7 @@ function setup() {
       if (t.type === 'clip') {
         checkpoint(); P.selectClip(t.i, t.c.id);
         if (t.zone === 'right' && stretchMode && state.tracks[t.i].kind === 'audio') { delete t.c.ll; delete t.c.lp; }
-        drag = { ll0: P.patternLen(t.c, state.tracks[t.i].kind), had: t.c.ll > 0, lp0: t.c.lp || 0, looped: !!P.loopOf(t.c), k: t.zone === 'right' ? (stretchMode && state.tracks[t.i].kind === 'audio' ? 'stretch' : 'resize') : t.zone === 'left' ? 'resizeL' : 'move', c: t.c, i: t.i, start: t.c.start, len: t.c.len, off: t.tick - t.c.start, t0: t.tick,
+        drag = { ll0: P.patternLen(t.c, state.tracks[t.i].kind), had: t.c.ll > 0, lp0: t.c.lp || 0, looped: !!P.loopOf(t.c), k: t.zone === 'right' ? (stretchMode && state.tracks[t.i].kind === 'audio' ? 'stretch' : 'resize') : t.zone === 'left' ? 'resizeL' : 'move', c: t.c, i: t.i, i0: t.i, start: t.c.start, len: t.c.len, off: t.tick - t.c.start, t0: t.tick,
           offset: t.c.offset || 0, notes: t.c.notes ? t.c.notes.map((n) => ({ ...n })) : null, pts: t.c.pts ? t.c.pts.map((n) => ({ ...n })) : null };
         return true;
       }
@@ -1192,6 +1256,12 @@ function setup() {
       invalidate();
     },
     dragEnd(x, y, t, cancel) {
+      if (cancel && drag && CLIP_EDITS.has(drag.k)) {           // Escape / the system took the pointer: every clip goes back where it was, no undo step left behind
+        const d = drag; drag = null; if (d.k === 'stretch') live.delete(d.c.id);
+        revertLast(); gl.clear();
+        toast('Dibatalkan.', 900); updateBar(); invalidate(); return;
+      }
+      if (cancel && drag && (drag.k === 'sel' || drag.k === 'marq')) { sel = null; marq = null; drag = null; updateBar(); invalidate(); return; }
       if (drag && drag.k === 'sel') { if (sel && sel.b - sel.a < BEAT / 4) sel = null; else selMenu(); }
       if (drag && drag.k === 'marq') {
         const m = marq; marq = null; drag = null;
