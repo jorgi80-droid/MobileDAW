@@ -139,7 +139,8 @@ public class NativeEnginePlugin extends Plugin {
                         JSObject dev = new JSObject();
                         for (int k = 0; k < nWatched; k++) {
                             int n = nDevOut(k, devBuf, devKey); if (n <= 0) continue;
-                            JSArray a = new JSArray(); for (int i = 0; i < n; i++) { float f = devBuf[i]; a.put(Float.isFinite(f) ? (double) f : 0.0); }
+                            JSArray a = new JSArray();
+                            try { for (int i = 0; i < n; i++) { float f = devBuf[i]; a.put(Float.isFinite(f) ? (double) f : 0.0); } } catch (org.json.JSONException e) { continue; }   // put(double) only throws for NaN / Inf, filtered above
                             dev.put((devKey[0] >> 16) + "," + (devKey[0] & 0xffff), a);
                         }
                         o.put("dev", dev);
