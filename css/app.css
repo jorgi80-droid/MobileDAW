@@ -287,7 +287,7 @@ button { font: inherit; color: inherit; }
    and reaches up over the bottom edge of the arrangement for an easy grab; the visible grip is the ::after pill. */
 #split { position: absolute; left: 0; right: 0; top: 0; bottom: 0; z-index: 0; touch-action: none; cursor: ns-resize; }
 #split::before { content: ""; position: absolute; left: 0; right: 0;  bottom: 0; }
-#split::after { content: ""; position: absolute; left: 50%; top: 50%; width: 64px; height: 4px; margin: -2px 0 0 -32px; border-radius: var(--r-1); background: var(--dim); opacity: .75; transition: background .12s, opacity .12s; pointer-events: none; }
+#split::after { content: ""; position: absolute; left: 50%; top: 50%; width: 64px; height: 4px; margin: -2px 0 0 -32px; border-radius: var(--r-1); background: var(--dim); opacity: .75; transition: background var(--d2) var(--e-std), opacity var(--d2) var(--e-std); pointer-events: none; }
 #split.grab::after, #view-arr.shut #split::after { background: var(--accent); opacity: 1; }
 #dtabs { touch-action: none; } #dtabs #dtitle { cursor: ns-resize; }
 

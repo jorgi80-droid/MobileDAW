@@ -63,7 +63,7 @@
    ==================================================================================================== */
 .mm { --mm-bg: #101012; --mm-panel: #17171a; --mm-line: #26262b; --mm-ink: #b8b8c0; --mm-dim: #6d6d76; --mm-a: #5fd0e0; --mm-b: #ff9d3d; --mm-c: #c9a0ff; --mm-ok: #5fd08a; --mm-warn: #e8d040; --mm-bad: #e5484d;
   position: relative; display: flex; flex-direction: column; width: 100%; height: 100%; background: var(--mm-bg); color: var(--mm-ink); font-size: 10.5px; overflow: hidden; }
-.mm-tool { position: absolute; left: 0; right: 0; top: 0; z-index: 8; height: var(--ctl); display: flex; align-items: center; gap: 3px; padding: 0 30px 0 5px; background: linear-gradient(rgba(8,8,10,.92), rgba(8,8,10,.78)); overflow: hidden; opacity: 0; pointer-events: none; transform: translateY(-6px); transition: opacity .15s, transform .15s; }
+.mm-tool { position: absolute; left: 0; right: 0; top: 0; z-index: 8; height: var(--ctl); display: flex; align-items: center; gap: 3px; padding: 0 30px 0 5px; background: linear-gradient(rgba(8,8,10,.92), rgba(8,8,10,.78)); overflow: hidden; opacity: 0; pointer-events: none; transform: translateY(-6px); transition: opacity var(--d3) var(--e-std), transform var(--d3) var(--e-std); }
 .mm.ui .mm-tool { opacity: 1; pointer-events: auto; transform: none; }
 .mm-more { position: absolute; right: 2px; top: 2px; z-index: 9; width: 24px; height: 22px; padding: 0; border: 0; border-radius: 11px; background: rgba(0,0,0,.35); color: #fff; font-size: var(--fs-6); line-height: 1; opacity: .3; }
 .mm.ui .mm-more { opacity: .9; background: rgba(255,255,255,.14); }

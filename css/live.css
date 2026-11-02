@@ -184,10 +184,10 @@
 .strip .ms .b.a.on::before { background: #fff; opacity: 1; }
 
 /* ===== motion: the duration / easing tokens live in the design-token block at the top of app.css ===== */
-.b, .chip, .lv-btn, .lv-tab, .lv-fld, .fv-b, .fv-t, .pl, .vbox, .menu .mi, .strip, .readout, .fw-b {
+.b, .chip, .lv-btn, .lv-tab, .lv-fld, .fv-b, .fv-t, .pl, .vbox, .menu .mi, .strip, .readout, .fw-b, .card.drack .pad, .row, .bs-i, .kb-oct .kb-a {
   transition: background-color var(--d2) var(--e-std), color var(--d2) var(--e-std), border-color var(--d2) var(--e-std), opacity var(--d2) var(--e-std), scale var(--d1) var(--e-std);
 }
-.b:active, .chip:active, .lv-btn:active, .lv-tab:active, .fv-b:active, .pl:active, .vbox:active { scale: .955; }
+.b:active, .chip:active, .lv-btn:active, .lv-tab:active, .fv-b:active, .pl:active, .vbox:active, .card.drack .pad:active { scale: .955; }
 .card h4 button.pw::before, .lv-tab .led, .lv-tab .chk, .pdot { transition: background-color var(--d3) var(--e-std), opacity var(--d3) var(--e-std); }
 .strip .ms .b.a::before { transition: background-color var(--d3) var(--e-std), opacity var(--d3) var(--e-std); }
 @keyframes mdFade { from { opacity: 0; } to { opacity: 1; } }
