@@ -376,6 +376,7 @@ void Engine::track(Strip& st, int idx, double p0, int n, double sp, bool anySolo
       }
     }
     double sh = st.inst->pitchNative ? 0 : st.pitch; uint8_t* tmap = st.tpMap;
+    st.inst->setSongPos(playing, f2t(pos) / PPQ);   // song position for beat-synced instrument LFOs (FLM SuperSaw Tempo Sync)
     int cur = 0;
     for (int i = 0; i < ne; i++) {
       if (eo[i] > cur) { st.inst->render(L, R, cur, eo[i]); balance(L, R, cur, eo[i], st.nPan); cur = eo[i]; }

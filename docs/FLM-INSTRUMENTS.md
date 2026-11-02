@@ -100,8 +100,9 @@ lama vs baru: selisih −∞ / sangat kecil untuk kasus yang bisa dinyatakan for
   rentang yang terlihat sama dengan FLM; **kurva** (cutoff 0..100 → 20 Hz–20 kHz, waktu envelope, algoritma FX, isi gelombang GMS
   seperti "Beast") adalah buatan MobileDAW. Suaranya mirip, belum terbukti identik — kalibrasi butuh render referensi dari FLM.
 - Mod wheel: MobileDAW belum punya sumber mod wheel, jadi MW Amount / Dest tersimpan (dan terbaca dari impor) tetapi belum berpengaruh.
-- Engine C++ (Android, pilihan "Native") belum memuat instrumen 30–33: track yang memakainya otomatis dimainkan engine Web (fallback yang
-  sudah ada), jadi bunyinya tetap sama di semua perangkat.
+- Engine C++ (Android, pilihan "Native"): **MiniSynth (32) dan SuperSaw (33) sudah di-port** (`native/engine/flmsyn.{h,cpp}`), identik bit
+  dengan engine Web (golden `params-/play-/presets-minisynth` & `-supersaw`). **DirectWave (30) dan GMS (31) belum** — track yang
+  memakainya tetap jatuh ke engine Web (fallback), jadi bunyinya sama di semua perangkat sampai port-nya selesai.
 - Impor FLM: DirectWave → instrumen 30 dengan zona per lapisan; nilai Flt Env / Frq Env / LFO dikonversi dari file (urutannya cocok dengan
   screenshot: amount bipolar 0,5 = 0); tab Sample / Filter juga (Pitch / Fine Tune per lapisan → root / tune zona; tata letak lengkap dan
   buktinya di `docs/IMPORT.md`, bagian "Presisi").
