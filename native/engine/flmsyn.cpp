@@ -196,4 +196,245 @@ void FlmSuperSaw::renderVoices(float* L, float* R, int from, int to) {
   for (int k = 0; k < n0; k++) { L[from + k] = (float)((double)L[from + k] + (double)B[k]); R[from + k] = (float)((double)R[from + k] + (double)Bq[k]); }
 }
 
+// ================================================================================================ GMS (31)
+// dsp.js fft (in-place, radix-2) on double buffers — used once to build the wavetables
+static void flmFft(double* re, double* im, int n) {
+  for (int i = 1, j = 0; i < n; i++) {
+    int bit = n >> 1;
+    for (; j & bit; bit >>= 1) j ^= bit;
+    j ^= bit;
+    if (i < j) { double t = re[i]; re[i] = re[j]; re[j] = t; t = im[i]; im[i] = im[j]; im[j] = t; }
+  }
+  for (int len = 2; len <= n; len <<= 1) {
+    double ang = -TWO_PI / len, wr = std::cos(ang), wi = std::sin(ang); int h = len >> 1;
+    for (int i = 0; i < n; i += len) {
+      double cr = 1, ci = 0;
+      for (int k = 0; k < h; k++) {
+        int a = i + k, b = a + h; double tr = re[b] * cr - im[b] * ci, ti = re[b] * ci + im[b] * cr;
+        re[b] = re[a] - tr; im[b] = im[a] - ti; re[a] += tr; im[a] += ti;
+        double nr = cr * wr - ci * wi; ci = cr * wi + ci * wr; cr = nr;
+      }
+    }
+  }
+}
+// harmonic amplitude of harmonic h for GMS wave w (flmsyn.js HARM)
+static double harm(int w, int h) {
+  switch (w) {
+    case 0: return (1.0 / h) * (h % 2 ? 1 : 0.55) * (1 + 1.6 * std::exp(-std::pow((double)(h - 7), 2) / 10));
+    case 1: return h == 1 ? 1 : 0;
+    case 2: return h % 2 ? (((h - 1) / 2) % 2 ? -1.0 : 1.0) / ((double)h * h) : 0;
+    case 3: return 1.0 / h;
+    case 4: return h % 2 ? 1.0 / h : 0;
+    case 5: return std::sin(PI * h * 0.25) / h;
+    case 6: return std::sin(PI * h * 0.125) / h;
+    case 7: { static const int K[6] = {1, 2, 3, 4, 6, 8}; static const double V[6] = {1, 0.8, 0.6, 0.5, 0.35, 0.3}; for (int i = 0; i < 6; i++) if (K[i] == h) return V[i]; return 0; }
+    case 8: return h == 1 ? 1 : h == 3 ? 0.55 : h == 5 ? 0.4 : h == 7 ? 0.3 : h == 11 ? 0.25 : h == 14 ? 0.2 : 0;
+    case 9: return (1.0 / h) * (std::exp(-std::pow((double)(h - 5), 2) / 3) * 2.5 + std::exp(-std::pow((double)(h - 13), 2) / 6) * 1.6 + 0.15);
+    case 10: return (h % 2 ? 1.0 / h : 0) * (h % 3 ? 1 : 0.2);
+    case 11: return (1.0 / h) * (1 - std::exp(-(double)h / 3)) * 1.8;
+    case 12: return (1.0 / h) * (std::exp(-std::pow((double)(h - 3), 2) / 2) * 2 + std::exp(-std::pow((double)(h - 9), 2) / 4) * 1.2 + 0.1);
+    case 13: return h <= 24 ? (h % 4 == 1 ? 1.0 : h % 4 == 3 ? -0.6 : 0.2) / std::sqrt((double)h) : 0;
+    default: return 0;
+  }
+}
+const std::vector<GmsMips>& gmsWT() {
+  static std::vector<GmsMips> WT;
+  if (!WT.empty()) return WT;
+  WT.resize(14);
+  for (int w = 0; w < 14; w++) {
+    for (int m = 0; m < WT_MIPS; m++) {
+      int maxH = (int)jsMax(1, std::floor(WT_LEN / 2.0 / std::pow(2.0, m)) - 1);
+      std::vector<double> re(WT_LEN, 0), im(WT_LEN, 0);
+      int hi = (int)jsMin(maxH, WT_LEN / 2 - 1);
+      for (int h = 1; h <= hi; h++) { double a = harm(w, h); im[h] = -a; im[WT_LEN - h] = a; }
+      flmFft(re.data(), im.data(), WT_LEN);
+      std::vector<float> t(WT_LEN + 1, 0.f); double pk = 0;
+      for (int i = 0; i < WT_LEN; i++) { t[i] = (float)re[i]; pk = jsMax(pk, std::fabs(re[i])); }
+      if (pk > 0) for (int i = 0; i < WT_LEN; i++) t[i] = (float)((double)t[i] / pk);
+      t[WT_LEN] = t[0]; WT[w].m[m] = std::move(t);
+    }
+  }
+  return WT;
+}
+double wtRead(const GmsMips& w, double ph, double dt) {
+  int m = (int)clamp(std::floor(std::log2(jsMax(1e-9, dt * WT_LEN * 2))) + 1, 0, WT_MIPS - 1);
+  const std::vector<float>& t = w.m[m]; double p = ph * WT_LEN; int i = (int)p; double f = p - i;
+  return (double)t[i] + ((double)t[i + 1] - (double)t[i]) * f;
+}
+void GmsFx::run(float* L, float* R, int from, int to, int k, double amt, double X, double Y, double rateBeats, int shape, double bpm) {
+  static const double VOX[5][3] = {{730, 1090, 2440}, {530, 1840, 2480}, {270, 2290, 3010}, {570, 840, 2410}, {300, 870, 2240}};
+  if (k != kind) { kind = k; dl.clear(); md.clear(); ph.clear(); rv.clear(); }
+  int n = to - from; double hz = bpm / 60 / rateBeats;
+  lp += hz * n / sr; lp -= std::floor(lp);
+  double lv = shape == 0 ? std::sin(TWO_PI * lp) : shape == 1 ? 1 - 2 * lp : lp < 0.5 ? 1 : -1;
+  double x = clamp(X / 100 + amt / 100 * lv * 0.5, 0, 1), y = clamp(Y / 100, 0, 1);
+  switch (k) {
+    case 0: { double drive = 1 + x * 30, f = cutHz(20 + y * 80); fl[0].set(sr, f, 0.1); fl[1].set(sr, f, 0.1); double nrm = 1 / std::tanh(drive);
+      for (int i = from; i < to; i++) { L[i] = (float)fl[0].run(std::tanh(L[i] * drive) * nrm, 0); R[i] = (float)fl[1].run(std::tanh(R[i] * drive) * nrm, 0); } break; }
+    case 1: md.run(L, R, from, to, 0.25 + std::fabs(lv) * 0, 0.001, 0.004 * x + 0.0005, y * 0.85, 0.5); break;
+    case 2: ph.run(L, R, from, to, 0.3, 200, x, y * 0.8, 0.6); break;
+    case 3: case 4: { double f = cutHz(x * 100); fl[0].set(sr, f, y * 0.9); fl[1].set(sr, f, y * 0.9); int m = k == 3 ? 0 : 1;
+      for (int i = from; i < to; i++) { L[i] = (float)fl[0].run(L[i], m); R[i] = (float)fl[1].run(R[i], m); } break; }
+    case 5: dl.run(L, R, from, to, sr * 60 / bpm * 0.75, x * 0.9, y, 0.45, true); break;
+    case 6: rv.run(L, R, from, to, x, y); break;
+    case 7: { double pan = x * 2 - 1, gl = jsMin(1, 1 - pan), gr = jsMin(1, 1 + pan); int d = (int)jsRound(y * 0.0007 * sr);
+      for (int i = from; i < to; i++) { double l = L[i], r = R[i]; L[i] = (float)(l * gl); R[i] = (float)(r * gr); }
+      if (d > 0) dl.run(L, R, from, to, d, 0, 0, y * 0.5); break; }
+    case 8: { double f = 20 * std::pow(250.0, x), inc = f / sr;
+      for (int i = from; i < to; i++) { rm += inc; if (rm >= 1) rm -= 1; double m = std::sin(TWO_PI * rm); L[i] = (float)(L[i] * m); R[i] = (float)(R[i] * m); } break; }
+    case 9: { double vf = x * 4; int a = (int)std::floor(vf), b = (int)jsMin(4, a + 1); double fr = vf - a, sc = 0.75 + y * 0.5;
+      for (int c = 0; c < 3; c++) { double f = (VOX[a][c] + (VOX[b][c] - VOX[a][c]) * fr) * sc; fv[c][0].set(sr, f, 0.85); fv[c][1].set(sr, f, 0.85); }
+      for (int i = from; i < to; i++) { double l = 0, r = 0; for (int c = 0; c < 3; c++) { l += fv[c][0].run(L[i], 2) * (c ? 0.6 : 1); r += fv[c][1].run(R[i], 2) * (c ? 0.6 : 1); } L[i] = (float)(l * 0.6); R[i] = (float)(r * 0.6); } break; }
+    default: break;
+  }
+}
+FlmGms::FlmGms(double sr_) : FlmVoices<GmsFlmVoice, 16>(sr_), bufL(4096, 0), bufR(4096, 0), fx0(sr_), fx1(sr_), fx2(sr_) {
+  max = 16; gmsWT();
+  double D[70] = {}; const double head[47] = {100, 0, 0.001, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0.001, 1, 0, 2, 0, 0, 0, 0, 0.001, 1, 1, 0.1, 0, 0.001, 0.5, 0, 0.3, 0, 0, 0, 0, 0, 0, 0, 0.1, 0, 0, 0, 0, 0, 0};
+  for (int i = 0; i < 47; i++) D[i] = head[i];
+  const double rk[3] = {1, 2, 5}; int o = 47; for (int s = 0; s < 3; s++) { double blk[7] = {0, rk[s], 0, 50, 50, 5, 0}; for (int j = 0; j < 7; j++) D[o++] = blk[j]; }
+  for (int i = 0; i < 68; i++) setParam(i, D[i]);
+}
+void FlmGms::setParam(int i, double x) {
+  if (i < 0 || i >= 70) return; p[i] = x;
+  if (i == 2 || i == 3) fp = adsrParams(p[2], p[3], 1, p[3], sr);
+  if (i == 16 || i == 17) mp = adsrParams(p[16], p[17], 0, p[17], sr);
+  if (i >= 24 && i <= 27) ap = adsrParams(p[24], p[25], p[26], p[27], sr);
+  if (i >= 29 && i <= 32) ep = adsrParams(p[29], p[30], p[31], p[32], sr);
+  if (i == 19) pb = x; if (i == 40) slide = x; if (i == 43) { mono = x > 0.5; allOff(); } if (i == 44) legato = x > 0.5;
+}
+void FlmGms::start(GmsFlmVoice& v, bool retrig) {
+  if (!retrig) { for (int k = 0; k < 8; k++) v.ph[k] = p[11] * (k & 1); v.lp = 0; v.lt = 0; v.s1.reset(); v.s2.reset(); v.s3.reset(); v.s4.reset(); v.fenv.v = 0; v.menv.v = 0; v.eg.v = 0; }
+  v.env.start(); v.fenv.start(); v.menv.start(); v.eg.start();
+}
+void FlmGms::render(float* L, float* R, int from, int to) {
+  const std::vector<GmsMips>& W = gmsWT();
+  const GmsMips& wa = W[(int)clamp(jsRound(p[7]), 0, (double)W.size() - 1)]; const GmsMips& wb = W[(int)clamp(jsRound(p[8]), 0, (double)W.size() - 1)];
+  int kind = (int)jsRound(p[15]), fk = (int)jsRound(p[6]); double bal = (p[12] + 100) / 200, noise = p[13] / 100, lvl = flmDbg(p[22]), pan = p[23] / 100;
+  int nv = (int)clamp(jsRound(p[45]) + 1, 1, 4); const int* sc = GMS_SCALE_C()[(int)clamp(jsRound(p[46]), 0, 2)]; double det = p[41] / 100 * 0.3, wide = p[42] / 100;
+  double lhz = bpm / 60 / flmSyncBeats(p[38]); int lsh = (int)jsRound(p[36]); double lamt = p[35] / 100; int ldst = (int)jsRound(p[37]), edst = (int)jsRound(p[34]); double eamt = p[28] / 100;
+  double res = p[1] / 100, bRatio = std::pow(2.0, (p[9] + p[10] / 100) / 12), tr = p[39];
+  float* B = bufL.data(); float* Bq = bufR.data(); int n0 = to - from;
+  if (n0 > (int)bufL.size()) { render(L, R, from, from + (int)bufL.size()); render(L, R, from + (int)bufL.size(), to); return; }
+  clock += n0; std::fill(B, B + n0, 0.f); std::fill(Bq, Bq + n0, 0.f);
+  for (auto& v : this->v) {
+    if (!v.on) continue;
+    for (int i = 0; i < n0; i += FLM_CR) {
+      int e2 = (int)jsMin(n0, i + FLM_CR), n = e2 - i;
+      lfoAdvance(v, n, lhz, sr); double lf = lfoValue(v, lsh, false, 0, rng) * lamt;
+      if (v.gl < 1) v.f += (v.ft - v.f) * (1 - std::pow(1 - v.gl, (double)n)); else v.f = v.ft;
+      double egv = v.eg.v * eamt * (p[33] > 0.5 ? v.vel : 1);
+      double modD = clamp(p[14] / 100 + v.menv.v * p[18] / 100 + (edst == 1 ? egv : 0) + (ldst == 1 ? lf : 0), 0, 1);
+      double pitchSt = tr + bendSt + (edst == 2 ? egv * 12 : 0) + (ldst == 2 ? lf * 12 : 0);
+      double oct = (p[5] > 0.5 ? (double)(v.pitch - 60) / 12 : 0) + v.fenv.v * p[4] / 100 * 6 + (edst == 0 ? egv * 6 : 0) + (ldst == 0 ? lf * 4 : 0);
+      double fc = cutHz(p[0]) * std::pow(2.0, oct);
+      v.s1.set(sr, fc, fk == 1 ? res * 0.5 : res); v.s2.set(sr, fc, fk == 1 ? res * 0.5 : res);
+      v.s3.copyCoef(v.s1); v.s4.copyCoef(v.s1);
+      int fm = fk == 2 ? 1 : 0; bool two = fk == 1;
+      double f0 = v.f * std::pow(2.0, pitchSt / 12);
+      for (int k = i; k < e2; k++) {
+        double e = v.env.next(ap); v.fenv.next(fp); v.menv.next(mp); v.eg.next(ep);
+        if (v.env.st == 0) { v.on = false; break; }
+        double l = 0, r = 0;
+        for (int u = 0; u < nv; u++) {
+          double uf = f0 * std::pow(2.0, (sc[u] + (u ? (u & 1 ? 1 : -1) * det * std::ceil(u / 2.0) : 0)) / 12), dA = uf / sr, dB = dA * bRatio * (kind == 3 ? std::pow(2.0, modD * 3) : 1);
+          double pa = v.ph[u * 2] + dA, pb = v.ph[u * 2 + 1] + dB;
+          if (pa >= 1) { pa -= 1; if (kind == 3) pb = pa * (dB / dA); }
+          if (pb >= 1) pb -= std::floor(pb);
+          v.ph[u * 2] = pa; v.ph[u * 2 + 1] = pb;
+          double b = wtRead(wb, pb, dB);
+          double a;
+          if (kind == 1) { double q = pa + b * modD * 0.6; q -= std::floor(q); a = wtRead(wa, q, dA); } else a = wtRead(wa, pa, dA);
+          if (kind == 2) a = a * (1 - modD) + a * b * modD;
+          double xx = a * (1 - bal) + b * bal, sp = nv > 1 ? ((double)u / (nv - 1) * 2 - 1) * wide : 0;
+          l += xx * (1 - sp); r += xx * (1 + sp);
+        }
+        if (noise > 0) { double nz = ((double)lcg(rng) / 2147483648.0 - 1) * noise; l += nz; r += nz; }
+        l = v.s1.run(l, fm); r = v.s2.run(r, fm);
+        if (two) { l = v.s3.run(l, 0); r = v.s4.run(r, 0); }
+        double g = e * v.vel * 0.2 / std::sqrt((double)nv);
+        B[k] = (float)((double)B[k] + l * g); Bq[k] = (float)((double)Bq[k] + r * g);
+      }
+      if (!v.on) break;
+    }
+  }
+  tailOf(this, n0);
+  GmsFx* fx[3] = {&fx0, &fx1, &fx2};
+  for (int s = 0; s < 3; s++) { int o = 47 + s * 7; if (p[o] > 0.5) fx[s]->run(B, Bq, 0, n0, (int)jsRound(p[o + 1]), p[o + 2], p[o + 3], p[o + 4], flmSyncBeats(jsMin(5, p[o + 5])), (int)jsRound(p[o + 6]), bpm); }
+  double gl = lvl * jsMin(1, 1 - pan), gr = lvl * jsMin(1, 1 + pan);
+  for (int k = 0; k < n0; k++) { L[from + k] = (float)((double)L[from + k] + (double)B[k] * gl); R[from + k] = (float)((double)R[from + k] + (double)Bq[k] * gr); }
+}
+
+// ================================================================================================ DirectWave (30)
+FlmDirectWave::FlmDirectWave(double sr_, Bank* bk) : FlmVoices<DwFlmVoice, 32>(sr_), bank(bk) {
+  static const double D[35] = {0, 0, 0.001, 1, 1, 0.3, 0.1, 2, 0, 0, 0, 0, 100, 0, 0, 0, 1, 0.001, 1, 1, 0.3, 0, 0.001, 1, 1, 0.3, 0, 0, 0.03, 9, 0, 0, 0, 0, 0};
+  for (int i = 0; i < 35; i++) setParam(i, D[i]);
+}
+void FlmDirectWave::setParam(int i, double x) {
+  if (i >= 300) { int zi = (i - 300) >> 1; if (zi < DW_ZONES) { if ((i - 300) & 1) z[zi].pan = clamp(x, -1, 1); else z[zi].gain = flmDbg(clamp(x, -60, 12)); } return; }
+  if (i >= 100) {
+    int zi = (int)std::floor((i - 100) / 8.0), k = (i - 100) % 8; if (zi >= DW_ZONES) return; DwZone& q = z[zi];
+    switch (k) { case 0: q.id = toInt32(x); break; case 1: q.root = (int)clamp(toInt32(x), 0, 127); break; case 2: q.lo = (int)clamp(toInt32(x), 0, 127); break; case 3: q.hi = (int)clamp(toInt32(x), 0, 127); break; case 4: q.vlo = (int)clamp(toInt32(x), 1, 127); break; case 5: q.vhi = (int)clamp(toInt32(x), 1, 127); break; case 6: q.tune = clamp(x, -100, 100); break; case 7: q.loop = x > 0.5; break; }
+    return;
+  }
+  if (i < 0 || i >= 40) return; p[i] = x;
+  if (i >= 2 && i <= 5) ap = adsrParams(p[2], p[3], p[4], p[5], sr);
+  if (i >= 17 && i <= 20) fp = adsrParams(p[17], p[18], p[19], p[20], sr);
+  if (i >= 22 && i <= 25) qp = adsrParams(p[22], p[23], p[24], p[25], sr);
+  if (i == 6) slide = x; if (i == 7) pb = x; if (i == 10) legato = x > 0.5; if (i == 11) { mono = x > 0.5; allOff(); }
+}
+void FlmDirectWave::start(DwFlmVoice& v, bool retrig) {
+  if (!retrig) { v.fenv.v = 0; v.penv.v = 0; v.lp = 0; v.lt = 0; v.sl.reset(); v.sr2.reset(); }
+  v.pos = p[8] > 0.5 ? -1 : 0;
+  v.env.start(); v.fenv.start(); v.penv.start();
+}
+void FlmDirectWave::noteOn(int pt, double vel) {
+  int vi = (int)jsMin(127, jsRound(vel * 127));
+  for (DwZone& q : z) {
+    Sample* s = q.id >= 0 ? bank->s[q.id] : nullptr;
+    if (!s || pt < q.lo || pt > q.hi || vi < q.vlo || vi > q.vhi) continue;
+    DwFlmVoice& v = mono ? this->v[0] : pick();
+    v.id = q.id; v.zroot = q.root; v.ztune = q.tune; v.zloop = q.loop; v.zg = q.gain; v.zp = q.pan;
+    if (mono) { FlmVoices::noteOn(pt, vel); return; }
+    begin(v, pt, vel, 0);
+  }
+}
+void FlmDirectWave::render(float* L, float* R, int from, int to) {
+  clock += to - from;
+  int ftype = (int)jsRound(p[16]); bool filt = ftype > 0; int mode = ftype - 1; bool loopAll = p[9] > 0.5, rev = p[8] > 0.5;
+  int lfoMode = (int)jsRound(p[27]); double lhz = lfoMode == 2 ? bpm / 60 / flmSyncBeats(p[29]) : p[28]; int lshape = (int)jsRound(p[30]); double lamt = p[32] / 100; int ldest = (int)jsRound(p[33]);
+  double lvl = flmDbg(p[34]), res = p[13] / 100;
+  for (auto& v : this->v) {
+    if (!v.on) continue;
+    Sample* s = v.id >= 0 && v.id < 256 ? bank->s[v.id] : nullptr;
+    if (!s || s->frames < 2) { v.on = false; continue; }
+    int last = s->frames - 1; const float* sl = s->l; const float* srr = s->r ? s->r : s->l; bool loop = loopAll || v.zloop; double base = s->rate / sr;
+    if (v.pos < 0) v.pos = last;
+    for (int i = from; i < to; i += FLM_CR) {
+      int e2 = (int)jsMin(to, i + FLM_CR), n = e2 - i;
+      lfoAdvance(v, n, lhz, sr); double lf = lfoValue(v, lshape, lfoMode == 1, p[31], rng) * lamt;
+      if (v.gl < 1) v.f += (v.ft - v.f) * (1 - std::pow(1 - v.gl, (double)n)); else v.f = v.ft;
+      double fe = v.fenv.v, pe = v.penv.v;
+      double st = 12 * std::log2(v.f / midiToHz(v.zroot)) + p[0] + (p[1] + v.ztune) / 100 + pe * p[26] / 100 * 12 + (ldest == 1 ? lf * 12 : 0) + bendSt;
+      double step = base * std::pow(2.0, st / 12) * (rev ? -1 : 1);
+      if (filt) {
+        double oct = (double)(v.pitch - 60) / 12 * p[14] / 100 + (v.vel - 1) * 4 * p[15] / 100 + fe * p[21] / 100 * 6 + (ldest == 0 ? lf * 4 : 0);
+        double f = cutHz(p[12]) * std::pow(2.0, oct); v.sl.set(sr, f, res); v.sr2.copyCoef(v.sl);
+      }
+      double amp = lvl * v.vel * v.zg * (ldest == 2 ? jsMax(0, 1 + lf) : 1), pan = clamp((ldest == 3 ? lf : 0) + v.zp, -1, 1), gl = amp * jsMin(1, 1 - pan), gr = amp * jsMin(1, 1 + pan);
+      for (int k = i; k < e2; k++) {
+        double e = v.env.next(ap); v.fenv.next(fp); v.penv.next(qp);
+        if (v.env.st == 0) { v.on = false; break; }
+        if (v.pos > last || v.pos < 0) { if (!loop) { v.on = false; break; } v.pos = rev ? v.pos + last : v.pos - last; }
+        int ip = (int)v.pos; double fr = v.pos - ip; int j = ip + 1 > last ? (loop ? 0 : last) : ip + 1;
+        double xl = (double)sl[ip] + ((double)sl[j] - sl[ip]) * fr, xr = (double)srr[ip] + ((double)srr[j] - srr[ip]) * fr;
+        if (filt) { xl = v.sl.run(xl, mode); xr = v.sr2.run(xr, mode); }
+        L[k] = (float)((double)L[k] + xl * e * gl); R[k] = (float)((double)R[k] + xr * e * gr);
+        v.pos += step;
+      }
+      if (!v.on) break;
+    }
+  }
+}
+
 }  // namespace mdaw

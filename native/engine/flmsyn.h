@@ -259,4 +259,44 @@ class FlmSuperSaw : public FlmVoices<SawFlmVoice, 16> {
   void renderVoices(float* L, float* R, int from, int to);
 };
 
+// ================================================================================================ GMS (31)
+inline const int (*GMS_SCALE_C())[4] { static const int S[3][4] = {{0, 0, 0, 0}, {0, 7, 14, 21}, {0, 12, 24, 36}}; return S; }   // Flat / Chord / Octave
+constexpr int WT_LEN = 2048, WT_MIPS = 10;
+struct GmsMips { std::vector<float> m[WT_MIPS]; };
+const std::vector<GmsMips>& gmsWT();                       // band-limited wavetables (built once, lazily)
+double wtRead(const GmsMips& w, double ph, double dt);
+
+struct GmsFx {
+  double sr; FlmDelay dl; FlmModDelay md; FlmPhaser ph; FlmReverb rv; Svf fl[2]; Svf fv[3][2]; double lp = 0, rm = 0; int kind = -1;
+  explicit GmsFx(double rate) : sr(rate), dl(rate, 2), md(rate), ph(rate), rv(rate) {}
+  void run(float* L, float* R, int from, int to, int kind, double amt, double X, double Y, double rateBeats, int shape, double bpm);
+};
+struct GmsFlmVoice : FlmVoice { double ph[8] = {}; Adsr fenv, menv, eg; Svf s1, s2, s3, s4; double nz = 0; };
+class FlmGms : public FlmVoices<GmsFlmVoice, 16> {
+ public:
+  double p[70] = {}; AdsrP ap, fp, mp, ep;
+  std::vector<float> bufL, bufR; GmsFx fx0, fx1, fx2;
+  explicit FlmGms(double sr);
+  void setParam(int i, double x) override;
+  void start(GmsFlmVoice& v, bool retrig) override;
+  void release(GmsFlmVoice& v) override { v.env.release(); v.eg.release(); v.fenv.release(); }
+  bool active() override { return FlmVoices::active() || tail > 0; }
+  void render(float* L, float* R, int from, int to) override;
+};
+
+// ================================================================================================ DirectWave (30)
+constexpr int DW_ZONES = 16;
+struct DwZone { int id = -1, root = 60, lo = 0, hi = 127, vlo = 1, vhi = 127; double tune = 0; bool loop = false; double gain = 1, pan = 0; };
+struct DwFlmVoice : FlmVoice { double pos = 0; int id = -1; int zroot = 60; double ztune = 0; bool zloop = false; double zg = 1, zp = 0; Adsr fenv, penv; Svf sl, sr2; };
+class FlmDirectWave : public FlmVoices<DwFlmVoice, 32> {
+ public:
+  double p[40] = {}; AdsrP ap, fp, qp; Bank* bank; DwZone z[DW_ZONES];
+  FlmDirectWave(double sr, Bank* bank);
+  void setParam(int i, double x) override;
+  void start(DwFlmVoice& v, bool retrig) override;
+  void release(DwFlmVoice& v) override { v.env.release(); v.fenv.release(); v.penv.release(); }
+  void noteOn(int p, double vel) override;
+  void render(float* L, float* R, int from, int to) override;
+};
+
 }  // namespace mdaw

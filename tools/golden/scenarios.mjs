@@ -4,9 +4,9 @@ import fs from 'node:fs'; import path from 'node:path'; import { fileURLToPath }
 const D = await import(path.join(path.dirname(fileURLToPath(import.meta.url)), '../../js/defs.js'));
 
 const PPQ = 960, BAR = PPQ * 4;
-const PARAM_SYNTHS = [13, 14, 15, 17, 18, 16, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 32, 33];   // + FL Studio Mobile MiniSynth / SuperSaw (C++ port)   // Live 12 instruments with a min / max sweep of every parameter
+const PARAM_SYNTHS = [13, 14, 15, 17, 18, 16, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 31, 32, 33];   // + FL Studio Mobile GMS / MiniSynth / SuperSaw (C++ port)   // Live 12 instruments with a min / max sweep of every parameter
 const FX_PORTED = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47];   // effects with a min / max sweep scenario (fx-<name>)
-const SYNTHS = [1, 2, 5, 7, 8, 11, 13, 14, 15, 17, 16, 19, 20, 21, 22, 23, 24, 25, 26, 27, 32, 33];   // instruments with golden scenarios (presets + playing)
+const SYNTHS = [1, 2, 5, 7, 8, 11, 13, 14, 15, 17, 16, 19, 20, 21, 22, 23, 24, 25, 26, 27, 31, 32, 33];   // instruments with golden scenarios (presets + playing)
 function lcg(seed) { let s = seed >>> 0; return () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 4294967296 * 2 - 1; }; }
 function tone(sec, hz, sr = 48000, amp = 0.5) { const n = Math.round(sec * sr), a = new Float32Array(n); for (let i = 0; i < n; i++) a[i] = Math.sin(2 * Math.PI * hz * i / sr) * amp * Math.min(1, (n - i) / 2000); return a; }
 function noise(sec, seed, sr = 48000, amp = 0.3) { const r = lcg(seed), n = Math.round(sec * sr), a = new Float32Array(n); for (let i = 0; i < n; i++) a[i] = r() * amp; return a; }
@@ -182,6 +182,26 @@ export const SCENARIOS = [
       e.play(); play(e, 2, [128, 77, 256]);
       e.instParam(0, 3, 1500); e.instParam(1, 3, 600); play(e, 1); e.instParam(0, 3, 20000); e.instParam(0, 1, 0.08); e.instParam(0, 4, 3.5); play(e, 1);
       e.instParam(0, 6, 1); e.instParam(1, 90, 7); play(e, 1); e.instParam(0, 6, 0); e.instParam(1, 90, -5); e.instParam(0, 0, 1.2); play(e, 1);
+      e.preview(0, 64, 0.8, true); play(e, 0.3); e.preview(0, 64, 0, false); e.stop(); play(e, 1);
+    } },
+  { name: 'inst-flmdw', info: 'FL Studio Mobile DirectWave (30): key / vel zones (gain / pan), loop, reverse, root / tune, filter + filter envelope, frequency (pitch) envelope, LFO (Hertz / One Shot / Tempo) to filter / frequency / level / pan, slide / legato / mono, PB range + bend',
+    run(e) {
+      samples(e); testSample(e); e.tempo(124); e.trackInst(0, 30);
+      const Z = (z, k, v) => e.instParam(0, 100 + z * 8 + k, v), G = (z, g, pn) => { e.instParam(0, 300 + z * 2, g); e.instParam(0, 300 + z * 2 + 1, pn); };
+      [[3, 60, 0, 59, 1, 127, 0, 0], [0, 72, 60, 127, 1, 90, -12, 1], [2, 60, 60, 127, 91, 127, 30, 1], [1, 48, 30, 50, 1, 127, 0, 0]].forEach((q, z) => q.forEach((v, k) => Z(z, k, v)));
+      G(0, 0, 0); G(1, -3, -0.4); G(2, 2, 0.5); G(3, -6, 0.2);
+      const f = []; for (let k = 0; k < 40; k++) f.push(k * PPQ / 4, PPQ * (k % 5 === 0 ? 2 : 0.3), 36 + ((k * 7) % 48), 0.25 + (k % 4) * 0.24, (k % 3 - 1) / 2); e.trackNotes(0, f, f.length / 5);
+      e.play(); play(e, 2, [128, 77, 256]);
+      const P = (i, v) => e.instParam(0, i, v);
+      P(16, 1); P(12, 45); P(13, 60); P(14, 40); P(15, 30); play(e, 0.8);
+      P(21, 60); P(17, 0.005); P(18, 0.3); P(19, 0.2); play(e, 0.8);
+      P(16, 2); play(e, 0.4); P(16, 3); play(e, 0.4);
+      P(26, 50); P(22, 0.01); P(23, 0.25); play(e, 0.8);
+      P(32, 60); P(33, 0); P(28, 5); play(e, 0.6); P(33, 1); play(e, 0.4); P(33, 2); play(e, 0.4); P(33, 3); play(e, 0.4);
+      P(27, 1); play(e, 0.4); P(27, 2); P(29, 7); play(e, 0.5);
+      P(8, 1); play(e, 0.6);
+      P(11, 1); P(6, 0.08); play(e, 0.8);
+      P(7, 12); e.bend(0, 1.5); play(e, 0.4);
       e.preview(0, 64, 0.8, true); play(e, 0.3); e.preview(0, 64, 0, false); e.stop(); play(e, 1);
     } },
   { name: 'inst-livesampler', info: 'Sampler (10): zones (key / vel), sustain loop forward + back-and-forth, crossfade, reverse, snap, start / end, HQ interpolation, filter types, envelopes, LFO, pitch envelope, spread, voices, release mode, Osc (all waves, with and without a sample)',

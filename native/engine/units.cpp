@@ -32,7 +32,7 @@ Instrument* makeInstrument(int type, double sr, Bank* bank) {
     case 22: return new DsHH(sr); case 23: return new DsClap(sr); case 24: return new DsFm(sr);
     case 25: return new Electric(sr); case 26: return new Tension(sr); case 27: return new Collision(sr);
     case 28: return new Impulse(sr, bank); case 29: return new Granulator(sr, bank);
-    case 32: return new FlmMiniSynth(sr); case 33: return new FlmSuperSaw(sr);
+    case 30: return new FlmDirectWave(sr, bank); case 31: return new FlmGms(sr); case 32: return new FlmMiniSynth(sr); case 33: return new FlmSuperSaw(sr);
     default: return nullptr;
   }
 }
@@ -53,7 +53,7 @@ Device* makeDevice(int type, double sr, float* sidechain) {
     default: return nullptr;
   }
 }
-bool instPorted(int type) { return type == 1 || type == 2 || type == 3 || type == 4 || type == 5 || type == 6 || type == 7 || type == 8 || type == 9 || type == 10 || type == 11 || type == 12 || type == 13 || type == 14 || type == 15 || type == 17 || type == 18 || type == 16 || (type >= 19 && type <= 29) || type == 32 || type == 33; }
+bool instPorted(int type) { return type == 1 || type == 2 || type == 3 || type == 4 || type == 5 || type == 6 || type == 7 || type == 8 || type == 9 || type == 10 || type == 11 || type == 12 || type == 13 || type == 14 || type == 15 || type == 17 || type == 18 || type == 16 || (type >= 19 && type <= 29) || type == 30 || type == 31 || type == 32 || type == 33; }
 bool devPorted(int type) { return (type >= 17 && type <= 45) || (type >= 46 && type <= 51) || type == 12 || type == 13 || type == 16 || type == 1 || type == 6 || type == 9 || type == 0 || type == 2 || type == 3 || type == 4 || type == 5 || type == 7 || type == 8 || type == 10 || type == 14 || type == 15; }
 
 }  // namespace mdaw

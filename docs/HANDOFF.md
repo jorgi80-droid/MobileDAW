@@ -212,12 +212,13 @@ Peta lengkap per layar: **`docs/GESTURES.md`**. Ringkasan teknis:
   = zona 100 + k * 8 seperti DirectWave Klasik). Panel `fxkit.js` VI[30..33] memakai `flmTabs` (tab FLM, ingat tab per track).
 - Tipe lama 1 / 2 / 4 / 5 tidak diubah (nama + " Klasik"), jadi proyek lama, preset lama, demo dan golden tetap identik. Track synth baru =
   32 (MiniSynth).
-- **Port C++ (sesi ini)**: MiniSynth (32) dan SuperSaw (33) di-port ke `native/engine/flmsyn.{h,cpp}` — primitif bersama (Svf ZDF, FlmVoices
-  poly/mono/legato/slide/polySlide, LFO, Delay/ModDelay/Phaser/Reverb, decimate, Arp) ditulis ulang di C++ dengan aturan jsmath.h (double
-  skalar, buffer float, urutan operasi JS, tanpa FMA). Diverifikasi golden `params-/play-/presets-minisynth` & `-supersaw` (identik /
-  selisih ≤ −156 dB, jauh di bawah ambang −90/−70). Hook `Instrument::setSongPos` ditambah (engine.cpp memanggilnya per blok seperti
-  core.js) untuk LFO Tempo-Sync SuperSaw. Registry `instPorted` + `units.cpp` + `CMakeLists` diperbarui. **DirectWave (30) & GMS (31)
-  belum** — masih fallback Web otomatis (`blocker()` di web.js). GMS perlu port wavetable (FFT) dan DirectWave perlu antarmuka bank sample.
+- **Port C++ (sesi ini)**: keempat instrumen FLM (30/31/32/33) di-port ke `native/engine/flmsyn.{h,cpp}` — primitif bersama (Svf ZDF,
+  FlmVoices poly/mono/legato/slide/polySlide, LFO, Delay/ModDelay/Phaser/Reverb, decimate, Arp, wavetable FFT GMS, bank sample DirectWave)
+  ditulis ulang di C++ dengan aturan jsmath.h (double skalar, buffer float, urutan operasi JS, tanpa FMA). Diverifikasi golden
+  `params-/play-/presets-minisynth`, `-supersaw`, `-gms` dan `inst-flmdw` — identik / selisih ≤ −156 dB (ambang −90/−70). Hook
+  `Instrument::setSongPos` ditambah (engine.cpp memanggilnya per blok seperti core.js) untuk LFO Tempo-Sync SuperSaw. `GmsVoice` FLM diberi
+  nama `GmsFlmVoice` agar tidak bentrok dengan GMS klasik di `inst_classic.h`. Registry `instPorted` + `units.cpp` + `CMakeLists` diperbarui.
+  **Tidak ada lagi fallback Web untuk 30–33** — semua instrumen MobileDAW kini punya port C++.
 - Rincian kontrol, batas (kurva buatan MDAW, mod wheel belum ada sumbernya) dan tes: `docs/FLM-INSTRUMENTS.md`.
 
 ## Kualitas MP3 + instrumen impor FLM (sesi ini)
