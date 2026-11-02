@@ -199,6 +199,9 @@ Peta lengkap per layar: **`docs/GESTURES.md`**. Ringkasan teknis:
   tinggi section (ResizeObserver, `_maxW` saat halaman melebihi layar). Kartu `.flm-card` lebar = isi. `devices.js fitKit`: zoom panel Live
   lain agar muat tinggi panel (0,7–1,15×); `lvDrag` sudah menormalkan koordinat jadi aman untuk zoom.
 - Tape Stop = device 52 (`fx8.js`, buffer cincin, kecepatan turun / naik dengan kurva Warp, crossfade ke live). fx-test: tes khusus.
+  **Port C++ (sesi ini): `native/engine/fx8.{h,cpp}` `TapeStop`** — satu-satunya efek yang belum di-port; kini `devPorted(52)` dan golden
+  `fx-tapestop` identik bit. Dengan ini **benar-benar semua instrumen (1–33) dan efek (0–52) punya port C++** — proyek apa pun bisa jalan
+  penuh native di Android tanpa fallback Web.
 - Impor FLM: `fxmap.js resolveFlmAutomation` (otomasi plugin), FLM_TYPES baru (2 / 23 / 52 synth, 6 / 15 / 32 / 35 / 42 / 46 efek).
 - Presisi impor FLM (`docs/IMPORT.md` bagian "Presisi"): tick pecahan (1/128 ketuk = 7,5 tick, `build.js T`), level bawaan f32 0,85312408 =
   0 dB (`flm.js LVL0`; berlaku juga untuk FLP / ALS: gain model 1 = 0 dB), velocity = mentah / 32767 sampai 2 (boost; engine memakai

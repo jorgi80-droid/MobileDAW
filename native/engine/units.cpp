@@ -19,6 +19,7 @@
 #include "fx5.h"
 #include "fxm.h"
 #include "flmsyn.h"
+#include "fx8.h"
 
 namespace mdaw {
 
@@ -48,12 +49,13 @@ Device* makeDevice(int type, double sr, float* sidechain) {
     case 38: return new MultibandDyn(sr); case 39: return new Resonators(sr); case 40: return new Corpus(sr);
     case 12: return new Levelness(sr); case 13: return new Analyzer(sr); case 16: return new MiniMeters(sr);
     case 51: return new AudioEffectRack(sr); case 46: return new SpectralTime(sr); case 47: return new SpectralResonator(sr);
+    case 52: return new TapeStop(sr);
     case 48: return new LfoMod(sr); case 49: return new ShaperMod(sr); case 50: return new EnvFollower(sr);
     case 41: return new Vocoder(sr); case 42: return new Shifter(sr); case 43: return new GrainDelay(sr); case 44: return new HybridReverb(sr); case 45: return new Looper(sr);
     default: return nullptr;
   }
 }
 bool instPorted(int type) { return type == 1 || type == 2 || type == 3 || type == 4 || type == 5 || type == 6 || type == 7 || type == 8 || type == 9 || type == 10 || type == 11 || type == 12 || type == 13 || type == 14 || type == 15 || type == 17 || type == 18 || type == 16 || (type >= 19 && type <= 29) || type == 30 || type == 31 || type == 32 || type == 33; }
-bool devPorted(int type) { return (type >= 17 && type <= 45) || (type >= 46 && type <= 51) || type == 12 || type == 13 || type == 16 || type == 1 || type == 6 || type == 9 || type == 0 || type == 2 || type == 3 || type == 4 || type == 5 || type == 7 || type == 8 || type == 10 || type == 14 || type == 15; }
+bool devPorted(int type) { return (type >= 17 && type <= 45) || (type >= 46 && type <= 51) || type == 12 || type == 13 || type == 16 || type == 1 || type == 6 || type == 9 || type == 0 || type == 2 || type == 3 || type == 4 || type == 5 || type == 7 || type == 8 || type == 10 || type == 14 || type == 15 || type == 52; }
 
 }  // namespace mdaw
