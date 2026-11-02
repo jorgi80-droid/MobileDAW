@@ -217,27 +217,42 @@
 }
 
 /* ===== v59 - About tab (Pengaturan > About): hero, people, GitHub-style Languages bar ===== */
-.ab-hero { display: flex; gap: var(--sp-6); align-items: center; padding: 10px 12px; border: 1px solid var(--line); background: var(--panel2); border-radius: var(--r-3); }
-.ab-ic { width: 56px; height: 56px; border-radius: 12px; flex: none; background: var(--bg); }
-.ab-title { font-size: 18px; font-weight: var(--fw-b); color: var(--text); letter-spacing: .2px; margin-bottom: 2px; }
-.ab-people { display: flex; flex-wrap: wrap; gap: var(--sp-5); }
-.ab-person { flex: 1 1 150px; display: flex; align-items: center; gap: var(--sp-5); padding: 8px 10px; border: 1px solid var(--line); background: var(--panel2); border-radius: var(--r-3); min-width: 0; }
-.ab-av { width: 44px; height: 44px; border-radius: 50%; flex: none; overflow: hidden; display: grid; place-items: center; border: 1px solid var(--line); }
-.ab-av.empty { background: var(--raise); }
-.ab-av.empty svg { width: 100%; height: 100%; fill: var(--dim); opacity: .75; }
-.ab-av.mark { background: var(--accent); color: var(--accent-ink); font: 700 20px/1 var(--font); }
+.ab-hero { display: flex; gap: var(--sp-6); align-items: center; padding: 14px; border: 1px solid var(--line); border-left: 2px solid var(--accent); border-radius: var(--r-4);
+  background: var(--panel2); background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 16%, var(--panel2)), var(--panel2) 58%); }
+.ab-iconwrap { flex: none; padding: 4px; border-radius: 15px; background: color-mix(in srgb, var(--accent) 22%, var(--bg)); box-shadow: 0 4px 14px rgba(0, 0, 0, .35), inset 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent); }
+.ab-ic { width: 60px; height: 60px; border-radius: 12px; display: block; }
+.ab-htext { min-width: 0; }
+.ab-title { font-size: 21px; font-weight: var(--fw-b); color: var(--text); letter-spacing: .3px; line-height: 1.1; }
+.ab-tag { color: var(--dim); font-size: var(--fs-4); margin: 3px 0 8px; }
+.ab-chips { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.ab-chip { font-size: var(--fs-2); font-weight: var(--fw-sb); color: var(--text); background: color-mix(in srgb, var(--accent) 10%, var(--bg)); border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line)); border-radius: 999px; padding: 2px 9px; letter-spacing: .02em; }
+.ab-sec { margin-top: 12px; }
+.ab-people { display: flex; flex-wrap: wrap; gap: var(--sp-4); }
+.ab-person { flex: 1 1 160px; display: flex; align-items: center; gap: var(--sp-5); padding: 9px 11px; border: 1px solid var(--line); background: var(--panel2); border-radius: var(--r-4); min-width: 0; }
+.ab-av { width: 46px; height: 46px; border-radius: 50%; flex: none; overflow: hidden; display: grid; place-items: center; }
+.ab-av.user { background: var(--raise); border: 1px solid var(--line); }
+.ab-av.user svg { width: 100%; height: 100%; fill: var(--dim); opacity: .75; }
+.ab-av.claude { background: linear-gradient(145deg, #7b6cf2, #a97cf3); box-shadow: 0 3px 12px rgba(123, 108, 242, .4), inset 0 0 0 1px rgba(255, 255, 255, .18); }
+.ab-av.claude svg { width: 100%; height: 100%; }
+.ab-av.claude svg text { fill: #fff; font: 800 30px/1 var(--font); }
+.ab-av.claude svg .ab-spk { fill: rgba(255, 255, 255, .95); }
 .ab-pn { display: flex; flex-direction: column; min-width: 0; }
 .ab-pn b { color: var(--text); font-size: var(--fs-6); letter-spacing: .3px; overflow: hidden; text-overflow: ellipsis; }
-.ab-pn span { color: var(--dim); font-size: var(--fs-3); }
-.ab-bar { display: flex; gap: var(--sp-1); height: 10px; border-radius: 5px; overflow: hidden; background: var(--bg); margin: 2px 0 8px; }
+.ab-pn span { color: var(--dim); font-size: var(--fs-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ab-bar { display: flex; gap: 2px; height: 11px; border-radius: 6px; overflow: hidden; background: var(--bg); margin: 2px 0 10px; box-shadow: inset 0 0 0 1px var(--line); }
 .ab-bar i { display: block; min-width: 3px; }
 .ab-leg { display: flex; flex-wrap: wrap; gap: 6px 16px; color: var(--dim); font-size: var(--fs-4); }
 .ab-lg { display: inline-flex; align-items: center; gap: var(--sp-3); white-space: nowrap; }
 .ab-lg i { width: 10px; height: 10px; border-radius: 50%; flex: none; }
 .ab-lg b { color: var(--text); font-weight: var(--fw-b); }
-.ab-stats { margin-top: 6px; border-top: 1px solid var(--sep); }
-.ab-row { display: flex; justify-content: space-between; gap: var(--sp-5); padding: 5px 0; border-bottom: 1px solid var(--sep); font-size: var(--fs-3); color: var(--dim); }
-.ab-row span:first-child { color: var(--text); }
+.ab-statbox { margin-top: 10px; border: 1px solid var(--line); border-radius: var(--r-4); overflow: hidden; }
+.ab-row { display: flex; justify-content: space-between; align-items: center; gap: var(--sp-5); padding: 7px 11px; border-bottom: 1px solid var(--sep); font-size: var(--fs-3); }
+.ab-rn { display: inline-flex; align-items: center; gap: var(--sp-3); color: var(--text); font-weight: var(--fw-sb); }
+.ab-rn i { width: 9px; height: 9px; border-radius: 2px; flex: none; }
+.ab-rv { color: var(--dim); }
+.ab-total { display: flex; justify-content: space-between; gap: var(--sp-5); padding: 8px 11px; background: var(--panel2); font-size: var(--fs-3); font-weight: var(--fw-sb); color: var(--text); }
+.ab-foot { margin-top: 14px; text-align: center; color: var(--dim); font-size: var(--fs-2); letter-spacing: .03em; }
+.ab-foot b { color: var(--text); font-weight: var(--fw-sb); }
 
 /* ===== v63 - mixer: Return / Master strips share the row grid of the track strips (fader, meter, pan and buttons level across the whole mixer) =====
    the spacers are invisible, inert boxes with the exact heights of the real rows (measured: read-out 12, output 20, sends 52, pan 52, buttons 26) */
