@@ -45,6 +45,24 @@ Baca juga `README-ANDROID.md` (build, install, status fase 2).
 | Ekspor: Mono, pilihan sample rate (resampler Kaiser HQ), rentang Area loop | selesai (`tools/export-test.mjs`) |
 | Kontrol sentuh gaya FL Studio Mobile: pengaturan gestur, ketuk-ganda bersih, batal gestur, Kontrol Klip tidak modal, Snap ketuk/tahan, reorder device, seleksi latar, titik otomasi banyak, menu pad drum, Simpan cepat geser + cadangan, pintasan keyboard yang bisa diubah | selesai (`docs/GESTURES.md`, `tools/gesture-test.mjs`, `tools/touch-ui-test.mjs`) |
 
+## Plugin selalu di jendela mengambang (sesi ini)
+Aturan pemilik: setiap plugin (instrumen & efek) tampil di jendela mengambang; saat jendela dikecilkan, kartu di rak menampilkan
+**"Klik Tampilkan untuk menampilkan plugin"** dengan tombol Tampilkan. Berlaku untuk semua plugin, termasuk yang akan datang.
+- Preferensi `floatPlugins` (prefs.js, **default ON**, VERSION 5). Bukan kunci lama → ditangani DEFAULTS; migrasi hanya memaksa ON untuk
+  proyek lama yang belum punya kunci itu dan **menghormati pilihan eksplisit** (`saved.floatPlugins === undefined`). Toggle di
+  Pengaturan → Tampilan → "Plugin selalu di jendela mengambang".
+- Sistem jendela mengambang sudah ada (`js/floatwin.js`: geser/ubah ukuran/gulung/kecilkan, chip di tray). Ditambah `isMin(id)`.
+- `js/devices.js`: saat `floatPlugins` ON, `instCard` / `fxCard` inline merender **kartu launcher** (`floatedCard`) alih-alih panel penuh —
+  header plugin tetap ada (bypass, nama, preset, menu ⋮). Pesan kartu mengikuti status jendela: tertutup → "Plugin tampil di jendela
+  mengambang.", terbuka → "Terbuka di jendela mengambang." + Tutup, **diminimize → "Klik Tampilkan untuk menampilkan plugin." + `.fl-min`**.
+  Device view sudah re-render pada `FW.onFloatChange`, jadi kartu ikut berubah saat minimize/restore. Panel penuh hanya hidup di jendela.
+- Saat `floatPlugins` OFF: perilaku lama (panel inline + tombol pop-out). Fold hanya berlaku saat OFF.
+- CSS `css/float.css`: `.card.floated .b.prim`, `.card.floated.fl-min` (tepi aksen).
+- Tes: `tools/float-ui-test.mjs` (Chromium, bukan bagian run-tests, seperti touch-ui-test): launcher saat ON, Tampilkan membuka jendela,
+  minimize → pesan persis + fl-min + chip, Tampilkan memulihkan, OFF → panel inline lagi. Alat screenshot/sentuh (`flm-inst-shots`,
+  `ui-shots`, `ui-perf`, `touch-ui-test`) kini menyuntik `floatPlugins:false` agar menangkap panel inline.
+- VST pihak ketiga (mis. reFX Nexus) **tidak** di-port/dekompilasi. Kerangka ini untuk plugin MobileDAW sendiri.
+
 ## Sesi ini: impor proyek FL Studio Mobile (.flm), FL Studio (.flp), Ableton (.als)
 Dokumen lengkap: **`docs/IMPORT.md`** (format FLM yang dipetakan, aturan placeholder, alur + progres, tes).
 - Kode: `js/import/flm.js` (pembaca FLM + `flmToModel`), `als.js` (gzip XML, parser XML kecil tanpa DOM), `flp.js` (event, eksperimental),

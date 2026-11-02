@@ -23,6 +23,7 @@ const emit = () => { for (const f of [...listeners]) { try { f(); } catch (e) { 
 
 export const onFloatChange = (fn) => { listeners.add(fn); return () => listeners.delete(fn); };
 export const isOpen = (id) => wins.has(id);
+export const isMin = (id) => { const w = wins.get(id); return !!(w && w.s.min); };   // open but minimised to a tray chip
 export const openIds = () => [...wins.keys()];
 
 function ensureLayer() {

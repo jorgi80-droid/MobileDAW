@@ -49,10 +49,14 @@
 .fw-chip:active { background: var(--raise2); }
 /* pop-out button in the card headers, and the placeholder left in the chain */
 .card h4 .fw-pop { width: 24px; }
-.card.floated { min-width: 120px; opacity: .8; }
-.card.floated .fl-msg { padding: 8px 10px; color: var(--dim); font-size: var(--fs-3); line-height: 1.35; max-width: 190px; }
+.card.floated { min-width: 150px; opacity: .92; }
+.card.floated .fl-msg { padding: 8px 10px; color: var(--dim); font-size: var(--fs-3); line-height: 1.35; max-width: 200px; }
 .card.floated .fl-btns { display: flex; gap: var(--sp-2); padding: 0 8px 8px; }
 .card.floated .fl-btns .b { flex: 1; height: 26px; min-width: 0; padding: 0 6px; font-size: var(--fs-3); }
+.card.floated .fl-btns .b.prim { background: var(--accent); color: #0a0a0c; border-color: transparent; font-weight: var(--fw-sb); }
+/* minimised: the card is the cue to bring the plugin back (owner's rule) — brighter, accent edge, pulse once */
+.card.floated.fl-min { opacity: 1; box-shadow: inset 2px 0 0 var(--accent); }
+.card.floated.fl-min .fl-msg { color: var(--text); }
 
 /* ====================================================================================================
    MiniMeters

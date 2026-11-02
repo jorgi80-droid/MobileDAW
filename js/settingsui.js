@@ -307,6 +307,8 @@ export function openSettings() {
           btn('Layar penuh', toggleFullscreen), btn('Layar penuh otomatis: ' + (prefs.fullscreen ? 'ya' : 'tidak'), (e) => { prefs.fullscreen = !prefs.fullscreen; savePrefs(); e.currentTarget.textContent = 'Layar penuh otomatis: ' + (prefs.fullscreen ? 'ya' : 'tidak'); }),
           ...(canInstall() ? [btn('Pasang aplikasi', () => promptInstall())] : [])),
       section('Timeline', snapBtn, follow),
+      section('Plugin', toggle('Plugin selalu di jendela mengambang', 'floatPlugins', () => P.emit('devices')),
+        h('div', { class: 'sv' }, 'Setiap instrumen dan efek dibuka di jendela mengambang yang bisa digeser, diubah ukurannya, digulung, dan dikecilkan. Kartu di rak tetap sebagai pintasan: ketuk Tampilkan untuk membukanya. Saat jendela dikecilkan, kartu menampilkan "Klik Tampilkan untuk menampilkan plugin". Matikan untuk mengedit panel plugin langsung di dalam rak.')),
     ],
     Sentuhan: [touchSection()],
     Pintasan: [keysSection()],

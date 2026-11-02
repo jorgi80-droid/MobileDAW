@@ -14,7 +14,7 @@ await new Promise((ok) => server.once('listening', ok));
 const browser = await chromium.launch({ args: ['--disable-gpu-vsync', '--disable-frame-rate-limit'] });
 const page = await (await browser.newContext({ viewport: { width: +(process.env.VW || 1180), height: +(process.env.VH || 560) }, deviceScaleFactor: 2 })).newPage();
 await page.addInitScript((th) => {
-  try { localStorage.setItem('mobiledaw.prefs.v1', JSON.stringify({ folderAsked: true, theme: th })); } catch (_) { /* no storage */ }
+  try { localStorage.setItem('mobiledaw.prefs.v1', JSON.stringify({ folderAsked: true, theme: th, floatPlugins: false })); } catch (_) { /* no storage */ }
   const raf = window.requestAnimationFrame.bind(window); window.__fr = [];
   window.requestAnimationFrame = (cb) => raf((ts) => { const t0 = performance.now(); cb(ts); window.__fr.push([t0, performance.now() - t0]); });
 }, process.env.THEME || 'dark');

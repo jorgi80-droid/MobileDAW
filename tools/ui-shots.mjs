@@ -18,7 +18,7 @@ const browser = await chromium.launch();
 const page = await (await browser.newContext({ viewport: { width: +(process.env.VW || 1180), height: +(process.env.VH || 560) }, deviceScaleFactor: 2, hasTouch: true })).newPage();
 const errs = [];
 page.on('pageerror', (e) => errs.push(e.message)); page.on('console', (m) => { if (m.type() === 'error') errs.push(m.text()); });
-await page.addInitScript((th) => { try { localStorage.setItem('mobiledaw.prefs.v1', JSON.stringify({ folderAsked: true, theme: th })); } catch (_) { /* no storage */ } }, process.env.THEME || 'dark');
+await page.addInitScript((th) => { try { localStorage.setItem('mobiledaw.prefs.v1', JSON.stringify({ folderAsked: true, theme: th, floatPlugins: false })); } catch (_) { /* no storage */ } }, process.env.THEME || 'dark');
 await page.goto(`http://127.0.0.1:${server.address().port}/index.html`);
 await page.waitForFunction(() => window.__dawBooted, null, { timeout: 15000 });
 await page.waitForTimeout(1200);
