@@ -378,7 +378,8 @@ export const DEVICES = {
     { n: 'Mix', min: 0, max: 1, def: 0.3, unit: '%' },
     { n: 'Pre-delay', min: 0, max: 60, def: 0, unit: 'ms' },
     { n: 'Low Cut', min: 20, max: 1000, def: 120, curve: 'log', unit: 'Hz' } ] },
-  16: { name: 'MiniMeters', view: 'minimeters', params: [        // transparent metering suite; the display options live in minimeters.js (saved per device)
+  16: { name: 'MiniMeters', view: 'minimeters', big: true, params: [   // big: a large metering suite -> opens in a floating window (prefs.floatPlugins), not inline in the rack
+
     { n: 'Reset', min: 0, max: 1000000, def: 0, step: 1, hidden: true },
     { n: 'FFT', min: 0, max: 4, def: 2, step: 1, hidden: true },
     { n: 'Follow Pitch', min: 0, max: 1, def: 0, step: 1, hidden: true },

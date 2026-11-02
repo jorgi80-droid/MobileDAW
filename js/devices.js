@@ -97,11 +97,14 @@ function pitchKnob(i, t) {
 }
 
 // ---- floating windows: the same cards, opened as free windows (drag, resize, shrink, minimise). While a window is open the chain shows a
-// placeholder. With prefs.floatPlugins on (owner's rule) every plugin lives only in a floating window and the chain always shows this card:
+// placeholder. Only a LARGE module (def.big, e.g. MiniMeters) auto-opens in a floating window when prefs.floatPlugins is on; modules that
+// fit the rack card stay inline (owner: float big modules, keep small ones below). The pop-out button still floats any module by hand.
+// While a module is floated the chain shows this card:
 //   window minimised -> "Klik Tampilkan untuk menampilkan plugin." + Tampilkan   (the explicit message the owner asked for)
 //   window open & visible -> "Terbuka di jendela mengambang." + Tampilkan (raise) + Tutup
 //   window closed (float-only mode) -> "Plugin tampil di jendela mengambang." + Tampilkan (opens it)
 const popBtn = (open) => h('button', { class: 'fw-pop', 'aria-label': 'Buka di jendela mengambang', title: 'Jendela mengambang', onclick: (e) => { e.stopPropagation(); open(); } }, '\u29C9');
+const bigMod = (def) => !!(def && def.big);   // a module large enough to default to a floating window (MiniMeters and the like)
 function floatedCard(key, name, open, o = {}) {
   const head = o.head || h('h4', {}, h('span', {}, name));
   const openEx = FW.isOpen(key), min = openEx && FW.isMin(key);
@@ -142,7 +145,7 @@ export function openInstWindow(trackId) {
 function instCard(i, t, o = {}) {
   const def = INSTRUMENTS[t.inst.type];
   const fk = 'i' + t.id;
-  if (!o.floating && !prefs.floatPlugins && isFolded(fk)) return foldedCard(fk, def.name, null);
+  if (!o.floating && isFolded(fk) && !FW.isOpen('i:' + t.id)) return foldedCard(fk, def.name, null);
   const head = h('h4', {}, h('i', { class: 'pdot' }));
   if (t.kind === 'midi') head.append(h('button', { class: 'dv-name', 'aria-label': 'Ganti instrumen', onclick: (e) => {
     const r = e.currentTarget.getBoundingClientRect();
@@ -170,7 +173,7 @@ function instCard(i, t, o = {}) {
       menu(items, r.left - 60, r.bottom);
     } }, 'Preset'));
   }
-  if (!o.floating && (prefs.floatPlugins || FW.isOpen('i:' + t.id))) return floatedCard('i:' + t.id, def.name, () => openInstWindow(t.id), { head });
+  if (!o.floating && (FW.isOpen('i:' + t.id) || (prefs.floatPlugins && bigMod(def)))) return floatedCard('i:' + t.id, def.name, () => openInstWindow(t.id), { head });
   if (!o.floating) head.append(popBtn(() => openInstWindow(t.id)));
   if (!o.floating) head.append(foldBtn(fk, false));
   if (def.view === 'kit') { const kv = instKitView(i, t, o.every || every); if (kv) return h('div', { class: 'card lkcard lvcard' + (def.flm ? ' flm-card flm-t' + t.inst.type : '') }, head, def.zones ? h('div', { class: 'inst-row' }, h('div', { class: 'inst-side' }, zonePanel(i, t)), kv.el) : kv.el); }   // FLM DirectWave: zone list + panel   // Live 12 instruments (fxkit.js VI)
@@ -335,11 +338,11 @@ function fxCard(i, d, di, n, o = {}) {
     ], r.left - 120, r.bottom);
   } }, '\u22EF');
   const dname = d.missing ? '[Tidak tersedia] ' + d.missing.name : def.name;
-  if (!o.floating && !d.missing && (prefs.floatPlugins || FW.isOpen('d:' + d.id))) {
+  if (!o.floating && !d.missing && (FW.isOpen('d:' + d.id) || (prefs.floatPlugins && bigMod(def)))) {
     const head = h('h4', {}, pw, h('span', {}, dname), more);
     return floatedCard('d:' + d.id, dname, () => openDeviceWindow(d.id), { head, off: d.bypass });
   }
-  if (!o.floating && !prefs.floatPlugins && isFolded(d.id)) { const c = foldedCard(d.id, dname, pw); if (d.bypass) c.classList.add('off'); return c; }
+  if (!o.floating && isFolded(d.id)) { const c = foldedCard(d.id, dname, pw); if (d.bypass) c.classList.add('off'); return c; }
 
   let view = null;
   const ids = () => new Set((P.tr(i) || { devices: [] }).devices.map((x) => String(x.id)));   // the chain's effect cards (dataset keys are strings)

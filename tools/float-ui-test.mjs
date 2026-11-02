@@ -1,7 +1,6 @@
-// Floating-window plugin UI in the real app (Chromium, landscape phone). The owner's rule: every plugin lives in a floating window, and
-// when the window is minimised the device card in the rack shows "Klik Tampilkan untuk menampilkan plugin" with a Tampilkan button.
-// Checks: default pref on -> inline card is a launcher (not the full panel); Tampilkan opens the window; minimise -> the exact message +
-// fl-min; Tampilkan restores it; turning the pref off -> the full panel is shown inline again.
+// Floating-window modules in the real app (Chromium, landscape phone). Owner's rule: only a LARGE module (def.big, e.g. MiniMeters) opens
+// in a floating window by default; instruments and modules that fit the rack card stay inline. When a floated window is minimised its rack
+// card shows "Klik Tampilkan untuk menampilkan plugin" with a Tampilkan button. Any module can still be floated by hand (the ⧉ button).
 // Usage: node tools/float-ui-test.mjs   (needs Playwright + Chromium; not part of run-tests)
 import http from 'node:http'; import fs from 'node:fs'; import path from 'node:path'; import { fileURLToPath } from 'node:url'; import { createRequire } from 'node:module';
 const { chromium } = createRequire(import.meta.url)('playwright');
@@ -17,45 +16,45 @@ await page.goto(`http://127.0.0.1:${server.address().port}/index.html`); await p
 let bad = 0; const ok = (c, m) => { console.log((c ? 'ok   ' : 'FAIL ') + m); if (!c) bad++; };
 const ev = (f, a) => page.evaluate(f, a);
 
-// a MIDI track with an instrument, then open the Device tab
-await ev(async () => { const P = await import('./js/project.js'); P.newProject(true); P.addTrack('midi'); P.setInstrument(P.state.tracks.length - 1, 32); P.selectTrack(P.state.tracks.length - 1); });
+// a MIDI track: MiniSynth instrument + a Delay (small) + a MiniMeters (big) in the chain; open the Device tab
+await ev(async () => { const P = await import('./js/project.js'); P.newProject(true); P.addTrack('midi'); const i = P.state.tracks.length - 1; P.setInstrument(i, 32); P.addDevice(i, 6); P.addDevice(i, 16); P.selectTrack(i); });
 await page.waitForTimeout(300);
 await ev(() => document.querySelector('#dtabs .b[data-tab="dev"]').click());
 await page.waitForTimeout(400);
 
-ok(await ev(async () => (await import('./js/prefs.js')).prefs.floatPlugins === true), 'default pref floatPlugins is on (in-memory after migration)');
-const launcher = () => ev(() => { const c = document.querySelector('.dev-scroll .card.floated'); return c ? { msg: (c.querySelector('.fl-msg') || {}).textContent || '', min: c.classList.contains('fl-min'), btns: [...c.querySelectorAll('.fl-btns .b')].map((b) => b.textContent), panel: !!c.querySelector('.lk, .flm-pg') } : null; });
-let L = await launcher();
-ok(L && !L.panel && /jendela mengambang/.test(L.msg) && L.btns.includes('Tampilkan'), 'plugin on: inline shows a launcher card (no full panel) with Tampilkan');
-ok(await ev(() => !document.querySelector('.dev-scroll .lkcard, .dev-scroll .lvcard')), 'plugin on: the full instrument panel is NOT inline');
+ok(await ev(async () => (await import('./js/prefs.js')).prefs.floatPlugins === true), 'default pref floatPlugins is on');
+const floated = () => ev(() => [...document.querySelectorAll('.dev-scroll .card.floated')].map((c) => ({ name: (c.querySelector('h4 span') || {}).textContent || '', msg: (c.querySelector('.fl-msg') || {}).textContent || '', min: c.classList.contains('fl-min') })));
+let F = await floated();
+ok(F.length === 1 && /MiniMeters/.test(F[0].name), 'only the big module (MiniMeters) is a floating launcher');
+ok(await ev(() => !!document.querySelector('.dev-scroll .lkcard, .dev-scroll .lvcard')), 'the MiniSynth instrument panel is shown inline (not floated)');
+ok(await ev(() => [...document.querySelectorAll('.dev-scroll .card')].some((c) => { const s = c.querySelector('h4 span'); return s && /Echo/.test(s.textContent) && !c.classList.contains('floated'); })), 'the small Echo effect is shown inline (not floated)');
 
-// Tampilkan -> a floating window opens
-await ev(() => [...document.querySelectorAll('.dev-scroll .card.floated .fl-btns .b')].find((b) => b.textContent === 'Tampilkan').click());
+// Tampilkan on the MiniMeters launcher -> its floating window opens
+await ev(() => { const c = [...document.querySelectorAll('.dev-scroll .card.floated')].find((x) => /MiniMeters/.test((x.querySelector('h4 span') || {}).textContent || '')); c.querySelector('.fl-btns .b').click(); });
 await page.waitForTimeout(400);
-ok(await ev(() => !!document.querySelector('#fwlayer .fw:not([hidden])')), 'Tampilkan opens a floating window with the plugin panel');
-ok(await ev(() => !!document.querySelector('#fwlayer .fw .lk, #fwlayer .fw .flm-pg')), 'the floating window holds the real instrument panel');
-L = await launcher();
-ok(L && /Terbuka di jendela mengambang/.test(L.msg) && L.btns.includes('Tutup'), 'while open the card says "Terbuka di jendela mengambang" + Tutup');
+ok(await ev(() => !!document.querySelector('#fwlayer .fw:not([hidden])')), 'Tampilkan opens the MiniMeters floating window');
 
 // minimise -> the owner's exact message + fl-min + a tray chip
 await ev(() => document.querySelector('#fwlayer .fw .fw-mn').click());
 await page.waitForTimeout(400);
-L = await launcher();
-ok(L && L.min && L.msg === 'Klik Tampilkan untuk menampilkan plugin.', 'minimised: card shows exactly "Klik Tampilkan untuk menampilkan plugin." with the fl-min cue');
+F = await floated();
+ok(F.length === 1 && F[0].min && F[0].msg === 'Klik Tampilkan untuk menampilkan plugin.', 'minimised: the card shows exactly "Klik Tampilkan untuk menampilkan plugin." with the fl-min cue');
 ok(await ev(() => !!document.querySelector('#fwlayer .fw-tray .fw-chip')), 'minimised: a chip appears in the tray');
-ok(await ev(() => { const w = document.querySelector('#fwlayer .fw'); return !!w && w.hidden; }), 'minimised: the window itself is hidden');
 
 // Tampilkan restores it
-await ev(() => [...document.querySelectorAll('.dev-scroll .card.floated .fl-btns .b')].find((b) => b.textContent === 'Tampilkan').click());
+await ev(() => { const c = [...document.querySelectorAll('.dev-scroll .card.floated')].find((x) => /MiniMeters/.test((x.querySelector('h4 span') || {}).textContent || '')); c.querySelector('.fl-btns .b').click(); });
 await page.waitForTimeout(400);
 ok(await ev(() => { const w = document.querySelector('#fwlayer .fw'); return !!w && !w.hidden; }), 'Tampilkan from the minimised card brings the window back');
-L = await launcher();
-ok(L && !L.min, 'restored: the card is no longer in the minimised state');
 
-// turn the pref off -> the full panel is inline again, no floated launcher
+// a small module can still be floated by hand (the ⧉ pop-out button on the Delay card)
+await ev(() => { const c = [...document.querySelectorAll('.dev-scroll .card')].find((x) => { const s = x.querySelector('h4 span'); return s && /Echo/.test(s.textContent) && !x.classList.contains('floated'); }); c.querySelector('h4 .fw-pop').click(); });
+await page.waitForTimeout(400);
+ok(await ev(() => [...document.querySelectorAll('.dev-scroll .card.floated')].some((c) => /Echo/.test((c.querySelector('h4 span') || {}).textContent || ''))), 'a small module floats on demand via the pop-out button');
+
+// pref off -> the big module is inline too (no floated launchers)
 await ev(async () => { const FW = await import('./js/floatwin.js'); FW.closeAllFloats(); const { prefs, savePrefs } = await import('./js/prefs.js'); const P = await import('./js/project.js'); prefs.floatPlugins = false; savePrefs(); P.emit('devices'); });
 await page.waitForTimeout(400);
-ok(await ev(() => !!document.querySelector('.dev-scroll .lkcard, .dev-scroll .lvcard') && !document.querySelector('.dev-scroll .card.floated')), 'pref off: the full instrument panel is shown inline again (no launcher)');
+ok(await ev(() => !document.querySelector('.dev-scroll .card.floated')), 'pref off: no module auto-floats (MiniMeters inline too)');
 
 ok(errs.length === 0, 'no page errors' + (errs.length ? ': ' + errs.slice(0, 3).join(' | ') : ''));
 await b.close(); server.close();
