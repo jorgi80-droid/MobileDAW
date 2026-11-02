@@ -219,6 +219,12 @@ Peta lengkap per layar: **`docs/GESTURES.md`**. Ringkasan teknis:
   `Instrument::setSongPos` ditambah (engine.cpp memanggilnya per blok seperti core.js) untuk LFO Tempo-Sync SuperSaw. `GmsVoice` FLM diberi
   nama `GmsFlmVoice` agar tidak bentrok dengan GMS klasik di `inst_classic.h`. Registry `instPorted` + `units.cpp` + `CMakeLists` diperbarui.
   **Tidak ada lagi fallback Web untuk 30–33** — semua instrumen MobileDAW kini punya port C++.
+- **Perbaikan lag playback (Android)**: `android/app/src/main/cpp/bridge.cpp` melaporkan instrumen ter-port hanya untuk `t < 32`, jadi
+  **MiniSynth (32) & SuperSaw (33) tidak pernah dilaporkan ke sisi JS** → `blocker()` (web.js) menganggap proyek belum didukung native →
+  Android **jatuh ke engine Web yang lebih lambat** untuk proyek FLM → under-run/suara tersendat saat playback di proyek berat. Loop
+  diperbaiki ke `t < 64` (efek sudah `< 64`); `instPorted()` tetap menyaring tipe yang belum didukung. Gabung dengan port 30–33, proyek
+  FLM (termasuk hasil impor) kini jalan penuh di native C++ di Android — jauh lebih ringan. (Tidak teruji otomatis: butuh build NDK/HP;
+  golden desktop tak terpengaruh karena pakai host terpisah.)
 - Rincian kontrol, batas (kurva buatan MDAW, mod wheel belum ada sumbernya) dan tes: `docs/FLM-INSTRUMENTS.md`.
 
 ## Kualitas MP3 + instrumen impor FLM (sesi ini)

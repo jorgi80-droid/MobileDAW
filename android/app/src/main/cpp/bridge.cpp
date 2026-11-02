@@ -169,7 +169,7 @@ JNIEXPORT jstring JNICALL Java_com_mobiledaw_app_NativeEnginePlugin_nStart(JNIEn
   std::lock_guard<std::mutex> g(hostLock);
   if (!host || host->rate != sr) { if (host) { host->close(); host->collect(); delete host; } host = new Host(sr); }
   std::string out = std::to_string(sr) + ";";
-  for (int t = 0; t < 32; t++) if (instPorted(t)) out += std::to_string(t) + ",";
+  for (int t = 0; t < 64; t++) if (instPorted(t)) out += std::to_string(t) + ",";   // report every ported instrument (incl. FLM 30-33); instPorted() filters the rest
   out += ";";
   for (int t = 0; t < 64; t++) if (devPorted(t)) out += std::to_string(t) + ",";
   return env->NewStringUTF(out.c_str());
