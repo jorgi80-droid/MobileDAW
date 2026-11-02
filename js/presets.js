@@ -2,7 +2,7 @@
 //   instrument preset = synth type + its knob values + pitch
 //   mixer preset      = volume, pan, sends and the whole effect chain (devices with their settings) of one track
 import { eng } from './engine.js';
-import { INSTRUMENTS, DEVICES } from './defs.js';
+import { INSTRUMENTS, DEVICES, FLM_FMT, migrateFlmParams } from './defs.js';
 import * as P from './project.js';
 import { log } from './log.js';
 
@@ -17,7 +17,7 @@ export function saveInstrumentPreset(i, name) {
   const def = INSTRUMENTS[t.inst.type];
   const p = def.params.map((q, k) => num(t.inst.params[k], q.def));
   const path = `${DIR_INST}/${def.name} - ${name}.json`;
-  eng.writeText(path, JSON.stringify({ app: 'mobiledaw', kind: 'instrument', type: t.inst.type, inst: def.name, name, p, pitch: t.inst.pitch || 0 }));
+  eng.writeText(path, JSON.stringify({ app: 'mobiledaw', kind: 'instrument', type: t.inst.type, inst: def.name, name, p, pitch: t.inst.pitch || 0, flm: FLM_FMT }));
   log('info', 'preset instrumen disimpan', path);
   return { path };
 }
@@ -32,7 +32,15 @@ export function saveMixerPreset(i, name) {
   return { path };
 }
 function read(path) {
-  try { const o = JSON.parse(eng.readText(path)); return o && o.app === 'mobiledaw' ? o : null; } catch (_) { return null; }
+  try { const o = JSON.parse(eng.readText(path)); return o && o.app === 'mobiledaw' ? flmUp(o) : null; } catch (_) { return null; }
+}
+// presets saved before the FL Studio Mobile manual corrections: GMS / MiniSynth / SuperSaw values -> the current format (defs.js)
+function flmUp(o) {
+  if (o.flm >= FLM_FMT) return o;
+  if (o.kind === 'instrument' && Array.isArray(o.p)) migrateFlmParams(o.type, o.p);
+  if (o.kind === 'rack' && o.inst && Array.isArray(o.inst.p)) migrateFlmParams(o.inst.type, o.inst.p);
+  o.flm = FLM_FMT;
+  return o;
 }
 export const readPreset = read;   // parsed preset file or null (used by the browser to list / audition presets)
 // Apply a preset file to a track. Returns { ok, msg } or { error }.
@@ -89,7 +97,7 @@ export function saveRackPreset(i, name, from = 0, to = Infinity) {
   const devices = P.devicesSnapshot(i, from, to).map((d) => ({ ...d, name: (DEVICES[d.type] || {}).name }));
   const inst = from === 0 && to === Infinity && t.inst && t.kind === 'midi' ? { type: t.inst.type, name: INSTRUMENTS[t.inst.type].name, p: INSTRUMENTS[t.inst.type].params.map((q, k) => num(t.inst.params[k], q.def)), pitch: t.inst.pitch || 0 } : null;
   const path = `${DIR_RACK}/${name}.json`;
-  eng.writeText(path, JSON.stringify({ app: 'mobiledaw', kind: 'rack', name, devices, inst }));
+  eng.writeText(path, JSON.stringify({ app: 'mobiledaw', kind: 'rack', name, devices, inst, flm: FLM_FMT }));
   return { path, n: devices.length };
 }
 export function rackPresets() {

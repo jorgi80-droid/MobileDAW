@@ -6,7 +6,7 @@ import { valueAt as curveAt, densify } from './autocurve.js';
 import { encodeWav } from './engine/wav.js';
 import * as WOPS from './engine/waveops.js';
 import { log } from './log.js';
-import { INSTRUMENTS, DEVICES, DRUM_PADS, INST, PRESETS, normOf, valOf, MOD_MAP, IRACK_DEF, migrateClassicInst } from './defs.js';
+import { INSTRUMENTS, DEVICES, DRUM_PADS, INST, PRESETS, normOf, valOf, MOD_MAP, IRACK_DEF, migrateClassicInst, migrateFlmInst, FLM_FMT } from './defs.js';
 
 export const PPQ = 960, MAX_TRACKS = 64;
 export let BEAT = PPQ, BAR = PPQ * 4;   // live bindings: they change with the time signature (setSig), so always read them at use time
@@ -1307,7 +1307,7 @@ export function serialize() {
     if (k === 'sf' && v) return { path: v.path, preset: v.preset };
     return v;
   };
-  return JSON.stringify({ v: 2, name: state.projectName, bpm: state.bpm, sig: state.sig, sigs: state.sigs, markers: state.markers, groove: state.groove, countIn: state.countIn, punch: state.punch, recLoop: state.recLoop, loop: state.loop, tracks: state.tracks, master: state.master, returns: state.returns, cc: state.ccLinks }, compact);
+  return JSON.stringify({ v: 2, flm: FLM_FMT, name: state.projectName, bpm: state.bpm, sig: state.sig, sigs: state.sigs, markers: state.markers, groove: state.groove, countIn: state.countIn, punch: state.punch, recLoop: state.recLoop, loop: state.loop, tracks: state.tracks, master: state.master, returns: state.returns, cc: state.ccLinks }, compact);
 }
 
 // onProgress(fraction): optional, called while samples are decoded / stretched clips rendered (big imported projects take a while)
@@ -1354,6 +1354,7 @@ async function deserializeInner(text, onProgress) {
   state.projectName = o.name || 'Untitled';
   state.returns = Array.isArray(o.returns) && o.returns.length >= 2 && o.returns.length <= MAX_FX ? o.returns : makeReturns();
   state.tracks = o.tracks;
+  if (!(o.flm >= FLM_FMT)) for (const t of state.tracks) migrateFlmInst(t && t.inst);   // FLM synth parameters saved before the manual corrections
   migrateClassic(state.tracks);
   state.ccLinks = o.cc || {};
   for (const t of state.tracks) { const oc = OLD_COLORS.indexOf(t.color); if (oc >= 0) t.color = COLORS[oc]; else if (t.color === '#8ea2c0') t.color = AUTO_COLOR; t.send = t.send || [0, 0]; t.clips = Array.isArray(t.clips) ? t.clips : []; t.devices = Array.isArray(t.devices) ? t.devices : []; }

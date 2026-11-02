@@ -63,8 +63,9 @@ Format tidak terdokumentasi; struktur di bawah dibaca dan diverifikasi pada proy
   = resample (kecepatan ikut berubah) → warp mode `repitch`. Arsip pemilik: 377 klip dengan pitch + 48 klip repitch (96_Tom −4,16 st).
 - **Pad drum**: pitch dengan cent (`PRMS[2]` = 0,5 + st/48, mis. kick +1,85 st) dan envelope A / D / S / R (`PRMS[6..9]`, kurva waktu
   kubik 1 ms–10 s, perkiraan — FLM tidak menampilkan angka).
-- **Modul**: `SMPR` = pan, level / mix (1 = penuh). Pada efek yang dikonversi: Dry/Wet stock plugin, atau campuran dry + olahan untuk
-  Utility / EQ Eight; pada lapisan DirectWave: level (dB) dan pan per zona.
+- **Modul**: `SMPR` = **Wet Pan, Mix, Post Gain** (opsi Mix di Rack menurut manual resmi; bawaan 0,5 / 1 / 0,5). Mix → level/wet modul: pada
+  efek yang dikonversi menjadi Dry/Wet stock plugin, atau campuran dry + olahan untuk Utility / EQ Eight; pada lapisan DirectWave: level
+  (dB) per zona. Wet Pan dan Post Gain non-default dilaporkan (kedua arsip pemilik selalu bawaan, jadi tidak ada yang hilang).
 - **Penomoran nada**: root zona DirectWave FLM tersimpan 12 di bawah MIDI (Banjo.wav ber-unity 60 di chunk `smpl` / `acid`, FLM
   menyimpan 48; nada dasarnya terukur C4 = 261 Hz). Root dan not pattern digeser +12 → nada relatif sampler tetap, nada absolut benar untuk
   synth / SoundFont. Kesimpulan dari satu sample; dikonfirmasi lebih lanjut bila ada proyek FLM dengan synth.
@@ -94,8 +95,11 @@ dari nilai file vs dari preset bernama sama, dan data asli yang belum bisa diter
   174 %). Instrumen memakai velocity secara linear, jadi 100 % = level penuh instrumen; pemilihan zona velocity memakai batas 127.
 - **Level**: track, master, bus, klip audio, pad drum: slider 0..1 dengan bawaan f32 0,85312408 = **0 dB** di MDAW, nilai lain = gain
   relatif terhadap bawaan itu (dulu track / master dipetakan ke 0,85 = −1,4 dB masing-masing, klip / pad memakai 0,853 → tidak konsisten).
-- **Mute track**: `RPRM` = f32 × 6 (level, pan, **mute 0 / 1**, ?, 0,5, ?). Dulu tidak dibaca — 5 track HIPDUT yang di-mute di FLM (Sytrus
+- **Mute track**: `RPRM` = f32 × 6 (level, pan, **mute 0 / 1**, solo?, 0,5, ?). Dulu tidak dibaca — 5 track HIPDUT yang di-mute di FLM (Sytrus
   Cubed, MUGWANTI, Synth_Shot_A (41), dua "rhythm"; dua di antaranya kosong) ikut berbunyi; sekarang di-mute. Nilai mentah di `ch.rprm`.
+- **Solo (asumsi)**: manual menyebut kontrol kanal Activate (mute) lalu **Solo**; indeks ke-3 `RPRM` kandidatnya, tetapi **0 di semua proyek
+  yang ada** sehingga belum bisa dibuktikan. Dibaca dan dilaporkan bila > 0, **tidak diterapkan otomatis** (solo yang salah akan membungkam
+  seluruh proyek — risiko terlalu besar untuk byte yang belum terbukti).
 - **Pitch klip audio** (f64 semitone) dan **rasio stretch** (f64) apa adanya; rasio yang sangat dekat 1 tetap diterapkan (dulu < 0,0001
   diabaikan: 4 klip di arsip pemilik).
 - **DirectWave** (`PRMS`, [0] = on): [1] Attack, [2] Release, [3] Pitch (±24 st, knob bertingkat: semitone utuh ke arah nol), [4] Fine Tune
@@ -120,6 +124,10 @@ dari nilai file vs dari preset bernama sama, dan data asli yang belum bisa diter
 - SoundFont player FLM (52: semua nilai kelipatan 1/81 = pilihan diskrit), modul 48 (3 parameter, sebelum SoundFont player — kemungkinan
   efek not; track "rhythm" HIPDUT memainkan not di oktaf 7–8 sehingga hasilnya bisa salah oktaf), instrumen 39 (149 parameter).
 - Parameter Reverb, Reverb 2, Tremolo, Distortion; tipe efek 4, 9, 16, 26, 30, 44, 45.
+- **Urutan proses Rack**: manual resmi menyebut efek yang berada **sebelum** sebuah instrumen di rack tidak memengaruhi instrumen itu
+  (DirectWave > Distortion > MiniSynth > Reverb → MiniSynth hanya kena Reverb). MobileDAW = satu instrumen + satu rantai efek per track,
+  jadi rack FLM dengan beberapa instrumen berselang-seling efek dipetakan mendekati (semua modul non-instrumen jadi device track); kasus
+  ini jarang dan dilaporkan. Mix options (Wet Pan / Mix / Post Gain) sesuai halaman Rack manual.
 - Kode DSP efek / instrumen FLM tidak dipublikasikan: instrumen FLM di MobileDAW meniru kontrol dan logikanya, tetapi bunyinya tidak
   identik bit demi bit. Kalibrasi akhir butuh render referensi (WAV per track) dari FLM untuk proyek yang sama.
 

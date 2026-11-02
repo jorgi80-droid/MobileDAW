@@ -1,6 +1,6 @@
 import { factoryPresets } from './presetlib.js';
 import { wtName, WT_COUNT } from './engine/live.js';
-import { FLM_SYNC, GMS_FX, GMS_WAVES, MINI_KINDS, SS_LFO_DEST } from './engine/flmsyn.js';
+import { FLM_SYNC, GMS_FX, GMS_FX_RATE, GMS_WAVES, MINI_KINDS, SS_LFO_DEST } from './engine/flmsyn.js';
 import { TS_BEATS } from './engine/fx8.js';
 // Instrument + device definitions. Parameter ORDER must match the C++ side
 // (app/src/main/cpp/instruments.h and devices.h).
@@ -933,37 +933,37 @@ export function fmtParam(p, v) {
     ...adsr('Flt ', 0.001, 1, 1, 0.3), bip('Flt Amount'), ...adsr('Frq ', 0.001, 1, 1, 0.3), bip('Frq Amount'),
     list('LFO Mode', LFO3, 0), q('LFO Rate', 0.03, 30, 0.03, { curve: 'log', unit: 'Hz' }), list('LFO Sync', SYNC, 9), list('LFO Shape', ['Sine', 'Saw', 'Square'], 0),
     q('LFO Attack', 0, 5, 0, { unit: 's' }), bip('LFO Amount'), list('LFO Destination', ['Filter', 'Frequency', 'Level', 'Pan'], 0), lvl('Level')] };
-  const FXP = (s) => [onoff(`FX${s} On`), list(`FX${s} Kind`, GMS_FX, [1, 2, 5][s - 1]), bip(`FX${s} Amount`), k100(`FX${s} X`, 50), k100(`FX${s} Y`, 50), list(`FX${s} LFO Rate`, SYNC, 9), list(`FX${s} LFO Shape`, ['Sine', 'Saw', 'Square'], 0)];
+  const FXP = (s) => [onoff(`FX${s} On`), list(`FX${s} Kind`, GMS_FX, [1, 2, 5][s - 1]), bip(`FX${s} Amount`), k100(`FX${s} X`, 50), k100(`FX${s} Y`, 50), list(`FX${s} LFO Rate`, GMS_FX_RATE, 5), list(`FX${s} LFO Shape`, ['Sine', 'Saw', 'Square'], 0)];
   INSTRUMENTS[31] = { name: 'GMS', view: 'kit', full: true, flm: true, params: [
     k100('Cutoff', 100), k100('Res'), tm('Flt Attack', 0.001), tm('Flt Decay', 1), bip('Flt Amount'), onoff('Kbd'), list('Kind', ['LP 12', 'LP 24', 'HP'], 0),
     list('Osc A', GMS_WAVES, 0), list('Osc B', GMS_WAVES, 0), st('Pitch B', -24, 24), q('Fine B', -100, 100, 0, { unit: 'ct' }), q('Phase B', 0, 1, 0, { unit: '%' }), bip('Balance'), k100('Noise'),
-    k100('Mod Amount'), list('Mod Kind', ['Mix', 'FM', 'Ring', 'Sync'], 2), tm('Mod Attack', 0.001), tm('Mod Decay', 1), bip('EG Amount'), st('PB Range', 0, 24, 2), list('MW Dest', ['Osc. Mod', 'Filter', 'Pitch'], 0), k100('MW Amount'),
+    k100('Mod Amount'), list('Mod Kind', ['Mix', 'FM', 'RM', 'Sync'], 2), tm('Mod Attack', 0.001), tm('Mod Decay', 1), bip('EG Amount'), st('PB Range', 0, 24, 2), list('MW Dest', ['Osc. Mod', 'Filter', 'LFO'], 0), k100('MW Amount'),
     lvl('Level'), bip('Pan'), tm('Atk', 0.001), tm('Dec', 1), sus('Sus'), tm('Rel', 0.1),
     bip('EG Contour'), tm('EG Attack', 0.001), tm('EG Decay', 0.5), sus('EG Sustain', 0), tm('EG Release', 0.3), onoff('EG Vel'), list('EG Dest', ['Filter', 'Osc. Mod', 'Pitch'], 0),
-    bip('LFO Amount'), list('LFO Shape', ['Sine', 'Saw', 'Square'], 0), list('LFO Dest', ['FLT', 'OSC', 'PITCH'], 0), list('LFO Rate', SYNC, 0),
+    bip('LFO Amount'), list('LFO Shape', ['Sine', 'Saw', 'Square'], 0), list('LFO Dest', ['Filter', 'Osc', 'Pitch'], 0), list('LFO Rate', SYNC, 0),
     st('Transpose', -24, 24), tm('Slide', 0.1, 2), k100('Chorus Detune'), k100('Chorus Stereo'), onoff('Mono'), onoff('Auto'), list('Voices', ['Solo', '2', '3', '4'], 0), list('Scale', ['Flat', 'Chord', 'Octave'], 0),
     ...FXP(1), ...FXP(2), ...FXP(3)] };
   INSTRUMENTS[32] = { name: 'MiniSynth', view: 'kit', full: true, flm: true, params: [
     list('Oscillator Kind', MINI_KINDS, 0), k100('Modifier'), k100('Noise'), st('Transp', -12, 12),
-    k100('Cutoff', 100), k100('Kbd Trk'), k100('Vel Trk'), k100('Res'),
+    k100('Cutoff', 100), bip('Kbd Trk'), bip('Vel Trk'), k100('Res'),
     ...adsr('Flt ', 0.001, 1, 1, 1), bip('Flt Amount'),
-    bip('LFO Amount'), list('LFO Rate', SYNC, 6), list('LFO Shape', ['SIN', 'SAW', 'SQR'], 0), list('LFO Dest', ['FLT', 'FRQ', 'MOD'], 0), k100('MW'), list('MW Dest', ['FLT', 'FRQ', 'MOD'], 0),
+    bip('LFO Amount'), list('LFO Rate', SYNC, 6), list('LFO Shape', ['SIN', 'SAW', 'SQR'], 0), list('LFO Dest', ['FLT', 'FRQ', 'MOD', 'MW'], 0), k100('MW'), list('MW Dest', ['FLT', 'FRQ', 'MOD'], 0),
     ...adsr('', 0.001, 1, 1, 0.08), list('Voices Mode', ['Poly', 'Mono', 'Lead'], 0), tm('Slide', 0.05, 2),
     onoff('Dist On'), k100('Drive'), k100('Decim'),
     onoff('Delay On'), k100('Delay Feedback', 40), k100('Delay Filter', 30), k100('Delay Mix', 25), list('Delay Time', SYNC, 6),
     onoff('Chorus On'), k100('Chorus Rate', 30), k100('Chorus Mod', 40), k100('Chorus Mix', 40),
     onoff('Phaser On'), k100('Phaser Speed', 40), k100('Phaser Width', 60), k100('Phaser Feedback', 40), k100('Phaser Freq', 30), k100('Phaser Mix', 50), lvl('Level')] };
   INSTRUMENTS[33] = { name: 'SuperSaw', view: 'kit', full: true, flm: true, params: [
-    onoff('Pulse Mode'), list('Osc Mode', ['Supersaw', 'Supersync'], 0), onoff('Retrig'), k100('Pulse Width', 50), k100('Sub Osc'),
+    onoff('Pulse Mode'), list('Osc Mode', ['Supersaw', 'Supersync'], 0), onoff('Retrig'), k100('Pulse Width', 100), k100('Sub Osc'),
     list('Unison', ['Single', '2', '3', '4', '5', '6', '7', '8', '9'], 0), k100('Detune', 20), k100('Unison Pan'), k100('Dtn. Spread', 50), k100('Unison Phase'),
     k100('Sync'), k100('Sync PW', 50), ...adsr('Sync ', 0.001, 0.5, 0, 0.3), bip('Sync Amount'), onoff('Flip'),
-    k100('Cutoff', 100), k100('Resonance'), k100('Kbd Trk'), k100('Vel Trk'), ...adsr('Flt ', 0.001, 0.5, 1, 0.3), bip('Flt Amount'),
+    k100('Cutoff', 100), k100('Resonance'), bip('Kbd Trk'), bip('Vel Trk'), ...adsr('Flt ', 0.001, 0.5, 1, 0.3), bip('Flt Amount'),
     list('LFO Mode', LFO3, 0), q('LFO Rate', 0.03, 30, 0.03, { curve: 'log', unit: 'Hz' }), list('LFO Sync', SYNC, 9), list('LFO Shape', ['Sine', 'Saw', 'Square', 'Random'], 0),
     q('LFO Attack', 0, 5, 0, { unit: 's' }), bip('LFO Amount'), list('LFO Destination', SS_LFO_DEST, 0),
     k100('Output Level', 100), bip('Panning'), ...adsr('', 0.001, 0.5, 1, 0.3),
-    st('PW Range', 0, 24, 2), bip('ModWheel Amount'), list('ModWheel Dest', ['Cutoff', 'Resonance', 'Osc Sync', 'Pulse Width', 'Unison Detune', 'LFO Amount'], 0),
+    st('PW Range', 0, 24, 2), bip('ModWheel Amount'), list('ModWheel Dest', ['Cutoff', 'Resonance', 'Osc Sync', 'Pulse Width', 'Unison Detune', 'Level', 'Pan', 'LFO Amount', 'LFO Rate'], 0),
     q('Poly', 1, 16, 5, { step: 1, fmt: 'num' }), st('Transp', -24, 24), tm('Slide', 0.05, 2), onoff('Legato'), onoff('Constant', 1), onoff('Mono Mode'),
-    list('Arp Rate', SYNC, 9), list('Arp Range', ['1 Oct', '2 Oct', '3 Oct', '4 Oct'], 2), list('Arp Mode', ['Off', 'Up', 'Down', 'Up & Down', 'Random'], 0),
+    list('Arp Rate', SYNC, 9), list('Arp Range', ['1 Oct', '2 Oct', '3 Oct', '4 Oct'], 2), list('Arp Mode', ['Off', 'Up', 'Down', 'Up/Down', 'Random', 'Up/Down 2'], 0),
     k100('Distortion'), q('Gain', -24, 12, 0, { unit: 'dB' }), list('Delay Time', SYNC, 6), k100('Delay Fdbk', 40), k100('Delay Filter', 50), k100('Delay Mix')] };
   // factory presets (by parameter name), after the sound-design examples of the FLM instrument guide
   const pre = (type, cat, name, vals) => { const ps = INSTRUMENTS[type].params, p = {}; for (const [n, v] of Object.entries(vals)) { const k = ps.findIndex((x) => x.n === n); if (k < 0) throw new Error('preset ' + name + ': ' + n); p[k] = v; } return { cat, name, p }; };
@@ -971,14 +971,14 @@ export function fmtParam(p, v) {
     pre(30, 'Pad', 'Slow Pad', { Attack: 0.9, Release: 2.5, Loop: 1, 'LFO Amount': 40, 'LFO Rate': 0.25, 'LFO Destination': 3, Cutoff: 80 }),
     pre(30, 'FX', 'Reverse Chop', { Reverse: 1, Attack: 0.01, Decay: 0.25, Sustain: 0.4, Release: 0.1 }), pre(30, 'Keys', 'Soft Keys', { Cutoff: 55, 'Kbd Trk': 50, 'Vel Trk': 80, Release: 0.6 })];
   PRESETS[31] = [pre(31, 'Dasar', 'Default', {}), pre(31, 'Bell', 'FM Bell', { 'Osc A': 1, 'Osc B': 1, 'Pitch B': 12, 'Mod Kind': 1, 'Mod Amount': 30, 'EG Amount': 60, 'Mod Decay': 0.4, Dec: 1.8, Sus: 0, Rel: 1.2 }),
-    pre(31, 'Bass', 'Growl Bass', { 'Osc A': 3, 'Osc B': 0, 'Mod Kind': 2, 'Mod Amount': 45, Mono: 1, Cutoff: 45, Res: 35, 'Flt Amount': 50, 'Flt Decay': 0.3, 'FX1 On': 1, 'FX1 Kind': 0, 'FX1 X': 40 }),
-    pre(31, 'Pluck', 'Pluck', { Dec: 0.25, Sus: 0, Rel: 0.2, Cutoff: 50, 'Flt Amount': 60, 'Flt Decay': 0.2, 'FX3 On': 1, 'FX3 X': 35, 'FX3 Y': 40 }),
+    pre(31, 'Bass', 'Growl Bass', { 'Osc A': 3, 'Osc B': 0, 'Mod Kind': 2, 'Mod Amount': 45, Mono: 1, Cutoff: 45, Res: 35, 'EG Contour': 50, 'EG Decay': 0.3, 'EG Release': 0.3, 'FX1 On': 1, 'FX1 Kind': 0, 'FX1 X': 40 }),
+    pre(31, 'Pluck', 'Pluck', { Dec: 0.25, Sus: 0, Rel: 0.2, Cutoff: 50, 'EG Contour': 60, 'EG Decay': 0.2, 'EG Release': 0.2, 'FX3 On': 1, 'FX3 X': 35, 'FX3 Y': 40 }),
     pre(31, 'Pad', 'Wide Chord', { Voices: 2, Scale: 1, 'Chorus Detune': 40, 'Chorus Stereo': 70, Atk: 0.4, Rel: 1.2, Cutoff: 70, 'FX3 On': 1, 'FX3 Kind': 6, 'FX3 X': 60, 'FX3 Y': 35 })];
-  PRESETS[32] = [pre(32, 'Dasar', 'Default', {}), pre(32, 'Pluck', 'Pluck', { Cutoff: 45, 'Flt Amount': 55, 'Flt Decay': 0.25, 'Flt Sustain': 0, Decay: 0.3, Sustain: 0, Release: 0.15 }),
-    pre(32, 'Bass', 'Retro Bass', { 'Oscillator Kind': 2, Modifier: 30, 'Voices Mode': 1, Cutoff: 38, Res: 40, 'Flt Amount': 40, 'Flt Decay': 0.2, 'Flt Sustain': 0.2, Release: 0.08 }),
+  PRESETS[32] = [pre(32, 'Dasar', 'Default', {}), pre(32, 'Pluck', 'Pluck', { Modifier: 50, Cutoff: 45, 'Flt Amount': 55, 'Flt Decay': 0.25, 'Flt Sustain': 0, Decay: 0.3, Sustain: 0, Release: 0.15 }),
+    pre(32, 'Bass', 'Retro Bass', { 'Oscillator Kind': 2, Modifier: 65, 'Voices Mode': 1, Cutoff: 38, Res: 40, 'Flt Amount': 40, 'Flt Decay': 0.2, 'Flt Sustain': 0.2, Release: 0.08 }),
     pre(32, 'Bell', 'Bell', { 'Oscillator Kind': 6, Modifier: 60, Decay: 1.2, Sustain: 0, Release: 0.8, 'Delay On': 1, 'Delay Mix': 20 }),
     pre(32, 'Pad', 'Pad', { 'Oscillator Kind': 5, Modifier: 45, Attack: 0.6, Release: 1.5, 'LFO Amount': 25, 'LFO Rate': 2, Cutoff: 70, 'Chorus On': 1 }),
-    pre(32, 'Lead', 'Lead', { 'Oscillator Kind': 1, Modifier: 2, 'Voices Mode': 2, Slide: 0.08, Cutoff: 75, 'Delay On': 1 })];
+    pre(32, 'Lead', 'Lead', { 'Oscillator Kind': 1, Modifier: 51, 'Voices Mode': 2, Slide: 0.08, Cutoff: 75, 'Delay On': 1 })];
   PRESETS[33] = [pre(33, 'Dasar', 'Default', {}), pre(33, 'Lead', 'EDM Lead', { Unison: 6, Detune: 40, 'Unison Pan': 70, Release: 0.3, 'Delay Mix': 20 }),
     pre(33, 'Pad', 'Wide Pad', { Unison: 8, Detune: 25, 'Unison Pan': 90, Attack: 0.8, Release: 2, 'LFO Amount': 30, 'LFO Destination': 7, 'LFO Rate': 0.2, Cutoff: 75 }),
     pre(33, 'Lead', 'Sync Lead', { 'Osc Mode': 1, Sync: 30, 'Sync Amount': 50, 'Sync Decay': 0.4, Unison: 2, Cutoff: 85 }),
@@ -996,6 +996,40 @@ export function fmtParam(p, v) {
     for (const x of all) if (!order.includes(x.cat)) order.push(x.cat);
     PRESETS[t] = order.flatMap((c) => all.filter((x) => x.cat === c));
   }
+}
+
+// ---- FL Studio Mobile instrument parameter format. 1 = before the corrections from the FL Studio Mobile manual, 2 = now (FLM_FMT).
+// Projects (serialize writes flm: 2), instrument presets and rack presets without it hold format 1: migrateFlmInst converts GMS /
+// MiniSynth / SuperSaw parameters in place, keeping the sound wherever format 2 can express it:
+//   MiniSynth Modifier: Saw (old square width 50 - 45 % x m) -> 50 - 45 m; Saw + Saw / Pulse / Square + Saw / Square + Square -> 50 + m / 2
+//   SuperSaw Pulse Width (old duty x %) -> 2 x min(x, 100 - x) (100 = square); ModWheel Dest "LFO Amount" 5 -> 7 (Level / Pan added)
+//   GMS filter envelope (old: decayed while the key was held) -> the Envelope Generator with dest Filter when that is free; FX LFO Rate
+//   faster than 1/4 bar -> 1/4 bar (FLM's range). GMS Scale Chord / Octave now stack voices upwards as FLM does (no equivalent kept).
+export const FLM_FMT = 2;
+export function migrateFlmParams(type, p) {
+  if (!p || typeof p !== 'object') return p;
+  const g = (k, d) => (p[k] != null && Number.isFinite(+p[k]) ? +p[k] : d), r3 = (x) => Math.round(x * 1000) / 1000;
+  if (type === 32) {
+    const kind = Math.round(g(0, 0)), m = Math.min(1, Math.max(0, g(1, 0) / 100));
+    if (kind === 0) p[1] = r3(50 - 45 * m);
+    else if (kind >= 1 && kind <= 4) p[1] = r3(50 + 50 * m);
+  } else if (type === 33) {
+    const d = Math.min(0.98, Math.max(0.02, g(3, 50) / 100));
+    p[3] = r3(200 * Math.min(d, 1 - d));
+    if (Math.round(g(42, 0)) === 5) p[42] = 7;
+  } else if (type === 31) {
+    const amt = g(4, 0);
+    if (amt !== 0 && g(28, 0) === 0) { const d = g(3, 1); p[28] = amt; p[29] = g(2, 0.001); p[30] = d; p[31] = 0; p[32] = d; p[33] = 0; p[34] = 0; p[4] = 0; }
+    for (let s = 0; s < 3; s++) { const k = 47 + s * 7 + 5; p[k] = Math.min(5, Math.max(0, Math.round(g(k, 9)))); }
+  }
+  return p;
+}
+// an instrument object (track inst, Instrument Rack chains, Drum Rack pad chains) in format 1 -> format 2, in place
+export function migrateFlmInst(inst) {
+  if (!inst || typeof inst !== 'object') return;
+  if (inst.type === 31 || inst.type === 32 || inst.type === 33) inst.params = migrateFlmParams(inst.type, inst.params || {});
+  for (const ch of inst.chains || []) if (ch && ch.inst) migrateFlmInst(ch.inst);
+  for (const q of inst.pads || []) if (q && q.chain && q.chain.inst) migrateFlmInst(q.chain.inst);
 }
 
 // classic engine -> FL Studio Mobile instrument (the classic ones are no longer offered; old projects are converted when they open)
@@ -1024,7 +1058,7 @@ export function migrateClassicInst(inst) {
   Object.assign(conv, {
     32: (p, d) => {                                                              // Mini Synth Klasik: Wave, Cutoff, A, D, S, R, Gain
       const g = (k) => p[k] ?? d[k].def, w = Math.round(g(0)), cut = w === 2 ? Math.max(150, g(1) * 0.5) : g(1);   // triangle: a darker saw (no triangle kind in FLM MiniSynth)
-      return { 'Oscillator Kind': w === 1 ? 2 : 1, Modifier: 0, Cutoff: cutK(cut), Attack: r3(g(2)), Decay: r3(g(3)), Sustain: r3(g(4)), Release: r3(g(5)),
+      return { 'Oscillator Kind': w === 1 ? 2 : 1, Modifier: 50, Cutoff: cutK(cut), Attack: r3(g(2)), Decay: r3(g(3)), Sustain: r3(g(4)), Release: r3(g(5)),   // 50: unison saws / a full square
         Level: cl(dB(g(6) / (w === 1 ? 0.19 : 0.209)), -60, 6) };
     },
     33: (p, d) => {                                                              // SuperSaw Klasik: Detune ct, Mix, Cutoff, Attack, Release, Gain
@@ -1037,7 +1071,8 @@ export function migrateClassicInst(inst) {
       const o = [0, 1, 2].map((j) => ({ wave: Math.round(g(10 + j * 4)), oct: Math.round(g(11 + j * 4)), fine: g(12 + j * 4), lv: g(13 + j * 4) }));
       const A = o[0], B = o[1].lv >= o[2].lv ? o[1] : o[2], sum = A.lv + B.lv, bal = sum > 0 ? B.lv / sum : 0;
       const q = g(3), res = Math.round(Math.sqrt(cl((q - 0.5) / 9.5, 0, 1)) * 100);
-      return { Cutoff: cutK(g(2)), Res: res, Kind: 1, 'Flt Attack': 0.001, 'Flt Decay': r3(cl(g(6) * 1.38, 0.001, 10)), 'Flt Amount': cl(Math.round(g(4) * 400 / 6), -100, 100),
+      const fd = r3(cl(g(6) * 1.38, 0.001, 10));                                 // the classic filter envelope decays while the key is held: the EG (dest Filter)
+      return { Cutoff: cutK(g(2)), Res: res, Kind: 1, 'EG Contour': cl(Math.round(g(4) * 400 / 6), -100, 100), 'EG Attack': 0.001, 'EG Decay': fd, 'EG Sustain': 0, 'EG Release': fd, 'EG Vel': 0, 'EG Dest': 0,
         'Osc A': W[A.wave] ?? 3, 'Osc B': W[B.wave] ?? 3, 'Pitch B': cl((B.oct - A.oct) * 12, -24, 24), 'Fine B': cl(Math.round(B.fine - A.fine), -100, 100), Balance: Math.round((bal * 2 - 1) * 100),
         'Mod Amount': 0, 'Mod Kind': 0, Transpose: cl(A.oct * 12, -24, 24), Mono: g(0) > 0.5 ? 1 : 0, Slide: r3(cl(g(1) / 1000, 0.001, 2)),
         Atk: r3(g(5)), Dec: r3(g(6)), Sus: r3(g(7)), Rel: r3(g(8)), Level: cl(dB(g(9) * Math.max(0.05, A.lv + B.lv + o[2].lv * (B === o[2] ? 0 : 1)) / 0.2), -60, 6) };

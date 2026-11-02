@@ -383,6 +383,7 @@ export class Engine {
       }
       const sh = s.inst.pitchNative ? 0 : s.pitch, tm = s.tpMap;
       try {
+        if (typeof s.inst.setSongPos === 'function') s.inst.setSongPos(this.playing, this.f2t(pos) / PPQ);   // song position for beat-synced instrument LFOs (FLM SuperSaw Tempo Sync)
         let cur = 0;
         for (let i = 0; i < ne; i++) {
           if (eo[i] > cur) { s.inst.render(L, R, cur, eo[i]); this.balance(L, R, cur, eo[i], s.nPan); cur = eo[i]; }

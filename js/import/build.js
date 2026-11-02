@@ -6,7 +6,7 @@
 //   - a DirectWave / sampler instrument whose sample is missing keeps its pattern (notes) and shows the missing program in its card;
 //   - a drum pad whose sample is missing keeps its steps (the pad is muted until a sample is loaded).
 // Model units: beats, linear gain (1 = default level), pan -1..1.
-import { DEVICES, PRESETS, INSTRUMENTS } from '../defs.js';
+import { DEVICES, PRESETS, INSTRUMENTS, FLM_FMT } from '../defs.js';
 import { gmFor, GM_SF } from './gm.js';
 import { LVL0 } from './flm.js';
 
@@ -120,7 +120,7 @@ export function buildMdaw(M, opts) {
     return c;
   };
 
-  const out = { v: 2, name: M.name, bpm: clamp(M.bpm || 120, 20, 300), sig: { n: M.sig ? M.sig[0] : 4, d: M.sig ? M.sig[1] : 4 }, sigs: [], markers: [], groove: { amt: 0, grid: 240 }, countIn: 0,
+  const out = { v: 2, flm: FLM_FMT, name: M.name, bpm: clamp(M.bpm || 120, 20, 300), sig: { n: M.sig ? M.sig[0] : 4, d: M.sig ? M.sig[1] : 4 }, sigs: [], markers: [], groove: { amt: 0, grid: 240 }, countIn: 0,
     punch: { on: false, start: 0, end: 0 }, recLoop: false, loop: { on: false, start: 0, end: 7680 }, tracks: [], master: { vol: 1, devices: [] }, returns: [], cc: {}, imported: { app: M.app } };
   const spb = 60 / out.bpm;
   const master = M.channels.find((c) => c.kind === 'master');
@@ -211,6 +211,10 @@ export function buildMdaw(M, opts) {
   if (prec.clipEnv) P2.push(prec.clipEnv + ' klip audio punya envelope (A / D / S / R) sendiri di file asli: belum diterapkan');
   const muted = M.channels.filter((c) => c.kind !== 'master' && c.mute).map((c) => c.name);
   if (muted.length) P2.push(muted.length + ' track di-mute seperti di FLM: ' + muted.join(', '));
+  const solo = M.channels.filter((c) => c.solo).map((c) => c.name);
+  if (solo.length) P2.push(solo.length + ' track ditandai Solo di file FLM (RPRM): tidak diterapkan otomatis karena byte ini belum terbukti di proyek lain — ' + solo.join(', '));
+  const pg = []; for (const c of M.channels) for (const m of c.modules || []) { if (m.postGain != null) pg.push(c.name + ' / ' + m.name + ' Post Gain'); if (m.wetPan != null) pg.push(c.name + ' / ' + m.name + ' Wet Pan'); }
+  if (pg.length) P2.push(pg.length + ' modul punya Post Gain / Wet Pan non-default (SMPR): dilaporkan, belum ada padanan persisnya — ' + pg.slice(0, 6).join(', ') + (pg.length > 6 ? ', …' : ''));
   if (dwN) P2.push(dwN + ' DirectWave: pitch / fine tune per lapisan, envelope, filter, loop / reverse / legato / mono dan LFO dari nilai file');
   if (synN) P2.push(synN + ' GMS / MiniSynth / SuperSaw memakai preset bernama sama di MobileDAW: nilai parameter proyek tersimpan mentah (urutannya di file belum diketahui), bunyi bisa berbeda');
   P2.push('Level bawaan FLM = 0 dB, level lain relatif terhadapnya; waktu, pitch klip dan rasio stretch apa adanya');

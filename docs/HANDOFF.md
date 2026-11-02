@@ -10,6 +10,10 @@ Baca juga `README-ANDROID.md` (build, install, status fase 2).
 - Setiap file JS yang diubah: `node --check`. Akhir tiap langkah: `node tools/run-tests.mjs` dan `node tools/golden/golden.mjs`.
 - File web baru: daftarkan di `ASSETS` di `sw.js`, lalu `node tools/build.mjs`.
 - Commit rapi per langkah, push ke branch di atas. Laporan ke pemilik dalam bahasa Indonesia.
+- Plugin mendatang (aturan pemilik, 2 Nov 2026): tampilan plugin tidak diubah dan selalu tampil di jendela mengambang; saat jendela
+  di-minimize, kartu device menampilkan pesan "klik tampilkan untuk menampilkan plugin" (dengan tombol Tampilkan). Berlaku untuk semua
+  plugin baru.
+- Kode hasil dekompilasi software berhak cipta (mis. libFLM.so, VST komersial seperti reFX Nexus) tidak dipakai dan tidak di-port.
 
 ## Status
 | Bagian | Status |

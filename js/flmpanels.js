@@ -8,7 +8,7 @@
 import { h } from './ui.js';
 import { lvTabs, lvPath, lvRing, lvEnvPts, DISPC } from './liveui.js';
 import { Biquad } from './engine/dsp.js';
-import { cutHz, gmsWaveTable, syncBeats } from './engine/flmsyn.js';
+import { cutHz, gmsWaveTable, syncBeats, GMS_SCALE, FLM_SYNC, miniPw, miniSt, miniPhaserBeats } from './engine/flmsyn.js';
 import * as P from './project.js';
 
 const SR = 48000, F0 = 20, F1 = 20000, CY = '#4fc3f0', OR = '#ffad32', WH = '#f2f2f2', DIM = '#3d3d42';
@@ -107,22 +107,27 @@ function disp(k, draw, drag, o = {}) {
 }
 
 // ---- envelopes: curve over a time grid with handles at the attack peak, the decay / sustain corner and the release end (Live: Drift,
-// Operator). Drag a handle: time left / right (x2 per 28 px), sustain up / down. s == null: attack / decay envelope (GMS filter / mod).
-function envPts(w, hh, A, D, S, R, pad) {                                       // top margin 2 x pad: the label line stays clear of the curve
+// Operator). Drag a handle: time left / right (x2 per 28 px), sustain up / down. s == null: attack / decay envelope (GMS mod envelope);
+// s == 'hold': attack, held at the peak while the key is down (dashed key-up line), Decay after the release (GMS filter, FLM manual).
+function envPts(w, hh, A, D, S, R, pad, hold) {                                 // top margin 2 x pad: the label line stays clear of the curve
+  if (hold) { const wa = Math.sqrt(A), wd = Math.sqrt(D), kx = (w - 2 * pad) * 0.62 / Math.max(1e-6, wa + wd), x1 = pad + wa * kx, x2 = x1 + (w - 2 * pad) * 0.3;
+    return [[pad, hh - pad], [x1, 2 * pad], [x2, 2 * pad], [x2 + wd * kx, hh - pad], [w - pad, hh - pad]]; }
   if (S == null) { const wa = Math.sqrt(A), wd = Math.sqrt(D), kx = (w - 2 * pad) * 0.82 / Math.max(1e-6, wa + wd);
     return [[pad, hh - pad], [pad + wa * kx, 2 * pad], [pad + (wa + wd) * kx, hh - pad], [w - pad, hh - pad]]; }
   return lvEnvPts(w, hh - pad, A, D, S, R, pad).map(([x, y]) => [x, y + pad]);
 }
 function env(k, a, d, s, r, col = CY, lab = null) {
-  const PAD = 9, lim = (j, v) => clamp(v, k.def.params[j].min, k.def.params[j].max);
-  const pts = (w, hh) => envPts(w, hh, k.get(a), k.get(d), s == null ? null : k.get(s), r == null ? 0 : k.get(r), PAD);
-  const hs = (q) => (s == null ? [[1, q[1]], [2, q[2]]] : [[1, q[1]], [2, q[2]], [4, q[4]]]);
+  const PAD = 9, lim = (j, v) => clamp(v, k.def.params[j].min, k.def.params[j].max), hold = s === 'hold';
+  if (hold) s = null;
+  const pts = (w, hh) => envPts(w, hh, k.get(a), k.get(d), s == null ? null : k.get(s), r == null ? 0 : k.get(r), PAD, hold);
+  const hs = (q) => (hold ? [[1, q[1]], [2, q[3]]] : s == null ? [[1, q[1]], [2, q[2]]] : [[1, q[1]], [2, q[2]], [4, q[4]]]);
   let box = null;
   box = disp(k, (g, w, hh) => {
     for (let j = 1; j < 8; j++) vl(g, w * j / 8, 0, hh, j % 2 ? '#2e2e31' : DISPC.grid);
     hl(g, hh - PAD, 0, w, DISPC.grid2);
     const q = pts(w, hh);
     if (s != null) { g.setLineDash([2, 3]); g.strokeStyle = DISPC.grid2; g.lineWidth = 1; g.beginPath(); g.moveTo(q[2][0], q[2][1] + 0.5); g.lineTo(w, q[2][1] + 0.5); g.stroke(); g.setLineDash([]); }
+    if (hold) { g.setLineDash([2, 3]); g.strokeStyle = DISPC.grid2; g.lineWidth = 1; g.beginPath(); g.moveTo(Math.round(q[2][0]) + 0.5, PAD); g.lineTo(Math.round(q[2][0]) + 0.5, hh - PAD); g.stroke(); g.setLineDash([]); txt(g, 'key up', q[2][0] + 3, hh - PAD - 3, DISPC.ink, 8); }
     lvPath(g, q, col, hh - PAD, 1.9);
     for (const [, p] of hs(q)) lvRing(g, p[0], p[1], 4.2);
     if (lab) txt(g, lab(), w - 6, 13, col, 9, 'right');
@@ -197,18 +202,19 @@ function gmsOsc(k) {
     txt(g, item(k, 15) + ' ' + Math.round(m * 100), w - 6, 13, OR, 9, 'right');
   });
 }
-// ---- MiniSynth: the oscillator kind's wave with the Modifier applied, the same formulas as the engine (pulse width, second voice pitch up
-// to +24 st, SuperSaw detune, spread voices), drawn at full height
+// ---- MiniSynth: the oscillator kind's wave with the Modifier applied, the same formulas as the engine (Saw: square width 0 at 0 / 100,
+// second wave -24..+24 st, Pulse: two squares cancelling at 0 / 100, SuperSaw detune, spread voices), drawn at full height
 const SS8 = [0, -1, 1, -0.6, 0.6, -0.3, 0.3, -0.85];
 function miniWave(k) {
   return disp(k, (g, w, hh) => {
     const kind = Math.round(k.get(0)), m = k.get(1) / 100, fr = (p) => p - Math.floor(p), saw = (p) => 2 * fr(p) - 1, pul = (p, pw = 0.5) => (fr(p) < pw ? -1 : 1);
-    const r2 = Math.pow(2, m * 2), pw = 0.5 - m * 0.45, sp = Math.pow(2, ((kind === 8 ? 12 : 7) + m * 0.25) / 12), mid = hh / 2, vs = [];
+    const pz = (p, w0) => (w0 <= 1e-4 ? 0 : fr(p) < w0 ? 2 * w0 - 2 : 2 * w0);   // zero-mean pulse (engine pulseZ)
+    const r2 = Math.pow(2, miniSt(m) / 12), pw = miniPw(m), sp = Math.pow(2, ((kind === 8 ? 12 : 7) + m * 0.25) / 12), mid = hh / 2, vs = [];
     vl(g, w / 2, 0, hh); hl(g, mid, 0, w, DISPC.grid2);
     for (let x = 0; x <= w; x++) {
       const p = x / w * 2; let v;
       switch (kind) {
-        case 0: v = 0.6 * saw(p) + 0.4 * pul(p, pw); break; case 1: v = saw(p) + saw(p * r2); break; case 2: v = pul(p) + pul(p + m * 0.5); break;
+        case 0: v = 0.6 * saw(p) + 0.4 * pz(p, pw); break; case 1: v = saw(p) + saw(p * r2); break; case 2: v = pul(p) - pul(p + m); break;
         case 3: v = pul(p) + saw(p * r2); break; case 4: v = pul(p) + pul(p * r2); break;
         case 5: v = 0; for (let u = 0; u < 8; u++) v += saw(p * Math.pow(2, SS8[u] * m * 0.5 / 12) + u * 0.137); break;
         case 6: v = 0.7 * saw(p) + m * 0.6 * Math.sin(6 * Math.PI * p) * Math.sin(2 * Math.PI * p); break;
@@ -218,23 +224,25 @@ function miniWave(k) {
     }
     const pk = Math.max(0.05, ...vs.map(Math.abs)), A = mid - 18;
     lvPath(g, vs.map((v, x) => [x, mid - v / pk * A]), WH, null, 1.8);
-    txt(g, item(k, 0), 6, 13, WH); txt(g, 'Modifier ' + Math.round(m * 100), w - 6, 13, OR, 9, 'right');
+    const st = miniSt(m), info = kind === 0 ? (pw <= 1e-4 ? 'Pure Saw' : 'PW ' + Math.round(pw * 100) + ' %') : kind === 2 ? (pw <= 1e-4 ? 'Cancelled (silent)' : 'Offset ' + Math.round(m * 100) + ' %')
+      : kind === 1 || kind === 3 || kind === 4 ? (st > 0 ? '+' : '') + st.toFixed(st % 1 ? 1 : 0) + ' st' : 'Modifier ' + Math.round(m * 100);
+    txt(g, item(k, 0), 6, 13, WH); txt(g, info, w - 6, 13, OR, 9, 'right');
   });
 }
 // ---- SuperSaw oscillator: one voice (saw / pulse, Supersync with the sync amount and its own pulse width) and the sub oscillator
 function ssWave(k) {
   return disp(k, (g, w, hh) => {
-    const pm = k.get(0) > 0.5, sync = Math.round(k.get(1)) === 1, pw = clamp(k.get(sync ? 11 : 3) / 100, 0.02, 0.98), r2 = Math.pow(2, clamp(k.get(10) / 100, 0, 1) * 4), sub = k.get(4) / 100;
+    const pm = k.get(0) > 0.5, sync = Math.round(k.get(1)) === 1, pw = sync ? clamp(k.get(11) / 100, 0.02, 0.98) : clamp(k.get(3) / 100, 0, 1) * 0.5, r2 = Math.pow(2, clamp(k.get(10) / 100, 0, 1) * 4), sub = k.get(4) / 100;
     const mid = hh / 2, amp = mid - 18, pts = [], sp = [];
     vl(g, w / 2, 0, hh); hl(g, mid, 0, w, DISPC.grid2);
     for (let x = 0; x <= w; x++) {
       const p = x / w * 2, q = p - Math.floor(p); let v;
-      if (sync) { const s = (q * r2) % 1; v = pm ? (s < pw ? 1 : -1) : 2 * s - 1; } else v = pm ? (q < pw ? -1 : 1) : 2 * q - 1;
+      if (sync) { const s = (q * r2) % 1; v = pm ? (s < pw ? 1 : -1) : 2 * s - 1; } else v = pm ? (pw <= 1e-4 ? 0 : q < pw ? 2 * pw - 2 : 2 * pw) : 2 * q - 1;
       pts.push([x, mid - v * amp]); const s2 = p / 2; sp.push([x, mid - (2 * (s2 - Math.floor(s2)) - 1) * amp * sub]);
     }
     if (sub > 0) lvPath(g, sp, 'rgba(255,173,50,.6)', null, 1.3);
     lvPath(g, pts, WH, null, 1.8);
-    txt(g, (sync ? 'Supersync' : 'Supersaw') + (pm ? ' · Pulse' : ''), 6, 13, WH); if (sub > 0) txt(g, 'Sub ' + Math.round(sub * 100), w - 6, 13, OR, 9, 'right');
+    txt(g, (sync ? 'Supersync' : 'Supersaw') + (pm ? ' · Pulse' + (sync ? '' : ' ' + Math.round(pw * 100) + ' %') : ''), 6, 13, WH); if (sub > 0) txt(g, 'Sub ' + Math.round(sub * 100), w - 6, 13, OR, 9, 'right');
   });
 }
 // ---- voices in the stereo field: x = pan, y = pitch offset; SuperSaw unison (detune in cents, spread curve, unison pan) and GMS
@@ -251,21 +259,20 @@ function ssUnison(k) {
     txt(g, nu === 1 ? 'Single' : nu + ' voices', w - 6, 13, WH, 9, 'right');
   });
 }
-const GMS_SCALE = [[0, 0, 0, 0], [0, 7, 12, 19], [0, 12, -12, 24]];
 function gmsVoices(k) {
   return disp(k, (g, w, hh) => {
     const nv = clamp(Math.round(k.get(45)) + 1, 1, 4), sc = GMS_SCALE[clamp(Math.round(k.get(46)), 0, 2)], det = k.get(41) / 100 * 0.3, wide = k.get(42) / 100, tr = Math.round(k.get(39));
-    const kb = clamp(Math.round(hh * 0.3), 18, 34), fh = hh - kb - 3, Y = (st) => 8 + (24 - st) / 36 * (fh - 16);
+    const kb = clamp(Math.round(hh * 0.3), 18, 34), fh = hh - kb - 3, Y = (st) => 8 + (38 - st) / 44 * (fh - 16);
     vl(g, w / 2, 4, fh, DISPC.grid2);
-    for (const [st, t] of [[24, '+24'], [12, '+12'], [0, '0'], [-12, '-12']]) { hl(g, Y(st), 0, w, st ? DISPC.grid : DISPC.grid2); txt(g, t, 4, Y(st) - 2, DISPC.ink, 8); }
+    for (const [st, t] of [[36, '+36'], [24, '+24'], [12, '+12'], [0, '0']]) { hl(g, Y(st), 0, w, st ? DISPC.grid : DISPC.grid2); txt(g, t, 4, Y(st) - 2, DISPC.ink, 8); }
     const vs = [];
     for (let u = 0; u < nv; u++) { const st = sc[u] + (u ? (u & 1 ? 1 : -1) * det * Math.ceil(u / 2) : 0), sp = nv > 1 ? (u / (nv - 1) * 2 - 1) * wide : 0; vs.push(st); const px = w / 2 + sp * (w / 2 - 22), py = Y(st); lvRing(g, px, py, 4.5); txt(g, (sc[u] > 0 ? '+' : '') + sc[u], px + 7, py + 3, CY, 8); }
-    // keyboard C3..B6 (48 keys): the notes a C4 plays (transpose + intervals)
-    const y0 = hh - kb, lo = 48, nW = 28, kw = w / nW, on = new Set(vs.map((st) => 60 + tr + Math.round(st)));
+    // keyboard C3..C7 (49 keys): the notes a C4 plays (transpose + intervals)
+    const y0 = hh - kb, lo = 48, nK = 49, nW = 29, kw = w / nW, on = new Set(vs.map((st) => 60 + tr + Math.round(st)));
     let wi = 0;
-    for (let n = lo; n < lo + 48; n++) { if ([1, 3, 6, 8, 10].includes(n % 12)) continue; g.fillStyle = on.has(n) ? CY : '#d8d8dc'; g.fillRect(Math.round(wi * kw) + 0.5, y0, Math.max(1, Math.round(kw) - 1), kb); wi++; }
+    for (let n = lo; n < lo + nK; n++) { if ([1, 3, 6, 8, 10].includes(n % 12)) continue; g.fillStyle = on.has(n) ? CY : '#d8d8dc'; g.fillRect(Math.round(wi * kw) + 0.5, y0, Math.max(1, Math.round(kw) - 1), kb); wi++; }
     wi = 0;
-    for (let n = lo; n < lo + 48; n++) { if ([1, 3, 6, 8, 10].includes(n % 12)) { g.fillStyle = on.has(n) ? CY : '#1c1c1e'; g.fillRect(Math.round(wi * kw - kw * 0.3), y0, Math.max(1, Math.round(kw * 0.6)), kb * 0.6); } else wi++; }
+    for (let n = lo; n < lo + nK; n++) { if ([1, 3, 6, 8, 10].includes(n % 12)) { g.fillStyle = on.has(n) ? CY : '#1c1c1e'; g.fillRect(Math.round(wi * kw - kw * 0.3), y0, Math.max(1, Math.round(kw * 0.6)), kb * 0.6); } else wi++; }
     txt(g, item(k, 46) + ' · ' + item(k, 45), w - 6, 12, WH, 9, 'right');
   });
 }
@@ -356,10 +363,12 @@ function phaserDisp(k, o) {
     }
     lvPath(g, pts, on ? CY : DISPC.grid2, bot, 1.8);
     txt(g, fmtHz(f0) + ' – ' + fmtHz(f1), 6, 13, on ? WH : DISPC.ink, 9);
+    if (o.speed != null) { const b = miniPhaserBeats(k.get(o.speed)), lab = FLM_SYNC[[32, 16, 8, 4, 2, 1, 0.75, 0.5, 1 / 3, 0.25].indexOf(b)] || ''; txt(g, 'Speed ' + lab, w - 6, 13, on ? OR : DISPC.ink, 9, 'right'); }
   }, null, { min: o.min });
 }
 // GMS FX slot: X / Y pad (what X and Y do depends on the kind, as in the FLM guide), the LFO sweep of X in orange; drag the point
-const GMS_XY = [['Drive', 'Tone'], ['Depth', 'Feedback'], ['Width', 'Feedback'], ['Cutoff', 'Reso'], ['Cutoff', 'Reso'], ['Feedback', 'Damp'], ['Size', 'Wet'], ['Pan', 'Width'], ['Freq', '-'], ['Vowel', 'Shift']];
+// X / Y of each kind, named as in the FL Studio Mobile manual (Ring Mod has no Y)
+const GMS_XY = [['Amount', 'LPF'], ['Depth', 'Feedback'], ['Depth', 'Feedback'], ['Cutoff', 'Res'], ['Cutoff', 'Res'], ['Feedback', 'Filter'], ['Feedback', 'Wet'], ['Pan', 'Binaural'], ['Freq', '—'], ['Vowel', 'Throat']];
 function fxPad(k, o) {
   let box = null;
   box = disp(k, (g, w, hh) => {
@@ -407,7 +416,7 @@ function ssArp(k) {
       for (let x = X(0); x <= X(span); x += 2) { const s = (x - 8) / (w - 16) * span; pts.push([x, s < t0 ? y1 : y2 + (y1 - y2) * Math.exp(-(s - t0) / Math.max(0.005, sl / 3))]); }
       lvPath(g, pts, CY, null, 2); vl(g, X(t0), 16, hh - 6, DISPC.grid2); vl(g, X(t0 + sl), 16, hh - 6, DISPC.grid2);
       txt(g, 'Glide ' + fmtS(sl) + (k.get(47) > 0.5 ? ' · Constant' : ''), 6, 13, WH, 9);
-      txt(g, (k.get(48) > 0.5 ? 'Mono' : 'Poly ' + Math.round(k.get(43))) + (k.get(46) > 0.5 ? ' · Legato' : ''), w - 6, 13, DISPC.ink, 9, 'right');
+      txt(g, (k.get(48) > 0.5 ? 'Mono' : 'Poly ' + Math.round(k.get(43)) + ' · held notes slide') + (k.get(46) > 0.5 ? ' · Legato' : ''), w - 6, 13, DISPC.ink, 9, 'right');
       return;
     }
     const rng = clamp(Math.round(k.get(50)) + 1, 1, 4), step = syncBeats(k.get(49)), held = [60, 64, 67], n = held.length, total = n * rng;
@@ -419,6 +428,7 @@ function ssArp(k) {
       let idx;
       if (mode === 1) idx = s % total; else if (mode === 2) idx = total - 1 - (s % total);
       else if (mode === 3) { const cyc = Math.max(1, total * 2 - 2), q = s % cyc; idx = q < total ? q : cyc - q; }
+      else if (mode === 5) { const cyc = total * 2, q = s % cyc; idx = q < total ? q : cyc - 1 - q; }   // Up/Down 2: top and bottom twice
       else { seed = (Math.imul(seed, 1103515245) + 12345) >>> 0; idx = (seed >>> 8) % total; }
       const p = held[idx % n] + 12 * Math.floor(idx / n), x = 6 + s * step / span * (w - 12), ww = Math.max(1.5, step / span * (w - 12) - 1.5);
       g.fillStyle = CY; g.fillRect(x + 0.5, Y(p) - rowH / 2, ww, rowH);
@@ -447,21 +457,22 @@ export function addFlmPanels(VI) {
   VI[31] = (k) => tabs(k, ['FILTER', 'OSC', 'MOD', 'LEVEL', 'EG', 'LFO', 'VOICES', 'FX'], [
     () => [FS('Filter', [filt(k, 0, 1, () => [0, 0, 1][Math.round(k.get(6))] ?? 0, () => Math.round(k.get(6)) === 1), KN(k, 0, 'Cutoff', { big: true }), KN(k, 1, 'Res')]),
       FS('Mode', [STACK(CHV(k, 6, ['LP 12', 'LP 24', 'HP']), TG(k, 5, 'Kbd', 72))]),
-      FS('Filter Envelope', [env(k, 2, 3, null, null, OR, () => 'Amount ' + Math.round(k.get(4))), KN(k, 2, 'Attack'), KN(k, 3, 'Decay'), KN(k, 4, 'Amount', { big: true })])],
+      FS('Filter Envelope', [env(k, 2, 3, 'hold', null, OR, () => 'Amount ' + Math.round(k.get(4))), KN(k, 2, 'Attack'), KN(k, 3, 'Decay'), KN(k, 4, 'Amount', { big: true })])],
     () => [FS('Oscillators', [SEL(k, 7, 'Osc A', 100), SEL(k, 8, 'Osc B', 100), gmsOsc(k)]),
       FS('Osc B', [KN(k, 9, 'Pitch B'), KN(k, 10, 'Fine B'), KN(k, 11, 'Phase B')]), FS('Mix', [KN(k, 12, 'Balance'), KN(k, 13, 'Noise')])],
-    () => [FS('Modulation', [CHV(k, 15, ['Mix', 'FM', 'Ring', 'Sync']), KN(k, 14, 'Amount', { big: true }), gmsOsc(k)]),
-      FS('Mod Envelope', [env(k, 16, 17, null, null, OR, () => 'EG Amount ' + Math.round(k.get(18))), KN(k, 16, 'Attack'), KN(k, 17, 'Decay'), KN(k, 18, 'EG Amount')]),
+    () => [FS('Modulation', [CHV(k, 15, ['Mix', 'FM', 'RM', 'Sync']), KN(k, 14, 'Amount', { big: true }), gmsOsc(k)]),
+      FS('Mod Envelope', [env(k, 16, 17, null, null, OR, () => 'Contour ' + Math.round(k.get(18))), KN(k, 16, 'Attack'), KN(k, 17, 'Decay'), KN(k, 18, 'Contour')]),
       FS('Wheels', [FC('PB Range', k.N(19, { w: 58 })), SEL(k, 20, 'MW Dest', 82), KN(k, 21, 'MW Amount')])],
     () => [FS('Output', [KN(k, 22, 'Level', { big: true }), KN(k, 23, 'Pan')]),
       FS('Amp Envelope', [env(k, 24, 25, 26, 27), ...ADSR(k, 24, 25, 26, 27)])],
     () => [FS('Envelope Generator', [env(k, 29, 30, 31, 32, OR, () => 'Contour ' + Math.round(k.get(28)) + ' → ' + item(k, 34)), ...ADSR(k, 29, 30, 31, 32)]),
       FS('Routing', [KN(k, 28, 'Contour', { big: true }), FT(TG(k, 33, 'Vel', 72)), CHV(k, 34, ['Filter', 'Osc. Mod', 'Pitch'])])],
-    () => [FS('LFO', [lfo(k, { shape: 36, amt: 35, sync: 38 }), KN(k, 35, 'Amount', { big: true }), SEL(k, 38, 'Rate', 76), SEL(k, 36, 'Shape', 76)]),
-      FS('Destination', [CHV(k, 37, ['FLT', 'OSC', 'PITCH'])])],
+    () => [FS('LFO', [lfo(k, { shape: 36, amt: 35, sync: 38 }), KN(k, 35, 'Contour', { big: true }), SEL(k, 38, 'Rate', 76), SEL(k, 36, 'Shape', 76)]),
+      FS('Destination', [CHV(k, 37, ['Filter', 'Osc', 'Pitch'])])],
     () => [FS('Voices', [SEL(k, 45, 'Voices', 76), SEL(k, 46, 'Scale', 76), gmsVoices(k)]), FS('Chorus', [KN(k, 41, 'Detune'), KN(k, 42, 'Stereo')]),
       FS('Glide', [KN(k, 39, 'Transpose'), KN(k, 40, 'Slide'), FT(TG(k, 43, 'Mono', 70), TG(k, 44, 'Auto', 70))])],
-    () => [0, 1, 2].map((s) => { const o = 47 + s * 7; return FS('FX ' + (s + 1), [SEL(k, o + 1, 'Kind', 74), SEL(k, o + 5, 'LFO Rate', 74), KN(k, o + 3, 'X'), KN(k, o + 4, 'Y'), KN(k, o + 2, 'LFO Amt'), SEL(k, o + 6, 'Shape', 60), fxPad(k, o)], { sw: SW(k, o) }); }),
+    () => [0, 1, 2].map((s) => { const o = 47 + s * 7, xy = (j) => k.swapN(o + 1, (m) => KN(k, o + 3 + j, (GMS_XY[m] || ['X', 'Y'])[j]));   // X / Y named by the kind
+      return FS('FX ' + (s + 1), [SEL(k, o + 1, 'Kind', 74), SEL(k, o + 5, 'LFO Rate', 74), xy(0), xy(1), KN(k, o + 2, 'LFO Amt'), SEL(k, o + 6, 'Shape', 60), fxPad(k, o)], { sw: SW(k, o) }); }),
   ]);
   VI[32] = (k) => tabs(k, ['OSC', 'FILTER', 'FLT EG', 'LFO', 'MASTER', 'FX'], [
     () => [FS('Oscillator', [SEL(k, 0, 'Kind', 116), KN(k, 1, 'Modifier', { big: true }), miniWave(k)]),
@@ -475,7 +486,7 @@ export function addFlmPanels(VI) {
     () => [FS('Distortion', [KN(k, 26, 'Drive'), KN(k, 27, 'Decim'), distWave(k, { on: 25, drive: 26, dmax: 20, decim: 27, min: 84 })], { sw: SW(k, 25) }),
       FS('Delay', [SEL(k, 32, 'Time', 58), KN(k, 31, 'Mix'), KN(k, 29, 'Feedback'), KN(k, 30, 'Filter'), taps(k, { on: 28, time: 32, fb: 29, filt: 30, mix: 31, min: 84 })], { sw: SW(k, 28) }),
       FS('Chorus', [KN(k, 34, 'Rate'), KN(k, 35, 'Mod'), KN(k, 36, 'Mix'), chorusDisp(k, { on: 33, rate: 34, mod: 35, mix: 36, min: 84 })], { sw: SW(k, 33) }),
-      FS('Phaser', [KN(k, 38, 'Speed'), KN(k, 39, 'Width'), KN(k, 40, 'Feedback'), KN(k, 41, 'Freq'), KN(k, 42, 'Mix'), phaserDisp(k, { on: 37, width: 39, fb: 40, freq: 41, mix: 42, min: 84 })], { sw: SW(k, 37) })],
+      FS('Phaser', [KN(k, 38, 'Speed'), KN(k, 39, 'Width'), KN(k, 40, 'Feedback'), KN(k, 41, 'Freq'), KN(k, 42, 'Mix'), phaserDisp(k, { on: 37, speed: 38, width: 39, fb: 40, freq: 41, mix: 42, min: 84 })], { sw: SW(k, 37) })],
   ]);
   VI[33] = (k) => tabs(k, ['OSC', 'FILTER', 'LFO', 'LEVEL', 'MOD', 'VOICES', 'FX'], [
     () => [FS('Oscillator', [STACK(CHV(k, 1, ['Supersaw', 'Supersync']), TG(k, 0, 'Pulse Mode', 72), TG(k, 2, 'Retrig', 72)), KN(k, 3, 'Pulse Width'), KN(k, 4, 'Sub Osc'), ssWave(k)]),

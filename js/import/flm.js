@@ -53,8 +53,8 @@ export function parseFlm(buf, onProgress) {
 
   const readRack = (r) => {
     const ks = kids(r), out = { vol: LVL0, pan: 0.5, modules: [], pads: [] };
-    const rp = one(ks, 'RPRM');                              // f32 x 6: level, pan, mute (0 / 1), ?, 0.5, ?  (mute: tracks switched off in FLM, also empty ones)
-    if (rp && rp.n >= 8) { out.vol = f32(rp.a); out.pan = f32(rp.a + 4); out.rprm = []; for (let k = 0; k + 4 <= rp.n; k += 4) out.rprm.push(f32(rp.a + k)); if (rp.n >= 12) out.mute = f32(rp.a + 8) > 0.5; }
+    const rp = one(ks, 'RPRM');                              // f32 x 6: level, pan, mute (0 / 1), solo?, 0.5, ?  (the FLM manual's channel has Activate (mute) then Solo; index 3 is a Solo candidate, 0 in every known project, not applied)
+    if (rp && rp.n >= 8) { out.vol = f32(rp.a); out.pan = f32(rp.a + 4); out.rprm = []; for (let k = 0; k + 4 <= rp.n; k += 4) out.rprm.push(f32(rp.a + k)); if (rp.n >= 12) out.mute = f32(rp.a + 8) > 0.5; if (rp.n >= 16) out.solo = f32(rp.a + 12) > 0.5; }
     for (const m of ks.filter((x) => x.tag === 'RMOd')) {
       const mk = kids(m), type = i32(m.a), id = u32(m.a + 4);
       const prst = one(mk, 'PRST'), prms = one(mk, 'PRMS'), desc = one(mk, 'DESC'), cstm = one(mk, 'CSTM'), smpr = one(mk, 'SMPR');
@@ -63,7 +63,7 @@ export function parseFlm(buf, onProgress) {
       const names = desc ? [str(desc.a, 256), str(desc.a + 0x100, 256)].filter(Boolean) : [];
       const folder = /Effect Presets\/([^/]+)\//.exec(pr); if (folder && !KNOWN[type]) presetName[type] = folder[1].replace(/(\S)\d+$/, '$1').trim();   // "Autoduck2" -> Autoduck, "Reverb 2" stays
       const mod = { type, id, params, enabled: !(params.length && params[0] < 0.5), preset: pr.replace(/^.*\//, '').replace(/\.(flmpst|dwp)$/i, ''), presetPath: pr, names };
-      if (smpr && smpr.n >= 12) { mod.pan = f32(smpr.a) * 2 - 1; mod.level = f32(smpr.a + 4); }   // module pan / level (mix)
+      if (smpr && smpr.n >= 12) { mod.wetPan = f32(smpr.a); mod.level = f32(smpr.a + 4); mod.postGain = f32(smpr.a + 8); mod.pan = 0; }   // SMPR = Wet Pan, Mix, Post Gain (FLM Rack "Mix options"); Mix -> module level, Wet Pan / Post Gain default 0.5 in known projects
       if (cstm) for (const z of kids(cstm)) {                 // DirectWave: the sample of its zone (user folder) or a library program (built-in content)
         if (z.tag === 'ZONE') { mod.sample = clean(raw(z.a, Math.min(z.n, 1024))); if (z.n > 1028) mod.root = Math.min(127, u[z.a + 1024] + NOTE_OFS); }   // path[1024], then the zone's root key (MIDI)
         if (z.tag === 'PATh') mod.library = clean(raw(z.a + 4, Math.min(z.n - 4, u32(z.a))));
@@ -145,8 +145,8 @@ export function flmToModel(P) {
     // an unidentified module with a synth-sized parameter set on a notes channel is its instrument (not an effect): reported by id
     const unk = dw.length || syn || !ch.tracks.some((t) => t.kind === 'notes') ? null : ch.modules.find((m) => !FLM_TYPES[m.type] && m.params.length >= 40);
     const instMods = new Set(dw.length ? dw : syn ? [syn] : unk ? [unk] : []);
-    const c = { kind: ch.kind, name: ch.name, hue: hue(ch.hue), gain: ch.vol / LVL0, pan: ch.pan * 2 - 1, ...(ch.mute ? { mute: true } : {}), tracks: [], pads: [],
-      modules: ch.modules.filter((m) => !instMods.has(m)).map((m) => ({ name: m.name, enabled: m.enabled, ...(m.level != null && m.level < 0.999 ? { mix: m.level } : {}), preset: m.preset && m.preset !== 'Default' ? m.preset : '', params: m.params, id: m.id, flmType: m.type, ...(FLM_TYPES[m.type] && FLM_TYPES[m.type].sure === false ? { sure: false } : {}), app: 'FL Studio Mobile' })) };
+    const c = { kind: ch.kind, name: ch.name, hue: hue(ch.hue), gain: ch.vol / LVL0, pan: ch.pan * 2 - 1, ...(ch.mute ? { mute: true } : {}), ...(ch.solo ? { solo: true } : {}), tracks: [], pads: [],
+      modules: ch.modules.filter((m) => !instMods.has(m)).map((m) => ({ name: m.name, enabled: m.enabled, ...(m.level != null && m.level < 0.999 ? { mix: m.level } : {}), ...(m.postGain != null && Math.abs(m.postGain - 0.5) > 1e-4 ? { postGain: m.postGain } : {}), ...(m.wetPan != null && Math.abs(m.wetPan - 0.5) > 1e-4 ? { wetPan: m.wetPan } : {}), preset: m.preset && m.preset !== 'Default' ? m.preset : '', params: m.params, id: m.id, flmType: m.type, ...(FLM_TYPES[m.type] && FLM_TYPES[m.type].sure === false ? { sure: false } : {}), app: 'FL Studio Mobile' })) };
     if (dw.length) {
       const lib = dw.find((m) => m.library);
       c.instrument = { kind: 'directwave', name: 'DirectWave', layers: dw.filter((m) => m.enabled && m.sample).map((m) => ({ sample: m.sample, root: m.root ?? 60, params: m.params, level: m.level ?? 1, pan: m.pan || 0 })), library: lib ? lib.library : '', preset: dw[0].preset, enabled: dw.some((m) => m.enabled) };

@@ -37,12 +37,15 @@ function lfoValue(v, shape, oneShot, attack, rng) {
   const x = shape === 0 ? Math.sin(TWO_PI * p) : shape === 1 ? 1 - 2 * p : shape === 2 ? (p < 0.5 ? 1 : -1) : v.lr;
   return attack > 0.0005 ? x * Math.min(1, v.lt / attack) : x;
 }
-// voice allocation shared by the synths: poly up to `max`, or mono (one voice; legato = no retrigger while a note is held; slide)
+// voice allocation shared by the synths: poly up to `max`, or mono (one voice; legato = no retrigger while a note is held; slide).
+// Slides follow the FL Studio Mobile manual: Mono without Legato / Lead / Auto slides on every note change (also from a note that has
+// ended), Legato / Lead / Auto only between overlapping notes; polySlide (SuperSaw, Mono Mode off): a new note played while another is
+// held slides from that note (notes that start together, a chord, do not slide from each other).
 class Voices {
   constructor(sr, n, extra) {
     this.sr = sr; this.counter = 0; this.rng = { seed: 9137 }; this.bpm = 120; this.bendSt = 0; this.pb = 2; this.max = n; this.mono = false; this.legato = false;
-    this.slide = 0; this.constSlide = true; this.stack = [];
-    this.v = Array.from({ length: n }, () => ({ on: false, held: false, pitch: 0, vel: 0, age: 0, f: 440, ft: 440, gl: 1, env: new Adsr(), lp: 0, lt: 0, lr: 0, ...extra() }));
+    this.slide = 0; this.constSlide = true; this.stack = []; this.lastF = 0; this.polySlide = false; this.clock = 0;
+    this.v = Array.from({ length: n }, () => ({ on: false, held: false, pitch: 0, vel: 0, age: 0, t0: 0, f: 440, ft: 440, gl: 1, env: new Adsr(), lp: 0, lt: 0, lr: 0, ...extra() }));
   }
   setTempo(b) { this.bpm = clamp(b, 20, 400); }
   setBend(st) { this.bendSt = st / 2 * this.pb; }                                // the UI wheel sends +-2: scaled by the instrument's PB range
@@ -62,18 +65,22 @@ class Voices {
       this.stack = this.stack.filter((x) => x.p !== p); this.stack.push({ p, vel });
       const cur = this.v.find((o) => o.on && o.held);
       if (cur) {
-        const ft = midiToHz(p); cur.gl = this.glideCoef(cur.f, ft); cur.ft = ft; cur.pitch = p; cur.vel = vel;
+        const ft = midiToHz(p); cur.gl = this.glideCoef(cur.f, ft); cur.ft = ft; cur.pitch = p; cur.vel = vel; this.lastF = ft;
         if (!this.legato) this.start(cur, true);
         return;
       }
       for (const o of this.v) if (o.on) { o.held = false; o.env.release(); }
-      const v = this.v[0]; this.begin(v, p, vel, v.on && this.slide > 0 && !this.legato ? v.f : 0); return;   // legato (Lead / Auto): no slide from a released note
+      const v = this.v[0], from = this.slide > 0 && !this.legato ? (v.on ? v.f : this.lastF) : 0;   // legato (Lead / Auto): no slide from a released note
+      this.begin(v, p, vel, from); return;
     }
-    this.begin(this.pick(), p, vel, 0);
+    let from = 0;
+    if (this.polySlide && this.slide > 0) { let b = null; for (const o of this.v) if (o.on && o.held && o.t0 < this.clock && (!b || o.age > b.age)) b = o; if (b) from = b.f; }
+    this.begin(this.pick(), p, vel, from);
   }
   begin(v, p, vel, fromF) {
-    v.on = v.held = true; v.pitch = p; v.vel = vel; v.age = ++this.counter; v.ft = midiToHz(p);
+    v.on = v.held = true; v.pitch = p; v.vel = vel; v.age = ++this.counter; v.t0 = this.clock; v.ft = midiToHz(p);
     if (fromF > 0) { v.f = fromF; v.gl = this.glideCoef(fromF, v.ft); } else { v.f = v.ft; v.gl = 1; }
+    this.lastF = v.ft;
     this.start(v, false);
   }
   noteOff(p) {
@@ -81,7 +88,7 @@ class Voices {
       this.stack = this.stack.filter((x) => x.p !== p);
       const cur = this.v.find((o) => o.on && o.held && o.pitch === p);
       if (!cur) return;
-      if (this.stack.length) { const t = this.stack[this.stack.length - 1], ft = midiToHz(t.p); cur.gl = this.glideCoef(cur.f, ft); cur.ft = ft; cur.pitch = t.p; if (!this.legato) this.start(cur, true); return; }
+      if (this.stack.length) { const t = this.stack[this.stack.length - 1], ft = midiToHz(t.p); cur.gl = this.glideCoef(cur.f, ft); cur.ft = ft; cur.pitch = t.p; this.lastF = ft; if (!this.legato) this.start(cur, true); return; }
       cur.held = false; this.release(cur); return;
     }
     for (const v of this.v) if (v.on && v.held && v.pitch === p) { v.held = false; this.release(v); }
@@ -224,7 +231,8 @@ class Arp {
     let idx;
     if (mode === 1) idx = this.step % total;
     else if (mode === 2) idx = total - 1 - (this.step % total);
-    else if (mode === 3) { const cyc = Math.max(1, total * 2 - 2), q = this.step % cyc; idx = q < total ? q : cyc - q; }
+    else if (mode === 3) { const cyc = Math.max(1, total * 2 - 2), q = this.step % cyc; idx = q < total ? q : cyc - q; }   // Up/Down: top and bottom once
+    else if (mode === 5) { const cyc = total * 2, q = this.step % cyc; idx = q < total ? q : cyc - 1 - q; }                // Up/Down 2: top and bottom twice
     else idx = (lcg(rng) >>> 8) % total;
     this.step++;
     return { p: Math.min(127, seq[idx % n].p + 12 * Math.floor(idx / n)), vel: seq[idx % n].vel };
@@ -278,6 +286,7 @@ export class FlmDirectWave extends Voices {
     }
   }
   render(L, R, from, to) {
+    this.clock += to - from;
     const p = this.p, sr = this.sr, ftype = Math.round(p[16]), filt = ftype > 0, mode = ftype - 1, loopAll = p[9] > 0.5, rev = p[8] > 0.5;
     const lfoMode = Math.round(p[27]), lhz = lfoMode === 2 ? this.bpm / 60 / syncBeats(p[29]) : p[28], lshape = Math.round(p[30]), lamt = p[32] / 100, ldest = Math.round(p[33]);
     const lvl = dbg(p[34]), res = p[13] / 100;
@@ -318,11 +327,16 @@ export class FlmDirectWave extends Voices {
 
 // ================================================================================================ GMS (31)
 // Filter (Cutoff, Res, Attack, Decay, Amount, Kbd, Kind LP12 / LP24 / HP), Osc (waves A / B, Pitch B, Fine B, Phase B, Balance, Noise),
-// Mod (Mod Amount, Kind Mix / FM / Ring / Sync, Attack, Decay, EG Amount, PB Range, MW Dest, MW Amount), Level (Level, Pan, ADSR), EG
-// (Amount, ADSR, Vel, Dest), LFO (Amount, Shape, Dest, Rate), Voices (Transpose, Slide, Chorus Detune / Stereo, Mono, Auto, Voices
+// Mod (Mod Amount, Kind Mix / FM / RM / Sync, Attack, Decay, Contour, PB Range, MW Dest, MW Amount), Level (Level, Pan, ADSR), EG
+// (Contour, ADSR, Vel, Dest), LFO (Contour, Shape, Dest, Rate), Voices (Transpose, Slide, Chorus Detune / Stereo, Mono, Auto, Voices
 // Solo..4, Scale Flat / Chord / Octave), FX x3 in series (on, kind, LFO amount, X, Y, LFO rate, LFO shape) at 47 + slot * 7.
+// As the FL Studio Mobile manual describes GMS: the filter envelope starts at the cutoff, rises to its peak (Amount) in Attack, stays
+// there while the key is held and falls back in Decay after the key is released; Scale Chord stacks the voices a fifth apart (0 / 7 /
+// 14 / 21 st), Octave an octave apart (0 / 12 / 24 / 36 st); the FX LFO rate goes from 1/4 bar to 8 bars.
 export const GMS_FX = ['Dist', 'Flanger', 'Phaser', 'LPF', 'HPF', 'Delay', 'Reverb', 'Panner', 'Ring Mod', 'VOX Filter'];
-const SCALE = [[0, 0, 0, 0], [0, 7, 12, 19], [0, 12, -12, 24]];
+export const GMS_SCALE = [[0, 0, 0, 0], [0, 7, 14, 21], [0, 12, 24, 36]];
+export const GMS_FX_RATE = ['8 Bars', '4 Bars', '2 Bars', '1 Bar', '1/2 Bar', '1/4 Bar'];   // = FLM_SYNC 0..5 (32 .. 1 beats)
+const SCALE = GMS_SCALE;
 const VOX = [[730, 1090, 2440], [530, 1840, 2480], [270, 2290, 3010], [570, 840, 2410], [300, 870, 2240]];   // a e i o u formants
 class GmsFx {
   constructor(sr) { this.sr = sr; this.dl = new Delay(sr, 2); this.md = new ModDelay(sr); this.ph = new Phaser(sr); this.rv = new Reverb(sr); this.fl = [new Svf(), new Svf()]; this.fv = [0, 1, 2].map(() => [new Svf(), new Svf()]); this.lp = 0; this.rm = 0; this.kind = -1; this.z = [0, 0]; }
@@ -360,12 +374,12 @@ export class FlmGms extends Voices {
     this.bufL = new Float32Array(4096); this.bufR = new Float32Array(4096); this.fx = [0, 1, 2].map(() => new GmsFx(sr));
     this.max = 16; wavetables();
     const D = [100, 0, 0.001, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0.001, 1, 0, 2, 0, 0, 0, 0, 0.001, 1, 1, 0.1, 0, 0.001, 0.5, 0, 0.3, 0, 0, 0, 0, 0, 0, 0, 0.1, 0, 0, 0, 0, 0, 0];
-    for (let s = 0; s < 3; s++) D.push(0, [1, 2, 5][s], 0, 50, 50, 9, 0);
+    for (let s = 0; s < 3; s++) D.push(0, [1, 2, 5][s], 0, 50, 50, 5, 0);
     D.forEach((x, i) => this.setParam(i, x));
   }
   setParam(i, x) {
     if (i < 0 || i >= 70) return; this.p[i] = x; const p = this.p;
-    if (i === 2 || i === 3) adsrInto(this.fp, p[2], p[3], 0, p[3], this.sr);
+    if (i === 2 || i === 3) adsrInto(this.fp, p[2], p[3], 1, p[3], this.sr);   // attack to the peak, held, Decay after the key is released
     if (i === 16 || i === 17) adsrInto(this.mp, p[16], p[17], 0, p[17], this.sr);
     if (i >= 24 && i <= 27) adsrInto(this.ap, p[24], p[25], p[26], p[27], this.sr);
     if (i >= 29 && i <= 32) adsrInto(this.ep, p[29], p[30], p[31], p[32], this.sr);
@@ -375,7 +389,7 @@ export class FlmGms extends Voices {
     if (!retrig) { for (let k = 0; k < 8; k++) v.ph[k] = this.p[11] * (k & 1); v.lp = 0; v.lt = 0; for (const f of [v.s1, v.s2, v.s3, v.s4]) f.reset(); v.fenv.v = 0; v.menv.v = 0; v.eg.v = 0; }
     v.env.start(); v.fenv.start(); v.menv.start(); v.eg.start();
   }
-  release(v) { v.env.release(); v.eg.release(); }
+  release(v) { v.env.release(); v.eg.release(); v.fenv.release(); }
   render(L, R, from, to) {
     const p = this.p, sr = this.sr, W = WT, wa = W[clamp(Math.round(p[7]), 0, W.length - 1)], wb = W[clamp(Math.round(p[8]), 0, W.length - 1)];
     const kind = Math.round(p[15]), fk = Math.round(p[6]), bal = (p[12] + 100) / 200, noise = p[13] / 100, lvl = dbg(p[22]), pan = p[23] / 100;
@@ -384,7 +398,7 @@ export class FlmGms extends Voices {
     const res = p[1] / 100, bRatio = Math.pow(2, (p[9] + p[10] / 100) / 12), tr = p[39];
     const B = this.bufL, Bq = this.bufR, n0 = to - from;
     if (n0 > B.length) { this.render(L, R, from, from + B.length); this.render(L, R, from + B.length, to); return; }
-    B.fill(0, 0, n0); Bq.fill(0, 0, n0);
+    this.clock += n0; B.fill(0, 0, n0); Bq.fill(0, 0, n0);
     for (const v of this.v) {
       if (!v.on) continue;
       for (let i = 0; i < n0; i += CR) {
@@ -427,7 +441,7 @@ export class FlmGms extends Voices {
       }
     }
     tailOf(this, n0);
-    for (let s = 0; s < 3; s++) { const o = 47 + s * 7; if (p[o] > 0.5) this.fx[s].run(B, Bq, 0, n0, Math.round(p[o + 1]), p[o + 2], p[o + 3], p[o + 4], syncBeats(p[o + 5]), Math.round(p[o + 6]), this.bpm); }
+    for (let s = 0; s < 3; s++) { const o = 47 + s * 7; if (p[o] > 0.5) this.fx[s].run(B, Bq, 0, n0, Math.round(p[o + 1]), p[o + 2], p[o + 3], p[o + 4], syncBeats(Math.min(5, p[o + 5])), Math.round(p[o + 6]), this.bpm); }
     const gl = lvl * Math.min(1, 1 - pan), gr = lvl * Math.min(1, 1 + pan);
     for (let k = 0; k < n0; k++) { L[from + k] += B[k] * gl; R[from + k] += Bq[k] * gr; }
   }
@@ -437,10 +451,20 @@ function tailOf(o, n) { let on = false; for (const v of o.v) if (v.on) { on = tr
 
 // ================================================================================================ MiniSynth (32)
 // Osc (Oscillator Kind, Modifier, Noise, Transp), Filter (Cutoff, Kbd Trk, Vel Trk, Res), Flt EG (ADSR, Amount), LFO (Amount, Rate,
-// Shape, Dest Filter / Frequency / Modifier, MW, MW Dest), Master (ADSR, Voices Mode Poly / Mono / Lead, Slide), FX: Distortion
+// Shape, Dest Filter / Frequency / Modifier / MW, MW, MW Dest), Master (ADSR, Voices Mode Poly / Mono / Lead, Slide), FX: Distortion
 // (on, Drive, Decim), Delay (on, Feedback, Filter, Mix, Time), Chorus (on, Rate, Mod, Mix), Phaser (on, Speed, Width, Feedback, Freq, Mix).
+// The Modifier as the FL Studio Mobile manual describes it: Saw = saw + square whose pulse width is 0 at Modifier 0 and 100 (a perfect saw)
+// and 50 % at 50; Saw + Saw / Square + Saw / Square + Square = pitch of the second wave -24 .. +24 st (50 = unison); Pulse = two squares
+// whose phase offset is the Modifier (0 and 100 cancel completely, 50 = a full square). Kbd / Vel Trk are bipolar, LFO Dest MW sends the
+// LFO to the MW Dest target, the phaser Speed is tempo synced (8 bars .. 1/4 beat).
 export const MINI_KINDS = ['Saw', 'Saw + Saw', 'Pulse', 'Square + Saw', 'Square + Square', 'SuperSaw', 'Bell', 'DeafSaw', 'Spread Oct', 'Spread 5th'];
 const pulse = (ph, dt, w) => { let p2 = ph + 1 - w; if (p2 >= 1) p2 -= 1; return (2 * ph - 1 - polyBlep(ph, dt)) - (2 * p2 - 1 - polyBlep(p2, dt)) + (1 - 2 * w); };
+// zero-mean pulse: width 0 is silence (the FLM manual's "pulse width zero"); the same as pulse() at 50 %
+const pulseZ = (ph, dt, w) => { if (w <= 1e-4) return 0; let p2 = ph + 1 - w; if (p2 >= 1) p2 -= 1; return (2 * ph - 1 - polyBlep(ph, dt)) - (2 * p2 - 1 - polyBlep(p2, dt)); };
+export const miniPw = (m) => 0.5 - Math.abs(clamp(m, 0, 1) - 0.5);              // MiniSynth Saw: Modifier 0..1 -> pulse width of its square
+export const miniSt = (m) => (clamp(m, 0, 1) - 0.5) * 48;                         // second wave pitch, semitones
+const PH_BEATS = [32, 16, 8, 4, 2, 1, 0.75, 0.5, 1 / 3, 0.25];
+export const miniPhaserBeats = (s) => PH_BEATS[clamp(Math.round(clamp(s, 0, 100) / 100 * 9), 0, 9)];   // Speed 0..100 -> 8 bars .. 1/4 beat
 const saw = (ph, dt) => 2 * ph - 1 - polyBlep(ph, dt);
 const SS_OFF = [0, -1, 1, -0.6, 0.6, -0.3, 0.3, -0.85], SS_PAN = [0, -0.9, 0.9, -0.55, 0.55, -0.25, 0.25, 0.7];
 export class FlmMiniSynth extends Voices {
@@ -465,10 +489,10 @@ export class FlmMiniSynth extends Voices {
   active() { return super.active() || this.tail > 0; }
   render(L, R, from, to) {
     const p = this.p, sr = this.sr, kind = clamp(Math.round(p[0]), 0, 9), mod = p[1] / 100, noise = p[2] / 100 * 0.5, res = p[7] / 100;
-    const lhz = this.bpm / 60 / syncBeats(p[14]), lsh = Math.round(p[15]), lamt = p[13] / 100, ldst = Math.round(p[16]);
+    const ld0 = Math.round(p[16]), lhz = this.bpm / 60 / syncBeats(p[14]), lsh = Math.round(p[15]), lamt = p[13] / 100, ldst = ld0 === 3 ? Math.round(p[18]) : ld0;   // 3 = MW: the MW Dest target
     const B = this.bufL, Bq = this.bufR, n0 = to - from;
     if (n0 > B.length) { this.render(L, R, from, from + B.length); this.render(L, R, from + B.length, to); return; }
-    B.fill(0, 0, n0); Bq.fill(0, 0, n0);
+    this.clock += n0; B.fill(0, 0, n0); Bq.fill(0, 0, n0);
     for (const v of this.v) {
       if (!v.on) continue;
       for (let i = 0; i < n0; i += CR) {
@@ -479,7 +503,7 @@ export class FlmMiniSynth extends Voices {
         const f0 = v.f * Math.pow(2, (p[3] + this.bendSt + (ldst === 1 ? lf * 2 : 0)) / 12), dt = f0 / sr;
         const oct = (v.pitch - 60) / 12 * p[5] / 100 + (v.vel - 1) * 4 * p[6] / 100 + v.fenv.v * p[12] / 100 * 6 + (ldst === 0 ? lf * 4 : 0);
         const fc = cutHz(p[4]) * Math.pow(2, oct); v.s1.set(sr, fc, res); v.s2.a1 = v.s1.a1; v.s2.a2 = v.s1.a2; v.s2.a3 = v.s1.a3; v.s2.k = v.s1.k;
-        const r2 = Math.pow(2, (m * 24) / 12), pw = 0.5 - m * 0.45, ph = v.ph;
+        const r2 = Math.pow(2, miniSt(m) / 12), pw = miniPw(m), ph = v.ph;
         const det = kind === 5 ? m * 0.5 : kind >= 8 ? m * 0.25 : 0, iv = kind === 8 ? 12 : kind === 9 ? 7 : 0;
         const d2 = dt * (kind === 1 || kind === 3 || kind === 4 ? r2 : kind >= 8 ? Math.pow(2, (iv + det) / 12) : 1);
         for (let k = i; k < e2; k++) {
@@ -494,9 +518,9 @@ export class FlmMiniSynth extends Voices {
             let b = ph[1] + d2; if (b >= 1) b -= 1; ph[1] = b;
             let x;
             switch (kind) {
-              case 0: x = 0.6 * saw(a, dt) + 0.4 * pulse(a, dt, pw); break;
+              case 0: x = 0.6 * saw(a, dt) + 0.4 * pulseZ(a, dt, pw); break;
               case 1: x = 0.55 * (saw(a, dt) + saw(b, d2)); break;
-              case 2: { let c = a + m * 0.5; if (c >= 1) c -= 1; x = 0.5 * (pulse(a, dt, 0.5) + pulse(c, dt, 0.5)); break; }
+              case 2: { let c = a + m; if (c >= 1) c -= 1; x = 0.5 * (pulse(a, dt, 0.5) - pulse(c, dt, 0.5)); break; }
               case 3: x = 0.5 * pulse(a, dt, 0.5) + 0.5 * saw(b, d2); break;
               case 4: x = 0.5 * (pulse(a, dt, 0.5) + pulse(b, d2, 0.5)); break;
               case 6: x = 0.7 * saw(a, dt) + m * 0.6 * Math.sin(TWO_PI * a * 3) * Math.sin(TWO_PI * a); break;
@@ -521,7 +545,7 @@ export class FlmMiniSynth extends Voices {
     }
     if (p[28] > 0.5) this.dl.run(B, Bq, 0, n0, sr * 60 / this.bpm * syncBeats(p[32]), p[29] / 100 * 0.9, p[30] / 100, p[31] / 100);
     if (p[33] > 0.5) this.ch.run(B, Bq, 0, n0, 0.1 + p[34] / 100 * 4, 0.007, 0.012 * p[35] / 100, 0, p[36] / 100);
-    if (p[37] > 0.5) this.phs.run(B, Bq, 0, n0, 0.05 + p[38] / 100 * 4, 80 + p[41] / 100 * 1500, p[39] / 100, p[40] / 100 * 0.85, p[42] / 100);
+    if (p[37] > 0.5) this.phs.run(B, Bq, 0, n0, this.bpm / 60 / miniPhaserBeats(p[38]), 80 + p[41] / 100 * 1500, p[39] / 100, p[40] / 100 * 0.85, p[42] / 100);
     const lvl = dbg(p[43]);
     for (let k = 0; k < n0; k++) { L[from + k] += B[k] * lvl; R[from + k] += Bq[k] * lvl; }
   }
@@ -532,15 +556,17 @@ export class FlmMiniSynth extends Voices {
 // Phase; Supersync: Sync, Sync PW, ADSR, Amount, Flip. Filter: Cutoff, Resonance, Kbd Trk, Vel Trk, ADSR, Amount. LFO: Hertz / One Shot /
 // Tempo, Rate, Shape (Sine / Saw / Square / Random), Attack, Amount, Destination. Level: Output Level, Panning, ADSR. Mod: PW Range,
 // ModWheel Amount / Dest. Voices: Poly (max voices), Transp, Slide, Legato, Constant, Mono Mode, Arp Rate / Range / Mode. FX: Distortion,
-// Gain, Delay Time / Feedback / Filter / Mix.
+// Gain, Delay Time / Feedback / Filter / Mix. From the FL Studio Mobile manual: Pulse Width 100 % = a normal square, 0 % = width zero (the
+// oscillator is silent); Kbd / Vel Trk are bipolar; with Mono Mode off a note played while another is held slides from it; the Tempo Sync
+// LFO follows the song's beat (tr() gives the position); Arp Up/Down plays the top and bottom notes once, Up/Down 2 twice.
 export const SS_LFO_DEST = ['Cutoff', 'Resonance', 'Frequency', 'Osc Sync', 'Pulse Width', 'Unison Detune', 'Level', 'Pan'];
 export class FlmSuperSaw extends Voices {
   constructor(sr) {
     super(sr, 16, () => ({ ph: new Float64Array(9), sp: new Float64Array(9), sub: 0, fenv: new Adsr(), senv: new Adsr(), s1: new Svf(), s2: new Svf(), dir: 1 }));
     this.p = new Float64Array(60); this.ap = {}; this.fp = {}; this.sp = {}; this.arp = new Arp(); this.lastPitch = 60;
     this.bufL = new Float32Array(4096); this.bufR = new Float32Array(4096); this.dl = new Delay(sr, 4); this.dz = [new Svf(), new Svf()];
-    this.uOff = new Float64Array(9); this.uPan = new Float64Array(9);
-    const D = [0, 0, 0, 50, 0, 0, 20, 0, 50, 0, 0, 50, 0.001, 0.5, 0, 0.3, 0, 0, 100, 0, 0, 0, 0.001, 0.5, 1, 0.3, 0, 0, 0.03, 9, 0, 0, 0, 0,
+    this.uOff = new Float64Array(9); this.uPan = new Float64Array(9); this.polySlide = true; this.playing = false; this.beat0 = 0; this.blk = 0;
+    const D = [0, 0, 0, 100, 0, 0, 20, 0, 50, 0, 0, 50, 0.001, 0.5, 0, 0.3, 0, 0, 100, 0, 0, 0, 0.001, 0.5, 1, 0.3, 0, 0, 0.03, 9, 0, 0, 0, 0,
       100, 0, 0.001, 0.5, 1, 0.3, 2, 0, 0, 5, 0, 0.05, 0, 1, 0, 9, 2, 0, 0, 0, 6, 40, 50, 0];
     D.forEach((x, i) => this.setParam(i, x));
   }
@@ -559,6 +585,7 @@ export class FlmSuperSaw extends Voices {
       const rt = p[2] > 0.5, ph = p[9] / 100;
       for (let k = 0; k < 9; k++) { const r = (lcg(this.rng) >>> 8) / 16777216; if (rt) { v.ph[k] = (k * 0.618 % 1) * ph; v.sp[k] = 0; } else { v.ph[k] = r; v.sp[k] = r; } }
       v.lp = 0; v.lt = 0; v.s1.reset(); v.s2.reset(); v.fenv.v = 0; v.senv.v = 0;
+      if (Math.round(p[27]) === 2 && this.playing) { const b = (this.beat0 + this.blk * this.bpm / 60 / this.sr) / syncBeats(p[29]); v.lp = b - Math.floor(b); }   // Tempo Sync: in phase with the song's beat
       v.dir = p[17] > 0.5 && v.pitch < this.lastPitch ? -1 : 1; this.lastPitch = v.pitch;
     }
     v.env.start(); v.fenv.start(); v.senv.start();
@@ -571,20 +598,24 @@ export class FlmSuperSaw extends Voices {
   }
   allOff() { super.allOff(); if (this.arp) { this.arp.note = -1; } }
   active() { return super.active() || this.tail > 0 || (Math.round(this.p[51]) > 0 && this.arp.held.length > 0); }
+  setSongPos(playing, beat) { this.playing = playing; this.beat0 = beat; this.blk = 0; }   // engine core: song position (beats) at the start of each block (named so it never collides with an instrument buffer field)
   render(L, R, from, to) {
     const mode = Math.round(this.p[51]);
-    if (!mode) { this.renderVoices(L, R, from, to); return; }
+    this.clock += to - from;
+    if (!mode) { this.renderVoices(L, R, from, to); this.blk = to; return; }
     const step = this.sr * 60 / this.bpm * syncBeats(this.p[49]), A = this.arp; let cur = from, guard = 0;
     while (cur < to && guard++ < 64) {
       if (A.held.length && A.pos <= 0) {                                         // next arp step
         if (A.note >= 0) super.noteOff(A.note);
         const nx = A.next(mode, clamp(Math.round(this.p[50]) + 1, 1, 4), this.rng);
+        this.blk = cur;
         if (nx) { A.note = nx.p; super.noteOn(nx.p, nx.vel); }
         A.pos = step;
       }
       const seg = A.held.length ? Math.min(to - cur, Math.max(1, Math.ceil(A.pos))) : to - cur;
       this.renderVoices(L, R, cur, cur + seg); cur += seg; if (A.held.length) A.pos -= seg; else A.pos = 0;
     }
+    this.blk = to;
   }
   renderVoices(L, R, from, to) {
     const p = this.p, sr = this.sr, B = this.bufL, Bq = this.bufR, n0 = to - from;
@@ -604,7 +635,8 @@ export class FlmSuperSaw extends Voices {
         if (v.gl < 1) v.f += (v.ft - v.f) * (1 - Math.pow(1 - v.gl, n)); else v.f = v.ft;
         const f0 = v.f * Math.pow(2, (p[44] + this.bendSt + (ld === 2 ? lf * 12 : 0)) / 12);
         const det = clamp(p[6] / 100 + (ld === 5 ? lf * 0.5 : 0), 0, 1) * 1.0;   // up to +-1 semitone at the outer voices
-        const pw = clamp(p[sync ? 11 : 3] / 100 + (ld === 4 ? lf * 0.5 : 0), 0.02, 0.98);   // Supersync has its own (minimum) pulse width
+        const pwS = clamp(p[3] / 100 + (ld === 4 ? lf * 0.5 : 0), 0, 1) * 0.5;            // Supersaw: 100 % = square (width 50 %), 0 = silent
+        const pwY = clamp(p[11] / 100 + (ld === 4 ? lf * 0.5 : 0), 0.02, 0.98);            // Supersync has its own (minimum) pulse width
         const syncAmt = clamp(p[10] / 100 + v.senv.v * p[16] / 100 * v.dir + (ld === 3 ? lf : 0), 0, 1), sr2 = Math.pow(2, syncAmt * 4);
         const oct = (v.pitch - 60) / 12 * p[20] / 100 + (v.vel - 1) * 4 * p[21] / 100 + v.fenv.v * p[26] / 100 * 6 + (ld === 0 ? lf * 4 : 0);
         v.s1.set(sr, cutHz(p[18]) * Math.pow(2, oct), clamp(res0 + (ld === 1 ? lf * 0.5 : 0), 0, 1)); v.s2.a1 = v.s1.a1; v.s2.a2 = v.s1.a2; v.s2.a3 = v.s1.a3; v.s2.k = v.s1.k;
@@ -622,10 +654,10 @@ export class FlmSuperSaw extends Voices {
               if (q >= 1) { q -= 1; s = q * sr2; }
               if (s >= 1) s -= Math.floor(s);
               v.sp[u] = s;
-              x = pulseM ? (s < pw ? 1 : -1) : 2 * s - 1;
+              x = pulseM ? (s < pwY ? 1 : -1) : 2 * s - 1;
             } else {
               if (q >= 1) q -= 1;
-              x = pulseM ? pulse(q, du, pw) : saw(q, du);
+              x = pulseM ? pulseZ(q, du, pwS) : saw(q, du);
             }
             v.ph[u] = q;
             l += x * (1 - uPan[u]); r += x * (1 + uPan[u]);
