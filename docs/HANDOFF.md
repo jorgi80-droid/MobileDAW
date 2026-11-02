@@ -178,6 +178,10 @@ Peta lengkap per layar: **`docs/GESTURES.md`**. Ringkasan teknis:
   lain agar muat tinggi panel (0,7–1,15×); `lvDrag` sudah menormalkan koordinat jadi aman untuk zoom.
 - Tape Stop = device 52 (`fx8.js`, buffer cincin, kecepatan turun / naik dengan kurva Warp, crossfade ke live). fx-test: tes khusus.
 - Impor FLM: `fxmap.js resolveFlmAutomation` (otomasi plugin), FLM_TYPES baru (2 / 23 / 52 synth, 6 / 15 / 32 / 35 / 42 / 46 efek).
+- Presisi impor FLM (`docs/IMPORT.md` bagian "Presisi"): tick pecahan (1/128 ketuk = 7,5 tick, `build.js T`), level bawaan f32 0,85312408 =
+  0 dB (`flm.js LVL0`; berlaku juga untuk FLP / ALS: gain model 1 = 0 dB), velocity = mentah / 32767 sampai 2 (boost; engine memakai
+  `min(127, vel*127)` untuk zona velocity di JS dan C++), DirectWave `PRMS[1..16]` (`dwParamsFromFlm`, `dwPitchSt` knob bertingkat ke arah
+  nol, `dwFineCt`; pitch / fine per lapisan → root / tune zona), mute track dari `RPRM[2]`, `report.precision` di laporan impor.
 
 ## Instrumen FL Studio Mobile: DirectWave / GMS / MiniSynth / SuperSaw (tipe 30-33, sesi ini)
 - Mesin `js/engine/flmsyn.js` (kelas FlmDirectWave / FlmGms / FlmMiniSynth / FlmSuperSaw, dasar bersama `Voices`: poly dengan batas,

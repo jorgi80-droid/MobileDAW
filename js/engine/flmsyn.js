@@ -267,7 +267,7 @@ export class FlmDirectWave extends Voices {
   }
   release(v) { v.env.release(); v.fenv.release(); v.penv.release(); }
   noteOn(p, vel) {
-    const vi = Math.round(vel * 127);
+    const vi = Math.min(127, Math.round(vel * 127));                            // velocities above 1 (FLM boost up to 200 %) use the top zones
     for (const q of this.z) {                                                    // every matching zone sounds (layers); mono: the first one
       const s = q.id >= 0 ? this.bank[q.id] : null;
       if (!s || p < q.lo || p > q.hi || vi < q.vlo || vi > q.vhi) continue;

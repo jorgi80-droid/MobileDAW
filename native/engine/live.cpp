@@ -84,7 +84,7 @@ void LiveSampler::startOsc(int p, double vel) {
   x.env.start(); x.fenv.start();
 }
 void LiveSampler::noteOn(int p, double vel) {
-  double vi = jsRound(vel * 127), sp = g[S_SPREAD]; bool started = false;
+  double vi = jsMin(127, jsRound(vel * 127)), sp = g[S_SPREAD]; bool started = false;
   for (auto& q : z) {
     const Sample* s = q.id >= 0 && q.id < 256 ? bank->s[q.id] : nullptr;
     if (!s || s->frames < 4 || p < q.lo || p > q.hi || vi < q.vlo || vi > q.vhi) continue;

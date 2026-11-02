@@ -311,8 +311,8 @@ function drawVel(t, c, gb) {
     for (const n of c.notes) {
       const s = sel.has(n); if ((pass === 1) !== s) continue;
       const x = Math.round(px(n.t)) + 0.5; if (x < KEYS - 4 || x > W + 4) continue;
-      const col = s ? C('#ffffff') : velCol(t.color, isPan ? 1 : n.v, false);
-      const y = isPan ? cy + pan0(n) * hh / 2 : top + (1 - n.v) * hh, from = isPan ? cy : bottom;
+      const vv = Math.min(1, n.v), col = s ? C('#ffffff') : velCol(t.color, isPan ? 1 : vv, false);   // an imported FLM boost (velocity above 1) sits at the top
+      const y = isPan ? cy + pan0(n) * hh / 2 : top + (1 - vv) * hh, from = isPan ? cy : bottom;
       ctx.fillStyle = col; ctx.fillRect(x - 0.75, Math.min(from, y), 1.5, Math.max(1, Math.abs(from - y)));          // stem
       ctx.beginPath(); ctx.arc(x, y, s ? 3.6 : 3, 0, 6.2832); ctx.fill();                                              // head
       if (!s) { ctx.strokeStyle = shadeC(t.color, 0.6); ctx.lineWidth = 1; ctx.stroke(); }
@@ -375,7 +375,7 @@ function drawSteps(t, c) {
       const hit = byRow[r] && s < steps ? byRow[r].find((q) => Math.abs(q.t - s * STEP) < STEP / 2) : null;
       ctx.fillStyle = Math.floor(s / SPBT) % 2 ? C('#1d1d20') : C('#19191b'); ctx.fillRect(x + 1, y0 + 4, sv.stepW - 2, inner + 2);
       if (hit && laneMode === 'rpt') { const q = hit.rpt > 1 ? hit.rpt : 1, bh = Math.max(3, q / 8 * inner), bw = Math.max(3, Math.min(14, sv.stepW * 0.5)), bx = Math.round(x + sv.stepW / 2 - bw / 2); ctx.fillStyle = t.color; ctx.fillRect(bx, y0 + 5 + inner - bh, bw, bh); if (sv.stepW >= 18) { ctx.fillStyle = C('#e8e8ec'); ctx.font = '600 9px system-ui'; ctx.textBaseline = 'bottom'; ctx.fillText(String(q), bx + bw / 2 - 2.5, y0 + 4 + inner - bh); } }
-      else if (hit) { const bh = Math.max(2, hit.v * inner), bw = Math.max(3, Math.min(10, sv.stepW * 0.35)); ctx.fillStyle = t.color; ctx.fillRect(Math.round(x + sv.stepW / 2 - bw / 2), y0 + 5 + inner - bh, bw, bh); ctx.fillRect(Math.round(x + sv.stepW / 2 - bw / 2) - 2, y0 + 5 + inner - bh, bw + 4, 2); }
+      else if (hit) { const bh = Math.max(2, Math.min(1, hit.v) * inner), bw = Math.max(3, Math.min(10, sv.stepW * 0.35)); ctx.fillStyle = t.color; ctx.fillRect(Math.round(x + sv.stepW / 2 - bw / 2), y0 + 5 + inner - bh, bw, bh); ctx.fillRect(Math.round(x + sv.stepW / 2 - bw / 2) - 2, y0 + 5 + inner - bh, bw + 4, 2); }
     }
     ctx.restore();
   }

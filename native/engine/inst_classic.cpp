@@ -42,7 +42,7 @@ SmpVoice& Sampler::allocS() {
   return x;
 }
 void Sampler::noteOn(int p, double vel) {
-  double vi = jsRound(vel * 127);
+  double vi = jsMin(127, jsRound(vel * 127));
   for (auto& q : z) {
     Sample* s = q.id >= 0 && q.id < 256 ? bank->s[q.id] : nullptr;
     if (!s || p < q.lo || p > q.hi || vi < q.vlo || vi > q.vhi) continue;
@@ -491,7 +491,7 @@ void SfPlayer::setParam(int i, double x) {
 void SfPlayer::noteOn(int p, double vel) {
   const SoundFont* sf = sfId >= 0 && sfId < 8 ? bank->sf[sfId] : nullptr; if (!sf || sf->presets.empty()) return;
   const std::vector<SfZone>& pr = preset < (int)sf->presets.size() && !sf->presets[preset].empty() ? sf->presets[preset] : sf->presets[0];
-  double vi = jsRound(vel * 127);
+  double vi = jsMin(127, jsRound(vel * 127));
   for (const SfZone& z : pr) {
     if (p < z.lo || p > z.hi || vi < z.vlo || vi > z.vhi) continue;
     int si = (int)z.sample; if (si < 0 || si >= (int)sf->rate.size()) continue;

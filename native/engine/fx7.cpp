@@ -95,7 +95,7 @@ InstrumentRack::InstrumentRack(double r) : core(r), sr(r) {
   for (int c = 0; c < RACK_CHAINS; c++) { core.p[122 + c * 2] = 0; core.p[123 + c * 2] = 127; core.p[138 + c * 2] = 1; core.p[139 + c * 2] = 127; }
 }
 bool InstrumentRack::plays(int c, int pitch, double v) const {
-  const double* q = core.p; double vel = jsMax(1, jsRound(v * 127)), sel = q[105];
+  const double* q = core.p; double vel = jsMax(1, jsMin(127, jsRound(v * 127))), sel = q[105];
   return q[c * 4 + 2] > 0.5 && pitch >= q[122 + c * 2] && pitch <= q[123 + c * 2] && vel >= q[138 + c * 2] && vel <= q[139 + c * 2] && sel >= q[106 + c * 2] && sel <= q[107 + c * 2];
 }
 void InstrumentRack::noteOn(int pitch, double vel) {

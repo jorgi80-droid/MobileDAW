@@ -110,7 +110,7 @@ export class LiveSampler extends VoiceBase {
     return i;
   }
   noteOn(p, vel) {
-    const vi = Math.round(vel * 127), sp = this.g[SMP.SPREAD];
+    const vi = Math.min(127, Math.round(vel * 127)), sp = this.g[SMP.SPREAD];
     let started = false;
     for (const q of this.z) {
       const s = q.id >= 0 ? this.bank[q.id] : null;

@@ -333,7 +333,7 @@ export class Sampler extends Base {
     return v;
   }
   noteOn(p, vel) {
-    const vi = Math.round(vel * 127);
+    const vi = Math.min(127, Math.round(vel * 127));
     for (const q of this.z) {
       const s = q.id >= 0 ? this.bank[q.id] : null;
       if (!s || p < q.lo || p > q.hi || vi < q.vlo || vi > q.vhi) continue;
@@ -676,7 +676,7 @@ export class SfPlayer extends Base {
   noteOn(p, vel) {
     const sf = this.sfs[this.sfId]; if (!sf) return;
     const pr = sf.presets[this.preset] || sf.presets[0]; if (!pr) return;
-    const vi = Math.round(vel * 127);
+    const vi = Math.min(127, Math.round(vel * 127));
     for (const z of pr.zones) {
       if (p < z.lo || p > z.hi || vi < z.vlo || vi > z.vhi) continue;
       const sh = sf.shdr[z.sample]; if (!sh) continue;

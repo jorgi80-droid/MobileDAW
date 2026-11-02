@@ -75,6 +75,7 @@ function report(r, secs) {
   const body = h('div', { class: 'imp-rep' },
     h('div', { class: 'sv' }, `Dari ${r.app}: ${R.tracks} track, ${R.clips} klip${R.pitched ? ` (${R.pitched} klip audio dengan pitch)` : ''}, ${R.notes} not, ${R.samplesFound} sample ditemukan, dalam ${secs.toFixed(1)} dtk. Tersimpan sebagai Projects/${r.name}.mdaw.`),
     sec('Instrumen', (R.instruments || []).map((x) => `${x.track}: ${x.from} \u2192 ${x.to}`)),
+    sec('Presisi', R.precision || []),
     ...fxSections(r.fx),
     sec('Sample tidak ada di arsip (klip / pad tetap ada, tanpa suara)', [...R.samplesMissing, ...r.missingOnOpen.filter((p) => !/\/_missing\//.test(p))], 'warn'),
     sec('Tidak dikonversi', R.skipped, 'warn'),

@@ -83,7 +83,7 @@ export class InstrumentRack extends AudioEffectRack {
   setParam(i, v) { if (i >= 100) super.setParam(i - 100, v); }   // instrument parameter 100 + k = rack parameter k (90 is the engine's Pitch)
   setTempo(b) { super.setTempo(b); for (const c of this.ch) if (c.inst && c.inst.setTempo) c.inst.setTempo(b); }
   plays(c, p, v) {
-    const q = this.p, vel = Math.max(1, Math.round(v * 127)), sel = q[105];
+    const q = this.p, vel = Math.max(1, Math.min(127, Math.round(v * 127))), sel = q[105];
     return q[c * 4 + 2] > 0.5 && p >= q[122 + c * 2] && p <= q[123 + c * 2] && vel >= q[138 + c * 2] && vel <= q[139 + c * 2] && sel >= q[106 + c * 2] && sel <= q[107 + c * 2];
   }
   noteOn(p, v) {

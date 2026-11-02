@@ -8,19 +8,32 @@
 // Model units: beats, linear gain (1 = default level), pan -1..1.
 import { DEVICES, PRESETS, INSTRUMENTS } from '../defs.js';
 import { gmFor, GM_SF } from './gm.js';
+import { LVL0 } from './flm.js';
 
 // the channel's instrument -> MDAW: DirectWave layers -> zones of MDAW's DirectWave; a library program that is not in the archive -> the
 // closest General MIDI program of the bundled SoundFont; GMS / MiniSynth / SuperSaw -> MDAW's instrument of the same name (preset by name)
 const SYNTH_TYPE = { gms: 31, minisynth: 32, supersaw: 33 };   // the FL Studio Mobile instruments of MobileDAW (js/engine/flmsyn.js)
-// FLM DirectWave module parameters (normalised 0..1, [0] = on) -> MDAW DirectWave (30). Only the groups whose layout is confirmed by the
-// owner's screenshots against the stored values (bipolar amounts at 0.5 = 0) are converted: filter envelope [17..21], frequency envelope
-// [22..26], LFO [27..32]. The Sample / Filter tab values ([1..16]) are kept raw in inst.from (their order is not known yet).
-const fT = (v) => Math.round((0.001 + 10 * Math.pow(clamp(v, 0, 1), 3)) * 1e4) / 1e4;   // FLM 0..1 envelope slider -> seconds (1 ms .. 10 s, cubic; FLM shows no times)
+// FLM DirectWave module parameters (normalised 0..1, [0] = on) -> MDAW DirectWave (30). Layout worked out from the owner's FLM screenshots
+// against the values stored in two real projects (defaults of a freshly loaded sample, a library program whose filter shows 40 / 0 / 50 /
+// 100, layered tracks an octave apart, legato + slide on the same instance):
+//   [1] Attack  [2] Release  [3] Pitch (+-24 st, the knob is stepped: whole semitones toward zero)  [4] Fine Tune (+-100 cents)
+//   [5] Decay  [6] Sustain  [7] Slide Time  [8] Reverse  [9] Loop  [10] Legato  [11] Mono
+//   [12] Cutoff  [13] Resonance  [14] Kbd Trk  [15] Vel Trk (0..1 = 0..100, as FLM shows them)  [16] Filter Off / Lowpass / Highpass / Bandpass
+//   [17..21] filter envelope A D S R Amount (0.5 = 0)  [22..26] frequency envelope  [27..32] LFO mode, rate, shape, attack, amount, destination.
+// Pitch / Fine Tune belong to each layer (they go into the zone: root and tune); FLM shows no envelope times (the time curve fT is MDAW's).
+const fT = (v) => Math.min(10, Math.round((0.001 + 10 * Math.pow(clamp(v, 0, 1), 3)) * 1e6) / 1e6);   // FLM 0..1 envelope slider -> seconds (1 ms .. 10 s, cubic)
+export const dwPitchSt = (r) => (r && r.length > 3 ? clamp(Math.trunc((r[3] - 0.5) * 48 + 1e-9 * Math.sign(r[3] - 0.5)), -24, 24) : 0);
+export const dwFineCt = (r) => (r && r.length > 4 ? clamp((r[4] - 0.5) * 200, -100, 100) : 0);
 export function dwParamsFromFlm(raw) {
   const r = raw || [], out = {};
+  if (r.length < 17) return out;
+  const amt = (v) => (clamp(v, 0, 1) - 0.5) * 200, idx = (v, n) => clamp(Math.round(v > 1 ? v : v * (n - 1)), 0, n - 1), on = (v) => (v > 0.5 ? 1 : 0);
+  out[0] = 0; out[1] = 0;                                                         // pitch / fine are per layer (zone root / tune)
+  out[2] = fT(r[1]); out[3] = fT(r[5]); out[4] = clamp(r[6], 0, 1); out[5] = fT(r[2]); out[6] = clamp(fT(r[7]), 0.001, 2);
+  out[8] = on(r[8]); out[9] = on(r[9]); out[10] = on(r[10]); out[11] = on(r[11]);
+  out[12] = clamp(r[12], 0, 1) * 100; out[13] = clamp(r[13], 0, 1) * 100; out[14] = clamp(r[14], 0, 1) * 100; out[15] = clamp(r[15], 0, 1) * 100; out[16] = idx(r[16], 4);
   if (r.length < 33) return out;
-  const amt = (v) => Math.round((clamp(v, 0, 1) - 0.5) * 200), idx = (v, n) => clamp(Math.round(v > 1 ? v : v * (n - 1)), 0, n - 1);
-  [[17, 17], [22, 22]].forEach(([src, dst]) => { out[dst] = fT(r[src]); out[dst + 1] = fT(r[src + 1]); out[dst + 2] = Math.round(clamp(r[src + 2], 0, 1) * 1e4) / 1e4; out[dst + 3] = fT(r[src + 3]); out[dst + 4] = amt(r[src + 4]); });
+  [[17, 17], [22, 22]].forEach(([src, dst]) => { out[dst] = fT(r[src]); out[dst + 1] = fT(r[src + 1]); out[dst + 2] = clamp(r[src + 2], 0, 1); out[dst + 3] = fT(r[src + 3]); out[dst + 4] = amt(r[src + 4]); });
   out[27] = idx(r[27], 3); out[28] = 0.03 * Math.pow(1000, clamp(r[28], 0, 1)); out[30] = idx(r[29], 3); out[31] = clamp(r[30], 0, 1) * 5; out[32] = amt(r[31]); out[33] = idx(r[32], 4);
   return out;
 }
@@ -31,7 +44,7 @@ function presetFor(type, name) {
 }
 const PPQ = 960, VMAX = 1.4, DEF_VOL = 0.85, MAX_FX = 8, MAX_TRACKS = 64, MAX_PADS = 16;
 const PALETTE = ['#1fbccf', '#e3c000', '#f07200', '#f02ec8', '#0b9fdb', '#8d5de0', '#a3df00', '#b8573c'];
-const T = (beats) => Math.round(beats * PPQ);
+const T = (beats) => { const t = beats * PPQ, r = Math.round(t); return Math.abs(t - r) < 1e-6 ? r : Math.round(t * 1024) / 1024; };   // exact ticks: FLM's 1/128 beat = 7.5 ticks (half ticks kept)
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const hex = (n) => n.toString(16).padStart(2, '0');
 function hueColor(h, k) {
@@ -57,7 +70,10 @@ export function buildMdaw(M, opts) {
     }
     return files.get(key);
   };
-  const zoneOf = (smp, root, L = {}) => ({ sample: smp, root: clamp(Math.round(root ?? 60), 0, 127), lo: 0, hi: 127, vlo: 1, vhi: 127, tune: 0, loop: false, sus: 0, s0: 0, s1: 1, l0: 0, l1: 1, xf: 0, rev: false, vol: L.level != null && L.level < 0.999 ? Math.round(20 * Math.log10(Math.max(1e-4, L.level)) * 100) / 100 : 0, pan: clamp(L.pan || 0, -1, 1) });   // FLM module level / pan per layer
+  // a DirectWave layer -> a zone: its Pitch (whole semitones) moves the root the other way, its Fine Tune is the zone tune (cents), its module
+  // level / pan are the zone level (dB, exact) / pan
+  const zoneOf = (smp, root, L = {}) => ({ sample: smp, root: clamp(Math.round(root ?? 60) - dwPitchSt(L.params), 0, 127), lo: 0, hi: 127, vlo: 1, vhi: 127, tune: dwFineCt(L.params), loop: false, sus: 0, s0: 0, s1: 1, l0: 0, l1: 1, xf: 0, rev: false,
+    vol: L.level != null && L.level > 0 && L.level !== 1 ? Math.max(-60, 20 * Math.log10(L.level)) : L.level === 0 ? -60 : 0, pan: clamp(L.pan || 0, -1, 1) });
   report.instruments = [];
   const instrumentOf = (I, trackName) => {
     I = I || { kind: 'unknown', name: 'Instrumen' };
@@ -68,9 +84,15 @@ export function buildMdaw(M, opts) {
       return { type, params: pr ? { ...pr.p } : {}, pitch: 0, from: { app: M.app, name: I.name, preset: I.preset || '', params: I.params || [] } };
     }
     const layers = I.layers || (I.sample ? [{ sample: I.sample, root: 60 }] : []);
-    const zones = [];
-    for (const L of layers) { const f = sample(L.sample); if (!f.missing) zones.push(zoneOf({ path: f.path, name: f.path.split('/').pop() }, L.root, L)); }
-    if (zones.length) { note('DirectWave (' + zones.length + ' zona' + (zones.length < layers.length ? ', ' + (layers.length - zones.length) + ' sample hilang' : '') + ')', 'exact'); return { type: 30, params: dwParamsFromFlm((layers.find((L) => (L.params || []).length >= 33) || {}).params), pitch: 0, zones, from: { app: M.app, name: I.name, preset: I.preset || '', layers: layers.map((L) => ({ sample: L.sample, root: L.root, params: (L.params || []).map((v) => Math.round(v * 1e5) / 1e5) })) } }; }
+    // every DirectWave layer becomes a zone with its own pitch / fine / level / pan, also when its sample is not in the archive (a silent
+    // placeholder file keeps the zone and the instrument settings: put the sample in place and it plays exactly as set in FLM)
+    const zones = [], lost = [];
+    for (const L of layers) { const f = sample(L.sample); const z = zoneOf({ path: f.path, name: f.path.split('/').pop() }, L.root, L); if (f.missing) { z.missing = L.sample; lost.push(L.sample); } zones.push(z); }
+    const dwParams = dwParamsFromFlm((layers.find((L) => (L.params || []).length >= 33) || layers.find((L) => (L.params || []).length >= 17) || {}).params);
+    if (zones.length) {
+      note('DirectWave (' + zones.length + ' zona' + (lost.length ? ', ' + lost.length + ' sample hilang' : '') + ')', lost.length === zones.length ? 'missing' : 'exact');
+      return { type: 30, params: dwParams, pitch: 0, zones, from: { app: M.app, name: I.name, preset: I.preset || '', layers: layers.map((L) => ({ sample: L.sample, root: L.root, params: (L.params || []).slice() })) }, ...(lost.length ? { missing: { name: I.name || 'DirectWave', library: '', sample: lost.join(', ') } } : {}) };
+    }
     const gm = I.library ? gmFor(I.library) : null;
     if (gm) { needSf = true; note('SoundFont GM: ' + gm.name + ' (pengganti program library yang tidak ada di arsip)', 'substitute'); return { type: 6, params: { 0: 0.8 }, pitch: 0, sf: { path: GM_SF, preset: gm.program }, sub: { from: I.name, library: gm.label, gm: gm.name } }; }
     note(I.kind === 'unknown' ? I.name + ' belum dikenal: DirectWave kosong (pattern tetap)' : 'DirectWave tanpa sample (pattern tetap)', 'missing');
@@ -79,15 +101,16 @@ export function buildMdaw(M, opts) {
   };
   let needSf = false;
   // FLM pad envelope (0..1 sliders): applied when it shapes the sound (attack, sustain below full, release); full settings = play the sample through
-  const padEnv = (e) => { if (!e || (e.a < 0.005 && e.s > 0.995 && e.r > 0.995)) return { a: 0, d: 0, s: 1, r: 0 }; return { a: e.a < 0.005 ? 0 : fT(e.a), d: fT(e.d), s: clamp(Math.round(e.s * 1e4) / 1e4, 0, 1), r: e.r > 0.995 ? 0 : fT(e.r) }; };
-  const vol = (g) => clamp((Number.isFinite(g) ? g : 1) * DEF_VOL, 0, VMAX);
+  const padEnv = (e) => { if (!e || (e.a < 0.005 && e.s > 0.995 && e.r > 0.995)) return { a: 0, d: 0, s: 1, r: 0 }; return { a: e.a < 0.005 ? 0 : fT(e.a), d: fT(e.d), s: clamp(e.s, 0, 1), r: e.r > 0.995 ? 0 : fT(e.r) }; };
+  const vol = (g) => clamp(Number.isFinite(g) ? g : 1, 0, VMAX);   // model gain 1 = the source app's default level = 0 dB in MDAW
   const util = DEVICES[0].params.map((q) => q.def);
   const placeholder = (m) => {
     report.plugins.set(m.name, (report.plugins.get(m.name) || 0) + 1);
-    return { id: uid(), type: 0, params: util.slice(), bypass: m.enabled === false, missing: { name: m.name, app: m.app || M.app, preset: m.preset || '', enabled: m.enabled !== false, ...(m.flmType != null ? { flmType: m.flmType } : {}), ...(m.sure === false ? { sure: false } : {}), ...(m.mix != null ? { mix: m.mix } : {}), ...(m.id != null ? { flmId: m.id } : {}), params: (m.params || []).map((v) => Math.round(v * 1e5) / 1e5) } };
+    return { id: uid(), type: 0, params: util.slice(), bypass: m.enabled === false, missing: { name: m.name, app: m.app || M.app, preset: m.preset || '', enabled: m.enabled !== false, ...(m.flmType != null ? { flmType: m.flmType } : {}), ...(m.sure === false ? { sure: false } : {}), ...(m.mix != null ? { mix: m.mix } : {}), ...(m.id != null ? { flmId: m.id } : {}), params: (m.params || []).slice() } };
   };
   const devices = (ch) => (ch.modules || []).slice(0, 16).map(placeholder);
-  const notesOf = (cl, map) => (cl.notes || []).map((n) => ({ t: Math.max(0, T(n.t)), d: Math.max(1, T(n.len)), p: map ? map(n.pitch) : clamp(Math.round(n.pitch), 0, 127), v: clamp(n.vel ?? 0.8, 0.01, 1), ...(n.pan ? { pan: clamp(n.pan, -1, 1) } : {}) })).filter((n) => n.p >= 0 && n.p <= 127);
+  const prec = { offGrid: 0, boost: 0 };                                     // precision report: values kept that a rounding would have changed
+  const notesOf = (cl, map) => (cl.notes || []).map((n) => { const t = Math.max(0, T(n.t)), d = Math.max(1 / 64, T(n.len)); if (t % 1 || d % 1) prec.offGrid++; if (n.vel > 1) prec.boost++; return { t, d, p: map ? map(n.pitch) : clamp(Math.round(n.pitch), 0, 127), v: clamp(n.vel ?? 0.8, 0.001, 2), ...(n.pan ? { pan: clamp(n.pan, -1, 1) } : {}) }; }).filter((n) => n.p >= 0 && n.p <= 127);
   const patternClip = (cl, notes, name) => {
     const c = { id: uid(), start: Math.max(0, T(cl.pos)), len: Math.max(1, T(cl.len)), name: name || '', notes, cm: true };
     const cyc = T(cl.cycle || 0);
@@ -134,12 +157,14 @@ export function buildMdaw(M, opts) {
           if (!cl.sample) continue;
           const f = sample(cl.sample, cl.name), ratio = cl.stretch > 0 ? cl.stretch : 1, nm = cl.name || (cl.sample.split('/').pop() || '').replace(/\.[^.]+$/, '');
           const c = { id: uid(), start: Math.max(0, T(cl.pos)), len: Math.max(1, T(cl.len)), sample: { path: f.path, name: f.path.split('/').pop() }, gain: clamp(cl.gain ?? 1, 0, 8), name: f.missing ? '⚠ ' + nm + ' (sample tidak ada)' : nm, offset: Math.max(0, (cl.offset || 0) * spb) };
-          const st = Math.round((cl.pitch || 0) * 1000) / 1000, rp = Math.round((cl.repitch || 0) * 1000) / 1000;
-          if (!f.missing && rp) c.warp = { beats: 0, ratio: Math.round(Math.pow(2, -rp / 12) * 1e5) / 1e5, rev: false, pitch: 0, mode: 'repitch', bpm: out.bpm };   // stretch off: pitch by resampling (speed follows)
-          else if (!f.missing && (Math.abs(ratio - 1) > 1e-4 || st)) c.warp = { beats: 0, ratio: Math.round(ratio * 1e5) / 1e5, rev: false, pitch: st, bpm: out.bpm };   // stretch on: time and pitch independent
+          const st = cl.pitch || 0, rp = cl.repitch || 0;                         // exact (FLM stores f64 semitones / an f32 knob)
+          if (!f.missing && rp) c.warp = { beats: 0, ratio: Math.pow(2, -rp / 12), rev: false, pitch: 0, mode: 'repitch', bpm: out.bpm };   // stretch off: pitch by resampling (speed follows)
+          else if (!f.missing && (Math.abs(ratio - 1) > 1e-12 || st)) c.warp = { beats: 0, ratio, rev: false, pitch: st, bpm: out.bpm };   // stretch on: time and pitch independent
           if (st || rp) report.pitched = (report.pitched || 0) + 1;
           const cyc = T(cl.cycle || 0); if (!f.missing && cyc > 0 && cyc < c.len - 1) c.ll = cyc;   // the loop repeats inside a longer clip
           if (cl.muted) c.muted = true;
+          if (Math.abs(cl.pan || 0) > 1e-6) prec.clipPan = (prec.clipPan || 0) + 1;   // MDAW clips have no pan of their own: reported
+          if (cl.env) prec.clipEnv = (prec.clipEnv || 0) + 1;
           if (f.missing) c.missing = { sample: cl.sample };
           t.clips.push(c); report.clips++;
         }
@@ -169,7 +194,7 @@ export function buildMdaw(M, opts) {
     const t = { id: uid(), name: 'Auto: ' + ch.name + ' • Volume', color: '#9fb4d8', kind: 'auto', inst: null, clips: [], devices: [], vol: DEF_VOL, pan: 0, mute: false, solo: false, send: [0, 0],
       target: { kind: 0, strip, param: 0, def: { n: 'Volume', min: 0, max: VMAX, fmt: 'gain' } } };
     for (const cl of at.clips) {
-      const len = Math.max(1, T(cl.len)), pts = (cl.points || []).map((q) => ({ t: clamp(T(q.t), 0, len), v: clamp(vol((q.v || 0) / 0.853) / VMAX, 0, 1) })).sort((a, b) => a.t - b.t);
+      const len = Math.max(1, T(cl.len)), pts = (cl.points || []).map((q) => ({ t: clamp(T(q.t), 0, len), v: clamp(vol((q.v || 0) / LVL0) / VMAX, 0, 1) })).sort((a, b) => a.t - b.t);
       if (!pts.length) continue;
       if (pts.length === 1) pts.push({ t: len, v: pts[0].v });
       t.clips.push({ id: uid(), start: Math.max(0, T(cl.pos)), len, name: '', pts }); report.clips++;
@@ -178,5 +203,16 @@ export function buildMdaw(M, opts) {
   }
   if (master) for (const at of master.tracks.filter((x) => x.kind === 'automation' && x.clips.length)) report.skipped.push(`Otomasi "${at.label || '?'}" di Master (otomasi volume master belum didukung MDAW)`);
   if (needSf) out.needsSoundFont = GM_SF;
+  const P2 = report.precision = [];
+  if (prec.offGrid) P2.push(prec.offGrid + ' not di luar grid MobileDAW (1/128 ketuk FLM = 7,5 tick) disimpan di posisi persisnya, tanpa pembulatan');
+  if (prec.boost) P2.push(prec.boost + ' not dengan velocity di atas 100 % (boost) dipertahankan, tidak dipotong');
+  const dwN = report.instruments.filter((x) => /^DirectWave \(/.test(x.to)).length, synN = report.instruments.filter((x) => x.how === 'preset' || x.how === 'default').length;
+  if (prec.clipPan) P2.push(prec.clipPan + ' klip audio punya pan sendiri di file asli: MobileDAW belum punya pan per klip (pan track tetap dipakai)');
+  if (prec.clipEnv) P2.push(prec.clipEnv + ' klip audio punya envelope (A / D / S / R) sendiri di file asli: belum diterapkan');
+  const muted = M.channels.filter((c) => c.kind !== 'master' && c.mute).map((c) => c.name);
+  if (muted.length) P2.push(muted.length + ' track di-mute seperti di FLM: ' + muted.join(', '));
+  if (dwN) P2.push(dwN + ' DirectWave: pitch / fine tune per lapisan, envelope, filter, loop / reverse / legato / mono dan LFO dari nilai file');
+  if (synN) P2.push(synN + ' GMS / MiniSynth / SuperSaw memakai preset bernama sama di MobileDAW: nilai parameter proyek tersimpan mentah (urutannya di file belum diketahui), bunyi bisa berbeda');
+  P2.push('Level bawaan FLM = 0 dB, level lain relatif terhadapnya; waktu, pitch klip dan rasio stretch apa adanya');
   return { json: out, files: [...files.values()], report: { ...report, plugins: [...report.plugins.entries()].map(([name, n]) => ({ name, n })) } };
 }

@@ -13,7 +13,7 @@
 //              its length is its cycle length (FLM duplicates / linked clips, LINk).
 //           MODULE SMPR = f32 pan, level / mix (1 = full), f32. DirectWave ZONE root is stored 12 below MIDI (a WAV with unity note 60 -> 48), so are
 //              the note pitches of EVN2: both are shifted +12 (relative pitch unchanged; absolute pitch right for synths / General MIDI).
-//     RACK: RPRM (f32 volume, f32 pan 0..1, ...), RMOd modules in signal order (prefix i32 type, u32 instance id; HEAD, DESC names, PRST preset
+//     RACK: RPRM (f32 volume, f32 pan 0..1, f32 mute 0 / 1, ...), RMOd modules in signal order (prefix i32 type, u32 instance id; HEAD, DESC names, PRST preset
 //           path, PRMS f32 params with [0] = enabled, CSTM: ZONE / PATh = DirectWave sample), RSMP = Drums sampler: SMPl per pad (PTH1, PRMS)
 import { FLM_TYPES } from './fxmap.js';
 const NOTE_OFS = 12;                                                               // FLM note / root numbering = MIDI - 12
@@ -52,8 +52,9 @@ export function parseFlm(buf, onProgress) {
   const presetName = {};                                     // type -> plugin name learned from preset folders in this file
 
   const readRack = (r) => {
-    const ks = kids(r), out = { vol: 0.853, pan: 0.5, modules: [], pads: [] };
-    const rp = one(ks, 'RPRM'); if (rp && rp.n >= 8) { out.vol = f32(rp.a); out.pan = f32(rp.a + 4); }
+    const ks = kids(r), out = { vol: LVL0, pan: 0.5, modules: [], pads: [] };
+    const rp = one(ks, 'RPRM');                              // f32 x 6: level, pan, mute (0 / 1), ?, 0.5, ?  (mute: tracks switched off in FLM, also empty ones)
+    if (rp && rp.n >= 8) { out.vol = f32(rp.a); out.pan = f32(rp.a + 4); out.rprm = []; for (let k = 0; k + 4 <= rp.n; k += 4) out.rprm.push(f32(rp.a + k)); if (rp.n >= 12) out.mute = f32(rp.a + 8) > 0.5; }
     for (const m of ks.filter((x) => x.tag === 'RMOd')) {
       const mk = kids(m), type = i32(m.a), id = u32(m.a + 4);
       const prst = one(mk, 'PRST'), prms = one(mk, 'PRMS'), desc = one(mk, 'DESC'), cstm = one(mk, 'CSTM'), smpr = one(mk, 'SMPR');
@@ -74,7 +75,7 @@ export function parseFlm(buf, onProgress) {
     if (rs) for (const s of kids(rs).filter((x) => x.tag === 'SMPl')) {
       const sk = kids(s), pm = one(sk, 'PRMS'), prm = [];
       if (pm) for (let k = 0; k + 4 <= pm.n; k += 4) prm.push(f32(pm.a + k));
-      out.pads.push({ path: path1(one(sk, 'PTH1')), vol: prm[0] ?? 0.853, pan: prm[1] ?? 0.5, pitch: prm[2] ?? 0.5, params: prm });
+      out.pads.push({ path: path1(one(sk, 'PTH1')), vol: prm[0] ?? LVL0, pan: prm[1] ?? 0.5, pitch: prm[2] ?? 0.5, params: prm });
     }
     return out;
   };
@@ -100,7 +101,7 @@ export function parseFlm(buf, onProgress) {
   for (let k = 0; k < chans.length; k++) {
     const c = chans[k], ks = kids(c), hd = one(ks, 'CHHD'), flag = u32(c.a);
     const ch = { kind: flag === 0 ? 'master' : flag === 0x80 ? 'bus' : 'track', name: hd ? str(hd.a, 1024) : 'Channel ' + k, order: hd && hd.n > 0x40c ? f32(hd.a + 0x408) : k, hue: hd && hd.n > 0x410 ? f32(hd.a + 0x40c) : 0, number: hd && hd.n >= 0x43c ? u32(hd.a + 0x438) : k, tracks: [] };
-    Object.assign(ch, racks[k] ? readRack(racks[k]) : { vol: 0.853, pan: 0.5, modules: [], pads: [] });
+    Object.assign(ch, racks[k] ? readRack(racks[k]) : { vol: LVL0, pan: 0.5, modules: [], pads: [] });
     for (const t of ks.filter((x) => x.tag === 'TRKH')) {
       const tk = kids(t), ds = one(tk, 'DESc');
       const tr = { kind: ds ? ['notes', 'automation', 'audio', 'drums'][i32(ds.a)] || 'audio' : 'audio', target: ds ? { module: i32(ds.a + 4), param: i32(ds.a + 8) } : null, label: ds ? str(ds.a + 28, 256) : '', clips: [] };
@@ -128,9 +129,11 @@ function synthOf(m) {
   for (const [kind, re, name] of SYNTHS) if (re.test(txt)) return { kind, name };
   return null;
 }
-// FLM structures -> the neutral import model (js/import/build.js). Units: beats, linear gain (1 = the app's default level), pan -1..1.
-// FLM levels are 0..1 sliders whose default is 0.853: gains are kept relative to that default (0.853 -> the MDAW default level).
-const LVL0 = 0.853;
+// FLM structures -> the neutral import model (js/import/build.js). Units: beats, linear gain (1 = unity, 0 dB), pan -1..1.
+// FLM levels (track, master, bus, audio clip, drum pad) are 0..1 sliders whose default is the f32 0.85312408...: that default is unity
+// gain and the stored values are kept as gain relative to it, exactly (no rounding). Note velocity: u16 with 32767 = 100 % (the default
+// of every untouched note) and up to 65535 = 200 % (FLM boost): velocity = raw / 32767, 0..2, never clamped to 1.
+export const LVL0 = 0.85312408208847046;
 export function flmToModel(P) {
   const M = { app: P.app, name: P.name || 'FLM Project', bpm: P.bpm, sig: P.sig, channels: [], warnings: P.warnings.slice() };
   const hue = (h) => (Number.isFinite(h) && h >= 0 && h <= 1 ? h : null);
@@ -142,7 +145,7 @@ export function flmToModel(P) {
     // an unidentified module with a synth-sized parameter set on a notes channel is its instrument (not an effect): reported by id
     const unk = dw.length || syn || !ch.tracks.some((t) => t.kind === 'notes') ? null : ch.modules.find((m) => !FLM_TYPES[m.type] && m.params.length >= 40);
     const instMods = new Set(dw.length ? dw : syn ? [syn] : unk ? [unk] : []);
-    const c = { kind: ch.kind, name: ch.name, hue: hue(ch.hue), gain: ch.vol / LVL0, pan: ch.pan * 2 - 1, tracks: [], pads: [],
+    const c = { kind: ch.kind, name: ch.name, hue: hue(ch.hue), gain: ch.vol / LVL0, pan: ch.pan * 2 - 1, ...(ch.mute ? { mute: true } : {}), tracks: [], pads: [],
       modules: ch.modules.filter((m) => !instMods.has(m)).map((m) => ({ name: m.name, enabled: m.enabled, ...(m.level != null && m.level < 0.999 ? { mix: m.level } : {}), preset: m.preset && m.preset !== 'Default' ? m.preset : '', params: m.params, id: m.id, flmType: m.type, ...(FLM_TYPES[m.type] && FLM_TYPES[m.type].sure === false ? { sure: false } : {}), app: 'FL Studio Mobile' })) };
     if (dw.length) {
       const lib = dw.find((m) => m.library);
@@ -150,7 +153,7 @@ export function flmToModel(P) {
       if (!c.instrument.layers.length && !c.instrument.library && dw[0].sample) c.instrument.layers.push({ sample: dw[0].sample, root: dw[0].root ?? 60, params: dw[0].params, level: dw[0].level ?? 1, pan: dw[0].pan || 0 });
     } else if (unk) { c.instrument = { kind: 'unknown', name: 'Instrumen FLM #' + unk.type, preset: unk.preset && unk.preset !== 'Default' ? unk.preset : '', params: unk.params, enabled: unk.enabled, flmType: unk.type };
     } else if (syn) { const k = synthOf(syn); c.instrument = { kind: k.kind, name: k.name, preset: syn.preset && syn.preset !== 'Default' ? syn.preset : '', params: syn.params, enabled: syn.enabled, flmType: syn.type, ...(k.kind === 'soundfont' ? { library: syn.presetPath } : {}) }; }
-    c.pads = ch.pads.map((q, k) => ({ path: q.path, name: (q.path.split('/').pop() || 'Pad ' + (k + 1)).replace(/\.[^.]+$/, ''), gain: q.vol / LVL0, pan: q.pan * 2 - 1, pitch: Math.round((q.pitch - 0.5) * 48 * 1000) / 1000, env: q.params.length >= 10 ? { a: q.params[6], d: q.params[7], s: q.params[8], r: q.params[9] } : null }));   // pitch 0.5 + st / 48 (cents kept)
+    c.pads = ch.pads.map((q, k) => ({ path: q.path, name: (q.path.split('/').pop() || 'Pad ' + (k + 1)).replace(/\.[^.]+$/, ''), gain: q.vol / LVL0, pan: q.pan * 2 - 1, pitch: (q.pitch - 0.5) * 48, env: q.params.length >= 10 ? { a: q.params[6], d: q.params[7], s: q.params[8], r: q.params[9] } : null }));   // pitch 0.5 + st / 48 (cents kept)
     for (const t of ch.tracks) {
       if (!t.clips.length && t.kind === 'automation') continue;               // empty automation slots
       const tr = { kind: t.kind, label: t.label, clips: [] };
@@ -160,9 +163,10 @@ export function flmToModel(P) {
       }
       for (const x of t.clips) {
         const cl = { pos: x.pos, len: x.len, cycle: x.cycle, offset: x.offset, srcLen: x.srcLen, muted: x.muted };
-        if (t.kind === 'audio') Object.assign(cl, { sample: x.sample, name: x.name, pitch: x.pitch || 0, repitch: x.repitch || 0, stretch: x.stretchOn !== false && x.stretch > 0.01 ? x.stretch : 1, gain: (x.gain ?? LVL0) / LVL0, pan: x.pan != null ? x.pan * 2 - 1 : 0 });
+        if (t.kind === 'audio') Object.assign(cl, { sample: x.sample, name: x.name, pitch: x.pitch || 0, repitch: x.repitch || 0, stretch: x.stretchOn !== false && x.stretch > 0.01 ? x.stretch : 1, gain: (x.gain ?? LVL0) / LVL0, pan: x.pan != null ? x.pan * 2 - 1 : 0,
+          ...(x.params && x.params.length >= 10 && (x.params[6] > 0 || x.params[7] < 1 || x.params[8] < 1 || x.params[9] < 1) ? { env: x.params.slice(6, 10) } : {}) });   // clip envelope A D S R (not applied yet: reported)
         else if (t.kind === 'automation') cl.points = x.events.map((e) => ({ t: e.t, v: e.vel / 65535 }));
-        else cl.notes = x.events.map((e) => ({ t: e.t, len: Math.max(1 / 64, e.len || 0.25), pitch: t.kind === 'notes' ? Math.min(127, e.pitch + NOTE_OFS) : e.pitch, vel: Math.max(0.05, Math.min(1, e.vel / 32767 * 0.8)), pan: Math.max(-1, Math.min(1, e.pan / 32767.5 - 1)) }));
+        else cl.notes = x.events.map((e) => ({ t: e.t, len: e.len > 0 ? e.len : 0.25, pitch: t.kind === 'notes' ? Math.min(127, e.pitch + NOTE_OFS) : e.pitch, vel: Math.min(2, e.vel / 32767), pan: Math.max(-1, Math.min(1, e.pan / 32767.5 - 1)) }));
         tr.clips.push(cl);
       }
       c.tracks.push(tr);

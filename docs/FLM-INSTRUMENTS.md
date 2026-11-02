@@ -79,7 +79,8 @@ Sync Lead / Pluck.
 - Engine C++ (Android, pilihan "Native") belum memuat instrumen 30–33: track yang memakainya otomatis dimainkan engine Web (fallback yang
   sudah ada), jadi bunyinya tetap sama di semua perangkat.
 - Impor FLM: DirectWave → instrumen 30 dengan zona per lapisan; nilai Flt Env / Frq Env / LFO dikonversi dari file (urutannya cocok dengan
-  screenshot: amount bipolar 0,5 = 0). Nilai tab Sample / Filter belum diketahui urutannya di file → disimpan mentah di `inst.from`.
+  screenshot: amount bipolar 0,5 = 0); tab Sample / Filter juga (Pitch / Fine Tune per lapisan → root / tune zona; tata letak lengkap dan
+  buktinya di `docs/IMPORT.md`, bagian "Presisi").
   GMS / MiniSynth / SuperSaw → 31 / 32 / 33 dengan preset bernama sama bila ada; parameter asli disimpan mentah (type id dan urutan
   parameternya belum terverifikasi dari file FLM asli).
 
