@@ -2,8 +2,8 @@
 // Run after code changes, before tools/build.mjs:  node tools/langstats.mjs
 import fs from 'node:fs'; import path from 'node:path'; import { fileURLToPath } from 'node:url';
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
-const KIND = { '.js': 'JavaScript', '.mjs': 'JavaScript', '.css': 'CSS', '.html': 'HTML' };
-const COLOR = { JavaScript: '#f1e05a', CSS: '#563d7c', HTML: '#e34c26' };   // GitHub linguist colours
+const KIND = { '.js': 'JavaScript', '.mjs': 'JavaScript', '.css': 'CSS', '.html': 'HTML', '.cpp': 'C++', '.cc': 'C++', '.h': 'C++', '.hpp': 'C++', '.java': 'Java', '.kt': 'Kotlin' };
+const COLOR = { JavaScript: '#f1e05a', CSS: '#563d7c', HTML: '#e34c26', 'C++': '#f34b7d', Java: '#b07219', Kotlin: '#A97BFF' };   // GitHub linguist colours
 const SKIP = new Set(['node_modules', 'demos', 'icons', '.git']);
 const acc = {};
 (function walk(d) {

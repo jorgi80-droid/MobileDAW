@@ -226,6 +226,10 @@
 .ab-tag { color: var(--dim); font-size: var(--fs-4); margin: 3px 0 8px; }
 .ab-chips { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
 .ab-chip { font-size: var(--fs-2); font-weight: var(--fw-sb); color: var(--text); background: color-mix(in srgb, var(--accent) 10%, var(--bg)); border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line)); border-radius: 999px; padding: 2px 9px; letter-spacing: .02em; }
+.ab-statrow { display: flex; gap: var(--sp-4); margin-top: 10px; }
+.ab-stat { flex: 1 1 0; min-width: 0; text-align: center; padding: 10px 6px; border: 1px solid var(--line); background: var(--panel2); border-radius: var(--r-4); }
+.ab-stat b { display: block; font-size: 18px; font-weight: var(--fw-b); color: var(--accent); letter-spacing: .3px; }
+.ab-stat span { display: block; margin-top: 3px; font-size: var(--fs-2); color: var(--dim); letter-spacing: .03em; text-transform: uppercase; }
 .ab-sec { margin-top: 12px; }
 .ab-people { display: flex; flex-wrap: wrap; gap: var(--sp-4); }
 .ab-person { flex: 1 1 160px; display: flex; align-items: center; gap: var(--sp-5); padding: 9px 11px; border: 1px solid var(--line); background: var(--panel2); border-radius: var(--r-4); min-width: 0; }
