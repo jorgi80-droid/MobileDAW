@@ -81,10 +81,10 @@ const ROW_MAX = 260;                                                // tallest r
 const full = () => prefs.headFull !== false;
 const compact = () => !full();
 const headLim = () => (full() ? [150, 460] : [56, 160]);
-const headAuto = () => (full() ? (W >= 1100 ? 310 : W >= 760 ? 280 : 236) : (W >= 760 ? 96 : 84));
+const headAuto = () => (full() ? (W >= 1100 ? 262 : W >= 760 ? 240 : 208) : (W >= 760 ? 96 : 84));   // about a fifth of the screen, as Live's track header
 const headPref = () => (full() ? prefs.headW : prefs.headWc) || 0;
 function applyHead() { const [lo, hi] = headLim(); HEAD = headPref() > 0 ? Math.round(clamp(headPref(), lo, Math.min(hi, Math.max(lo, W - 120)))) : headAuto(); CW = Math.max(60, W - HEAD); }
-const nameW = () => (full() ? Math.max(76, Math.round((HEAD - METW) * 0.3)) : HEAD - METW);   // coloured column width: only the name; the rest, left of the meter, is the wide mixer column
+const nameW = () => (full() ? Math.max(76, Math.round((HEAD - METW) * 0.36)) : HEAD - METW);   // coloured column width: only the name; the rest, left of the meter, is the wide mixer column
 export const headWidth = () => HEAD;
 export function setHeadW(w) { const [lo, hi] = headLim(); prefs[full() ? 'headW' : 'headWc'] = w > 0 ? Math.round(clamp(w, lo, hi)) : 0; savePrefs(); applyHead(); clampView(); invalidate(); }
 export function setHeadFull(on) { prefs.headFull = !!on; savePrefs(); applyHead(); clampView(); invalidate(); }
@@ -107,24 +107,20 @@ function hdr(i) {
     if (!auto) { r.solo = { x: L + q + 4 + gp, y: by, w: q + 4, h: q }; r.arm = { x: L + (q + 4 + gp) * 2, y: by, w: q + 4, h: q }; }
     return r;
   }
-  // Mixer column in the default control size (finger friendly, not scaled with the row): row 1 = activator / S / arm / automation, row 2 = volume + pan,
-  // row 3 = Send A / Send B / output (Master). A taller row only adds air between the rows; a shorter one drops the lower rows first.
-  const sends = state.returns.length >= 2, MAXU = 26, WT = { btn: 1, vp: 1.25, io: 1 };
-  const kinds = auto ? ['btn'] : ['btn', ...(h >= 50 ? ['vp'] : []), ...(h >= 66 ? ['io'] : [])];
-  const W0 = kinds.reduce((q, k) => q + WT[k], 0), unit = Math.min(MAXU, (h - 3 - 3 * (kinds.length - 1)) / W0);
-  const gap = kinds.length > 1 ? Math.min(10, Math.max(3, (h - 3 - unit * W0) / (kinds.length - 1) + 0)) : 0, fs = Math.max(10, Math.min(12, unit * 0.58)); r.fs = fs;
-  let ry = y + 2; const Y = {};
-  for (const k of kinds) { const hh = Math.round(unit * WT[k]); Y[k] = { y: Math.round(ry), h: hh }; ry += hh + gap; }
-  const bh = Y.btn.h, bw = Math.max(22, Math.min(Math.round(bh * 1.5), Math.floor((R - L - gp * 3) / (auto ? 3 : 4))));
-  r.mute = { x: L, y: Y.btn.y, w: auto ? bw + 14 : bw, h: bh, fs };
+  // Mixer column like Live's: small fixed controls (buttons 16 px, fields 15 px, text 10 px) that never grow with the row; row 1 = activator / S / arm /
+  // automation, row 2 = volume + pan, row 3 = Send A | Send B | output (Master). A taller row only shows more of the lane; a shorter one drops row 3, then row 2.
+  const sends = state.returns.length >= 2, gap = 3, fs = 10, BH = 16, FH = 15; r.fs = fs;
+  const bw = Math.max(20, Math.min(24, Math.floor((R - L - gp * 3) / 4)));
+  const y1 = y + 2, y2 = y1 + BH + gap, y3 = y2 + FH + gap;
+  r.mute = { x: L, y: y1, w: auto ? bw + 14 : bw, h: BH, fs };
   if (!auto) {
-    r.solo = { x: L + bw + gp, y: Y.btn.y, w: bw, h: bh, fs }; r.arm = { x: L + (bw + gp) * 2, y: Y.btn.y, w: bw, h: bh, fs };
-    if (R - bw >= L + (bw + gp) * 3 - 2) r.aut = { x: R - bw, y: Y.btn.y, w: bw, h: bh, fs };
-    if (Y.vp) { const vw = Math.round((R - L - gp) * 0.6); r.vol = { x: L, y: Y.vp.y, w: vw, h: Y.vp.h, fs }; r.pan = { x: L + vw + gp, y: Y.vp.y, w: R - L - vw - gp, h: Y.vp.h, fs }; }
-    if (Y.io) {                                                       // Send A | Send B | output, one row, equal cells (output alone = the whole row)
-      const cells = sends ? 3 : 1, cw = Math.floor((R - L - gp * (cells - 1)) / cells);
-      if (sends) { r.sa = { x: L, y: Y.io.y, w: cw, h: Y.io.h, fs }; r.sb = { x: L + cw + gp, y: Y.io.y, w: cw, h: Y.io.h, fs }; }
-      r.out = { x: sends ? L + (cw + gp) * 2 : L, y: Y.io.y, w: sends ? R - L - (cw + gp) * 2 : R - L, h: Y.io.h, fs };
+    r.solo = { x: L + bw + gp, y: y1, w: bw, h: BH, fs }; r.arm = { x: L + (bw + gp) * 2, y: y1, w: bw, h: BH, fs };
+    if (R - bw >= L + (bw + gp) * 3 - 2) r.aut = { x: R - bw, y: y1, w: bw, h: BH, fs };
+    if (h >= y2 - y + FH + 2) { const vw = Math.round((R - L - gp) * 0.6); r.vol = { x: L, y: y2, w: vw, h: FH, fs }; r.pan = { x: L + vw + gp, y: y2, w: R - L - vw - gp, h: FH, fs }; }
+    if (h >= y3 - y + FH + 2) {                                        // Send A | Send B | output, equal cells (output alone = the whole row)
+      const cw = sends ? Math.floor((R - L - gp * 2) * 0.28) : 0;    // Send cells narrow, the output name gets the rest
+      if (sends) { r.sa = { x: L, y: y3, w: cw, h: FH, fs }; r.sb = { x: L + cw + gp, y: y3, w: cw, h: FH, fs }; }
+      r.out = { x: sends ? L + (cw + gp) * 2 : L, y: y3, w: sends ? R - L - (cw + gp) * 2 : R - L, h: FH, fs };
     }
   }
   return r;
@@ -570,8 +566,8 @@ function drawHeads() {
     if (auto && fullLook && h >= 46) { ctx.fillStyle = ik; ctx.globalAlpha = 0.7; ctx.font = FONT(500, 10); ctx.textBaseline = 'middle'; ctx.fillText('Otomasi', hx + 8, y + TH + 12, nw - 14); ctx.globalAlpha = 1; }
     if (r.out) {                                                                                           // output: a dark field in the mixer column, the destination written in it
       ctx.fillStyle = C('#19191a'); ctx.fillRect(r.out.x, r.out.y, r.out.w, r.out.h); ctx.strokeStyle = C('#141415'); ctx.lineWidth = 1; ctx.strokeRect(r.out.x + 0.5, r.out.y + 0.5, r.out.w - 1, r.out.h - 1);
-      ctx.fillStyle = C('#f2f2f4'); ctx.font = FONT(700, r.out.fs || 9.5); ctx.textAlign = 'center'; ctx.fillText(cut2(P.outLabel(t.out), r.out.w - 24), r.out.x + r.out.w / 2 - 4, r.out.y + r.out.h / 2 + 0.5); ctx.textAlign = 'left';
-      ctx.fillStyle = C('#8b8b92'); { const cy = r.out.y + r.out.h / 2, q = Math.max(3, Math.min(8, r.out.h * 0.22)), cx = r.out.x + r.out.w - 6 - q; ctx.beginPath(); ctx.moveTo(cx - q, cy - q * 0.6); ctx.lineTo(cx + q, cy - q * 0.6); ctx.lineTo(cx, cy + q * 0.7); ctx.closePath(); ctx.fill(); }
+      ctx.fillStyle = C('#f2f2f4'); ctx.font = FONT(700, r.out.fs || 9.5); ctx.textAlign = 'center'; ctx.fillText(cut2(P.outLabel(t.out), r.out.w - 16), r.out.x + (r.out.w - 10) / 2, r.out.y + r.out.h / 2 + 0.5); ctx.textAlign = 'left';
+      ctx.fillStyle = C('#8b8b92'); { const cy = r.out.y + r.out.h / 2, q = Math.max(2.5, Math.min(4, r.out.h * 0.2)), cx = r.out.x + r.out.w - 4 - q; ctx.beginPath(); ctx.moveTo(cx - q, cy - q * 0.6); ctx.lineTo(cx + q, cy - q * 0.6); ctx.lineTo(cx, cy + q * 0.7); ctx.closePath(); ctx.fill(); }
     }
     if (r.vol) drawSlider(r.vol, Math.sqrt(clamp(t.vol / VMAX, 0, 1)), dbTxt(t.vol) + ' dB', false);
     if (r.pan) drawSlider(r.pan, (clamp(t.pan, -1, 1) + 1) / 2, panTxt(t.pan), true);

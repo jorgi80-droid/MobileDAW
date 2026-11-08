@@ -546,7 +546,7 @@ Permintaan pemilik: SEMUA efek dan instrumen diganti dengan set stok Ableton Liv
   `tools/clip-pan-test.mjs`. UI: slider Pan di panel Audio klip (`audioedit.js`); impor FLM mengisi `c.pan` dari PRMS klip.
 - Graph editor drum: lane Pan per step (menu di nama lane); memakai `note.pan` yang sudah ada (engine menerapkan pan not dari awal step, bukan per suara).
   Pitch per step dan Slide Notes belum: butuh event engine baru (JS + C++ + golden).
-- Header track, ukuran default yang ramah jari (bukan elastis): baris 1 = aktivator / S / arm / otomasi, baris 2 = volume + pan, baris 3 = Send A | Send B | Output
-  (Master) dalam satu baris; tinggi kontrol maks 26 px, teks 10-12 px, baris yang lebih tinggi hanya menambah jarak antar baris dan baris bawah dilepas lebih
-  dulu saat baris dipendekkan (baris 3 butuh >= 66 px, baris 2 >= 50 px). Area sentuh slider +2 px; geser relatif + mode halus.
+- Header track seperti Live: kontrol kecil berukuran TETAP (tombol 16 px, field 15 px, teks 10 px; tidak membesar mengikuti tinggi baris): baris 1 = aktivator / S /
+  arm / otomasi, baris 2 = volume + pan, baris 3 = Send A | Send B (sel sempit) | Output (Master, sisa lebar). Kolom header otomatis ~1/5 layar (262 / 240 / 208 px),
+  kolom nama 36 %. Baris pendek melepas baris 3 lalu baris 2. Area sentuh slider +2 px; geser relatif + mode halus (jari menjauh dari slider).
 - Otomasi Level Master diimpor sebagai lane master; metode Replica + audit arsip FLM: `docs/replica/`.
