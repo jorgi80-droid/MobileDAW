@@ -42,7 +42,7 @@ function flmFile() {
     rack(0x100, 0.853, [mod(99, 6, [1, 0.3], 'Presets/GMS Presets/Bass/Growl Bass.flmpst')]), rack(0x100, 0.853, [mod(98, 7, [1], 'Presets/MiniSynth/Bass/Retro Bass.flmpst')]),
     rack(0x100, 0.853, [mod(97, 8, [1], 'Presets/SuperSaw/EDM Lead.flmpst')]), rack(0x100, 0.853, [mod(1, 9, [1], 'Keyboard/Grand Piano.dwp', [ck('CSTM', asc('10WD'), ck('PATh', u32(46), asc('@R@\0DirectWave Samples/Keyboard/Grand Piano.dwp')))])]),
     rack(0x100, 0.853, [mod(7, 10, [1, 0.5], 'Effect Presets/SuperSaw Chorus.flmpst')], [], 1));
-  parts.push(chnl(0, 'MASTER', 0, 0, ck('TRKH', desc(1))),
+  parts.push(chnl(0, 'MASTER', 0, 0, ck('TRKH', desc(1)), ck('TRKH', desc(1, 0, 0, 'Level'), clip(0, clhd(8, 8, 0), ck('ZOOM', new Uint8Array(32)), evn([{ t: 0, p: 1, v: 20000 }, { t: 4, p: 1, v: 60000 }])))),
     chnl(0x100, 'Vokal', 2.5, 1, ck('TRKH', desc(2), clip(4, clhd(8, 1024, 1, 7.5), ck('ZOOM', new Uint8Array(32)), clsm('My Tracks/vokal.wav', 0.8), evn([])), clip(16, clhd(8, 4, 0, 4), ck('ZOOM', new Uint8Array(32)), clsm('My Tracks/tidakada.wav', 1), evn([])),
       clip(28, clhd(0, 4, 0, 4), ck('ZOOM', new Uint8Array(32)), clsm('My Tracks/vokal.wav', 1.25, 5), evn([])), clip(36, clhd(4, 4, 0, 4), ck('ZOOM', new Uint8Array(32)), clsm('My Tracks/vokal.wav', 1, -4, 0), evn([]))),
       ck('TRKH', desc(1, 0, 0, 'Level'), clip(0, clhd(8, 8, 0), ck('ZOOM', new Uint8Array(32)), evn([{ t: 0, p: 1, v: 30000 }, { t: 4, p: 1, v: 60000 }])))),
@@ -111,6 +111,8 @@ const lc = lead.clips[0];
 ok(lc.start === 8 * 960 && lc.len === 12 * 960 && lc.ll === 4 * 960 && lc.lp === 2 * 960 && lc.notes.length === 3 && lc.notes[1].t === 960 && lc.notes[0].d === 480, 'pattern clip: cycle 4 beats, loop position 2, length 12 (repeats without copying notes)');
 ok(drum.kind === 'drum' && drum.inst.pads.length === 2 && drum.inst.pads[1].mute && !drum.inst.pads[1].sample && drum.clips[0].notes.map((n) => n.p).join() === '36,37,36', 'drums: pads from the sampler, missing pad kept (muted), steps kept');
 const auto = B.json.tracks.find((t) => t.kind === 'auto' && t.target.kind === 0);
+{ const ma = B.json.tracks.find((t) => t.kind === 'auto' && t.target.kind === 0 && t.target.strip === 'master');
+  ok(ma && ma.clips[0].pts.length === 2 && ma.clips[0].pts[1].v > ma.clips[0].pts[0].v && !B.report.skipped.some((x) => /Master/.test(x)), 'Master Level automation -> a volume lane on the master strip (no longer skipped)'); }
 ok(auto && auto.target.strip === voc.id && auto.clips[0].pts.length === 2 && auto.clips[0].pts[1].t === 4 * 960, 'mixer Level automation -> MDAW volume automation on that track');
 { const FXa = await import('../js/import/fxmap.js'), J = structuredClone(B.json), R0 = { skipped: [], tracks: 0 }; await FXa.migrateJson(J, 'map'); FXa.resolveFlmAutomation(J, R0);
   const ln = J.tracks.find((t) => t.kind === 'auto' && t.target.kind === 4), dv = ln && J.tracks.find((t) => t.id === ln.target.strip).devices.find((x) => x.id === ln.target.devId);

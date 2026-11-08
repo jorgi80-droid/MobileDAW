@@ -170,3 +170,5 @@ sesuai dokumentasi komunitas (PyFLP); belum dengan file .flp asli.
 - `node tools/import-test.mjs` (masuk `run-tests`): FLM / ALS / FLP buatan + alur impor ZIP lengkap. `FLM_ZIP=/path.zip` = juga arsip asli.
 - `IMPORT_FILE=/path.zip node tools/import-ui-test.mjs` (Chromium Pixel 7): impor lewat UI, progres, laporan, decode semua sample, render
   klip stretch, kartu placeholder, proyek bisa diputar. Arsip pemilik: 26 track, 1032 klip, 620 not, 42/42 sample, 619 klip stretch, ±31 dtk.
+
+- **Otomasi Level Master** (sesi ini): jadi lane volume di strip master (`target.strip 'master'`), bukan dilewati lagi. Audit arsip asli + modul yang belum dikenali: `docs/replica/`.

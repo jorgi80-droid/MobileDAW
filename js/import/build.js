@@ -201,7 +201,18 @@ export function buildMdaw(M, opts) {
     }
     if (t.clips.length) { out.tracks.push(t); report.tracks++; }
   }
-  if (master) for (const at of master.tracks.filter((x) => x.kind === 'automation' && x.clips.length)) report.skipped.push(`Otomasi "${at.label || '?'}" di Master (otomasi volume master belum didukung MDAW)`);
+  if (master) for (const at of master.tracks.filter((x) => x.kind === 'automation' && x.clips.length)) {   // Master level automation -> a lane on the master strip
+    if (!at.target || at.target.kind !== 'volume' || out.tracks.length >= MAX_TRACKS) { report.skipped.push(`Otomasi "${at.label || '?'}" di Master: targetnya plugin / tidak tersedia`); continue; }
+    const t = { id: uid(), name: 'Auto: Master \u2022 Volume', color: '#9fb4d8', kind: 'auto', inst: null, clips: [], devices: [], vol: DEF_VOL, pan: 0, mute: false, solo: false, send: [0, 0],
+      target: { kind: 0, strip: 'master', param: 0, def: { n: 'Volume', min: 0, max: VMAX, fmt: 'gain' } } };
+    for (const cl of at.clips) {
+      const len = Math.max(1, T(cl.len)), pts = (cl.points || []).map((q) => ({ t: clamp(T(q.t), 0, len), v: clamp(vol((q.v || 0) / LVL0) / VMAX, 0, 1) })).sort((x, y) => x.t - y.t);
+      if (!pts.length) continue;
+      if (pts.length === 1) pts.push({ t: len, v: pts[0].v });
+      t.clips.push({ id: uid(), start: Math.max(0, T(cl.pos)), len, name: '', pts }); report.clips++;
+    }
+    if (t.clips.length) { out.tracks.push(t); report.tracks++; }
+  }
   if (needSf) out.needsSoundFont = GM_SF;
   const P2 = report.precision = [];
   if (prec.offGrid) P2.push(prec.offGrid + ' not di luar grid MobileDAW (1/128 ketuk FLM = 7,5 tick) disimpan di posisi persisnya, tanpa pembulatan');

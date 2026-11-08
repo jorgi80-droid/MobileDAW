@@ -1,0 +1,92 @@
+feature,area,priority,original,clone,notes
+"Satu pengenal gestur (tap / ketuk-ganda / tekan lama / seret / pinch / geser 2 jari), ambang bisa diatur, getar","Gestur global, shortcut, quick action",should,yes,yes,"gesture-test, touch-ui-test"
+Ketuk-ganda tidak dibaca dua ketukan; Escape / jari kedua membatalkan tanpa langkah undo,"Gestur global, shortcut, quick action",should,yes,yes,"gesture-test, touch-ui-test"
+Aksi destruktif lewat menu/konfirmasi + Undo,"Gestur global, shortcut, quick action",should,yes,yes,hapus track / pad / proyek / ganti rantai; touch-ui-test
+"Shortcut keyboard opsional, bisa diubah (Pengaturan → Pintasan), tidak memotong input teks","Gestur global, shortcut, quick action",should,yes,yes,touch-ui-test
+Quick action: Playlist / Piano Roll / Step / Automation / Wave Editor,"Gestur global, shortcut, quick action",should,yes,yes,"menu klip tidak modal, bar not, menu pad, bar titik otomasi, menu seleksi Wave Editor"
+"Quick action Piano Roll ""Slide""","Gestur global, shortcut, quick action",should,yes,no,slide note butuh dukungan di engine JS + C++ (lihat §7F)
+"Ketuk klip = Clip Controls (Copy, Cut, Delete, Snap, Edit, Combine, Mute …), ketuk-ganda = editor",Playlist,must,yes,yes,touch-ui-test
+"Pattern 4→8 bar mengulang 1-4; 3→8 bar = 3+3+2, tanpa pembulatan, sumber tidak disalin",Playlist,must,yes,yes,"pattern-test, pattern-ui-test"
+"Resize vs time-stretch audio dipisah (Stretch Mode), warp Beats / Tones / Re-Pitch",Playlist,must,yes,yes,stretch-test
+Insert / Duplicate / Delete / Delete Space / Trim rentang waktu,Playlist,must,yes,yes,menu seleksi ruler (sesi sebelumnya)
+"Snap ketuk = on/off, tekan lama = pilihan; zoom, fit proyek / klip / seleksi",Playlist,must,yes,yes,touch-ui-test
+Bayangan posisi asal + gelembung posisi saat menyeret,Playlist,must,yes,yes,touch-ui-test
+Sub-track (Notes Track / Step Track di bawah drum channel),Playlist,must,yes,no,model data satu track = satu jenis klip; perlu desain struktur track baru
+Save as MIDI per track,Playlist,must,yes,yes,"menu header track → ""Simpan sebagai MIDI"" (track-dup-test, channel-ui-test); ekspor seluruh proyek tetap ada"
+"Menu channel: Duplikat track, Impor MIDI ke track ini, Sync semua sample",Playlist,must,yes,yes,"track-dup-test (salinan independen, id baru, sidechain mengikuti, satu langkah urung), channel-ui-test"
+Urutan modul = urutan sinyal (rantai utama dan di dalam rack),Channel Rack / Rack efek,must,yes,yes,"chain-order-test (suara beda bila urutan dibalik; urutan baru = rantai baru, identik)"
+"Tekan lama header modul + geser = reorder, garis sisip, undo",Channel Rack / Rack efek,must,yes,yes,"rantai utama, **Audio / Instrument Rack**, chain pad Drum Rack (js/reorder.js); touch-ui-test"
+Ketuk-ganda header = lipat / buka,Channel Rack / Rack efek,must,yes,yes,sesi sebelumnya
+"Header track gaya Live: kolom warna penuh + kolom mixer, ketuk = Penuh / Ringkas, lebar bisa diseret, Monitor In/Auto/Off, Out",Channel Rack / Rack efek,must,yes,yes,tools/header-ui-test.mjs
+Tombol Rewind di toolbar (CTRL dihapus),Channel Rack / Rack efek,must,yes,yes,
+"Menu modul: geser, Sisip kiri/kanan, Ganti, Copy, Paste, Reset, Simpan preset, Sisip preset, Bypass, Hapus",Channel Rack / Rack efek,must,yes,yes,touch-ui-test
+"Rack Preset: simpan / muat (ganti) / sisip, Copy All / Paste All",Channel Rack / Rack efek,must,yes,yes,touch-ui-test (simpan → kosongkan → muat = identik)
+Plugin hilang di preset,Channel Rack / Rack efek,must,yes,partial,modul tak dikenal dilewati DAN dilaporkan namanya (tidak diam-diam); placeholder yang menyimpan state belum (butuh tipe device kosong di engine)
+"Mix per modul (Dry/Wet, gain)",Channel Rack / Rack efek,must,yes,partial,"ada di modul yang punya parameter itu (Live 12), bukan kontrol seragam di semua modul"
+Fader / pan / mute / solo / meter / send / Master FX / return,Mixer,should,yes,yes,"mixer-test, click-test (sesi sebelumnya)"
+Semua kontrol mixer bisa diotomasi (tekan lama atau CTRL),Mixer,should,yes,yes,touch-ui-test (CTRL)
+"Ketuk = not, seret / ujung = pindah / durasi, seret latar = seleksi, copy/paste relatif",Piano Roll,must,yes,yes,"touch-ui-test, clipview-test"
+"More: Legato, Snap ke skala, Tebak skala, Humanize, Double up/down, Panjang, Transpose, ±1",Piano Roll,must,yes,yes,sesi sebelumnya
+"Snap Steps 1/6..1, Beats 1/6..1, Bar; quantize hanya not terpilih",Piano Roll,must,yes,yes,sesi sebelumnya
+Ruler: Select / Insert / Duplicate / Delete space / Trim / Tebak skala / Snap ke skala,Piano Roll,must,yes,yes,sesi sebelumnya
+Lane Velocity / Pan,Piano Roll,must,yes,yes,sesi sebelumnya
+**Ghost Notes** (bisa dimatikan di Pengaturan → Editor),Piano Roll,must,yes,yes,dicek visual; data dari clipNoteEvents yang sama dengan engine
+Slide Notes (pitch / velocity / pan glide),Piano Roll,must,yes,no,perlu perubahan engine JS + port C++ identik + skenario golden; tidak dikerjakan agar engine tidak rusak
+Strength quantize parsial,Piano Roll,must,yes,no,
+"Ketuk step, lukis, Swing (groove global / per klip), Fill 1/2/4, Clear",Step Sequencer / Drum,must,yes,yes,sesi sebelumnya
+"Menu channel: Load Sample, Clone, Set MIDI Key (ketik / learn dari controller), Hapus",Step Sequencer / Drum,must,yes,yes,touch-ui-test
+"Graph editor: Velocity, **Note Repeat 1–8**",Step Sequencer / Drum,must,yes,yes,pattern-test (event yang dikirim ke kedua engine)
+Graph editor: Pan / Pitch per step,Step Sequencer / Drum,must,yes,no,engine native mengabaikan pan per not; pitch per step butuh engine
+"ADSR pad, Reverse, Pitch, Start/End",Step Sequencer / Drum,must,yes,yes,panel pad (sesi sebelumnya)
+"Cut Groups A/B/C, Poly, Hold, Shift per pad (tab **Seq**)",Step Sequencer / Drum,must,yes,yes,"drumseq-test (perilaku), golden inst-drumcut (JS = C++ identik); **AUX per pad belum** (butuh routing send per pad)"
+Simpan / muat Drum Kit (Save Template / My Drumsets),Step Sequencer / Drum,must,yes,yes,"menu header track drum; drumkit-test, channel-ui-test; pad dengan chain instrumen dilewati dan dihitung"
+**CTRL** di transport: gerakkan kontrol → CTRL → Add Automation Track / Link to Current Track / Link to MIDI CC,Automation,should,yes,yes,touch-ui-test
+"Edit titik: tambah, seret, seleksi banyak, copy / paste (bentuk & jarak terjaga), hapus, kurva",Automation,should,yes,yes,"touch-ui-test, autocurve-test"
+Rekam otomasi dari gerakan kontrol saat merekam,Automation,could,yes,no, | pemilik: rekam cukup alakadarnya
+Seret ruler (atau tekan lama + seret) = seleksi waktu,Audio / Wave Editor,should,yes,yes,touch-ui-test
+"Menu: Deselect, Insert Silence, Duplicate, Clear, Delete Space, Trim, Normalize, Fade In, Fade Out, Undo",Audio / Wave Editor,should,yes,yes,"waveops-test, touch-ui-test"
+"Edit tidak merusak file asli (hasil di Samples/Edits, Undo menunjuk lagi ke sample lama); potongan di zero-crossing",Audio / Wave Editor,should,yes,yes,waveops-test
+Envelope Volume / Pan / Pitch di dalam klip,Audio / Wave Editor,should,yes,partial,fade in/out dan gain klip ada; envelope bertitik per klip belum (lane otomasi track bisa dipakai)
+"Keyboard Klasik, **Skala**, **Chord** (strip per derajat skala, inversi per zona, 7th, Hold), **Strum** (arah + kecepatan)",Keyboard / Drumpad / MIDI,should,yes,yes,"chords-test, touch-ui-test"
+"Pitch bend wheel, velocity dari posisi sentuh",Keyboard / Drumpad / MIDI,should,yes,yes,sesi sebelumnya
+Penamaan C tengah C3 / C4 / C5,Keyboard / Drumpad / MIDI,should,yes,yes,Pengaturan → Editor
+"Drumpad, MIDI learn CC, MMC, pilih perangkat",Keyboard / Drumpad / MIDI,should,yes,yes,sesi sebelumnya (Web MIDI)
+Bluetooth MIDI / USB di APK,Keyboard / Drumpad / MIDI,should,yes,skip,WebView Android tidak punya Web MIDI; butuh plugin native MIDI (belum)
+Mod wheel,Keyboard / Drumpad / MIDI,should,yes,no,
+"Play, Rec, Metronom + level, count-in, Tap Tempo, input BPM, CTRL, Undo, CPU meter, tes performa",Transport / Recording,could,yes,yes,sesi sebelumnya + CTRL
+Kompensasi latensi rekaman + PDC,Transport / Recording,could,yes,yes,pdc-test
+Monitoring input audio + peringatan headphone,Transport / Recording,could,yes,no,rekaman audio belum punya monitoring (jadi juga tidak ada risiko feedback)
+Multitrack input,Transport / Recording,could,yes,skip,getUserMedia di HP umumnya satu input stereo
+"**New Project**: nama, tempo, birama, template",Home / Project / Files / Export,must,yes,yes,touch-ui-test
+"Save / Save As / **Quick Save (geser)** + cadangan, indikator belum tersimpan, autosave",Home / Project / Files / Export,must,yes,yes,touch-ui-test
+"**Recent**, **Duplikat / Ganti nama / Hapus** proyek (hapus dengan konfirmasi)",Home / Project / Files / Export,must,yes,yes,Browser → Proyek (tekan lama)
+"Ekspor WAV 16/24/32f, MP3, MIDI, .mdaw, ZIP (proyek + sample), stem, mono, sample rate",Home / Project / Files / Export,must,yes,yes,export-test
+"Preset ekspor **WAV 16-bit · 44,1 kHz** / **MP3 320 kbps · 44,1 kHz**; MP3 dengan model masking, scalefactor, bit reservoir",Home / Project / Files / Export,must,yes,yes,"export-test (struktur MP3), export-ui-test, mp3-quality-test (vs LAME, butuh ffmpeg)"
+"Render **Seleksi**, **Trim Silence**, tail **Leave / Wrap / Cut**",Home / Project / Files / Export,must,yes,yes,waveops-test (postRender)
+"**Impor proyek FL Studio Mobile (.flm / ZIP)**, Ableton (.als), FL Studio (.flp, eksperimental) dengan progres + laporan; DirectWave FLM → DirectWave MDAW (semua lapisan + root key), GMS / MiniSynth / SuperSaw → synth MDAW yang sama",Home / Project / Files / Export,must,yes,yes,"import-test, import-ui-test (arsip FLM pemilik: 26 track, 1032 klip, 42/42 sample); lihat docs/IMPORT.md"
+FLAC / AAC / OGG,Home / Project / Files / Export,must,yes,skip,tidak ada encoder di browser tanpa pustaka tambahan
+"Audio, Performa, Tampilan, **Sentuhan**, **Pintasan**, **Editor** (ghost notes, C tengah, velocity / panjang default), Penyimpanan, Log, Reset dengan konfirmasi",Settings,could,yes,yes,touch-ui-test
+"Pilihan input audio / interface, buffer manual",Settings,could,yes,partial,profil performa mengatur buffer; pemilihan perangkat input belum
+Semua editor menulis ke satu model proyek; Undo membalik data,Data & kinerja,could,yes,yes,semua tes di atas memakai project.js langsung
+Engine audio tidak berubah oleh pekerjaan UI,Data & kinerja,could,yes,yes,golden 111 skenario identik bit JS = C++
+"Gelembung nilai, penyesuaian halus knob, bayangan drag",Data & kinerja,could,yes,yes,touch-ui-test
+"Baca tempo, birama, nama proyek",Impor FLM,must,yes,yes,Dites pada 2 arsip asli
+Track / channel + urutan + warna + volume / pan / mute,Impor FLM,must,yes,yes,44 + 28 track
+"Klip pattern dan not (posisi pecahan 1/128, velocity > 100 %)",Impor FLM,must,yes,yes,4958 + 620 not tanpa pembulatan
+"Klip audio: posisi, panjang, offset, stretch, pitch, loop",Impor FLM,must,yes,yes,
+Sample di arsip ZIP ditempatkan di FLM/<proyek>/ dan terhubung,Impor FLM,must,yes,yes,"59 + 42 sample, 0 hilang"
+"Drum / Step channel: pad, sample, gain, pan",Impor FLM,must,yes,yes,
+"DirectWave: zona, root key, lapisan",Impor FLM,must,yes,yes,"parameter DW (envelope, filter, LFO) disimpan mentah, belum dipetakan"
+GMS / MiniSynth / SuperSaw: instrumen + preset,Impor FLM,should,yes,partial,dikenali dari nama preset; parameter file belum dipetakan penuh
+Program library bawaan FLM (DirectWave Samples/...) tidak ada di arsip,Impor FLM,should,yes,partial,diganti SoundFont GM terdekat (dilaporkan)
+"Efek: Graphic EQ, Compressor, Leveller, Reverb, Multiband dll",Impor FLM,must,yes,partial,padanan persis / perkiraan / bypass; kalibrasi skala butuh render referensi FLM
+"Efek tipe FLM yang belum dikenali (id 4, 9, 16, 26, 30, 35, 44, 45)",Impor FLM,should,yes,no,"tetap placeholder ""Efek FLM #id"""
+Otomasi volume channel,Impor FLM,must,yes,yes,
+Otomasi volume Master,Impor FLM,should,yes,yes,lane master (sesi ini)
+Otomasi parameter plugin,Impor FLM,should,yes,partial,hanya plugin hasil konversi; sisanya dilaporkan
+Routing send / bus FLM,Impor FLM,should,yes,partial,arsip uji: semua ke Master
+Pan per klip audio,Impor FLM,should,yes,no,MobileDAW belum punya pan per klip (3 klip di arsip uji)
+Envelope A/D/S/R per klip audio,Impor FLM,could,yes,no,
+Flag Solo track dari file (RPRM),Impor FLM,could,yes,partial,"dibaca, tidak diterapkan: byte belum terbukti"
+Chunk KEYB (akor keyboard) dan META,Impor FLM,could,yes,no,
+Laporan impor jujur: apa yang diterapkan / diganti / dilewati,Impor FLM,must,yes,yes,
