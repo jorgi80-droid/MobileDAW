@@ -16,7 +16,7 @@
   --bg: #1b1b1c; --panel: #242426; --panel2: #2d2d30; --raise: #38383c; --raise2: #4a4a50; --line: #0e0e0f; --sep: #1b1b1d; --menu: #2f2f33;
   --text: #cfcfd2; --dim: #8b8b92; --accent: #ffa722; --accent-ink: #1a1100; --play: #5bd876; --rec: #e5484d; --ok: #7ac555;
   --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --top-h: 38px; --detail-h: 42%;
+  --top-h: 32px; --detail-h: 42%;
   --sat: 0px; --sar: 0px; --sab: 0px; --sal: 0px;
   --sp-1: 2px; --sp-2: 4px; --sp-3: 6px; --sp-4: 8px; --sp-5: 10px; --sp-6: 12px; --sp-7: 16px;
   --r-1: 2px; --r-2: 3px; --r-3: 4px; --r-4: 6px;
