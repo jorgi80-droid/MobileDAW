@@ -53,3 +53,14 @@ Yang belum sama dan alasannya:
 - Meter Bass Drum Buss hanya bergerak bila Boom > 0 (mengukur sinyal Boom); di referensi meter itu penuh.
 - Proporsi: knob dan teks Live lebih besar relatif terhadap tinggi panel; panel MobileDAW di-zoom agar muat tinggi Device panel.
 - Warna: referensi kebanyakan tema abu-abu Live; tema MobileDAW "Mid Light" adalah padanannya (lihat perbandingan di sesi).
+
+## Putaran 3: bayangan, cahaya, animasi; Compressor
+- Kedalaman: kartu efek punya bayangan lembut dan cahaya tipis di atas; display "tenggelam" (bayangan dalam + kilau di bagian atas).
+- Cahaya: kurva (`lvPath`) dan ring (`lvRing`) bercahaya dalam warnanya sendiri, area di bawah kurva memudar ke bawah; tombol aktif bersinar oranye;
+  busur nilai knob bercahaya; batang meter Drum Buss / Compressor punya glow + garis sorot.
+- Animasi fluid: meter dan analyser bergerak tiap frame (60 fps, naik cepat / turun pelan, `glide` di fxkit.js) alih-alih melompat tiap 50 ms;
+  tombol, kotak nilai dan knob merespons sentuhan dengan pegas singkat. Semua gerakan mati bila "Kurangi animasi" / prefers-reduced-motion.
+- Compressor (Live): display tinggi berisi pasangan meter In (panah = Threshold), kurva transfer di grid 6 dB, batang GR, pasangan meter Out
+  (panah = Output, seret di sisi kanan display), strip dengan tiga tombol tampilan (ringkas / kurva / aktivitas: riwayat level + GR), Knee, Look, Env;
+  Makeup + Peak/RMS/Expand + Dry/Wet di kanan. Skor layout 40,7 -> 52,7.
+- GIF panel yang berjalan: `FRAMES=28 PLAY=1 CARD=1 FX=0,4,25,29 node tools/ui-shots.mjs <dir> devs` lalu gabungkan frame-nya.

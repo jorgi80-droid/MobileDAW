@@ -20,6 +20,10 @@ import { addFlmPanels } from './flmpanels.js';
 import { eng, MASTER, RET0 } from './engine.js';
 import * as P from './project.js';
 import * as BR from './browser.js';
+import { prefs } from './prefs.js';
+// fluid motion for meters / analysers: a value glides to its target every frame (fast up, slower down); off with Reduce motion
+const calm = () => prefs.reduceMotion || (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
+const glide = (cur, tgt, up = 0.5, down = 0.14) => (calm() ? tgt : cur + (tgt - cur) * (tgt > cur ? up : down));
 
 const SR = 48000, F0 = 20, F1 = 20000;
 const lx = (f, w) => (Math.log(f / F0) / Math.log(F1 / F0)) * w, xl = (x, w) => F0 * Math.pow(F1 / F0, Math.max(0, Math.min(1, x / w)));
@@ -132,8 +136,8 @@ V[25] = (k) => {
   k.every(60, () => { const r = k.out(); if (r.length < 64) return; const n = r.length, m = new Float32Array(n), a = new Float32Array(n);
     for (let b = 0; b < n; b++) m[b] = Math.max(r[Math.max(0, b - 1)], r[b], r[Math.min(n - 1, b + 1)]);
     for (let b = 0; b < n; b++) { let t = 0, c = 0; for (let j = -3; j <= 3; j++) { const q = b + j; if (q >= 0 && q < n) { t += m[q]; c++; } } a[b] = t / c; }
-    if (!spec || spec.length !== n) spec = a; else for (let b = 0; b < n; b++) spec[b] = a[b] > spec[b] ? a[b] : spec[b] + (a[b] - spec[b]) * 0.25;
-    disp.paint(); });
+    sTgt = a; });
+  let sTgt = null; k.every(16, () => { if (!sTgt) return; if (!spec || spec.length !== sTgt.length) spec = Float32Array.from(sTgt); else for (let b = 0; b < spec.length; b++) spec[b] = glide(spec[b], sTgt[b], 0.35, 0.08); disp.paint(); });   // fluid: the analyser glides every frame
   const ico = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); ico.setAttribute('viewBox', '0 0 24 14'); ico.setAttribute('width', '22'); ico.setAttribute('height', '13');
   ico.innerHTML = '<path d="M2 12 C 8 12, 9 3, 15 3 L 22 3" fill="none" stroke="currentColor" stroke-width="2"/>';
   const hp = k.T(0, '', { w: 34, cls: 'lk-hpi' }); hp.append(ico);
@@ -161,14 +165,17 @@ V[29] = (k) => {
   const met = k.D(132, 150, (g, w, hh) => {
     const top = 22, bot = hh - 26, y = (db) => top + ((6 - Math.min(6, Math.max(-60, db))) / 66) * (bot - top);
     const frame = (x, ww) => { g.fillStyle = '#121214'; g.fillRect(x - 2, top - 2, ww + 4, bot - top + 4); g.strokeStyle = '#4a4a50'; g.lineWidth = 1; g.strokeRect(x - 1.5, top - 1.5, ww + 3, bot - top + 3); };
-    frame(18, 26); g.fillStyle = '#ffad32'; g.fillRect(19, y(bm), 24, bot - y(bm)); g.fillStyle = '#a8731f'; g.fillRect(19, y(bm), 24, Math.min(10, bot - y(bm)));
+    const bar = (x, ww, v, c0, c1, glow) => { const yt = y(v); if (bot - yt < 0.5) return; const gr = g.createLinearGradient(0, yt, 0, bot); gr.addColorStop(0, c0); gr.addColorStop(1, c1);
+      g.save(); g.shadowColor = glow; g.shadowBlur = 9; g.fillStyle = gr; g.fillRect(x, yt, ww, bot - yt); g.restore(); g.fillStyle = 'rgba(255,255,255,.18)'; g.fillRect(x, yt, Math.max(1, ww * 0.3), bot - yt); };   // light: glow + a highlight stripe
+    frame(18, 26); bar(19, 24, bm, '#ffc35a', '#e08a12', 'rgba(255,173,50,.75)'); if (bot - y(bm) > 1) { g.fillStyle = '#a8731f'; g.fillRect(19, y(bm), 24, Math.min(10, bot - y(bm))); }
     g.fillStyle = '#ffd08a'; g.fillRect(19, Math.round(y(pb)), 24, 1.5);
-    frame(70, 26); for (const x of [71, 84]) { g.fillStyle = '#5fd08a'; g.fillRect(x, y(ov), 11, bot - y(ov)); g.fillStyle = '#b8f0c8'; g.fillRect(x, Math.round(y(po)), 11, 1.5); }
+    frame(70, 26); for (const x of [71, 84]) { bar(x, 11, ov, '#8af0a8', '#3fb46a', 'rgba(95,208,138,.75)'); g.fillStyle = '#b8f0c8'; g.fillRect(x, Math.round(y(po)), 11, 1.5); }
     const oy = y(k.get(10)); g.fillStyle = '#c8c8ce'; g.beginPath(); g.moveTo(100, oy); g.lineTo(110, oy - 6); g.lineTo(110, oy + 6); g.closePath(); g.fill();
     label(g, 'Bass', 31, 14, '#c8c8ce', 11, 'center'); label(g, 'Out', 83, 14, '#c8c8ce', 11, 'center');
     label(g, k.get(7) * 100 >= 0 ? (k.get(7) * 100).toFixed(1) + ' %' : '', 31, hh - 8, '#c8c8ce', 10.5, 'center'); label(g, k.get(10).toFixed(2) + ' dB', 86, hh - 8, '#c8c8ce', 10.5, 'center');
   }, { onDown: () => ({ o: k.get(10) }), onMove: (x, y, dx, dy, s) => k.set(10, Math.max(po0.min, Math.min(po0.max, s.o - dy * 0.15))) });
-  k.every(50, () => { const r = k.out(); if (r.length) { bm = r[0]; ov = r[1]; pb = Math.max(pb - 0.8, bm); po = Math.max(po - 0.8, ov); met.paint(); } });
+  let tb = -80, to = -80, fr = 0;                                            // targets from the engine; the bars glide to them every frame
+  k.every(16, () => { if (fr++ % 3 === 0) { const r = k.out(); if (r.length) { tb = r[0]; to = r[1]; } } bm = glide(bm, tb); ov = glide(ov, to); pb = Math.max(pb - 0.35, bm); po = Math.max(po - 0.35, ov); met.paint(); });
   // Live Boom section: the note of the Boom frequency (tap = Force To Note: Freq to that note exactly) and the headphone = Boom Audition
   const NN2 = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'], midi = () => Math.round(69 + 12 * Math.log2(k.get(8) / 440));
   const note = h('button', { class: 'lv-btn lk-pill', title: 'Force To Note' }); const nUp = () => { const m = midi(); note.textContent = NN2[((m % 12) + 12) % 12] + (Math.floor(m / 12) - 2); }; nUp();
@@ -225,21 +232,43 @@ V[3] = (k) => {
 };
 // Compressor: Ratio / Attack / Release (+ Auto) | transfer display with GR and Out meters, Knee / Lookahead / Env | Makeup, Peak / RMS / Expand, Output, Dry/Wet
 V[4] = (k) => {
-  let o = [0, -80, -80], grs = 0;
-  const disp = k.D(250, 112, (g, w, hh) => {
-    const L0 = 34, W0 = 150, cx = (db) => L0 + ((db + 60) / 60) * W0, cy = (db) => hh - 14 - ((Math.max(-60, Math.min(12, db)) + 60) / 72) * (hh - 22);
+  // Live Compressor: one tall display with the input meter pair (arrow = Threshold), the transfer curve on a fine grid, the GR bar and the
+  // output meter pair (arrow = Output); a strip under it with the three view buttons (collapsed / curve / activity), Knee, Look, Env.
+  // Left: Ratio, Attack, Release, Auto. Right: Makeup, Peak / RMS / Expand, Dry/Wet.
+  let o = [0, -80, -80], grs = 0, pi = -80, po = -80, view = 1; const hist = new Float32Array(160), hin = new Float32Array(160); let hw = 0;
+  const disp = k.D(330, 178, (g, w, hh) => {
+    const T = 8, Bt = hh - 18, yd = (db) => T + ((Math.min(6, Math.max(-60, db)) - 6) / -66) * (Bt - T), L0 = 46, W0 = view === 0 ? 0 : 212, cx = (db) => L0 + ((db + 60) / 60) * W0;
     const thr = k.get(0), ratio = Math.max(1, k.get(1)), knee = Math.max(0.01, k.get(5)), mode = Math.round(k.get(7));
     const tf = (x) => { if (mode === 2) return x < thr ? thr + (x - thr) * ratio : x; const over = x - thr, slope = 1 / ratio - 1; let r = 0; if (2 * over > knee) r = slope * over; else if (2 * over > -knee) r = slope * (over + knee / 2) * (over + knee / 2) / (2 * knee); return x + r; };
-    g.fillStyle = DISPC.grid; for (const v of [-48, -36, -24, -12, 0]) { g.fillRect(Math.round(cx(v)), 6, 1, hh - 20); g.fillRect(L0, Math.round(cy(v)), W0, 1); }
-    const pts = []; for (let x = -60; x <= 0; x += 1) pts.push([cx(x), cy(tf(x))]); lvPath(g, pts, DISPC.bl, null, 1.8); lvRing(g, cx(thr), cy(tf(thr)), 4.5);
-    const met = (x, db, col) => { const y = cy(db); g.fillStyle = '#1b1b1d'; g.fillRect(x, 6, 10, hh - 20); g.fillStyle = col; g.fillRect(x, y, 10, hh - 14 - y); };
-    met(8, o[1], '#5fd08a'); g.fillStyle = '#1b1b1d'; g.fillRect(W0 + 46, 6, 10, hh - 20); g.fillStyle = '#ffad32'; g.fillRect(W0 + 46, 6, 10, Math.min(hh - 20, grs * 2)); met(W0 + 72, o[2], '#5fd08a');
-    label(g, 'Thresh', L0 + 2, 12, DISPC.ink); label(g, 'GR', W0 + 44, hh - 3, DISPC.ink, 8); label(g, 'Out', W0 + 70, hh - 3, DISPC.ink, 8); label(g, thr.toFixed(1) + ' dB', L0 + 2, hh - 3, DISPC.bl, 9);
-  }, { onDown: () => ({ t: k.get(0) }), onMove: (x, y, dx, dy, s) => k.set(0, Math.max(-60, Math.min(0, s.t - dy * 0.4))) });
-  k.every(50, () => { const r = k.out(); if (r.length) { o = r; grs += (r[0] - grs) * 0.4; disp.paint(); } });
+    const pair = (x, v, pk, arrowDb) => { g.fillStyle = '#121214'; g.fillRect(x - 1, T - 1, 20, Bt - T + 2); for (const xx of [x, x + 10]) { const yt = yd(v); if (Bt - yt > 0.5) { const gr = g.createLinearGradient(0, yt, 0, Bt); gr.addColorStop(0, '#8af0a8'); gr.addColorStop(1, '#3fb46a'); g.save(); g.shadowColor = 'rgba(95,208,138,.7)'; g.shadowBlur = 7; g.fillStyle = gr; g.fillRect(xx, yt, 8, Bt - yt); g.restore(); } g.fillStyle = '#d8f8e0'; g.fillRect(xx, Math.round(yd(pk)), 8, 1.2); }
+      const ay = yd(arrowDb), ax = x + 21; g.fillStyle = '#c8c8ce'; g.beginPath(); g.moveTo(ax, ay); g.lineTo(ax + 7, ay - 4.5); g.lineTo(ax + 7, ay + 4.5); g.closePath(); g.fill(); };
+    pair(8, o[1], pi, thr);
+    if (view === 1) {                                                         // transfer curve
+      g.fillStyle = DISPC.grid; for (let v = -54; v < 0; v += 6) { g.fillRect(Math.round(cx(v)), T, 1, Bt - T); g.fillRect(L0, Math.round(yd(v)), W0, 1); }
+      g.strokeStyle = DISPC.grid2; g.lineWidth = 1; g.strokeRect(L0 + 0.5, T + 0.5, W0, Bt - T);
+      const pts = []; for (let x = -60; x <= 0; x += 1) pts.push([cx(x), yd(tf(x))]); lvPath(g, pts, DISPC.bl, null, 1.8);
+      lvRing(g, cx(thr), yd(tf(thr)), 4.5); const cur = Math.max(-60, Math.min(0, o[1])); g.fillStyle = DISPC.or; g.beginPath(); g.arc(cx(cur), yd(tf(cur)), 3, 0, 6.2832); g.fill();
+      label(g, 'Thresh', L0 + 4, T + 12, DISPC.ink, 10);
+    } else if (view === 2) {                                                  // activity: input level (grey) and gain reduction (orange) over time
+      g.strokeStyle = DISPC.grid2; g.lineWidth = 1; g.strokeRect(L0 + 0.5, T + 0.5, W0, Bt - T);
+      const n = hist.length, xs = (j) => L0 + (j / (n - 1)) * W0, a = [], b = [];
+      for (let j = 0; j < n; j++) { const q = (hw + j) % n; a.push([xs(j), yd(hin[q])]); b.push([xs(j), T + Math.min(Bt - T, hist[q] * (Bt - T) / 24)]); }
+      lvPath(g, a, '#9a9aa2', Bt, 1.2); lvPath(g, b, DISPC.or, null, 1.6); label(g, 'Activity', L0 + 4, T + 12, DISPC.ink, 10);
+    }
+    const gx = L0 + W0 + 10; g.fillStyle = '#121214'; g.fillRect(gx, T - 1, 12, Bt - T + 2); g.save(); g.shadowColor = 'rgba(255,173,50,.7)'; g.shadowBlur = 7; g.fillStyle = '#ffad32'; g.fillRect(gx + 1, T, 10, Math.min(Bt - T, grs * (Bt - T) / 24)); g.restore();
+    pair(gx + 24, o[2], po, k.get(4));
+    label(g, 'GR', gx - 1, T + 10, DISPC.ink, 9); label(g, 'Out', gx + 24, T + 10, DISPC.ink, 9);
+    label(g, thr.toFixed(1) + ' dB', 6, hh - 4, DISPC.ink, 10); label(g, k.get(4).toFixed(2) + ' dB', gx + 10, hh - 4, DISPC.ink, 10);
+  }, { onDown: (x) => ({ x, t: k.get(0), o: k.get(4) }), onMove: (x, y, dx, dy, s) => { if (s.x > 46 + (view === 0 ? 0 : 212) + 28) k.set(4, Math.max(k.def.params[4].min, Math.min(k.def.params[4].max, s.o - dy * 0.2))); else k.set(0, Math.max(-60, Math.min(0, s.t - dy * 0.4))); } });
+  let tg = [0, -80, -80], fr = 0; k.every(16, () => { if (fr++ % 3 === 0) { const r = k.out(); if (r.length) tg = r; hist[hw] = grs; hin[hw] = o[1]; hw = (hw + 1) % hist.length; } o = [glide(o[0], tg[0]), glide(o[1], tg[1]), glide(o[2], tg[2])]; grs = glide(grs, tg[0], 0.4, 0.12); pi = Math.max(pi - 0.35, o[1]); po = Math.max(po - 0.35, o[2]); disp.paint(); });
+  // the three view buttons of Live's display strip (collapsed = meters only, transfer curve, activity)
+  const ICON = ['<rect x="3" y="3" width="3" height="10"/><rect x="8" y="6" width="3" height="7"/>', '<path d="M2 13 L8 7 L14 4" fill="none" stroke="currentColor" stroke-width="1.8"/>', '<path d="M1 10 L3 6 L5 11 L7 4 L9 9 L11 5 L13 10 L15 7" fill="none" stroke="currentColor" stroke-width="1.4"/>'];
+  const vb = ICON.map((ic, j) => { const b = h('button', { class: 'lv-btn lk-vbtn', title: ['Collapsed', 'Transfer curve', 'Activity'][j] }); const sv = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); sv.setAttribute('viewBox', '0 0 16 16'); sv.setAttribute('width', '14'); sv.setAttribute('height', '14'); sv.setAttribute('fill', 'currentColor'); sv.innerHTML = ic; b.append(sv);
+    b.addEventListener('click', () => { view = j; vb.forEach((x, q) => x.classList.toggle('on', q === view)); disp.paint(); }); return b; });
+  vb[view].classList.add('on');
   return k.row(k.col(k.K(1), k.K(2), k.K(3), k.T(11, 'Auto')), k.sep(),
-    k.col(disp, h('div', { class: 'lk-bar' }, k.LN('Knee', k.N(5, { w: 56 })), k.LN('Look', k.S(9, { w: 58 })), k.LN('Env', k.CH(10, ['Lin', 'Log'])))), k.sep(),
-    k.col(k.T(8, 'Makeup', { w: 68 }), k.CH(7, ['Peak', 'RMS', 'Expand'], { v: true }), k.K(4), k.K(6)));
+    k.col(h('div', { class: 'lk-dk lk-ceq' }, disp, h('div', { class: 'lk-ceqs' }, ...vb, h('span', { class: 'lk-grow' }), k.LN('Knee', k.NT(5, { w: 52 })), k.LN('Look', k.S(9, { w: 56 })), k.LN('Env', k.CH(10, ['Lin', 'Log']))))),
+    k.col(k.T(8, 'Makeup', { w: 68 }), h('span', { style: 'height:14px' }), k.CH(7, ['Peak', 'RMS', 'Expand'], { v: true }), h('span', { class: 'lk-grow' }), k.K(6)));
 };
 // Limiter: gain reduction display | Gain, Ceiling, Release
 V[5] = (k) => {
@@ -247,7 +276,7 @@ V[5] = (k) => {
   const disp = k.D(150, 90, (g, w, hh) => { const y = (db) => 6 + (Math.min(0, Math.max(-48, db)) / -48) * (hh - 18);
     for (const [x, db, col, t] of [[10, o[1], '#5fd08a', 'In'], [60, -o[0], '#ffad32', 'GR'], [110, o[2], '#5fd08a', 'Out']]) { g.fillStyle = '#1b1b1d'; g.fillRect(x, 6, 26, hh - 18); g.fillStyle = col; if (t === 'GR') g.fillRect(x, 6, 26, Math.min(hh - 18, o[0] * (hh - 18) / 24)); else g.fillRect(x, y(db), 26, hh - 12 - y(db)); label(g, t, x + 4, hh - 2, DISPC.ink, 8); }
     g.fillStyle = DISPC.or; g.fillRect(104, y(k.get(0)), 38, 2); });
-  k.every(50, () => { const r = k.out(); if (r.length) { o = r; disp.paint(); } });
+  let tg = [0, -80, -80], fr = 0; k.every(16, () => { if (fr++ % 3 === 0) { const r = k.out(); if (r.length) tg = r; } o = [glide(o[0], tg[0]), glide(o[1], tg[1]), glide(o[2], tg[2])]; disp.paint(); });
   return k.row(disp, k.sep(), k.col(k.K(2), k.K(0)), k.col(k.K(1)));
 };
 // Reverb: Input Processing (Lo Cut / Hi Cut), Predelay, decay display, Global (Size / Damping), Freeze, Width, Dry/Wet

@@ -595,8 +595,9 @@
 .lk .lv-btn.lk-pill { min-width: 34px; height: 18px; padding: 0 8px; border-radius: 9px; font-size: 11px; }
 .lk .lv-btn.lk-hph { min-width: 0; width: 22px; height: 22px; padding: 0; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; }
 /* Channel EQ (Live): display + bottom strip in one dark box, HP icon switch */
-.lk .lk-ceq { padding: 0; gap: 0; }
+.lk .lk-ceq { padding: 0; gap: 0; align-items: stretch; } .lk .lk-ceq > canvas { align-self: center; }
 .lk .lk-ceqs { display: flex; align-items: center; gap: 6px; padding: 3px 6px; border-top: 1px solid #3a3a3e; }
+.lk .lv-btn.lk-vbtn { min-width: 0; width: 22px; height: 18px; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
 .lk .lk-hpi { display: inline-flex; align-items: center; justify-content: center; padding: 0; height: 18px; color: var(--lv-dim, #9a9aa2); }
 .lk .lk-hpi.on { color: #1b1b1d; }
 /* Drum Buss (Live): meters in a dark box, Dry / Wet strip under a line */
@@ -1015,3 +1016,25 @@
 .inst-row:has(> .lk-flm) > .inst-side { flex: 0 0 150px; width: 150px; padding: 5px; border-right: 1px solid var(--lv-edge); overflow: auto; }
 .inst-row:has(> .lk-flm) > .inst-side .zones { display: flex; flex-direction: column; gap: 3px; }
 .lk .lk-t.flm-sw { min-width: 0; width: 13px; height: 13px; padding: 0; border-radius: 1px; }   /* section on / off switch (Live: the square left of a section title) */
+
+/* ---- depth, light and fluid motion for the device panels (owner request: shadow, light effects, fluid animation) ----
+   Cards lift off the chain with a soft shadow and a faint top light; displays sit IN the panel (inset shadow, a sheen at the top);
+   active switches and value arcs glow; every control answers a touch with a short spring. Reduce motion turns the motion off. */
+.dev-scroll > .card { box-shadow: 0 10px 24px -8px rgba(0, 0, 0, .55), 0 3px 8px rgba(0, 0, 0, .3), inset 0 1px 0 rgba(255, 255, 255, .07); border-radius: 3px; }
+.dev-scroll > .card > h4 { background-image: linear-gradient(180deg, rgba(255, 255, 255, .07), rgba(255, 255, 255, 0)); }
+.lk-dk, .lk .lv-disp { box-shadow: inset 0 2px 6px rgba(0, 0, 0, .55), inset 0 0 0 1px rgba(0, 0, 0, .25), 0 1px 0 rgba(255, 255, 255, .06); border-radius: 2px; }
+.lk-dk { background-image: linear-gradient(180deg, rgba(255, 255, 255, .045), rgba(255, 255, 255, 0) 38%); }
+.lk .lv-btn { transition: background-color .18s cubic-bezier(.2, .8, .2, 1), box-shadow .22s cubic-bezier(.2, .8, .2, 1), transform .14s cubic-bezier(.3, 1.6, .5, 1), color .18s; }
+.lk .lv-btn.on { box-shadow: 0 0 10px rgba(255, 173, 50, .5), inset 0 1px 0 rgba(255, 255, 255, .35); }
+.lk .lv-btn:active { transform: scale(.94); }
+.lk .lv-fld, .lk .lk-n { transition: box-shadow .2s, transform .14s cubic-bezier(.3, 1.6, .5, 1); }
+.lk .lv-fld:active, .lk .lk-n:active { transform: scale(.97); box-shadow: 0 0 8px rgba(79, 195, 240, .45); }
+.lk .knob.lk-k svg { overflow: visible; transition: transform .16s cubic-bezier(.3, 1.6, .5, 1), filter .2s; filter: drop-shadow(0 2px 2px rgba(0, 0, 0, .35)); }
+.lk .knob.lk-k svg path:nth-of-type(2) { filter: drop-shadow(0 0 2.5px rgba(79, 195, 240, .75)); }   /* the value arc glows */
+.lk .knob.lk-k:active svg { transform: scale(1.08); filter: drop-shadow(0 0 6px rgba(79, 195, 240, .55)); }
+.lk .lk-lamp { transition: background-color .25s, box-shadow .25s; }
+.dev-scroll > .card { transition: box-shadow .25s cubic-bezier(.2, .8, .2, 1), transform .25s cubic-bezier(.2, .8, .2, 1), opacity var(--d3, .15s) var(--e-std, ease); }
+.dev-scroll > .card:active { box-shadow: 0 14px 30px -8px rgba(0, 0, 0, .6), 0 4px 10px rgba(0, 0, 0, .32), inset 0 1px 0 rgba(255, 255, 255, .08); }
+[data-theme="light"] .dev-scroll > .card { box-shadow: 0 10px 22px -10px rgba(0, 0, 0, .35), 0 2px 6px rgba(0, 0, 0, .18), inset 0 1px 0 rgba(255, 255, 255, .5); }
+@media (prefers-reduced-motion: reduce) { .lk .lv-btn, .lk .knob.lk-k svg, .dev-scroll > .card, .lk .lv-fld, .lk .lk-n { transition: none !important; } .lk .lv-btn:active, .lk .knob.lk-k:active svg { transform: none; } }
+html.reduce-motion .lk .lv-btn, html.reduce-motion .lk .knob.lk-k svg, html.reduce-motion .dev-scroll > .card { transition: none !important; }

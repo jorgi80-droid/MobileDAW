@@ -132,11 +132,18 @@ export function lvDrag(c, o) {
 }
 
 // ---- drawing helpers shared by the displays ------------------------------------------------------
-export function lvRing(g, x, y, r = 3.2) { g.beginPath(); g.arc(x, y, r, 0, 6.2832); g.fillStyle = DISPC.bg; g.fill(); g.strokeStyle = DISPC.or; g.lineWidth = 1.5; g.stroke(); }   // Live 12 handle
+// Live 12 handle, with a soft orange glow (light effect)
+export function lvRing(g, x, y, r = 3.2) { g.save(); g.shadowColor = 'rgba(255,173,50,.85)'; g.shadowBlur = 7; g.beginPath(); g.arc(x, y, r, 0, 6.2832); g.fillStyle = DISPC.bg; g.fill(); g.strokeStyle = DISPC.or; g.lineWidth = 1.5; g.stroke(); g.restore(); }
+// curve with a glow in its own colour (light effect); the area under it fades out downwards
 export function lvPath(g, pts, color, fillTo = null, lw = 1.5) {
-  g.beginPath(); pts.forEach(([x, y], n) => (n ? g.lineTo(x, y) : g.moveTo(x, y)));
-  g.strokeStyle = color; g.lineWidth = lw; g.lineJoin = 'round'; g.stroke();
-  if (fillTo !== null) { g.lineTo(pts[pts.length - 1][0], fillTo); g.lineTo(pts[0][0], fillTo); g.closePath(); g.fillStyle = color + '30'; g.fill(); }
+  if (!pts.length) return;
+  if (fillTo !== null) {
+    let top = fillTo; for (const q of pts) if (q[1] < top) top = q[1];
+    g.beginPath(); pts.forEach(([x, y], n) => (n ? g.lineTo(x, y) : g.moveTo(x, y))); g.lineTo(pts[pts.length - 1][0], fillTo); g.lineTo(pts[0][0], fillTo); g.closePath();
+    const gr = g.createLinearGradient(0, top, 0, fillTo); gr.addColorStop(0, color + '55'); gr.addColorStop(1, color + '08'); g.fillStyle = gr; g.fill();
+  }
+  g.save(); g.beginPath(); pts.forEach(([x, y], n) => (n ? g.lineTo(x, y) : g.moveTo(x, y)));
+  g.strokeStyle = color; g.lineWidth = lw; g.lineJoin = 'round'; if (lw >= 1.4 && /^#[0-9a-f]{6}$/i.test(color)) { g.shadowColor = color + 'b0'; g.shadowBlur = 6; } g.stroke(); g.restore();
 }
 // ADSR picture: x positions proportional to sqrt(time) so a 20 s release and a 1 ms attack are both visible
 export function lvEnvPts(w, hh, a, d, s, r, pad = 4) {
