@@ -252,6 +252,17 @@ export const SCENARIOS = [
       e.rackCmd(0, -1, 3, 8, 0, 1, 0); play(e, 0.5); e.rackCmd(0, -1, 7, 8, 0, 0, 0); play(e, 0.5); e.rackCmd(0, -1, 0, 0, 0, 0, 0);
       e.stop(); play(e, 1);
     } },
+  { name: 'core-slide', info: 'Slide notes (trackCC kind 4, exact semitones) on four instrument kinds: classic voice bend (1), FLM MiniSynth (32, setBendSl past its PB range), Live Analog (15, setBend), Operator (14); with and without a wheel lane',
+    run(e) {
+      e.tempo(120); [1, 32, 15, 14].forEach((ty, t) => e.trackInst(t, ty));
+      for (let t = 0; t < 4; t++) {
+        const f = []; for (let k = 0; k < 4; k++) f.push(k * PPQ * 2, PPQ * 1.8, 57 + t, 0.8, 0); e.trackNotes(t, f, 4);
+        const cc = [0, 4, 0, PPQ * 0.5, 4, 0, PPQ * 1.2, 4, 7, PPQ * 1.8, 4, 7, PPQ * 1.8 + 1, 4, 0, PPQ * 4, 4, 0, PPQ * 5, 4, -12, PPQ * 5.8, 4, -12, PPQ * 5.8 + 1, 4, 0];
+        if (t === 1) cc.push(PPQ * 2, 0, 0, PPQ * 3, 0, 1);       // a wheel lane on top of the slide (scaled by MiniSynth's PB range, the slide is not)
+        e.trackCC(t, cc, cc.length / 3);
+      }
+      e.play(); play(e, 8, [128, 77, 256]);
+    } },
   { name: 'inst-drumpitch', info: 'Drum Sampler per-step pitch (stride-6 note events, step graph Pitch lane): sample pad and built-in pads hit at -12 / -5 / 0 / +7 / +12 semitones, pan per step, old stride-5 track next to it',
     run(e) {
       samples(e); testSample(e); e.tempo(120); e.trackInst(0, 3); e.trackInst(1, 3);

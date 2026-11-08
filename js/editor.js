@@ -197,7 +197,8 @@ function drawRoll(t, c) {
     ctx.fillStyle = velCol(t.color, n.v, s); ctx.fillRect(x, y + 1, w - 1, v.keyH - 1);
     ctx.strokeStyle = s ? C('#ffffff') : shadeC(t.color, 0.6); ctx.lineWidth = s ? 1.5 : 1; ctx.strokeRect(x + 0.5, y + 1.5, w - 2, v.keyH - 2);   // flat note, hairline outline (Live: no bevel)
     if (w > 16 && (s || w > 30)) { ctx.fillStyle = 'rgba(0,0,0,.28)'; ctx.fillRect(x + w - 5, y + 4, 2, Math.max(2, v.keyH - 7)); }   // right edge: resize grip, kept for touch
-    if (w > 34 && v.keyH >= 13) { ctx.fillStyle = nInk; ctx.fillText(pName(n.p), x + 4, y + v.keyH / 2 + 1, w - 9); }
+    if (n.sl) { ctx.strokeStyle = nInk; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(x + 2, y + v.keyH - 1); ctx.lineTo(x + Math.min(w - 3, v.keyH * 1.6), y + 3); ctx.stroke(); }   // slide note: a rising stroke (glide)
+    if (w > 34 && v.keyH >= 13) { ctx.fillStyle = nInk; ctx.fillText((n.sl ? '\u2197 ' : '') + pName(n.p), x + 4 + (n.sl ? 4 : 0), y + v.keyH / 2 + 1, w - 9); }
   }
   if (drag && drag.k === 'rect' && drag.pending) { ctx.strokeStyle = 'rgba(170,210,240,.9)'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(drag.x0, drag.y0, 14, 0, 7); ctx.stroke(); }   // long press recognised: the rubber band starts here
   if (drag && drag.k === 'rect' && !drag.pending) { ctx.fillStyle = 'rgba(120,182,230,.14)'; ctx.strokeStyle = 'rgba(170,210,240,.9)'; ctx.lineWidth = 1; ctx.fillRect(drag.x, drag.y, drag.w, drag.h); ctx.strokeRect(drag.x + 0.5, drag.y + 0.5, drag.w, drag.h); }
@@ -494,6 +495,7 @@ function ops() {
   return {
     copy: () => { clipboard = selNotes().map((n) => ({ ...n })); toast(clipboard.length + ' not disalin. Tekan lama di grid untuk paste.'); },
     del: () => { checkpoint(); c.notes = c.notes.filter((n) => !sel.has(n)); sel.clear(); changed(); },
+    slide: () => { checkpoint(); const on = ![...sel].every((n) => n.sl); for (const n of sel) { if (on) n.sl = true; else delete n.sl; } changed(); },   // FL Studio Mobile Slide: glide the sounding note to this pitch
     snap: () => { checkpoint(); for (const n of sel) { n.t = Math.max(0, quantT(n.t)); } grew(c, notesEnd(sel)); changed(); },
     legato: () => { checkpoint(); const all = [...c.notes].sort((a, b) => a.t - b.t); for (const n of sel) { const nx = all.find((o) => o.t > n.t && o.p === n.p); n.d = nx ? nx.t - n.t : Math.max(n.d, contentEnd(c) - n.t); } changed(); },
     humanize: () => { checkpoint(); for (const n of sel) { const e = n.t + n.d; n.t = Math.max(0, Math.round(n.t + (Math.random() - 0.5) * 36)); n.d = Math.max(30, Math.round(e + (Math.random() - 0.5) * 36) - n.t); } grew(c, notesEnd(sel)); changed(); },
@@ -567,7 +569,7 @@ function noteBar(n, x, y) {
   if (!sel.size) return;
   const o = ops(), r = canvas.getBoundingClientRect(), ax = r.left + x, ay = r.top + y;
   bar([
-    { label: 'Copy', fn: o.copy }, { label: 'Del', fn: o.del }, { label: 'Snap', fn: o.snap },
+    { label: 'Copy', fn: o.copy }, { label: 'Del', fn: o.del }, { label: 'Snap', fn: o.snap }, ...(P.state.tracks[cur().track] && P.state.tracks[cur().track].kind === 'midi' ? [{ label: 'Slide', fn: o.slide }] : []),
     { label: 'More\u2026', keep: true, fn: () => menu([
       { label: 'Legato', fn: o.legato }, { label: 'Snap ke skala', fn: o.scale }, { label: 'Tebak skala?', fn: () => guessMenu(selNotes(), ax, ay) }, { label: 'Humanize', fn: o.humanize },
       { label: 'Double up (+1 oktaf)', fn: () => o.double(1) }, { label: 'Double down (\u22121 oktaf)', fn: () => o.double(-1) },

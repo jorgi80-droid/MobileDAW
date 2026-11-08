@@ -29,7 +29,7 @@ struct NoteData {                     // trackNotes: events sorted (offs before 
 struct Clip { double start, len; int sample; double gain, offset, fadeIn, fadeOut, pan; };
 struct ClipData { std::vector<Clip> c; };
 struct CCLane { std::vector<double> t, v; };
-struct CCData { CCLane* lane[4] = {}; ~CCData() { for (auto* l : lane) delete l; } };
+struct CCData { CCLane* lane[5] = {}; ~CCData() { for (auto* l : lane) delete l; } };
 struct Lane { int kind, track, dev, param; std::vector<std::pair<double, double>> pts; double last; };
 struct LaneData { std::vector<Lane> lanes; };
 
@@ -129,7 +129,7 @@ class Engine {
   void rackCmd(int t, double d, int op, double c, double j, double a, double b, Device* prepared);
   void rackCmd(int t, double d, int op, double c, double j, double a, double b, Device* prepared, Instrument* preparedInst);
   void devBypass(int t, int d, bool b) { if (ok(t) && d >= 0 && d < s[t].ndev) s[t].dev[d]->bypass = b; }
-  void bend(int t, double st);
+  void bend(int t, double st, double sl = 0);
   void preview(int t, int pitch, double vel, bool on);
   void trackNotes(int t, NoteData* prepared);
   void trackCC(int t, CCData* prepared);

@@ -173,10 +173,11 @@ export class Engine {
   rackCmd(t, d, op, c, j, a, b) { const r = this.ok(t) && (d < 0 ? this.s[t].inst : this.s[t].dev[d]); if (r && r.rack) r.cmd(op, c, j, a, b, this); }   // d = -1: the Instrument Rack
   mk(type) { const d = makeDevice(type, this.sr, this.sc); if (d && d.setTempo) d.setTempo(this.bpm); return d; }
   // Pitch bend (semitones, +-12 max, the UI wheel uses +-2): scales the frequency of the sounding voices and of the notes that start afterwards
-  bend(t, st) {
-    if (!this.ok(t) || t >= MASTER) return; const s = this.s[t]; st = clamp(+st || 0, -12, 12);
-    const r = Math.pow(2, (st - s.bend) / 12); s.bend = st;
-    if (s.inst && s.inst.setBend) { s.inst.setBend(st); return; }   // Live 12 instruments scale the wheel by their own PB Range
+  // st = pitch wheel in semitones (+-2 from the bend lane / wheel), sl = slide notes in exact semitones (not scaled by an instrument's PB range)
+  bend(t, st, sl = 0) {
+    if (!this.ok(t) || t >= MASTER) return; const s = this.s[t]; st = clamp(+st || 0, -12, 12); sl = sl ? clamp(+sl || 0, -24, 24) : 0;
+    const tot = st + sl, r = Math.pow(2, (tot - s.bend) / 12); s.bend = tot;
+    if (s.inst && s.inst.setBend) { if (sl && s.inst.setBendSl) s.inst.setBendSl(st, sl); else s.inst.setBend(tot); return; }   // Live 12 instruments scale the wheel by their own PB Range
     if (s.inst && s.inst.bendVoice && r !== 1) for (const v of s.inst.v) if (v.on) s.inst.bendVoice(v, r);
   }
   bendNew(s) { const n = s.inst.counter, r = Math.pow(2, s.bend / 12); for (const v of s.inst.v) if (v.on && v.age === n) s.inst.bendVoice(v, r); }
@@ -197,8 +198,8 @@ export class Engine {
   // Evaluated once per block (linear between points). n = 0 removes the lanes.
   trackCC(t, flat, n) {
     if (!this.ok(t) || t >= MASTER) return;
-    const s = this.s[t], by = [[], [], [], []];
-    for (let i = 0; i < n; i++) { const k = flat[i * 3 + 1] | 0; if (k >= 0 && k < 4) by[k].push([flat[i * 3], flat[i * 3 + 2]]); }
+    const s = this.s[t], by = [[], [], [], [], []];                    // kind 4 = slide notes (semitones, exact)
+    for (let i = 0; i < n; i++) { const k = flat[i * 3 + 1] | 0; if (k >= 0 && k < 5) by[k].push([flat[i * 3], flat[i * 3 + 2]]); }
     const ccl = by.map((a) => { if (!a.length) return null; a.sort((x, y) => x[0] - y[0]); return { t: Float64Array.from(a, (q) => q[0]), v: Float64Array.from(a, (q) => q[1]) }; });
     s.ccl = ccl.some(Boolean) ? ccl : null;
     if (!s.ccl) this.ccReset(s, t);
@@ -211,7 +212,7 @@ export class Engine {
   }
   applyCC(s, idx, tick) {
     const c = s.ccl;
-    if (c[0]) { const st = clamp(this.ccAt(c[0], tick), -1, 1) * 2; if (Math.abs(st - s.bend) > 1e-4) this.bend(idx, st); }
+    if (c[0] || c[4]) { const st = c[0] ? clamp(this.ccAt(c[0], tick), -1, 1) * 2 : 0, sl = c[4] ? clamp(this.ccAt(c[4], tick), -24, 24) : 0; if (Math.abs(st + sl - s.bend) > 1e-4) this.bend(idx, st, sl); }
     let g = 1; if (c[1]) g *= clamp(this.ccAt(c[1], tick) / 127, 0, 1); if (c[3]) g *= clamp(this.ccAt(c[3], tick) / 127, 0, 1);
     s.ccG = g; s.ccP = c[2] ? clamp((this.ccAt(c[2], tick) - 64) / 63, -1, 1) : 0;
   }

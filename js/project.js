@@ -333,6 +333,7 @@ export function syncClips(i) {
         for (const g of segs) for (const q of l.pts) if (q.t >= g.s && q.t <= g.s + g.len) { cf.push(c.start + g.o + q.t - g.s, kd, q.v); cn++; }
       }
     }
+    for (const c of t.clips) if (!c.muted && t.kind === 'midi' && c.notes && c.notes.some((q) => q.sl)) cn += slideLane(c, cf);   // Slide notes -> lane kind 4 (exact semitones)
     eng.trackCC(i, cf, cn);
   }
 }
@@ -341,13 +342,34 @@ export function syncClips(i) {
 // cycle, read from the source: sourcePos = (local + lp) % cycle. A note sounds in a piece of the clip when it starts inside that piece and
 // is cut at the piece end (cycle end / clip end), so nothing hangs over into the next cycle and nothing triggers twice.
 const DRUM_STEP = 240;   // one step of the step sequencer (a 16th) in ticks
+// FL Studio Mobile Slide notes: a slide note does not play a note of its own; over its length it glides the pitch of the note that is sounding
+// (the latest plain note under it) to the slide note's pitch, which then holds until that note ends. Written as lane kind 4 (semitones, exact,
+// both engines bend every sounding voice of the track). Returns the number of points appended to f as [tick, 4, semitones].
+export function slideLane(c, f) {
+  let n = 0;
+  for (const g of loopSegs(c)) {
+    const e = g.s + g.len, at = (t) => c.start + g.o + Math.min(t, e) - g.s;
+    const plain = c.notes.filter((q) => !q.sl).sort((a, b) => a.t - b.t);
+    const slides = c.notes.filter((q) => q.sl && q.t >= g.s && q.t < e).sort((a, b) => a.t - b.t);
+    let base = null, cur = 0;
+    for (const s of slides) {
+      let b = null; for (const q of plain) { if (q.t > s.t) break; if (q.t + q.d > s.t) b = q; }
+      if (!b) continue;
+      if (b !== base) { if (base && cur) { f.push(at(base.t + base.d), 4, cur, at(base.t + base.d) + 1, 4, 0); n += 2; } base = b; cur = 0; }
+      const end = Math.min(s.t + Math.max(1, s.d), b.t + b.d), to = s.p - b.p;
+      f.push(at(s.t), 4, cur, at(end), 4, to); n += 2; cur = to;
+    }
+    if (base && cur) { f.push(at(base.t + base.d), 4, cur, at(base.t + base.d) + 1, 4, 0); n += 2; }
+  }
+  return n;
+}
 export function clipNoteEvents(c, kind, f = [], st6 = false) {   // st6: a 6th value per note = pitch offset in semitones (drum step Pitch lane)
   let n = 0;
   const xp = kind === 'drum' ? 0 : (c.xpose | 0);   // xpose = clip transpose (semitones, playback only)
   for (const g of loopSegs(c)) {
     const e = g.s + g.len;
     for (const nt of c.notes) {
-      if (nt.t < g.s || nt.t >= e) continue;
+      if (nt.t < g.s || nt.t >= e || (nt.sl && kind === 'midi')) continue;   // a slide note glides the sounding note (slideLane), it is not played
       const at = g.o + nt.t - g.s, sw = swingShift(c, at);
       if (kind === 'drum' && nt.rpt > 1) {                       // step graph Note Repeat: rpt triggers spread over the step (both engines get plain note events)
         const q = Math.min(8, nt.rpt | 0), sub = DRUM_STEP / q;

@@ -157,6 +157,7 @@ class FlmVoices : public Instrument {
   void setTempo(double b) override { bpm = clamp(b, 20, 400); }
   bool hasSetBend() override { return true; }
   void setBend(double st) override { bendSt = st / 2 * pb; }
+  void setBendSl(double st, double sl) override { bendSt = st / 2 * pb + sl; }
   bool active() override { for (auto& x : v) if (x.on) return true; return false; }
   int voicesOn() override { int n = 0; for (auto& x : v) if (x.on) n++; return n; }
   V& pick() {

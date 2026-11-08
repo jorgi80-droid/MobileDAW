@@ -4,7 +4,7 @@ Ketuk-ganda tidak dibaca dua ketukan; Escape / jari kedua membatalkan tanpa lang
 Aksi destruktif lewat menu/konfirmasi + Undo,"Gestur global, shortcut, quick action",should,yes,yes,hapus track / pad / proyek / ganti rantai; touch-ui-test
 "Shortcut keyboard opsional, bisa diubah (Pengaturan → Pintasan), tidak memotong input teks","Gestur global, shortcut, quick action",should,yes,yes,touch-ui-test
 Quick action: Playlist / Piano Roll / Step / Automation / Wave Editor,"Gestur global, shortcut, quick action",should,yes,yes,"menu klip tidak modal, bar not, menu pad, bar titik otomasi, menu seleksi Wave Editor"
-"Quick action Piano Roll ""Slide""","Gestur global, shortcut, quick action",should,yes,no,slide note butuh dukungan di engine JS + C++ (lihat §7F)
+"Quick action Piano Roll ""Slide""","Gestur global, shortcut, quick action",should,yes,yes,Slide button in the note bar
 "Ketuk klip = Clip Controls (Copy, Cut, Delete, Snap, Edit, Combine, Mute …), ketuk-ganda = editor",Playlist,must,yes,yes,touch-ui-test
 "Pattern 4→8 bar mengulang 1-4; 3→8 bar = 3+3+2, tanpa pembulatan, sumber tidak disalin",Playlist,must,yes,yes,"pattern-test, pattern-ui-test"
 "Resize vs time-stretch audio dipisah (Stretch Mode), warp Beats / Tones / Re-Pitch",Playlist,must,yes,yes,stretch-test
@@ -31,7 +31,7 @@ Semua kontrol mixer bisa diotomasi (tekan lama atau CTRL),Mixer,should,yes,yes,t
 Ruler: Select / Insert / Duplicate / Delete space / Trim / Tebak skala / Snap ke skala,Piano Roll,must,yes,yes,sesi sebelumnya
 Lane Velocity / Pan,Piano Roll,must,yes,yes,sesi sebelumnya
 **Ghost Notes** (bisa dimatikan di Pengaturan → Editor),Piano Roll,must,yes,yes,dicek visual; data dari clipNoteEvents yang sama dengan engine
-Slide Notes (pitch / velocity / pan glide),Piano Roll,must,yes,no,perlu perubahan engine JS + port C++ identik + skenario golden; tidak dikerjakan agar engine tidak rusak
+Slide Notes (pitch / velocity / pan glide),Piano Roll,must,yes,partial,pitch glide done (golden core-slide); velocity / pan glide not
 Strength quantize parsial,Piano Roll,must,yes,yes,alat Quantize (Jumlah %); tanpa tes otomatis
 "Ketuk step, lukis, Swing (groove global / per klip), Fill 1/2/4, Clear",Step Sequencer / Drum,must,yes,yes,sesi sebelumnya
 "Menu channel: Load Sample, Clone, Set MIDI Key (ketik / learn dari controller), Hapus",Step Sequencer / Drum,must,yes,yes,touch-ui-test

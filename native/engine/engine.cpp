@@ -183,11 +183,12 @@ void Engine::stereo(Strip& st, float* L, float* R, int n) {
   }
   st.sw = std::fabs(sw - w) < 1e-6 ? w : sw; st.pL = std::fabs(pL - tL) < 1e-6 ? tL : pL; st.pR = std::fabs(pR - tR) < 1e-6 ? tR : pR;
 }
-void Engine::bend(int t, double st0) {
+void Engine::bend(int t, double st0, double sl0) {
   if (!ok(t) || t >= MASTER) return;
   Strip& st = s[t]; double x = (st0 == st0 && st0 != 0) ? st0 : 0; x = clamp(x, -12, 12);
-  double r = std::pow(2, (x - st.bend) / 12); st.bend = x;
-  if (st.inst && st.inst->hasSetBend()) { st.inst->setBend(x); return; }
+  double sl = (sl0 == sl0 && sl0 != 0) ? clamp(sl0, -24, 24) : 0, tot = x + sl;   // slide notes, exact semitones (as core.js)
+  double r = std::pow(2, (tot - st.bend) / 12); st.bend = tot;
+  if (st.inst && st.inst->hasSetBend()) { if (sl != 0) st.inst->setBendSl(x, sl); else st.inst->setBend(tot); return; }
   if (st.inst && st.inst->canBend() && r != 1) st.inst->bendSounding(r);
 }
 void Engine::bendNew(Strip& st) { double r = std::pow(2, st.bend / 12); st.inst->bendNewest(r); }
@@ -208,7 +209,7 @@ double Engine::ccAt(const CCLane& l, double tick) {
 }
 void Engine::applyCC(Strip& st, int idx, double tick) {
   CCData* c = st.ccl;
-  if (c->lane[0]) { double v = clamp(ccAt(*c->lane[0], tick), -1, 1) * 2; if (std::fabs(v - st.bend) > 1e-4) bend(idx, v); }
+  if (c->lane[0] || c->lane[4]) { double v = c->lane[0] ? clamp(ccAt(*c->lane[0], tick), -1, 1) * 2 : 0, sl = c->lane[4] ? clamp(ccAt(*c->lane[4], tick), -24, 24) : 0; if (std::fabs(v + sl - st.bend) > 1e-4) bend(idx, v, sl); }
   double g = 1; if (c->lane[1]) g *= clamp(ccAt(*c->lane[1], tick) / 127, 0, 1); if (c->lane[3]) g *= clamp(ccAt(*c->lane[3], tick) / 127, 0, 1);
   st.ccG = g; st.ccP = c->lane[2] ? clamp((ccAt(*c->lane[2], tick) - 64) / 63, -1, 1) : 0;
 }

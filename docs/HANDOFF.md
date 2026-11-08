@@ -555,3 +555,10 @@ Permintaan pemilik: SEMUA efek dan instrumen diganti dengan set stok Ableton Liv
 - Otomasi Level Master diimpor sebagai lane master; metode Replica + audit arsip FLM: `docs/replica/`.
 
 - Klip arrangement direplika dari Live (metode Replica): `docs/replica/CLIP-RECON.md` (warna klip penuh, isi hitam / putih menurut luminansi, klip nonaktif abu netral di semua tema).
+
+## Slide Notes (sesi ini)
+- Not dengan `n.sl` (tombol Slide di bar not piano roll, track synth): tidak dimainkan; `P.slideLane(c, f)` menulis lane trackCC **kind 4** (semitone persis): dari 0 di awal
+  slide ke (nada slide - nada not yang berbunyi) di akhir slide, bertahan sampai not itu selesai, lalu 0. Slide berantai melanjutkan dari nilai terakhir.
+- Engine: `bend(t, st, sl)` (JS) / `Engine::bend(t, st, sl)` (C++): roda (lane kind 0, +-2) + slide; instrumen dengan PB range sendiri memakai `setBendSl(st, sl)`
+  (FLM synth: roda diskalakan, slide tidak), lainnya `setBend(st + sl)` / bend per suara. Tanpa slide semuanya identik bit. Golden `core-slide`, `tools/slide-test.mjs`.
+- Batas: slide menggeser semua suara track (akor ikut bergeser); glide velocity / pan belum; flag slide di file .flm belum diketahui sehingga impor belum memakainya.

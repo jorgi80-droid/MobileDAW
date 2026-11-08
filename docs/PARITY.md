@@ -14,7 +14,7 @@ Stack dipertahankan: JS modul (tanpa build) + AudioWorklet + engine C++ (Android
 | Aksi destruktif lewat menu/konfirmasi + Undo | Selesai | hapus track / pad / proyek / ganti rantai; `touch-ui-test` |
 | Shortcut keyboard opsional, bisa diubah (Pengaturan → Pintasan), tidak memotong input teks | Selesai | `touch-ui-test` |
 | Quick action: Playlist / Piano Roll / Step / Automation / Wave Editor | Selesai | menu klip tidak modal, bar not, menu pad, bar titik otomasi, menu seleksi Wave Editor |
-| Quick action Piano Roll "Slide" | Belum | slide note butuh dukungan di engine JS + C++ (lihat §7F) |
+| Quick action Piano Roll "Slide" | Selesai | tombol Slide di bar not (track synth); not slide digambar dengan goresan naik + ↗ |
 
 ## 4. Playlist
 | Fitur | Status | Bukti / catatan |
@@ -58,7 +58,7 @@ Stack dipertahankan: JS modul (tanpa build) + AudioWorklet + engine C++ (Android
 | Ruler: Select / Insert / Duplicate / Delete space / Trim / Tebak skala / Snap ke skala | Selesai | sesi sebelumnya |
 | Lane Velocity / Pan | Selesai | sesi sebelumnya |
 | **Ghost Notes** (bisa dimatikan di Pengaturan → Editor) | Selesai | dicek visual; data dari `clipNoteEvents` yang sama dengan engine |
-| Slide Notes (pitch / velocity / pan glide) | Belum | perlu perubahan engine JS + port C++ identik + skenario golden; tidak dikerjakan agar engine tidak rusak |
+| Slide Notes (pitch / velocity / pan glide) | Sebagian | glide pitch: not slide menggeser nada yang berbunyi ke nadanya selama panjang not (lane kind 4, semitone persis, JS = C++: golden `core-slide`, `slide-test`); glide velocity / pan belum; slide berlaku untuk semua suara track |
 | Strength quantize parsial | Selesai | alat Quantize di editor (Jumlah 0-100 %, `editor.js` TOOLS); belum ada tes otomatis |
 
 ## 8. Step Sequencer / Drum

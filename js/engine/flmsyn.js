@@ -48,7 +48,8 @@ class Voices {
     this.v = Array.from({ length: n }, () => ({ on: false, held: false, pitch: 0, vel: 0, age: 0, t0: 0, f: 440, ft: 440, gl: 1, env: new Adsr(), lp: 0, lt: 0, lr: 0, ...extra() }));
   }
   setTempo(b) { this.bpm = clamp(b, 20, 400); }
-  setBend(st) { this.bendSt = st / 2 * this.pb; }                                // the UI wheel sends +-2: scaled by the instrument's PB range
+  setBend(st) { this.bendSt = st / 2 * this.pb; }
+  setBendSl(st, sl) { this.bendSt = st / 2 * this.pb + sl; }                     // slide notes: exact semitones on top of the scaled wheel                                // the UI wheel sends +-2: scaled by the instrument's PB range
   active() { for (const v of this.v) if (v.on) return true; return false; }
   pick() {
     let k = -1; const n = Math.min(this.max, this.v.length);
