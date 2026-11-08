@@ -1062,3 +1062,16 @@ html.reduce-motion .lk .lv-btn, html.reduce-motion .lk .knob.lk-k svg, html.redu
 #top button:active, .seg .b:active, #dtabs .b:active { transform: scale(.94); }
 @media (prefers-reduced-motion: reduce) { #btn-play.on, #btn-rec.on { animation: none !important; } #top button, .seg .b, #dtabs .b { transition: none !important; } }
 html.reduce-motion #btn-play.on, html.reduce-motion #btn-rec.on { animation: none !important; }
+
+/* ---- blur (frosted glass) for everything that floats: menus, dialogs, floating windows, the MiniMeters option popups ----
+   The surface keeps 80 % of its colour so text stays readable; what lies behind is blurred and slightly saturated. */
+.menu, .modal, .fw, .mm-pop {
+  -webkit-backdrop-filter: blur(16px) saturate(1.35); backdrop-filter: blur(16px) saturate(1.35);
+  background-color: color-mix(in srgb, var(--lv-body, #2a2a2c) 80%, transparent) !important;
+}
+.modal { background-color: color-mix(in srgb, var(--panel, #2a2a2c) 82%, transparent) !important; }
+.modal > h3, .modal .acts { background-color: color-mix(in srgb, var(--panel2, #303034) 70%, transparent) !important; }
+.scrim { -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); }
+.scrim:has(+ .modal) { -webkit-backdrop-filter: blur(10px) saturate(.85); backdrop-filter: blur(10px) saturate(.85); }
+html.reduce-motion .menu, html.reduce-motion .modal, html.reduce-motion .fw, html.reduce-motion .mm-pop, html.reduce-motion .scrim { -webkit-backdrop-filter: none !important; backdrop-filter: none !important; }
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) { .menu, .modal, .fw, .mm-pop { background-color: var(--lv-body, #2a2a2c) !important; } }

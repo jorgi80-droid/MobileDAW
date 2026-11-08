@@ -42,6 +42,13 @@ const binOf = (f, top) => clamp(Math.log(f / 20) / Math.log(Math.max(21, top) / 
 function sample(arr, off, b) { const i = Math.floor(b), j = Math.min(NB - 1, i + 1), t = b - i; return arr[off + i] + (arr[off + j] - arr[off + i]) * t; }
 
 function text(g, t, x, y, al, col, sz, wt) { g.fillStyle = col; g.font = `${wt || ''} ${sz}px system-ui,sans-serif`; g.textAlign = al || 'left'; g.textBaseline = 'alphabetic'; g.fillText(t, x, y); }
+const MONO = 'ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace';
+// a label box over the display with the picture behind it blurred (frosted glass), as the readouts of the reference video
+function glassBox(g, x, y, w, h, fill) {
+  const d = g.getTransform().a || 1;
+  try { g.save(); g.beginPath(); g.rect(x, y, w, h); g.clip(); g.filter = 'blur(5px)'; g.drawImage(g.canvas, x * d, y * d, w * d, h * d, x, y, w, h); g.restore(); } catch (_) { g.restore(); }
+  g.fillStyle = fill || 'rgba(16,18,24,.55)'; g.fillRect(x, y, w, h);
+}
 const hline = (g, y, x0, x1, col) => { g.fillStyle = col; g.fillRect(x0, Math.round(y), x1 - x0, 1); };
 const vline = (g, x, y0, y1, col) => { g.fillStyle = col; g.fillRect(Math.round(x), y0, 1, y1 - y0); };
 
@@ -114,8 +121,8 @@ FACTORY.waveform = (env) => {
   const e = (d) => Math.pow(10, clamp(d, -90, 6) / 20);
   const LANES = { L: [['L']], R: [['R']], M: [['M']], S: [['S']], LR: [['L'], ['R']], MS: [['M'], ['S']] };
   return {
-    title: 'Waveform', def: { ch: 'LR', color: 'multi', secs: 6, hist: false, loop: false },
-    opts: [seg('ch', 'Channels', [['L', 'L'], ['R', 'R'], ['M', 'M'], ['S', 'S'], ['LR', 'L / R'], ['MS', 'M / S']]), seg('color', 'Color', [['static', 'Static'], ['multi', 'Multi-Band'], ['map', 'Color Map']]),
+    title: 'Waveform', def: { ch: 'M', color: 'glow', secs: 6, hist: false, loop: false },
+    opts: [seg('ch', 'Channels', [['L', 'L'], ['R', 'R'], ['M', 'M'], ['S', 'S'], ['LR', 'L / R'], ['MS', 'M / S']]), seg('color', 'Color', [['glow', 'Glow'], ['static', 'Static'], ['multi', 'Multi-Band'], ['map', 'Color Map']]),
       rng('secs', 'Speed', 2, 30, 1, (v) => v + ' s'), tog('hist', 'Peak History'), tog('loop', 'Loop')],
     ingest(o) {
       const j = total & (RING - 1);
@@ -145,7 +152,10 @@ FACTORY.waveform = (env) => {
           for (let k = a; k <= b && k < RING - 2; k++) { const j = at(k); if (mn[j] < lo) lo = mn[j]; if (mx[j] > hi) hi = mx[j]; el += F.lo[j]; em += F.mid[j]; eh += F.hi[j]; n++; }
           if (!n || lo > hi) continue;
           let col;
-          if (op.color === 'multi') {
+          if (op.color === 'glow') {                                        // reference video: lows red, mids pink-white, highs blue, brighter when loud
+            const r = e(el / n), gg = e(em / n), bb = e(eh / n), s = Math.max(1e-6, r + gg + bb), wr = r / s, wm = gg / s, wb = bb / s, lv = clamp(0.55 + Math.max(Math.abs(lo), Math.abs(hi)) * 0.6, 0, 1);
+            col = `rgb(${Math.round((255 * wr + 255 * wm + 90 * wb) * lv)},${Math.round((70 * wr + 170 * wm + 150 * wb) * lv)},${Math.round((90 * wr + 200 * wm + 255 * wb) * lv)})`;
+          } else if (op.color === 'multi') {
             const r = e(el / n), gg = e(em / n), bb = e(eh / n), m = Math.max(r, gg, bb, 1e-6);
             col = `rgb(${Math.round(70 + 185 * Math.pow(r / m, 1.4))},${Math.round(70 + 185 * Math.pow(gg / m, 1.4))},${Math.round(70 + 185 * Math.pow(bb / m, 1.4))})`;
           } else if (op.color === 'map') { const q = clamp(Math.round(Math.max(Math.abs(lo), Math.abs(hi)) * 255), 0, 255); col = `rgb(${mapL[q * 3]},${mapL[q * 3 + 1]},${mapL[q * 3 + 2]})`; }
@@ -234,12 +244,12 @@ FACTORY.spectrogram = (env) => {
 
 // ---------------------------------------------------------------- Spectrum
 FACTORY.spectrum = (env) => {
-  const sm = [new Float32Array(NB).fill(-120), new Float32Array(NB).fill(-120)], tgt = { arr: null, name: '' };
+  const sm = [new Float32Array(NB).fill(-120), new Float32Array(NB).fill(-120)], tgt = { arr: null, name: '' }, pkh = new Float32Array(NB).fill(-120);
   let dom = { f: 0, db: -100 }, sr = 48000, cur = null, mean = -60;
   const DB0 = 0, DB1 = -90;
   return {
-    title: 'Spectrum', def: { mode: 'fft', smooth: 0.6, ch: 0, over: true, scale: 'log', eng: { fft: 2, ch: 0 } },
-    opts: [seg('mode', 'Mode', [['fft', 'FFT'], ['bars', 'Color Bars'], ['both', 'Both']]), rng('smooth', 'Smoothing', 0, 0.95, 0.05, (v) => Math.round(v * 100) + '%'),
+    title: 'Spectrum', def: { mode: 'flow', smooth: 0.6, ch: 0, over: true, scale: 'log', eng: { fft: 2, ch: 0 } },
+    opts: [seg('mode', 'Mode', [['flow', 'Flow'], ['fft', 'FFT'], ['bars', 'Color Bars'], ['both', 'Both']]), rng('smooth', 'Smoothing', 0, 0.95, 0.05, (v) => Math.round(v * 100) + '%'),
       seg('ch', 'Channel', [[0, 'Left / Right'], [1, 'Mid / Side']], { eng: 3 }), tog('over', 'dB / Hz / Note'),
       seg('fft', 'FFT Size', [[0, '1024'], [1, '2048'], [2, '4096'], [3, '8192'], [4, '16384']], { eng: 1 }), seg('scale', 'Scale', [['mel', 'Mel'], ['log', 'Log'], ['lin', 'Linear']]),
       { k: 'target', type: 'file', label: 'Target' }],
@@ -248,11 +258,13 @@ FACTORY.spectrum = (env) => {
       const k = clamp(+env.opt().smooth, 0, 0.95); sr = o[31] || 48000;
       for (let c = 0; c < 2; c++) { const s = sm[c], off = c ? O.B : O.A; for (let b = 0; b < NB; b++) { const v = clamp(o[off + b], -120, 6); s[b] = s[b] < -119 ? v : s[b] * k + v * (1 - k); } }
       dom = { f: o[27], db: o[28] };
+      for (let b = 0; b < NB; b++) { const v = Math.max(sm[0][b], sm[1][b]); pkh[b] = v > pkh[b] ? v : pkh[b] - 0.6; }   // peak line (falls ~18 dB/s)
       let m = 0; for (let b = 40; b < NB - 40; b++) m += sm[0][b] + sm[1][b]; mean = mean * 0.9 + (m / ((NB - 80) * 2)) * 0.1;
     },
-    clear() { sm[0].fill(-120); sm[1].fill(-120); },
+    clear() { sm[0].fill(-120); sm[1].fill(-120); pkh.fill(-120); },
     pointer(x) { cur = x; },
     draw(g, W, H) {
+      if ((env.opt().mode || 'flow') === 'flow') return this.drawFlow(g, W, H);
       const T = env.T(), op = env.opt(), top = Math.min(20000, sr * 0.49), L = 28, R = 6, TP = 14, BT = 14, w = W - L - R, h = H - TP - BT;
       g.fillStyle = T.bg; g.fillRect(0, 0, W, H);
       if (w < 20 || h < 20) return;
@@ -296,6 +308,29 @@ FACTORY.spectrum = (env) => {
         const v = val(sm[0], 0, x); text(g, `${f >= 1000 ? (f / 1000).toFixed(2) + 'k' : Math.round(f)} Hz  ${fdb(v)} dB`, Math.min(x + 4, W - 96), TP + 24, 'left', '#fff', 10);
       }
     },
+    // Flow (reference video): the spectrum filled edge to edge with a warm-to-teal gradient along frequency, a grey peak line, small Hz marks
+    // at the top and a frosted readout "dB | Hz | note cents" of the strongest partial
+    drawFlow(g, W, H) {
+      const T = env.T(), op = env.opt(), top = Math.min(20000, sr * 0.49), w = W, h = H;
+      g.fillStyle = T.bg; g.fillRect(0, 0, W, H); if (w < 20 || h < 20) return;
+      const X = (f) => fpos(f, op.scale) * w, Y = (db) => 4 + (clamp(db, -96, -6) + 6) / -90 * (h - 4);
+      for (const f of [100, 1000, 10000]) { vline(g, X(f), 0, h, 'rgba(255,255,255,.06)'); text(g, fLabel(f).replace('k', 'kHz') + (f < 1000 ? 'Hz' : ''), X(f) + 3, 10, 'left', 'rgba(200,205,220,.45)', 8.5, '600'); }
+      const n = Math.max(24, Math.floor(w / 2)), val = (arr, x) => sample(arr, 0, binOf(pfreq(x / w, op.scale), top)), avg = (x) => (val(sm[0], x) + val(sm[1], x)) * 0.5;
+      const hg = g.createLinearGradient(0, 0, w, 0); hg.addColorStop(0, '#8a2a2a'); hg.addColorStop(0.18, '#e2553a'); hg.addColorStop(0.5, '#f08a5d'); hg.addColorStop(0.8, '#3fa6b8'); hg.addColorStop(1, '#46c6d8');
+      g.beginPath(); g.moveTo(0, h); for (let k = 0; k <= n; k++) { const x = (k / n) * w; g.lineTo(x, Y(avg(x))); } g.lineTo(w, h); g.closePath();
+      g.save(); g.globalAlpha = 0.85; g.fillStyle = hg; g.fill(); const vg = g.createLinearGradient(0, 0, 0, h); vg.addColorStop(0, 'rgba(255,255,255,.10)'); vg.addColorStop(1, 'rgba(0,0,0,.35)'); g.globalAlpha = 1; g.fillStyle = vg; g.fill(); g.restore();
+      g.save(); g.shadowColor = 'rgba(255,170,120,.55)'; g.shadowBlur = 8; g.beginPath(); for (let k = 0; k <= n; k++) { const x = (k / n) * w, y = Y(avg(x)); if (!k) g.moveTo(x, y); else g.lineTo(x, y); } g.strokeStyle = 'rgba(255,214,190,.9)'; g.lineWidth = 1.1; g.stroke(); g.restore();
+      g.beginPath(); for (let k = 0; k <= n; k++) { const x = (k / n) * w, y = Y(val(pkh, x)); if (!k) g.moveTo(x, y); else g.lineTo(x, y); } g.strokeStyle = 'rgba(190,196,210,.55)'; g.lineWidth = 1; g.stroke();
+      if (op.over && dom.f > 0 && dom.db > -70) {
+        const nn = 12 * Math.log2(dom.f / 440) + 69, r = Math.round(nn), ct = Math.round((nn - r) * 100);
+        const t = `${dom.db.toFixed(2)}dB | ${dom.f >= 1000 ? (dom.f / 1000).toFixed(2) + 'kHz' : dom.f.toFixed(2) + 'Hz'} | ${r >= 0 && r < 128 ? noteName(r) : ''} ${ct >= 0 ? '+' : ''}${ct} Cents`;
+        g.font = `600 10px ${MONO}`; let tt = t, tw = g.measureText(tt).width + 12;
+        if (tw > W - 8) { tt = t.replace(/ \| [^|]*Cents$/, ''); tw = g.measureText(tt).width + 12; } if (tw > W - 8) { tt = tt.replace(/ \| [^|]*Hz$/, ''); tw = g.measureText(tt).width + 12; }   // narrow module: drop the note, then the Hz
+        const bx = clamp(X(dom.f) - tw / 2, 4, Math.max(4, W - tw - 4)), by = 16;
+        glassBox(g, bx, by, tw, 17, 'rgba(24,20,26,.45)'); g.fillStyle = 'rgba(255,200,190,.95)'; g.textAlign = 'left'; g.textBaseline = 'alphabetic'; g.fillText(tt, bx + 6, by + 12);
+      }
+      if (cur !== null) { const x = clamp(cur, 0, W), f = pfreq(x / w, op.scale); vline(g, x, 0, h, '#ffffff55'); g.font = `600 10px ${MONO}`; const t = `${f >= 1000 ? (f / 1000).toFixed(2) + 'kHz' : Math.round(f) + 'Hz'} ${fdb(avg(x))}dB`, tw = g.measureText(t).width + 10; glassBox(g, Math.min(x + 4, W - tw - 2), h - 22, tw, 16); g.fillStyle = '#fff'; g.fillText(t, Math.min(x + 4, W - tw - 2) + 5, h - 10); }
+    },
   };
 };
 
@@ -303,8 +338,8 @@ FACTORY.spectrum = (env) => {
 FACTORY.stereo = (env) => {
   const KEEP = 5, trails = [], st = { corr: [0, 0, 0, 0], bal: [0, 0, 0], k: [0, 0, 0] };
   return {
-    title: 'Stereometer', def: { mode: 'scaled', color: 'rgb', corr: 'multi' },
-    opts: [seg('mode', 'Display', [['scaled', 'Scaled'], ['linear', 'Linear'], ['liss', 'Lissajous']]), seg('color', 'Color', [['static', 'Static'], ['rgb', 'RGB'], ['multi', 'Multi-Band']]), seg('corr', 'Correlation', [['single', 'Single-Band'], ['multi', 'Multi-Band']])],
+    title: 'Stereometer', def: { mode: 'polar', color: 'rgb', corr: 'multi' },
+    opts: [seg('mode', 'Display', [['polar', 'Polar'], ['scaled', 'Scaled'], ['linear', 'Linear'], ['liss', 'Lissajous']]), seg('color', 'Color', [['static', 'Static'], ['rgb', 'RGB'], ['multi', 'Multi-Band']]), seg('corr', 'Correlation', [['single', 'Single-Band'], ['multi', 'Multi-Band']])],
     ingest(o) {
       const fr = { all: Float32Array.from(o.slice(O.dots, O.dots + 256)), lo: Float32Array.from(o.slice(O.dLo, O.dLo + 128)), mid: Float32Array.from(o.slice(O.dMid, O.dMid + 128)), hi: Float32Array.from(o.slice(O.dHi, O.dHi + 128)), bal: [o[24], o[25], o[26]] };
       trails.push(fr); if (trails.length > KEEP) trails.shift();
@@ -312,6 +347,7 @@ FACTORY.stereo = (env) => {
     },
     clear() { trails.length = 0; },
     draw(g, W, H) {
+      if ((env.opt().mode || 'polar') === 'polar') return this.drawPolar(g, W, H);
       const T = env.T(), op = env.opt(), multi = op.corr === 'multi', cH = multi ? 54 : 22, area = Math.max(20, H - cH - 4), size = Math.min(W - 8, area), cx = W / 2, cy = 2 + area / 2, R = size / 2 - 3;
       g.fillStyle = T.bg; g.fillRect(0, 0, W, H);
       // guides
@@ -351,6 +387,23 @@ FACTORY.stereo = (env) => {
       });
       if (!multi) { text(g, '\u22121', x0, y0 + 2, 'left', T.dim, 7.5); text(g, '+1', x0 + bw, y0 + 2, 'right', T.dim, 7.5); }
     },
+    // Polar (reference video): a half circle with rings and 45 degree spokes; every sample is a dot at angle = stereo position, radius = level;
+    // newer frames brighter, pale green / white, additive so dense areas glow
+    drawPolar(g, W, H) {
+      const T = env.T(); g.fillStyle = T.bg; g.fillRect(0, 0, W, H);
+      const R = Math.max(10, Math.min(W / 2 - 6, H - 8)), cx = W / 2, cy = Math.min(H - 2, R + 6 + (H - R - 8) / 2);
+      g.strokeStyle = 'rgba(200,205,220,.16)'; g.lineWidth = 1; g.beginPath();
+      for (const k of [0.5, 1]) { g.moveTo(cx + R * k, cy); g.arc(cx, cy, R * k, 0, Math.PI, true); }
+      for (const a of [-0.25, 0, 0.25]) { g.moveTo(cx, cy); g.lineTo(cx + Math.sin(a * Math.PI) * R, cy - Math.cos(a * Math.PI) * R); }
+      g.moveTo(cx - R, cy); g.lineTo(cx + R, cy); g.stroke();
+      const nT = trails.length; g.save(); g.beginPath(); g.rect(0, 0, W, cy + 1); g.clip(); g.globalCompositeOperation = 'lighter';
+      trails.forEach((fr, k) => {
+        const a = ((k + 1) / nT) * 0.85; g.fillStyle = k === nT - 1 ? `rgba(235,255,240,${a})` : `rgba(150,235,170,${a * 0.7})`;
+        for (let p = 0; p < 128; p++) { const sx = fr.all[p * 2], my = fr.all[p * 2 + 1], m = Math.hypot(sx, my); if (m < 1e-4) continue;
+          const ang = Math.atan2(sx, Math.abs(my)), r = Math.pow(Math.min(1, m * 1.4), 0.5) * R; g.fillRect(cx + Math.sin(ang) * r - 1, cy - Math.cos(ang) * r - 1, 2, 2); }
+      });
+      g.restore(); g.globalCompositeOperation = 'source-over';
+    },
   };
 };
 
@@ -359,10 +412,11 @@ FACTORY.loudness = (env) => {
   const st = { pk: -100, pkHold: -100, pkAt: 0, max: -100, val: -100, rmsS: 1e-9, vmax: -100, maxPk: -100 };
   const MODES = { m: ['LUFS-M', 'MOMENTARY'], s: ['LUFS-S', 'SHORT-TERM'], rf: ['RMS-F', 'FAST 0.3 s'], rs: ['RMS-S', 'SLOW 1.0 s'] };
   return {
-    title: 'Loudness', def: { mode: 'm' },
-    opts: [seg('mode', 'Mode', [['m', 'LUFS Momentary'], ['s', 'LUFS Short-Term'], ['rf', 'RMS Fast'], ['rs', 'RMS Slow']])],
+    title: 'Loudness', def: { mode: 'm', look: 'bars' },
+    opts: [seg('mode', 'Mode', [['m', 'LUFS Momentary'], ['s', 'LUFS Short-Term'], ['rf', 'RMS Fast'], ['rs', 'RMS Slow']]), seg('look', 'Look', [['bars', 'Bars'], ['big', 'Numbers']])],
     ingest(o) {
       const mode = env.opt().mode, now = env.clock();
+      st.l = o[4]; st.r = o[5]; st.dl = Math.max((st.dl ?? -100) - 0.8, o[4]); st.dr = Math.max((st.dr ?? -100) - 0.8, o[5]);
       const pk = Math.max(o[4], o[5]); st.pk = pk; if (pk >= st.pkHold || now - st.pkAt > 1400) { st.pkHold = pk; st.pkAt = now; } st.maxPk = Math.max(st.maxPk, pk);
       const rmsFast = o[17]; st.rmsS += (Math.pow(10, rmsFast / 10) - st.rmsS) * (1 - Math.exp(-1 / 30));
       st.val = mode === 'm' ? o[10] : mode === 's' ? o[11] : mode === 'rf' ? rmsFast : 10 * Math.log10(Math.max(st.rmsS, 1e-10));
@@ -371,6 +425,7 @@ FACTORY.loudness = (env) => {
     clear() { st.maxPk = -100; st.vmax = -100; st.pkHold = -100; },
     reset() { this.clear(); },
     draw(g, W, H) {
+      if ((env.opt().look || 'bars') === 'bars') return this.drawBars(g, W, H);
       const T = env.T(), op = env.opt(), [unit, sub] = MODES[op.mode] || MODES.m; g.fillStyle = T.bg; g.fillRect(0, 0, W, H);
       const lo = -60, hi = 0, colw = W / 2, bh = Math.max(20, H - 70), by = 52, Y = (v) => by + (1 - (clamp(v, lo, hi) - lo) / (hi - lo)) * bh;
       const side = (x, label, val, held, maxv, color, hold) => {
@@ -387,6 +442,22 @@ FACTORY.loudness = (env) => {
       side(colw, unit, st.val, st.vmax, st.vmax, T.b, st.vmax);
       if (H > 110) { text(g, sub, W - 4, H - 14, 'right', T.dim, 7.5); text(g, 'dBFS', 4, H - 14, 'left', T.dim, 7.5); }
       vline(g, colw, 4, H - 4, T.grid);
+    },
+    // Bars (reference video): a dB scale (0 6 12 24 36 50), two thin level bars L / R with peak lines, and the reading in a teal box ("-6.56RMS")
+    drawBars(g, W, H) {
+      const T = env.T(), op = env.opt(); g.fillStyle = T.bg; g.fillRect(0, 0, W, H);
+      const top = 6, bot = H - 4, Y = (db) => top + (clamp(-db, 0, 54) / 54) * (bot - top), sx = 30, bw = 7, gap = 3, bx = sx + 8;
+      g.font = `500 9px ${MONO}`; g.textAlign = 'right'; g.fillStyle = 'rgba(200,205,220,.6)';
+      for (const v of [0, 6, 12, 24, 36, 50]) { g.fillText(String(v), sx, Y(-v) + 3); g.fillRect(sx + 2, Math.round(Y(-v)), 4, 1); }
+      for (const [k, v, pk] of [[0, st.l ?? -100, st.dl ?? -100], [1, st.r ?? -100, st.dr ?? -100]]) {
+        const x = bx + k * (bw + gap), y = Y(v); g.fillStyle = 'rgba(255,255,255,.06)'; g.fillRect(x, top, bw, bot - top);
+        const gr = g.createLinearGradient(0, bot, 0, top); gr.addColorStop(0, '#9fb3d8'); gr.addColorStop(1, '#d6e2f7'); g.save(); g.shadowColor = 'rgba(180,200,240,.5)'; g.shadowBlur = 6; g.fillStyle = gr; g.fillRect(x, y, bw, bot - y); g.restore();
+        g.fillStyle = '#eef3ff'; g.fillRect(x, Math.round(Y(pk)), bw, 1.5);
+      }
+      const unit = op.mode === 'rf' || op.mode === 'rs' ? 'RMS' : 'LUFS', t = (st.val > -99 ? st.val.toFixed(unit === 'RMS' ? 2 : 1) : '-inf') + unit;
+      g.font = `700 11px ${MONO}`; const tw = g.measureText(t).width + 10, x2 = bx + 2 * (bw + gap) + 4, y2 = Math.max(top, Math.min(bot - 18, Y(st.val) - 9));
+      g.save(); g.shadowColor = 'rgba(70,170,190,.6)'; g.shadowBlur = 8; g.fillStyle = '#3c93a6'; g.fillRect(x2, y2, tw, 18); g.restore();
+      g.fillStyle = '#e8f8ff'; g.textAlign = 'left'; g.textBaseline = 'alphabetic'; g.fillText(t, x2 + 5, y2 + 13);
     },
   };
 };

@@ -407,8 +407,8 @@ function drawRuler(g) {
   { const step = 4, cols = Math.ceil(CW / step), cs = new Array(cols);
     for (let j = 0; j < cols; j++) cs[j] = clipColorAt(xt(j * step + step / 2));
     for (let j = 0; j < cols; j++) { const c = cs[j] || cs[j - 1] && cs[j + 1] && cs[j - 1]; if (!c) continue;
-      const gr = ctx.createLinearGradient(0, RULER, 0, MROW - 2); gr.addColorStop(0, washRgba(c, 0.42)); gr.addColorStop(0.55, washRgba(c, 0.12)); gr.addColorStop(1, washRgba(c, 0));
-      ctx.fillStyle = gr; ctx.fillRect(j * step, MROW - 2, step + 0.5, RULER - MROW + 2); } }
+      const gr = ctx.createLinearGradient(0, RULER - 2, 0, RULER - 11); gr.addColorStop(0, washRgba(c, 0.38)); gr.addColorStop(1, washRgba(c, 0));   // a thin band along the bottom edge only (owner: the glow spread too far)
+      ctx.fillStyle = gr; ctx.fillRect(j * step, RULER - 11, step + 0.5, 9); } }
   ctx.fillStyle = C('#08080a'); ctx.fillRect(0, MROW - 1, CW, 1); ctx.fillRect(0, RULER - 2, CW, 2);
   ctx.save(); ctx.beginPath(); ctx.rect(0, 0, CW, RULER); ctx.clip();
   if (sel) { ctx.fillStyle = 'rgba(255,255,255,.22)'; ctx.fillRect(tx(sel.a), MROW, tx(sel.b) - tx(sel.a), RULER - MROW - 1); }
@@ -530,11 +530,11 @@ function drawHead(tick) {
   const x = Math.round(px * dpr) / dpr;
   // the light travels with the playhead: a glow in the colour of the clip it is crossing, breathing with the master level while playing
   const hc = clipColorAt(tick) || '#ffa722', lv = state.playing && !calmTL() ? meterFrac(Math.max(mDisp[MASTER * 2] || 0, mDisp[MASTER * 2 + 1] || 0)) : 0.35;
-  { const R = 70 + lv * 60, gr = octx.createRadialGradient(x, RULER, 2, x, RULER, R); gr.addColorStop(0, washRgba(hc, 0.30 + lv * 0.45)); gr.addColorStop(0.45, washRgba(hc, 0.10 + lv * 0.18)); gr.addColorStop(1, washRgba(hc, 0));
+  { const R = 20 + lv * 14, gr = octx.createRadialGradient(x, RULER, 1, x, RULER, R); gr.addColorStop(0, washRgba(hc, 0.32 + lv * 0.4)); gr.addColorStop(0.5, washRgba(hc, 0.10 + lv * 0.15)); gr.addColorStop(1, washRgba(hc, 0));   // tight: about 20..34 px around the playhead
     octx.save(); octx.beginPath(); octx.rect(0, 0, CW, RULER); octx.clip(); octx.fillStyle = gr; octx.fillRect(x - R, 0, R * 2, RULER); octx.restore();
-    if (px >= 0) { const lg = octx.createLinearGradient(x - 10, 0, x + 10, 0); lg.addColorStop(0, washRgba(hc, 0)); lg.addColorStop(0.5, washRgba(hc, 0.10 + lv * 0.22)); lg.addColorStop(1, washRgba(hc, 0)); octx.fillStyle = lg; octx.fillRect(x - 10, RULER, 20, LANE_B() - RULER); } }   // a soft beam down the lanes
+    if (px >= 0) { const lg = octx.createLinearGradient(x - 4, 0, x + 4, 0); lg.addColorStop(0, washRgba(hc, 0)); lg.addColorStop(0.5, washRgba(hc, 0.08 + lv * 0.14)); lg.addColorStop(1, washRgba(hc, 0)); octx.fillStyle = lg; octx.fillRect(x - 4, RULER, 8, LANE_B() - RULER); } }   // a soft beam down the lanes
   if (px >= 0) { octx.fillStyle = 'rgba(0,0,0,.35)'; octx.fillRect(x + 1.5, RULER, 1, LANE_B() - RULER); octx.fillStyle = C('#ffa722'); octx.fillRect(x, RULER, 1.5, LANE_B() - RULER); }
-  octx.save(); octx.shadowColor = washRgba(hc, 0.9); octx.shadowBlur = 8 + lv * 8; octx.fillStyle = C('#ffa722'); octx.beginPath(); octx.moveTo(x - 5.5, MROW); octx.lineTo(x + 6.5, MROW); octx.lineTo(x + 0.75, MROW + 8); octx.closePath(); octx.fill(); octx.restore();   // the playhead flag glows
+  octx.save(); octx.shadowColor = washRgba(hc, 0.9); octx.shadowBlur = 4 + lv * 4; octx.fillStyle = C('#ffa722'); octx.beginPath(); octx.moveTo(x - 5.5, MROW); octx.lineTo(x + 6.5, MROW); octx.lineTo(x + 0.75, MROW + 8); octx.closePath(); octx.fill(); octx.restore();   // the playhead flag glows
   octx.restore();
 }
 

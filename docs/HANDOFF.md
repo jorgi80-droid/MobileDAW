@@ -669,3 +669,14 @@ Permintaan pemilik: SEMUA efek dan instrumen diganti dengan set stok Ableton Liv
 - Animasi: tombol Play bernapas (glow oranye) saat lagu jalan, Record berdenyut merah saat merekam, tombol bar atas / segmen / tab memantul
   saat disentuh. Semua mati dengan Kurangi animasi / prefers-reduced-motion.
 - Tangkapan: `PLAY=1 FRAMES=30 node tools/ui-shots.mjs <dir> glow` (frame untuk GIF).
+
+## MiniMeters gaya video referensi + blur (sesi ini)
+- Video pemilik (strip horizontal MiniMeters): bawaan baru di `mmdraw.js` (pilihan lama tetap ada di Opsi tiap modul):
+  Spectrum mode "Flow" (isian gradasi merah-oranye -> teal sepanjang frekuensi, garis puncak abu-abu, label 100Hz / 1kHz / 10kHz, kotak buram
+  "dB | Hz | nada +-Cents" yang memendek di modul sempit); Stereometer mode "Polar" (setengah lingkaran, titik-titik hijau pucat, aditif);
+  Loudness tampilan "Bars" (skala 0 6 12 24 36 50, dua batang L/R dengan garis puncak, kotak teal "-6.56RMS" / "-11.6LUFS"); Waveform warna
+  "Glow" (rendah merah, tengah merah muda-putih, tinggi biru) satu lajur Mid. `glassBox` = kotak dengan gambar di belakangnya diburamkan (canvas filter).
+- Kartu di rantai: tata letak Horizontal bawaan (Spectrogram, Waveform, Stereo, Loudness, Spectrum), 560 x 226 (pas di panel Device Pixel 7).
+- Blur: menu, dialog, jendela mengambang dan popup MiniMeters jadi kaca buram (backdrop-filter, warna 80 %), scrim ikut buram; mati dengan Kurangi
+  animasi; tanpa dukungan backdrop-filter warnanya kembali padat.
+- Glow ruler dipersempit (permintaan pemilik): sorot playhead 20..34 px, berkas 8 px, cahaya warna klip hanya pita 9 px di tepi bawah ruler.

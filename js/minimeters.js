@@ -16,7 +16,7 @@ const MOD_NAME = Object.fromEntries(MODULES);
 // ------------------------------------------------------------------------------------------------ presets
 const P1 = (o) => o;
 export const FACTORY = [
-  P1({ name: 'Default', layout: 'bar', bar: ['spectrogram', 'stereo', 'waveform', 'loudness', 'scope', 'spectrum'], theme: 'Default', eng: { fft: 2, follow: 1, ch: 0 }, opt: {} }),
+  P1({ name: 'Default', layout: 'bar', bar: ['spectrogram', 'waveform', 'stereo', 'loudness', 'spectrum'], theme: 'Default', eng: { fft: 2, follow: 1, ch: 0 }, opt: {} }),
   P1({ name: 'Quad', layout: 'quad', quad: ['spectrogram', 'spectrum', 'stereo', 'loudness'], theme: 'Default', eng: { fft: 2, follow: 1, ch: 0 }, opt: {} }),
   P1({ name: 'Mastering', layout: 'quad', quad: ['spectrum', 'stereo', 'loudness', 'waveform'], theme: 'Default', eng: { fft: 3, follow: 0, ch: 1 },
     opt: { spectrum: { mode: 'both', smooth: 0.7 }, stereo: { mode: 'scaled', color: 'multi', corr: 'multi' }, loudness: { mode: 's' }, waveform: { ch: 'MS', color: 'multi', secs: 10, hist: true } } }),
@@ -40,7 +40,7 @@ const states = new Map();
 const defaults = (id) => { const d = makeModule(id, { opt: () => ({}), T: () => THEMES.Default, themeName: () => 'Default', clock: () => 0, eng: () => 0 }).def; return { ...d }; };
 function blank() {
   const opt = {}; for (const id of MODULE_IDS) opt[id] = defaults(id);
-  return { layout: 'quad', quad: ['spectrogram', 'spectrum', 'stereo', 'loudness'], bar: ['spectrogram', 'stereo', 'waveform', 'loudness', 'scope', 'spectrum'], single: 'spectrum', theme: 'Default', opt, preset: 'Quad', paused: false };
+  return { layout: 'bar', quad: ['spectrogram', 'spectrum', 'stereo', 'loudness'], bar: ['spectrogram', 'waveform', 'stereo', 'loudness', 'spectrum'], single: 'spectrum', theme: 'Default', opt, preset: 'Quad', paused: false };
 }
 function stateFor(devId) {
   let S = states.get(devId);
@@ -242,6 +242,6 @@ export function buildSuite(ctx, every, opts = {}) {
 // compact version for the device chain (the full suite lives in the floating window)
 export function minimetersView(ctx) {
   const suite = buildSuite(ctx, ctx.every, { compact: true });
-  const box = h('div', { class: 'mmbox', style: 'width:340px;height:214px' }, suite.el);
+  const box = h('div', { class: 'mmbox', style: 'width:560px;height:226px' }, suite.el);   // a wide strip like the reference video (Horizontal layout by default); the floating window shows it full width
   return { el: box, draw() { /* knobs of this device are hidden: nothing to redraw */ } };
 }
