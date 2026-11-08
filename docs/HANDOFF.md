@@ -658,3 +658,14 @@ Permintaan pemilik: SEMUA efek dan instrumen diganti dengan set stok Ableton Liv
 - Engine: ChannelEq punya `readOut` spektrum 128 bin (JS fx3.js + C++ fx3.h/fx3.cpp, hanya tampilan); Drum Buss parameter 12 "Audition"
   (Boom Audition: keluaran = band Boom saja; mati = jalur lama bit sama). Golden 125/125 identik.
 - ui-shots: `PLAY=1` memutar lagu demo (dari awal untuk tiap modul), `CARD=1` memotret kartu efek di ukuran panel normal.
+
+## Cahaya ruler, bayangan, animasi (sesi ini)
+- Ruler arrangement: di belakang beat ruler ada cahaya dengan warna klip di bawahnya (`timeline.js clipColorAt`: track terpilih dulu, lalu track
+  aktif teratas; kolom 4 px, naik dari tepi bawah ruler dan memudar ke atas). Lapisan overlay: sorot cahaya bulat di playhead dengan warna klip yang
+  sedang dilewati, membesar / menyala mengikuti level Master saat diputar, berkas cahaya tipis turun ke lane, bendera playhead bercahaya. Diam
+  (atau Kurangi animasi) = cahaya tetap pelan.
+- Klip: bayangan lembut kanan-bawah (dua pita gelap, tanpa blur supaya murah) dan glow warna klip saat dipilih.
+- Bayangan: satu sumber cahaya dari atas; kartu efek = bayangan kontak + bayangan lebar, menu / modal melayang lebih tinggi, bar atas punya bayangan.
+- Animasi: tombol Play bernapas (glow oranye) saat lagu jalan, Record berdenyut merah saat merekam, tombol bar atas / segmen / tab memantul
+  saat disentuh. Semua mati dengan Kurangi animasi / prefers-reduced-motion.
+- Tangkapan: `PLAY=1 FRAMES=30 node tools/ui-shots.mjs <dir> glow` (frame untuk GIF).

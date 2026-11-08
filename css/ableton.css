@@ -1044,3 +1044,21 @@
 [data-theme="light"] .dev-scroll > .card { box-shadow: 0 10px 22px -10px rgba(0, 0, 0, .35), 0 2px 6px rgba(0, 0, 0, .18), inset 0 1px 0 rgba(255, 255, 255, .5); }
 @media (prefers-reduced-motion: reduce) { .lk .lv-btn, .lk .knob.lk-k svg, .dev-scroll > .card, .lk .lv-fld, .lk .lk-n { transition: none !important; } .lk .lv-btn:active, .lk .knob.lk-k:active svg { transform: none; } }
 html.reduce-motion .lk .lv-btn, html.reduce-motion .lk .knob.lk-k svg, html.reduce-motion .dev-scroll > .card { transition: none !important; }
+
+/* ---- shadows refined + more motion (owner: perfect the shadows, light that follows the clips, better animations) ----
+   One light source from the top: every raised surface gets a tight contact shadow plus a wide soft one, popups float higher than cards. */
+.dev-scroll > .card { box-shadow: 0 1px 1px rgba(0, 0, 0, .35), 0 4px 10px -2px rgba(0, 0, 0, .35), 0 16px 32px -12px rgba(0, 0, 0, .55), inset 0 1px 0 rgba(255, 255, 255, .07); }
+.menu { box-shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 18px -4px rgba(0, 0, 0, .45), 0 24px 48px -16px rgba(0, 0, 0, .6) !important; }
+.modal { box-shadow: 0 2px 4px rgba(0, 0, 0, .35), 0 16px 32px -8px rgba(0, 0, 0, .5), 0 40px 80px -24px rgba(0, 0, 0, .65) !important; }
+#top { box-shadow: 0 1px 0 rgba(0, 0, 0, .5), 0 6px 14px -8px rgba(0, 0, 0, .6); position: relative; z-index: 3; }
+[data-theme="light"] .dev-scroll > .card { box-shadow: 0 1px 1px rgba(0, 0, 0, .18), 0 4px 10px -2px rgba(0, 0, 0, .16), 0 16px 28px -14px rgba(0, 0, 0, .3), inset 0 1px 0 rgba(255, 255, 255, .5); }
+/* transport: Play breathes while the song runs, Record pulses red while recording */
+@keyframes playGlow { 0%, 100% { box-shadow: 0 0 0 rgba(255, 167, 34, 0); } 50% { box-shadow: 0 0 12px rgba(255, 167, 34, .55); } }
+@keyframes recGlow { 0%, 100% { box-shadow: 0 0 2px rgba(229, 72, 77, .3); } 50% { box-shadow: 0 0 14px rgba(229, 72, 77, .75); } }
+#btn-play.on { animation: playGlow 1.6s ease-in-out infinite; }
+#btn-rec.on { animation: recGlow 1s ease-in-out infinite; }
+/* buttons everywhere answer a touch with a short spring */
+#top button, .seg .b, #dtabs .b { transition: transform .14s cubic-bezier(.3, 1.6, .5, 1), background-color .18s, box-shadow .22s; }
+#top button:active, .seg .b:active, #dtabs .b:active { transform: scale(.94); }
+@media (prefers-reduced-motion: reduce) { #btn-play.on, #btn-rec.on { animation: none !important; } #top button, .seg .b, #dtabs .b { transition: none !important; } }
+html.reduce-motion #btn-play.on, html.reduce-motion #btn-rec.on { animation: none !important; }

@@ -163,6 +163,14 @@ function noteBox(c) {
   return [lo, hi];
 }
 
+// colour of the clip that plays at a tick: the selected track first, otherwise the topmost active track with a clip there (null = no clip)
+function clipColorAt(tick) {
+  const T0 = state.tracks, sel = T0[state.sel.track], hit = (t) => t && t.kind !== 'auto' && !t.mute && t.clips.some((c) => !c.muted && tick >= c.start && tick < c.start + c.len);
+  if (hit(sel)) return sel.color;
+  for (const t of T0) if (hit(t)) return t.color;
+  return null;
+}
+const calmTL = () => prefs.reduceMotion || (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
 function washRgba(hex, a) { const m = /^#?([0-9a-f]{6})$/i.exec(String(hex)); if (!m) return `rgba(128,128,128,${a})`; const v = parseInt(m[1], 16); return `rgba(${v >> 16},${(v >> 8) & 255},${v & 255},${a})`; }
 const shadeCache = new Map();
 function shade(hex, k) {                 // darken a colour by k (0..1): clip outlines and the note / waveform ink are deep tones of the track colour
@@ -204,6 +212,9 @@ function drawClip(t, c, y, hh) {
   const isSel = state.sel.clip === c.id || msel.has(c.id);
   const tall = hh >= 40, hd = tall ? 14 : 0, y0 = y + 1, h0 = hh - 2;   // folded / short rows: no title strip, only colour + content
   const col = c.muted ? '#8a8a8f' : t.color;                               // deactivated clip: the same neutral grey in every theme (clip colours are not themed)
+  { const sy0 = Math.max(RULER, y0 + 1), sy1 = Math.min(LANE_B(), y0 + h0 + 2);   // depth: a soft shadow below / right of the clip (two dark bands, no blur cost)
+    if (sy1 > sy0) { ctx.fillStyle = 'rgba(0,0,0,.22)'; ctx.fillRect(xs + 2, sy0 + 1, Math.max(0, xe - xs), sy1 - sy0); ctx.fillStyle = 'rgba(0,0,0,.12)'; ctx.fillRect(xs + 3, sy0 + 2, Math.max(0, xe - xs), sy1 - sy0); }
+    if (isSel && !c.muted) { ctx.save(); ctx.shadowColor = washRgba(t.color, 0.85); ctx.shadowBlur = 12; ctx.fillStyle = washRgba(t.color, 0.6); ctx.fillRect(xs, Math.max(RULER, y0), Math.max(0, xe - xs), Math.max(0, Math.min(LANE_B(), y0 + h0) - Math.max(RULER, y0))); ctx.restore(); } }   // selected: a glow in its colour
   ctx.save();
   const cy0 = Math.max(RULER, y0), cy1 = Math.min(LANE_B(), y0 + h0);              // clipped to the clip itself and the lane area: notes never spill while it glides
   ctx.beginPath(); ctx.rect(xs, cy0, Math.max(0, xe - xs), Math.max(0, cy1 - cy0)); ctx.clip();
@@ -392,6 +403,12 @@ const PUon = () => state.punch.on && state.punch.end > state.punch.start;
 function drawRuler(g) {
   ctx.fillStyle = C('#202022'); ctx.fillRect(0, 0, CW, MROW);                              // locator strip
   ctx.fillStyle = C('#2c2c2f'); ctx.fillRect(0, MROW, CW, RULER - MROW);                   // beat time ruler
+  // light behind the ruler in the colours of the clips below it (rises from the bottom edge, fades upwards); columns of 4 px, neighbours blended
+  { const step = 4, cols = Math.ceil(CW / step), cs = new Array(cols);
+    for (let j = 0; j < cols; j++) cs[j] = clipColorAt(xt(j * step + step / 2));
+    for (let j = 0; j < cols; j++) { const c = cs[j] || cs[j - 1] && cs[j + 1] && cs[j - 1]; if (!c) continue;
+      const gr = ctx.createLinearGradient(0, RULER, 0, MROW - 2); gr.addColorStop(0, washRgba(c, 0.42)); gr.addColorStop(0.55, washRgba(c, 0.12)); gr.addColorStop(1, washRgba(c, 0));
+      ctx.fillStyle = gr; ctx.fillRect(j * step, MROW - 2, step + 0.5, RULER - MROW + 2); } }
   ctx.fillStyle = C('#08080a'); ctx.fillRect(0, MROW - 1, CW, 1); ctx.fillRect(0, RULER - 2, CW, 2);
   ctx.save(); ctx.beginPath(); ctx.rect(0, 0, CW, RULER); ctx.clip();
   if (sel) { ctx.fillStyle = 'rgba(255,255,255,.22)'; ctx.fillRect(tx(sel.a), MROW, tx(sel.b) - tx(sel.a), RULER - MROW - 1); }
@@ -511,8 +528,13 @@ function drawHead(tick) {
   if (px < -6 || px > CW + 6) return;
   octx.save(); octx.beginPath(); octx.rect(0, 0, CW, H); octx.clip();
   const x = Math.round(px * dpr) / dpr;
+  // the light travels with the playhead: a glow in the colour of the clip it is crossing, breathing with the master level while playing
+  const hc = clipColorAt(tick) || '#ffa722', lv = state.playing && !calmTL() ? meterFrac(Math.max(mDisp[MASTER * 2] || 0, mDisp[MASTER * 2 + 1] || 0)) : 0.35;
+  { const R = 70 + lv * 60, gr = octx.createRadialGradient(x, RULER, 2, x, RULER, R); gr.addColorStop(0, washRgba(hc, 0.30 + lv * 0.45)); gr.addColorStop(0.45, washRgba(hc, 0.10 + lv * 0.18)); gr.addColorStop(1, washRgba(hc, 0));
+    octx.save(); octx.beginPath(); octx.rect(0, 0, CW, RULER); octx.clip(); octx.fillStyle = gr; octx.fillRect(x - R, 0, R * 2, RULER); octx.restore();
+    if (px >= 0) { const lg = octx.createLinearGradient(x - 10, 0, x + 10, 0); lg.addColorStop(0, washRgba(hc, 0)); lg.addColorStop(0.5, washRgba(hc, 0.10 + lv * 0.22)); lg.addColorStop(1, washRgba(hc, 0)); octx.fillStyle = lg; octx.fillRect(x - 10, RULER, 20, LANE_B() - RULER); } }   // a soft beam down the lanes
   if (px >= 0) { octx.fillStyle = 'rgba(0,0,0,.35)'; octx.fillRect(x + 1.5, RULER, 1, LANE_B() - RULER); octx.fillStyle = C('#ffa722'); octx.fillRect(x, RULER, 1.5, LANE_B() - RULER); }
-  octx.fillStyle = C('#ffa722'); octx.beginPath(); octx.moveTo(x - 5.5, MROW); octx.lineTo(x + 6.5, MROW); octx.lineTo(x + 0.75, MROW + 8); octx.closePath(); octx.fill();
+  octx.save(); octx.shadowColor = washRgba(hc, 0.9); octx.shadowBlur = 8 + lv * 8; octx.fillStyle = C('#ffa722'); octx.beginPath(); octx.moveTo(x - 5.5, MROW); octx.lineTo(x + 6.5, MROW); octx.lineTo(x + 0.75, MROW + 8); octx.closePath(); octx.fill(); octx.restore();   // the playhead flag glows
   octx.restore();
 }
 

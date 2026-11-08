@@ -50,6 +50,11 @@ const ev = (fn, ...a) => page.evaluate(fn, ...a);
 const sel = (i, c = 0) => ev(async ([i, c]) => { const P = await import('./js/project.js'); P.selectTrack(i); const t = P.state.tracks[i]; if (t && t.clips[c]) P.selectClip(i, t.clips[c].id); }, [i, c]);
 const tab = (k) => ev((k) => document.querySelector(`#dtabs .b[data-tab="${k}"]`).click(), k);
 const btn = (id) => ev((id) => document.getElementById(id).click(), id);
+if (want.includes('glow')) {                             // arrangement while playing: ruler light in the clip colours, playhead glow (frames for a GIF)
+  await ev(async () => { const P = await import('./js/project.js'); P.seekTo && P.seekTo(0); P.play(); }); await page.waitForTimeout(700);
+  for (let f = 0; f < (+process.env.FRAMES || 1); f++) { await page.screenshot({ path: path.join(out, `glow-f${String(f).padStart(2, '0')}.png`), clip: { x: 0, y: 0, width: +(process.env.VW || 1180), height: 300 } }); await page.waitForTimeout(70); }
+  await ev(async () => (await import('./js/project.js')).stop());
+}
 if (go('arr')) {
   await sel(2, 1); await shot('arr');
   await ev(async () => { const P = await import('./js/project.js'); P.setLoop({ on: true, start: P.BAR, end: P.BAR * 3 }); P.state.tracks[1].hx = 1.6; P.emit('tracks'); });   // loop brace on + one taller row
