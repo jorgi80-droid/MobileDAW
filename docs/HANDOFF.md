@@ -568,3 +568,9 @@ Permintaan pemilik: SEMUA efek dan instrumen diganti dengan set stok Ableton Liv
   (`build.js FLM_DEFAULT`), `lvl` param FLM synth kini sampai +12 dB. Tes: `tools/flm-stem-test.mjs` (`FLM_STEMS=` arsip).
 - Dampak pada proyek FLM lama yang diimpor ulang: track synth / GM berbunyi satu oktaf lebih rendah dari sebelumnya = sesuai FL Studio Mobile. Proyek .mdaw yang
   sudah tersimpan tidak berubah (konversi hanya saat impor).
+
+## Replica diff (sesi ini)
+- Alat paket replica disalin: `tools/imgdiff.py` (diff tata letak screenshot, pustaka standar), `tools/parity.py`. `tools/replica-arr-shot.mjs` merender
+  arrangement dalam keadaan referensi. Hasil dan iterasi: `docs/replica/CLIP-RECON.md` (48,3 -> 59,6).
+- Perubahan dari diff: gelombang stereo dua jalur (`stereoPyr` di timeline.js, piramida per kanal dibuat sekali per sample, hanya bila tinggi isi >= 34 px);
+  baris Master / FX 26 px (`XROW_H`), aktivator FX dan field level di kolom mixer, keterangan "x track aktif" hanya bila baris >= 40 px.

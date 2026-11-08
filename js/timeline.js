@@ -7,7 +7,10 @@ import { attachGestures, gestureTiming, haptic } from './gesture.js';
 import { menu, ask, modal, toast, clamp } from './ui.js';
 import { checkpoint, revertLast } from './history.js';
 import { prefs, savePrefs } from './prefs.js';
-import { wavePath, peaksPath } from './waveform.js';
+import { wavePath, peaksPath, buildPyramid } from './waveform.js';
+// Live draws a stereo clip as two waveforms (left above right): per-channel pyramids, built once per sample on first use
+const chPyr = new WeakMap();
+const stereoPyr = (p) => { if (!p || p.mono || p.r === p.l) return null; let q = chPyr.get(p); if (!q) { q = [buildPyramid(p.l, p.l), buildPyramid(p.r, p.r)]; chPyr.set(p, q); } return q; };
 import * as P from './project.js';
 import { BAR, BEAT } from './project.js';   // live bindings (they follow the time signature)
 import { pickColor } from './colorpick.js';
@@ -22,7 +25,7 @@ const { state, PPQ, SWATCHES } = P;
 // and a level meter along the right edge of every header.
 let HEAD = 140;                                                 // header width: prefs.headW (drag the header's left edge), else chosen from the canvas width
 const RULER = 34, MROW = 12, BOT = 19, HANDLE = 18, TH = 20, METW = 9;   // top ruler (locators + beats) / bottom time ruler / header title bar / meter strip
-const FOLD_H = 24, MIN_ROW = 52, ADD_H = 44, XROW_H = 48;                // folded row (title bar only) / smallest open row (title + buttons) / "+" row / Master + FX rows
+const FOLD_H = 24, MIN_ROW = 52, ADD_H = 44, XROW_H = 26;                // folded row (title bar only) / smallest open row (title + buttons) / "+" row / Master + FX rows (thin, as Live's return / main rows)
 export const view = { x0: 0, ppt: 0.06, y0: 0, rowH: 78 };   // 78: the four header rows (buttons, volume + pan, sends, output) fit with their borders
 let CW = 0;                                                    // width of the clip area = canvas width - HEAD
 const sn = (n, f) => ({ 0: n, get 1() { return f(); } });   // snap values are read live: BAR / BEAT change with the time signature
@@ -129,7 +132,7 @@ function hdr(i) {
   }
   return r;
 }
-function xhdr(i) { const y = rowY(i), h = rh(i); return { y, h, act: full() ? { x: CW + nameW() + 4, y: y + 4, w: 28, h: 20 } : { x: CW + 5, y: y + TH + 4, w: 28, h: 20 } }; }
+function xhdr(i) { const y = rowY(i), h = rh(i), ah = Math.min(18, h - 6); return { y, h, act: full() ? { x: CW + nameW() + 4, y: y + Math.round((h - 1 - ah) / 2), w: 28, h: ah, fs: 10 } : { x: CW + HEAD - METW - 33, y: y + Math.round((h - 1 - ah) / 2), w: 28, h: ah, fs: 10 } }; }
 const inRect = (r, x, y, p = 0) => x >= r.x - p && x <= r.x + r.w + p && y >= r.y - p && y <= r.y + r.h + p;
 
 function clampView() {
@@ -221,8 +224,11 @@ function drawClip(t, c, y, hh) {
       if (px1 <= px0) continue;
       const sec0 = o + (g.s / PPQ) * 60 / state.bpm / lk + (px0 - sx) / sw * dur, spp0 = dur / sw / es.duration;
       if (es.pyr) {
-        const N = es.pyr.l.length;
-        ctx.fill(wavePath(es.pyr, { x0: px0, x1: px1, s0: sec0 / es.duration * N, spp: spp0 * N, mid: by + bh / 2, amp: bh * 0.5 * 0.96 }));
+        const N = es.pyr.l.length, two = bh >= 34 ? stereoPyr(es.pyr) : null;
+        if (two) {                                                      // stereo, row tall enough: left channel in the upper half, right in the lower (as Live)
+          const hh = bh / 2;
+          for (let k = 0; k < 2; k++) ctx.fill(wavePath(two[k], { x0: px0, x1: px1, s0: sec0 / es.duration * N, spp: spp0 * N, mid: by + hh * k + hh / 2, amp: hh * 0.5 * 0.94 }));
+        } else ctx.fill(wavePath(es.pyr, { x0: px0, x1: px1, s0: sec0 / es.duration * N, spp: spp0 * N, mid: by + bh / 2, amp: bh * 0.5 * 0.96 }));
       } else if (es.peaks) {
         const N = es.peaks.length;
         ctx.fill(peaksPath(es.peaks, { x0: px0, x1: px1, s0: sec0 / es.duration * N, spp: spp0 * N, mid: by + bh / 2, amp: bh * 0.5 * 0.96 }));
@@ -311,7 +317,7 @@ function draw() {
   if (xl.length) {                                                                        // caption on a small pill, so the grid never cuts through the letters
     ctx.font = FONT(600, 10); ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
     for (const l of xl) {
-      if (l.h < 22) continue;
+      if (l.h < 40) continue;                                                            // thin Live-style rows: no caption
       const w = Math.round(ctx.measureText(l.t).width + 20), x = Math.round(CW / 2 - w / 2), y = Math.round(l.y + l.h / 2 - 9);
       ctx.fillStyle = C('#1f1f21'); ctx.fillRect(x, y, w, 18); ctx.strokeStyle = C('#141415'); ctx.lineWidth = 1; ctx.strokeRect(x + 0.5, y + 0.5, w - 1, 17);
       ctx.fillStyle = C('#8b8b92'); ctx.fillText(l.t, CW / 2, l.y + l.h / 2 + 0.5);
@@ -559,10 +565,11 @@ function drawHeads() {
       const x = xInfo(i), on = state.sel.track === x.strip, fx = !x.master, rt = fx ? state.returns[x.k] : null, r = xhdr(i), nw = nameW(), ik = ink(x.color);
       ctx.fillStyle = on ? C('#3a3a3e') : C('#2c2c2f'); ctx.fillRect(hx, y, HEAD, h - 1);
       ctx.fillStyle = x.color; ctx.fillRect(hx, y, nw, h - 1);                                           // the whole name block in the colour, as in Live
-      ctx.fillStyle = ik; ctx.font = FONT(700, 11); ctx.textBaseline = 'middle'; ctx.fillText(cut2(x.name, nw - 14), hx + 8, y + Math.min(TH, h - 3) / 2 + 0.5);
-      if (h >= 44) {
-        if (fx) drawBtn(r.act, x.k < 2 ? 'AB'[x.k] : 'F' + (x.k - 1), !rt.mute, T('--mute'));
-        if (full()) { ctx.fillStyle = ik; ctx.globalAlpha = 0.7; ctx.font = FONT(500, 10); ctx.fillText((x.master ? '' : 'FX \u2022 ') + dbTxt(x.master ? state.master.vol : rt.vol) + ' dB', hx + 8, y + TH + 12, nw - 14); ctx.globalAlpha = 1; }
+      ctx.fillStyle = ik; ctx.font = FONT(700, 11); ctx.textBaseline = 'middle'; ctx.fillText(cut2(x.name, nw - 14), hx + 8, y + (h - 1) / 2 + 0.5);   // thin row like Live's return / main tracks: name centred
+      if (fx) drawBtn(r.act, x.k < 2 ? 'AB'[x.k] : 'F' + (x.k - 1), !rt.mute, T('--mute'));
+      if (full()) {                                                                          // the strip's level in the mixer column (Live: the volume field of the row)
+        const vx = x.master ? r.act.x : r.act.x + r.act.w + 3, vr = hx + HEAD - METW - 4, vol = x.master ? state.master.vol : rt.vol;
+        if (vr - vx > 30) drawSlider({ x: vx, y: r.act.y, w: vr - vx, h: r.act.h, fs: 10 }, Math.sqrt(clamp(vol / VMAX, 0, 1)), dbTxt(vol) + ' dB', false);
       }
       meterWell();
       ctx.fillStyle = C('#141415'); ctx.fillRect(hx, y + h - 1, HEAD, 1);
@@ -745,7 +752,7 @@ function hit(x, y) {
     const n0 = state.tracks.length;
     if (i === n0 + nX()) return { type: 'add' };
     if (i < 0 || i > n0 + nX()) return { type: 'none' };
-    if (i >= n0) { const xi = xInfo(i); return { type: 'xhead', x: xi, mute: !xi.master && rh(i) >= 44 && inRect(xhdr(i).act, x, y, 3) }; }
+    if (i >= n0) { const xi = xInfo(i); return { type: 'xhead', x: xi, mute: !xi.master && inRect(xhdr(i).act, x, y, 3) }; }
     if (!state.tracks[i].fold && rowY(i) + rh(i) - y < 8) return { type: 'rowh', i };          // bottom edge of a header: row height
     const r = hdr(i);
     for (const [k, key] of [[0, 'mute'], [1, 'solo'], [2, 'fold'], [3, 'vol'], [4, 'pan'], [5, 'arm'], [7, 'aut'], [8, 'sa'], [9, 'sb'], [10, 'out']]) if (r[key] && inRect(r[key], x, y, key === 'vol' || key === 'pan' || key === 'sa' || key === 'sb' || key === 'out' ? 2 : 3)) return { type: 'head', i, btn: k };
