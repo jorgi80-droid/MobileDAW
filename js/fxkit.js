@@ -350,12 +350,12 @@ V[31] = (k) => {
 };
 // Spectrum: Block / Channel / Avg / Graph / Max / Scale X / Auto | spectrum display (L+R or one channel, bins or line, peak hold)
 V[32] = (k) => {
-  let sp = null, mx = null; const W = 300, H = 132;
+  let sp = null, mx = null; const W = 380, H = 212;
   const disp = k.D(W, H, (g) => {
     const lin = Math.round(k.get(5)) === 0, auto = k.get(6) > 0.5; let lo = -120, hi = 0;
     if (sp && auto) { let a = -200, b = 0; for (const v of sp) { if (v > a) a = v; } hi = Math.min(0, Math.ceil(a / 6) * 6 + 6); lo = hi - 72; }
     const yd = (db) => 4 + (hi - Math.max(lo, Math.min(hi, db))) / (hi - lo) * (H - 18), N = sp ? sp.length : 256;
-    g.fillStyle = DISPC.grid; for (let d = Math.ceil(lo / 12) * 12; d <= hi; d += 12) { g.fillRect(0, Math.round(yd(d)), W, 1); label(g, String(d), 3, yd(d) - 2, DISPC.ink, 8); }
+    g.fillStyle = DISPC.grid; for (let d = Math.ceil(lo / 12) * 12; d <= hi; d += 12) { g.fillRect(0, Math.round(yd(d)), W, 1); label(g, String(d), 3, yd(d) - 2, DISPC.ink, 10); }
     const st = Math.round(k.get(5)) === 2;
     if (st) for (let o = 1; o <= 9; o++) { const f = 32.703 * Math.pow(2, o - 1), x = Math.log(f / 20) / Math.log(1000) * W; g.fillRect(Math.round(x), 0, 1, H - 12); label(g, 'C' + o, x + 2, H - 2, DISPC.ink, 8); }
     else if (!lin) for (const f of [100, 1000, 10000]) { const x = Math.log(f / 20) / Math.log(1000) * W; g.fillRect(Math.round(x), 0, 1, H - 12); label(g, f >= 1000 ? f / 1000 + 'k' : String(f), x + 2, H - 2, DISPC.ink, 8); }
@@ -366,7 +366,10 @@ V[32] = (k) => {
     if (k.get(4) > 0.5 && mx) lvPath(g, Array.from(mx, (v, b) => [b / (N - 1) * W, yd(v)]), DISPC.or, null, 1);
   });
   k.every(60, () => { const r = k.out(); if (r.length) { sp = r; if (k.get(4) > 0.5) { mx = mx && mx.length === r.length ? mx.map((v, j) => Math.max(v - 0.15, r[j])) : r.slice(); } else mx = null; disp.paint(); } });
-  return k.row(k.col(k.LN('Block', k.S(0, { w: 70 })), k.LN('Channel', k.CH(1, ['L', 'R', 'L+R'])), k.LN('Avg', k.N(2, { w: 50 })), k.LN('Graph', k.CH(3, ['Line', 'Bins'])), k.T(4, 'Max'), k.LN('Scale X', k.CH(5, ['Lin', 'Log', 'ST'])), k.T(6, 'Auto')), k.sep(), disp);
+  // Live: a compact settings column in groups split by thin rules (Block / Channel | Avg | Graph + Max, Scale X, Auto) and the analyser filling the rest
+  const hr = () => h('div', { class: 'lk-hr' });
+  return k.row(h('div', { class: 'lk-col lk-spl' }, k.LN('Block', k.S(0, { w: 76 })), hr(), k.LN('Channel', k.CH(1, ['L', 'R', 'L+R'])), hr(), k.LN('Avg', k.N(2, { w: 60 })), hr(),
+    k.LN('Graph', k.row(k.CH(3, ['Line', 'Bins']), k.T(4, 'Max', { w: 40 }))), k.LN('Scale X', k.CH(5, ['Lin', 'Log', 'ST'])), k.row(k.T(6, 'Auto', { w: 48 }))), disp);
 };
 
 // ================================================================================================ Live 12 set, part 2 (engine: js/engine/fx4.js)
@@ -453,7 +456,8 @@ V[38] = (k) => {
   fillRd();
   const vb = lvChoice(['T', 'B', 'A'].map((l) => ({ label: l, title: TBA[['T', 'B', 'A'].indexOf(l)][2] })), () => view, (j) => { view = j; fillRd(); }, { cls: 'lk-ch lk-tba' });
   const outs = k.col(h('div', { class: 'lk-st c' }, 'Output'), ...ROWS.map((b) => cell(k.K(BO(b) + 2, { n: '' }))));
-  return k.row(split, input, k.col(h('div', { class: 'lk-st c' }, ' '), disp), k.col(rdBox, vb), outs, k.sep(), k.col(k.K(31), k.K(30), k.K(29)));
+  // Live: the band bars and the Att/Rel (Below / Above) readouts share ONE dark box, the T / B / A view switch in its bottom-right corner
+  return k.row(split, input, h('div', { class: 'lk-dk lk-mbdk' }, disp, h('div', { class: 'lk-col lk-mbrd' }, rdBox, vb)), outs, k.sep(), k.col(k.K(31), k.K(30), k.K(29)));
 };
 // Resonators: Filter (on, frequency, type) | Mode, Decay, Const, Color | I (note) and II-V (pitch): on, pitch, fine, gain | Width, Gain, Dry/Wet
 V[39] = (k) => {

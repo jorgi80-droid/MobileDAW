@@ -1157,3 +1157,11 @@ html.reduce-motion .menu, html.reduce-motion .modal, html.reduce-motion .fw, htm
 .lk-fdg > .lk-col { gap: 3px !important; }
 .lk .lk-ch.lk-g4 { display: grid !important; grid-template-columns: repeat(4, 22px); gap: 2px; }
 .lk .lk-ch.lk-g4 .lv-btn { min-width: 0 !important; width: 22px; height: 18px; padding: 0 !important; }
+/* Spectrum (Live): compact settings column with thin rules */
+.lk.lk-fill.lk-row > .lk-col.lk-spl, .lk .lk-spl { justify-content: flex-start !important; align-items: stretch; gap: 5px !important; }
+.lk .lk-hr { height: 1px; align-self: stretch; background: rgba(255,255,255,.10); margin: 2px 0; }
+.lk .lk-spl .lk-ln, .lk .lk-spl > .lk-row { justify-content: space-between; }
+/* Multiband Dynamics: bars + readouts in one dark box (Live) */
+.lk .lk-mbdk { flex-direction: row !important; align-items: stretch; gap: 8px !important; padding: 6px 8px !important; }
+.lk .lk-mbrd { justify-content: space-between !important; align-items: center; }
+.lk .lk-mbdk .lk-tba { align-self: flex-end; }
