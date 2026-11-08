@@ -32,11 +32,11 @@ Ruler: Select / Insert / Duplicate / Delete space / Trim / Tebak skala / Snap ke
 Lane Velocity / Pan,Piano Roll,must,yes,yes,sesi sebelumnya
 **Ghost Notes** (bisa dimatikan di Pengaturan → Editor),Piano Roll,must,yes,yes,dicek visual; data dari clipNoteEvents yang sama dengan engine
 Slide Notes (pitch / velocity / pan glide),Piano Roll,must,yes,no,perlu perubahan engine JS + port C++ identik + skenario golden; tidak dikerjakan agar engine tidak rusak
-Strength quantize parsial,Piano Roll,must,yes,no,
+Strength quantize parsial,Piano Roll,must,yes,yes,alat Quantize (Jumlah %); tanpa tes otomatis
 "Ketuk step, lukis, Swing (groove global / per klip), Fill 1/2/4, Clear",Step Sequencer / Drum,must,yes,yes,sesi sebelumnya
 "Menu channel: Load Sample, Clone, Set MIDI Key (ketik / learn dari controller), Hapus",Step Sequencer / Drum,must,yes,yes,touch-ui-test
 "Graph editor: Velocity, **Note Repeat 1–8**",Step Sequencer / Drum,must,yes,yes,pattern-test (event yang dikirim ke kedua engine)
-Graph editor: Pan / Pitch per step,Step Sequencer / Drum,must,yes,no,engine native mengabaikan pan per not; pitch per step butuh engine
+Graph editor: Pan / Pitch per step,Step Sequencer / Drum,must,yes,partial,Pan per step ada; Pitch per step butuh engine
 "ADSR pad, Reverse, Pitch, Start/End",Step Sequencer / Drum,must,yes,yes,panel pad (sesi sebelumnya)
 "Cut Groups A/B/C, Poly, Hold, Shift per pad (tab **Seq**)",Step Sequencer / Drum,must,yes,yes,"drumseq-test (perilaku), golden inst-drumcut (JS = C++ identik); **AUX per pad belum** (butuh routing send per pad)"
 Simpan / muat Drum Kit (Save Template / My Drumsets),Step Sequencer / Drum,must,yes,yes,"menu header track drum; drumkit-test, channel-ui-test; pad dengan chain instrumen dilewati dan dihitung"
@@ -85,7 +85,7 @@ Otomasi volume channel,Impor FLM,must,yes,yes,
 Otomasi volume Master,Impor FLM,should,yes,yes,lane master (sesi ini)
 Otomasi parameter plugin,Impor FLM,should,yes,partial,hanya plugin hasil konversi; sisanya dilaporkan
 Routing send / bus FLM,Impor FLM,should,yes,partial,arsip uji: semua ke Master
-Pan per klip audio,Impor FLM,should,yes,no,MobileDAW belum punya pan per klip (3 klip di arsip uji)
+Pan per klip audio,Impor FLM,should,yes,yes,clip-pan-test + golden core-clip-pan
 Envelope A/D/S/R per klip audio,Impor FLM,could,yes,no,
 Flag Solo track dari file (RPRM),Impor FLM,could,yes,partial,"dibaca, tidak diterapkan: byte belum terbukti"
 Chunk KEYB (akor keyboard) dan META,Impor FLM,could,yes,no,

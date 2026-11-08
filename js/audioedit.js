@@ -171,6 +171,7 @@ export function panel(ui) {
   const c = r.clip, w = c.warp || { ratio: 1, rev: false, beats: 0, pitch: 0 };
   const dbOf = (g) => (g > 0.004 ? clamp(20 * Math.log10(g), -48, 18) : -48);          // slider works in dB: -inf .. +18 (= the x8 normalise ceiling), 0 dB = unity
   const lvl = slider({ label: 'Gain', min: -48, max: 18, home: 0, step: 0.1, speed: 0.5, value: dbOf(c.gain), width: 172, fmt: (db) => (db <= -48 ? '-∞' : (db > 0 ? '+' : '') + db.toFixed(1)) + ' dB', onStart: () => checkpoint(), onInput: (db) => { c.gain = db <= -48 ? 0 : Math.pow(10, db / 20); touch(r); } });
+  const pnl = slider({ label: 'Pan', min: -100, max: 100, home: 0, step: 1, speed: 0.5, value: Math.round((c.pan || 0) * 100), width: 172, fmt: (v) => (v === 0 ? 'C' : (v < 0 ? 'L ' : 'R ') + Math.abs(v)), onStart: () => checkpoint(), onInput: (v) => { if (v) c.pan = v / 100; else delete c.pan; touch(r); } });   // the clip's own balance (on top of the track pan)
   const st = stOf(w.pitch), ct = ctOf(w.pitch), sgn = (n) => (n > 0 ? '+' : '') + n;
   const own = c.swing != null && c.swing >= 0, setSw = (v) => { checkpoint(); if (v == null) delete c.swing; else c.swing = v; P.scheduleBake(60); P.emit('clips'); build(); };
   const regionMenu = (x, y) => menu([
@@ -179,7 +180,7 @@ export function panel(ui) {
   ], x, y);
   const [o, e] = region(c);
   return [
-    ui.sec('Audio', h('div', { class: 'cp-line cp-full' }, lvl),
+    ui.sec('Audio', h('div', { class: 'cp-line cp-full' }, lvl), h('div', { class: 'cp-line cp-full' }, pnl),
       h('div', { class: 'cp-grid g2' },
         ui.btn('Normalisasi', () => { const m = peakOf(c); if (m < 0.001) return toast('Audio terlalu pelan atau kosong.'); checkpoint(); c.gain = Math.min(8, 0.98 / m); touch(r); build(); toast(`Level dinaikkan ke ${gainDb(c.gain)}.`); }),
         ui.sw('Reverse', !!w.rev, () => run(r, { rev: !w.rev }, w.rev ? 'Kembali normal.' : 'Klip dibalik.')),

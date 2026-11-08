@@ -403,12 +403,13 @@ void Engine::track(Strip& st, int idx, double p0, int n, double sp, bool anySolo
       Sample* sm = c.sample >= 0 && c.sample < 256 ? bank.s[c.sample] : nullptr; if (!sm) continue;
       double from = jsMax(p0, cs), to = jsMin(p0 + n, ce), off = jsRound(c.offset * sr);
       const float* sl = sm->l; const float* sr2 = sm->r; double frames = sm->frames;
+      const double cp = c.pan, pl = cp > 0 ? 1 - cp : 1, pr = cp < 0 ? 1 + cp : 1;       // clip pan = balance (centre untouched), as core.js
       for (double k = from; k < to; k++) {
         double ix = off + (k - cs); if (ix >= frames || ix < 0) { if (ix >= frames) break; continue; }
         double g = c.gain, fi = k - cs, fo = ce - 1 - k;
         if (fi < FI) g *= (fi + 1) / FI; if (fo < FO) g *= (fo + 1) / FO;
         int o = (int)(k - p0), j = (int)ix;
-        L[o] = (float)(L[o] + sl[j] * g); R[o] = (float)(R[o] + sr2[j] * g);
+        L[o] = (float)(L[o] + sl[j] * g * pl); R[o] = (float)(R[o] + sr2[j] * g * pr);
       }
       active = true;
     }

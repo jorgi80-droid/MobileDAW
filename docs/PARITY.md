@@ -27,6 +27,7 @@ Stack dipertahankan: JS modul (tanpa build) + AudioWorklet + engine C++ (Android
 | Bayangan posisi asal + gelembung posisi saat menyeret | Selesai | `touch-ui-test` |
 | Sub-track (Notes Track / Step Track di bawah drum channel) | Belum | model data satu track = satu jenis klip; perlu desain struktur track baru |
 | Save as MIDI per track | Selesai | menu header track → "Simpan sebagai MIDI" (`track-dup-test`, `channel-ui-test`); ekspor seluruh proyek tetap ada |
+| Pan per klip audio (balance di atas pan track, slider Pan di panel audio klip, impor FLM memakainya) | Selesai | `clip-pan-test` (pan 0 identik bit dengan sebelumnya), golden `core-clip-pan` JS = C++ |
 | Menu channel: Duplikat track, Impor MIDI ke track ini, Sync semua sample | Selesai | `track-dup-test` (salinan independen, id baru, sidechain mengikuti, satu langkah urung), `channel-ui-test` |
 
 ## 5. Channel Rack / Rack efek
@@ -58,7 +59,7 @@ Stack dipertahankan: JS modul (tanpa build) + AudioWorklet + engine C++ (Android
 | Lane Velocity / Pan | Selesai | sesi sebelumnya |
 | **Ghost Notes** (bisa dimatikan di Pengaturan → Editor) | Selesai | dicek visual; data dari `clipNoteEvents` yang sama dengan engine |
 | Slide Notes (pitch / velocity / pan glide) | Belum | perlu perubahan engine JS + port C++ identik + skenario golden; tidak dikerjakan agar engine tidak rusak |
-| Strength quantize parsial | Belum | |
+| Strength quantize parsial | Selesai | alat Quantize di editor (Jumlah 0-100 %, `editor.js` TOOLS); belum ada tes otomatis |
 
 ## 8. Step Sequencer / Drum
 | Fitur | Status | Bukti / catatan |
@@ -66,7 +67,7 @@ Stack dipertahankan: JS modul (tanpa build) + AudioWorklet + engine C++ (Android
 | Ketuk step, lukis, Swing (groove global / per klip), Fill 1/2/4, Clear | Selesai | sesi sebelumnya |
 | Menu channel: Load Sample, Clone, Set MIDI Key (ketik / learn dari controller), Hapus | Selesai | `touch-ui-test` |
 | Graph editor: Velocity, **Note Repeat 1–8** | Selesai | `pattern-test` (event yang dikirim ke kedua engine) |
-| Graph editor: Pan / Pitch per step | Belum | engine native mengabaikan pan per not; pitch per step butuh engine |
+| Graph editor: Pan / Pitch per step | Sebagian | lane Pan per step ada (menu nama lane di graph editor; engine memakai pan per not dari awal step, sama di JS dan C++); Pitch per step belum (butuh perubahan event engine) |
 | ADSR pad, Reverse, Pitch, Start/End | Selesai | panel pad (sesi sebelumnya) |
 | Cut Groups A/B/C, Poly, Hold, Shift per pad (tab **Seq**) | Selesai | `drumseq-test` (perilaku), golden `inst-drumcut` (JS = C++ identik); **AUX per pad belum** (butuh routing send per pad) |
 | Simpan / muat Drum Kit (Save Template / My Drumsets) | Selesai | menu header track drum; `drumkit-test`, `channel-ui-test`; pad dengan chain instrumen dilewati dan dihitung |

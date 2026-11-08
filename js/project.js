@@ -311,12 +311,12 @@ export function syncClips(i) {
     for (const c of t.clips) {
       if (c.muted) continue;
       const bk = bakeCurrent(c);       // grid-locked clip on a tempo map / with swing: one pre-warped buffer that starts at the clip start
-      if (bk) { f.push(c.start, c.len, bk.sample.id, c.gain, 0, c.fadeIn || 0, c.fadeOut || 0); n++; continue; }
+      if (bk) { f.push(c.start, c.len, bk.sample.id, c.gain, 0, c.fadeIn || 0, c.fadeOut || 0, c.pan || 0); n++; continue; }
       const es = c.dsample || c.sample;
       const segs = loopSegs(c);       // clip dragged longer than its audio: the audio repeats instead of leaving silence
-      segs.forEach((g, k) => { f.push(c.start + g.o, g.len, es.id, c.gain, (c.offset || 0) + g.s / PPQ * 60 / state.bpm, k === 0 ? c.fadeIn || 0 : 0, k === segs.length - 1 ? c.fadeOut || 0 : 0); n++; });
+      segs.forEach((g, k) => { f.push(c.start + g.o, g.len, es.id, c.gain, (c.offset || 0) + g.s / PPQ * 60 / state.bpm, k === 0 ? c.fadeIn || 0 : 0, k === segs.length - 1 ? c.fadeOut || 0 : 0, c.pan || 0); n++; });
     }
-    eng.trackClips(i, f, n);
+    eng.trackClips(i, f, n, 8);
   } else {
     for (const c of t.clips) {
       if (c.muted) continue;

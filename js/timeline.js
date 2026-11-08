@@ -100,23 +100,32 @@ function hdr(i) {
   const t = state.tracks[i], y = rowY(i), h = rh(i), x = CW, auto = t.kind === 'auto', th = Math.min(TH, h - 3), nw = nameW();
   const r = { y, h, th, nw, title: { x, y, w: HEAD - METW, h: th }, fold: { x, y, w: 26, h: th } };
   if (compact()) { if (HEAD >= 92) { const R = x + HEAD - METW - 5; r.mute = { x: R - (auto ? 26 : 20), y: y + 3, w: auto ? 26 : 20, h: Math.max(10, th - 6) }; } return r; }
-  const L = x + nw + 4, R = x + HEAD - METW - 4, gp = 3, bw = 22;
+  const L = x + nw + 4, R = x + HEAD - METW - 4, gp = 3;
   if (h < 46) {                                                      // folded row: the three switches as small squares in the mixer column
     const q = Math.max(10, Math.min(18, h - 8)), by = y + (h - 1 - q) / 2;
     r.mute = { x: L, y: by, w: auto ? 30 : q + 4, h: q };
     if (!auto) { r.solo = { x: L + q + 4 + gp, y: by, w: q + 4, h: q }; r.arm = { x: L + (q + 4 + gp) * 2, y: by, w: q + 4, h: q }; }
     return r;
   }
-  const by = y + 2, bh = 16, sh = 14, vh = 18, sends = state.returns.length >= 2;
-  r.mute = { x: L, y: by, w: auto ? 36 : bw, h: bh };
+  // Mixer column in the default control size (finger friendly, not scaled with the row): row 1 = activator / S / arm / automation, row 2 = volume + pan,
+  // row 3 = Send A / Send B / output (Master). A taller row only adds air between the rows; a shorter one drops the lower rows first.
+  const sends = state.returns.length >= 2, MAXU = 26, WT = { btn: 1, vp: 1.25, io: 1 };
+  const kinds = auto ? ['btn'] : ['btn', ...(h >= 50 ? ['vp'] : []), ...(h >= 66 ? ['io'] : [])];
+  const W0 = kinds.reduce((q, k) => q + WT[k], 0), unit = Math.min(MAXU, (h - 3 - 3 * (kinds.length - 1)) / W0);
+  const gap = kinds.length > 1 ? Math.min(10, Math.max(3, (h - 3 - unit * W0) / (kinds.length - 1) + 0)) : 0, fs = Math.max(10, Math.min(12, unit * 0.58)); r.fs = fs;
+  let ry = y + 2; const Y = {};
+  for (const k of kinds) { const hh = Math.round(unit * WT[k]); Y[k] = { y: Math.round(ry), h: hh }; ry += hh + gap; }
+  const bh = Y.btn.h, bw = Math.max(22, Math.min(Math.round(bh * 1.5), Math.floor((R - L - gp * 3) / (auto ? 3 : 4))));
+  r.mute = { x: L, y: Y.btn.y, w: auto ? bw + 14 : bw, h: bh, fs };
   if (!auto) {
-    r.solo = { x: L + bw + gp, y: by, w: bw, h: bh }; r.arm = { x: L + (bw + gp) * 2, y: by, w: bw, h: bh };
-    if (R - bw >= L + (bw + gp) * 3 - 2) r.aut = { x: R - bw, y: by, w: bw, h: bh };
-    // everything else sits in the wide mixer column, right-aligned: volume + pan, Send A / B, where the track plays into (Master / an effect track)
-    let sy = by + bh + 2;
-    if (h >= 50) { const vw = Math.round((R - L - gp) * 0.6); r.vol = { x: L, y: sy, w: vw, h: vh }; r.pan = { x: L + vw + gp, y: sy, w: R - L - vw - gp, h: vh }; sy += vh + 2; }
-    if (h >= 58 && sends && r.vol) { const hw = Math.round((R - L - gp) / 2); r.sa = { x: L, y: sy, w: hw, h: sh }; r.sb = { x: L + hw + gp, y: sy, w: R - L - hw - gp, h: sh }; sy += sh + 2; }
-    if (r.vol && h >= sy - y + sh + 1) r.out = { x: L, y: sy, w: R - L, h: sh };
+    r.solo = { x: L + bw + gp, y: Y.btn.y, w: bw, h: bh, fs }; r.arm = { x: L + (bw + gp) * 2, y: Y.btn.y, w: bw, h: bh, fs };
+    if (R - bw >= L + (bw + gp) * 3 - 2) r.aut = { x: R - bw, y: Y.btn.y, w: bw, h: bh, fs };
+    if (Y.vp) { const vw = Math.round((R - L - gp) * 0.6); r.vol = { x: L, y: Y.vp.y, w: vw, h: Y.vp.h, fs }; r.pan = { x: L + vw + gp, y: Y.vp.y, w: R - L - vw - gp, h: Y.vp.h, fs }; }
+    if (Y.io) {                                                       // Send A | Send B | output, one row, equal cells (output alone = the whole row)
+      const cells = sends ? 3 : 1, cw = Math.floor((R - L - gp * (cells - 1)) / cells);
+      if (sends) { r.sa = { x: L, y: Y.io.y, w: cw, h: Y.io.h, fs }; r.sb = { x: L + cw + gp, y: Y.io.y, w: cw, h: Y.io.h, fs }; }
+      r.out = { x: sends ? L + (cw + gp) * 2 : L, y: Y.io.y, w: sends ? R - L - (cw + gp) * 2 : R - L, h: Y.io.h, fs };
+    }
   }
   return r;
 }
@@ -496,7 +505,7 @@ function drawBtn(r, label, on, col, quiet) {
   if (label === 'aut') {                       // automation: a small breakpoint envelope
     ctx.strokeStyle = on ? '#15151a' : C('#b4b4ba'); ctx.lineWidth = 1.4; ctx.beginPath(); ctx.moveTo(cx - 6, cy + 4); ctx.lineTo(cx - 2, cy - 3); ctx.lineTo(cx + 2, cy + 1); ctx.lineTo(cx + 6, cy - 4); ctx.stroke(); return;
   }
-  ctx.fillStyle = on ? '#15151a' : C('#c8c8cc'); ctx.font = FONT(700, r.h < 16 ? 9 : 10.5); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = on ? '#15151a' : C('#c8c8cc'); ctx.font = FONT(700, r.fs || (r.h < 16 ? 9 : 10.5)); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillText(label, cx, cy + 0.5, r.w - 2); ctx.textAlign = 'left';
 }
 // Live's header slider: a dark well, a grey fill up to the value (from the centre for pan) and the value written over it
@@ -506,7 +515,7 @@ function drawSlider(r, frac, label, fromCenter) {
   if (fromCenter) { const c = r.x + r.w / 2, e = r.x + frac * r.w; if (Math.abs(e - c) >= 1) ctx.fillRect(Math.min(c, e), r.y + 1, Math.abs(e - c), r.h - 2); }
   else ctx.fillRect(r.x + 1, r.y + 1, Math.max(0, frac * (r.w - 2)), r.h - 2);
   ctx.strokeStyle = C('#141415'); ctx.lineWidth = 1; ctx.strokeRect(r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
-  ctx.font = FONT(700, 9.5); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.font = FONT(700, r.fs || 9.5); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillStyle = C('#f2f2f4'); ctx.fillText(label, r.x + r.w / 2, r.y + r.h / 2 + 0.5, r.w - 4); ctx.textAlign = 'left';
 }
 function drawSwitch(r, label, on, isPressed) {   // Live-style switch: LED + text in a flat field
@@ -561,8 +570,8 @@ function drawHeads() {
     if (auto && fullLook && h >= 46) { ctx.fillStyle = ik; ctx.globalAlpha = 0.7; ctx.font = FONT(500, 10); ctx.textBaseline = 'middle'; ctx.fillText('Otomasi', hx + 8, y + TH + 12, nw - 14); ctx.globalAlpha = 1; }
     if (r.out) {                                                                                           // output: a dark field in the mixer column, the destination written in it
       ctx.fillStyle = C('#19191a'); ctx.fillRect(r.out.x, r.out.y, r.out.w, r.out.h); ctx.strokeStyle = C('#141415'); ctx.lineWidth = 1; ctx.strokeRect(r.out.x + 0.5, r.out.y + 0.5, r.out.w - 1, r.out.h - 1);
-      ctx.fillStyle = C('#f2f2f4'); ctx.font = FONT(700, 9.5); ctx.textAlign = 'center'; ctx.fillText(cut2(P.outLabel(t.out), r.out.w - 24), r.out.x + r.out.w / 2 - 4, r.out.y + r.out.h / 2 + 0.5); ctx.textAlign = 'left';
-      ctx.fillStyle = C('#8b8b92'); ctx.beginPath(); ctx.moveTo(r.out.x + r.out.w - 12, r.out.y + 5); ctx.lineTo(r.out.x + r.out.w - 6, r.out.y + 5); ctx.lineTo(r.out.x + r.out.w - 9, r.out.y + 9); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = C('#f2f2f4'); ctx.font = FONT(700, r.out.fs || 9.5); ctx.textAlign = 'center'; ctx.fillText(cut2(P.outLabel(t.out), r.out.w - 24), r.out.x + r.out.w / 2 - 4, r.out.y + r.out.h / 2 + 0.5); ctx.textAlign = 'left';
+      ctx.fillStyle = C('#8b8b92'); { const cy = r.out.y + r.out.h / 2, q = Math.max(3, Math.min(8, r.out.h * 0.22)), cx = r.out.x + r.out.w - 6 - q; ctx.beginPath(); ctx.moveTo(cx - q, cy - q * 0.6); ctx.lineTo(cx + q, cy - q * 0.6); ctx.lineTo(cx, cy + q * 0.7); ctx.closePath(); ctx.fill(); }
     }
     if (r.vol) drawSlider(r.vol, Math.sqrt(clamp(t.vol / VMAX, 0, 1)), dbTxt(t.vol) + ' dB', false);
     if (r.pan) drawSlider(r.pan, (clamp(t.pan, -1, 1) + 1) / 2, panTxt(t.pan), true);
@@ -721,7 +730,7 @@ function hit(x, y) {
     if (i >= n0) { const xi = xInfo(i); return { type: 'xhead', x: xi, mute: !xi.master && rh(i) >= 44 && inRect(xhdr(i).act, x, y, 3) }; }
     if (!state.tracks[i].fold && rowY(i) + rh(i) - y < 8) return { type: 'rowh', i };          // bottom edge of a header: row height
     const r = hdr(i);
-    for (const [k, key] of [[0, 'mute'], [1, 'solo'], [2, 'fold'], [3, 'vol'], [4, 'pan'], [5, 'arm'], [7, 'aut'], [8, 'sa'], [9, 'sb'], [10, 'out']]) if (r[key] && inRect(r[key], x, y, key === 'vol' || key === 'pan' || key === 'sa' || key === 'sb' || key === 'out' ? 1 : 2)) return { type: 'head', i, btn: k };
+    for (const [k, key] of [[0, 'mute'], [1, 'solo'], [2, 'fold'], [3, 'vol'], [4, 'pan'], [5, 'arm'], [7, 'aut'], [8, 'sa'], [9, 'sb'], [10, 'out']]) if (r[key] && inRect(r[key], x, y, key === 'vol' || key === 'pan' || key === 'sa' || key === 'sb' || key === 'out' ? 2 : 3)) return { type: 'head', i, btn: k };
     return { type: 'head', i };
   }
   if (i < 0 || i >= state.tracks.length) return { type: 'empty', i, tick: xt(x) };

@@ -93,7 +93,7 @@ static ClipData* prepClips(const Arg& flat, const Arg& nArg, int stride) {
   for (int i = 0; i < n; i++) {
     size_t b = (size_t)i * stride;
     d->c.push_back({ arrAt(flat, b), arrAt(flat, b + 1), toInt32(arrAt(flat, b + 2)), arrAt(flat, b + 3),
-                     stride > 4 ? arrAt(flat, b + 4) : 0, stride > 5 ? arrAt(flat, b + 5) : 0, stride > 6 ? arrAt(flat, b + 6) : 0 });
+                     stride > 4 ? arrAt(flat, b + 4) : 0, stride > 5 ? arrAt(flat, b + 5) : 0, stride > 6 ? arrAt(flat, b + 6) : 0, stride > 7 ? arrAt(flat, b + 7) : 0 });
   }
   std::stable_sort(d->c.begin(), d->c.end(), [](const Clip& a, const Clip& b) { return a.start < b.start; });
   return d;

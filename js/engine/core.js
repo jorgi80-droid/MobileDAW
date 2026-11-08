@@ -215,11 +215,11 @@ export class Engine {
     let g = 1; if (c[1]) g *= clamp(this.ccAt(c[1], tick) / 127, 0, 1); if (c[3]) g *= clamp(this.ccAt(c[3], tick) / 127, 0, 1);
     s.ccG = g; s.ccP = c[2] ? clamp((this.ccAt(c[2], tick) - 64) / 63, -1, 1) : 0;
   }
-  // flat = [start tick, length ticks, sample id, gain, offset seconds, fade in seconds, fade out seconds] * n
+  // flat = [start tick, length ticks, sample id, gain, offset seconds, fade in seconds, fade out seconds, (stride 8: pan -1..1 balance)] * n
   trackClips(t, flat, n, stride = 7) {
     if (!this.ok(t) || t >= MASTER) return;
     const c = [];
-    for (let i = 0; i < n; i++) c.push({ start: flat[i * stride], len: flat[i * stride + 1], sample: flat[i * stride + 2] | 0, gain: flat[i * stride + 3], offset: stride > 4 ? flat[i * stride + 4] : 0, fadeIn: stride > 5 ? flat[i * stride + 5] : 0, fadeOut: stride > 6 ? flat[i * stride + 6] : 0 });
+    for (let i = 0; i < n; i++) c.push({ start: flat[i * stride], len: flat[i * stride + 1], sample: flat[i * stride + 2] | 0, gain: flat[i * stride + 3], offset: stride > 4 ? flat[i * stride + 4] : 0, fadeIn: stride > 5 ? flat[i * stride + 5] : 0, fadeOut: stride > 6 ? flat[i * stride + 6] : 0, pan: stride > 7 ? flat[i * stride + 7] : 0 });
     c.sort((a, b) => a.start - b.start);
     this.s[t].clips = c;
   }
@@ -405,12 +405,12 @@ export class Engine {
         if (ce <= pos) continue;
         const sm = this.bank[c.sample]; if (!sm) continue;
         const from = Math.max(pos, cs), to = Math.min(pos + n, ce), off = Math.round(c.offset * this.sr);
-        const sl = sm.l, sr2 = sm.r, frames = sm.frames;
+        const sl = sm.l, sr2 = sm.r, frames = sm.frames, cp = c.pan || 0, pl = cp > 0 ? 1 - cp : 1, pr = cp < 0 ? 1 + cp : 1;   // clip pan = balance: the centre leaves both sides untouched
         for (let k = from; k < to; k++) {
           const idx = off + (k - cs); if (idx >= frames || idx < 0) { if (idx >= frames) break; continue; }
           let g = c.gain; const fi = k - cs, fo = ce - 1 - k;
           if (fi < FI) g *= (fi + 1) / FI; if (fo < FO) g *= (fo + 1) / FO;
-          L[k - pos] += sl[idx] * g; R[k - pos] += sr2[idx] * g;
+          L[k - pos] += sl[idx] * g * pl; R[k - pos] += sr2[idx] * g * pr;
         }
         active = true;
       }

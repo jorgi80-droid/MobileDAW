@@ -163,7 +163,7 @@ export function buildMdaw(M, opts) {
           if (st || rp) report.pitched = (report.pitched || 0) + 1;
           const cyc = T(cl.cycle || 0); if (!f.missing && cyc > 0 && cyc < c.len - 1) c.ll = cyc;   // the loop repeats inside a longer clip
           if (cl.muted) c.muted = true;
-          if (Math.abs(cl.pan || 0) > 1e-6) prec.clipPan = (prec.clipPan || 0) + 1;   // MDAW clips have no pan of their own: reported
+          if (Math.abs(cl.pan || 0) > 1e-6) { c.pan = clamp(cl.pan, -1, 1); prec.clipPan = (prec.clipPan || 0) + 1; }   // the clip's own pan, as in FL Studio Mobile (balance on top of the track pan)
           if (cl.env) prec.clipEnv = (prec.clipEnv || 0) + 1;
           if (f.missing) c.missing = { sample: cl.sample };
           t.clips.push(c); report.clips++;
@@ -218,7 +218,7 @@ export function buildMdaw(M, opts) {
   if (prec.offGrid) P2.push(prec.offGrid + ' not di luar grid MobileDAW (1/128 ketuk FLM = 7,5 tick) disimpan di posisi persisnya, tanpa pembulatan');
   if (prec.boost) P2.push(prec.boost + ' not dengan velocity di atas 100 % (boost) dipertahankan, tidak dipotong');
   const dwN = report.instruments.filter((x) => /^DirectWave \(/.test(x.to)).length, synN = report.instruments.filter((x) => x.how === 'preset' || x.how === 'default').length;
-  if (prec.clipPan) P2.push(prec.clipPan + ' klip audio punya pan sendiri di file asli: MobileDAW belum punya pan per klip (pan track tetap dipakai)');
+  if (prec.clipPan) P2.push(prec.clipPan + ' klip audio punya pan sendiri di file asli: dipakai sebagai pan klip (balance)');
   if (prec.clipEnv) P2.push(prec.clipEnv + ' klip audio punya envelope (A / D / S / R) sendiri di file asli: belum diterapkan');
   const muted = M.channels.filter((c) => c.kind !== 'master' && c.mute).map((c) => c.name);
   if (muted.length) P2.push(muted.length + ' track di-mute seperti di FLM: ' + muted.join(', '));

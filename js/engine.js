@@ -54,7 +54,7 @@ const nativeEng = {
   trackMute: (t, m) => call('trackMute', t, m), trackSolo: (t, s) => call('trackSolo', t, s),
   trackInst: (t, type) => call('trackInst', t, type), instParam: (t, i, v) => call('instParam', t, i, v),
   trackNotes: (t, flat, n) => call('trackNotes', t, flat.filter((_, k) => k % 5 < 4), n),   // the native engine still takes [start, len, pitch, vel]
-  trackClips: (t, flat, n) => call('trackClips', t, flat.filter((_, k) => k % 7 < 4), n),
+  trackClips: (t, flat, n, stride = 7) => call('trackClips', t, flat.filter((_, k) => k % stride < 4), n),
   resetTrack: (t) => call('resetTrack', t),
   insertDevice: (t, i, type) => call('insertDevice', t, i, type), removeDevice: (t, i) => call('removeDevice', t, i),
   devParam: (t, d, p, v) => call('devParam', t, d, p, v), devBypass: (t, d, b) => call('devBypass', t, d, b), rackCmd: (t, d, op, c, j, a, b) => call('rackCmd', t, d, op, c, j, a, b),

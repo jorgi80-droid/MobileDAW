@@ -26,7 +26,7 @@ struct NoteData {                     // trackNotes: events sorted (offs before 
   std::vector<double> tick; std::vector<uint8_t> p; std::vector<float> v; std::vector<uint8_t> on; std::vector<float> pan;
   std::vector<std::array<double, 5>> notes;   // [start, end, pitch, vel, pan]
 };
-struct Clip { double start, len; int sample; double gain, offset, fadeIn, fadeOut; };
+struct Clip { double start, len; int sample; double gain, offset, fadeIn, fadeOut, pan; };
 struct ClipData { std::vector<Clip> c; };
 struct CCLane { std::vector<double> t, v; };
 struct CCData { CCLane* lane[4] = {}; ~CCData() { for (auto* l : lane) delete l; } };

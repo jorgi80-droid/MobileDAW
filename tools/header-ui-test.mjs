@@ -40,7 +40,7 @@ ok(await ev(async () => { const P = await import('./js/project.js'), t = P.state
 await ev(async () => (await import('./js/history.js')).undoOp()); await wait(200);
 ok(await ev(async () => { const P = await import('./js/project.js'); return P.monMode(P.state.tracks[0]); }) === 'off', 'one undo returns Monitor to the previous mode');
 await ev(async () => (await import('./js/project.js')).setMonitor(0, 'in'));
-await tapH(0, a.nw + 4 + 30, 55 + 8); await wait(350);   // the Output field: last row of the mixer column
+await tapH(0, a.head - 9 - 4 - 14, 51 + 9); await wait(350);   // the Output field: right cell of the last row of the mixer column
 let m = await menuTexts();
 ok(m.includes('Master'), 'Output field (mixer column) opens the routing menu (' + m.slice(0, 3).join(' | ') + ')');
 await closeAll(); await wait(200);
@@ -55,7 +55,7 @@ await tapH(0, a.nw + 4 + 25 + 11, 2 + 9); await wait(150);
   a = await hd(0); const volW = Math.round((a.head - 9 - a.nw - 8 - 3) * 0.6);
   ok(volW >= 120, `the volume slider is wide (${volW} px)`);
   const vol = () => ev(async () => (await import('./js/project.js')).state.tracks[0].vol);
-  const sl = async (dy, dxs) => { const q = await hd(0), x0 = q.x + q.w - q.head + q.nw + 4 + 20, y0 = q.top + 29; await ptr('pointerdown', x0, y0); for (let k = 1; k <= 8; k++) { await ptr('pointermove', x0 + dxs * k / 8, y0 + dy * k / 8); await wait(16); } await ptr('pointerup', x0 + dxs, y0 + dy); await wait(150); };
+  const sl = async (dy, dxs) => { const q = await hd(0), x0 = q.x + q.w - q.head + q.nw + 4 + 20, y0 = q.top + 36; await ptr('pointerdown', x0, y0); for (let k = 1; k <= 8; k++) { await ptr('pointermove', x0 + dxs * k / 8, y0 + dy * k / 8); await wait(16); } await ptr('pointerup', x0 + dxs, y0 + dy); await wait(150); };
   await ev(async () => (await import('./js/project.js')).setVol(0, 0.5)); const v0 = await vol();
   await sl(0, 20); const v1 = await vol();
   await ev(async () => (await import('./js/project.js')).setVol(0, 0.5));
@@ -95,6 +95,16 @@ await tap(ex2, a.top + 40); await tap(ex2, a.top + 40); await wait(300);
 ok(await ev(async () => (await import('./js/prefs.js')).prefs.headWc) === 0 && (await hd(0)).head < 110, 'double tap on the edge resets the COMPACT width to automatic');
 await ev(async () => { const T = await import('./js/timeline.js'); T.setHeadFull(true); }); await wait(300);
 ok(await ev(async () => { const T = await import('./js/timeline.js'); T.setHeadW(5); const lo = T.headWidth(); T.setHeadW(900); const hi = T.headWidth(); T.setHeadW(0); return lo >= 150 && hi <= 460; }), 'FULL width is clamped (150..460)');
+
+// ---- default control size: a taller row keeps finger-sized controls (no giant sliders); the Output field stays at the end of the third row
+{
+  await ev(async () => { const P = await import('./js/project.js'); P.state.tracks[0].hx = 2.4; P.state.tracks[0].fold = false; P.emit('all'); }); await wait(500);
+  const q = await hd(0); ok(q.h > 160, `row 0 is tall (${q.h.toFixed(0)} px)`);
+  await tapH(0, q.head - 9 - 4 - 14, 91 + 9); await wait(350);
+  const mm = await menuTexts(); ok(mm.includes('Master'), 'tall row: controls keep their default size (Output cell at the third row, not stretched to the bottom)');
+  await closeAll(); await wait(200);
+  await ev(async () => { const P = await import('./js/project.js'); delete P.state.tracks[0].hx; P.emit('all'); }); await wait(300);
+}
 
 // ---- long-press menu
 a = await hd(0);

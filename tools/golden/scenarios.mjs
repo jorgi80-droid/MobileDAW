@@ -282,6 +282,8 @@ export const SCENARIOS = [
     } },
   { name: 'core-clip-nofade', info: 'audio clips with fade -1 (no fade at all: frozen tracks), next to the default 64-frame fade and real fades',
     run(e) { samples(e); e.tempo(126); e.trackClips(0, [0, BAR, 0, 0.8, 0, -1, -1, BAR, BAR, 2, 0.9, 0.3, 0, 0, BAR * 2, BAR, 1, 1, 0, 0.02, -1], 3); e.play(); play(e, 6, [128, 77]); } },
+  { name: 'core-clip-pan', info: 'audio clips with a pan of their own (stride 8: balance, centre untouched): hard left, half right, centre next to an old stride-7 track',
+    run(e) { samples(e); e.tempo(126); e.trackClips(0, [0, BAR, 0, 0.8, 0, 0, 0, -1, BAR, BAR, 2, 0.9, 0.1, 0.02, 0.02, 0.5, BAR * 2, BAR, 1, 1, 0, 0.02, 0.02, 0], 3, 8); e.trackClips(1, [0, BAR * 3, 2, 0.7, 0, 0, 0], 1); e.play(); play(e, 6, [128, 77]); } },
   ...fxScenarios(),
   { name: 'fx-autoduck-sc', info: 'Autoduck: track 2 (short bass notes) ducks the pad on track 1; source / threshold / amount / attack / release changes while playing',
     run(e) {
