@@ -679,4 +679,5 @@ Permintaan pemilik: SEMUA efek dan instrumen diganti dengan set stok Ableton Liv
 - Kartu di rantai: tata letak Horizontal bawaan (Spectrogram, Waveform, Stereo, Loudness, Spectrum), 560 x 226 (pas di panel Device Pixel 7).
 - Blur: menu, dialog, jendela mengambang dan popup MiniMeters jadi kaca buram (backdrop-filter, warna 80 %), scrim ikut buram; mati dengan Kurangi
   animasi; tanpa dukungan backdrop-filter warnanya kembali padat.
-- Glow ruler dipersempit (permintaan pemilik): sorot playhead 20..34 px, berkas 8 px, cahaya warna klip hanya pita 9 px di tepi bawah ruler.
+- Glow ruler (permintaan pemilik): hanya di ruler, tidak ada cahaya di grid / lane. Sorot playhead 20..34 px; pita warna klip 9 px di tepi bawah
+  ruler hanya di bagian yang SUDAH dilewati playhead (warna kolom dihitung di drawRuler -> `rulerCols`, digambar overlay `drawHead` sampai x playhead).
