@@ -56,7 +56,7 @@ const flm = flmFile();
 const P = parseFlm(flm), M = flmToModel(P);
 ok(P.name === 'Tes FLM' && P.bpm === 150 && P.sig.join('/') === '3/4' && P.appVersion === '4.6.0', 'FLM header: name, tempo 150, 3/4, app version');
 const ch = (n) => M.channels.find((c) => c.name === n);
-ok(ch('Lead').tracks[0].clips[0].notes.length === 3 && ch('Lead').instrument.layers.map((l) => l.sample + '@' + l.root).join() === 'My Samples/lead.wav@60,My Samples/lead2.wav@60' && ch('Lead').tracks[0].clips[0].notes[0].pitch === 72, 'FLM notes track + every DirectWave layer with its sample and root key (FLM numbering + 12 = MIDI)');
+ok(ch('Lead').tracks[0].clips[0].notes.length === 3 && ch('Lead').instrument.layers.map((l) => l.sample + '@' + l.root).join() === 'My Samples/lead.wav@48,My Samples/lead2.wav@48' && ch('Lead').tracks[0].clips[0].notes[0].pitch === 60, 'FLM notes track + every DirectWave layer with its sample and root key (FLM numbering = MIDI, proven by the owner stems)');
 ok(ch('GmsT').instrument.kind === 'gms' && ch('GmsT').instrument.preset === 'Growl Bass' && ch('MiniT').instrument.kind === 'minisynth' && ch('SawT').instrument.kind === 'supersaw', 'FLM GMS / MiniSynth / SuperSaw recognised from their preset path');
 ok(ch('Piano').instrument.kind === 'directwave' && /Grand Piano/.test(ch('Piano').instrument.library) && !ch('EqOnly').instrument, 'DirectWave library program kept; an effect preset named "SuperSaw" is not a synth');
 ok(!ch('GmsT').modules.length && ch('Lead').modules.map((m) => m.name).join() === 'Leveller', 'instrument modules are not in the effect chain');
@@ -84,7 +84,7 @@ ok(tr('EqOnly').mute === true && !lead.mute && !voc.mute && (B.report.precision 
   ok(n[0].v === 1 && Math.abs(n[1].v - 46725 / 32767) < 1e-12 && n[2].t === (3 + 1 / 128) * 960 && n[2].t === 2887.5,
     'FLM note velocity 100 % -> 1, a boost (46725 = 143 %) kept above 1 (not clipped); a note 1/128 beat off the grid keeps its exact position (2887.5 ticks)');
   ok(Math.abs(B.json.master.vol - Math.fround(0.853) / LVL0) < 1e-12 && Math.abs(lead.vol - Math.fround(0.853) / LVL0) < 1e-12, 'track / master level: the FLM default is 0 dB in MDAW (gain relative to it, exact)'); }
-ok(lead.kind === 'midi' && lead.inst.type === 30 && lead.inst.zones[0].sample.path === '/Samples/Imports/T/My Samples/lead.wav' && lead.inst.zones.length === 2 && lead.inst.zones[1].root === 60 && Math.abs(lead.inst.zones[1].vol + 6.02) < 0.01 && lead.inst.zones[0].vol === 0 && lead.inst.zones[1].lo === 0 && lead.inst.zones[1].hi === 127, 'FLM DirectWave -> MDAW DirectWave: one zone per layer, root key kept, full key range');
+ok(lead.kind === 'midi' && lead.inst.type === 30 && lead.inst.zones[0].sample.path === '/Samples/Imports/T/My Samples/lead.wav' && lead.inst.zones.length === 2 && lead.inst.zones[1].root === 48 && Math.abs(lead.inst.zones[1].vol + 6.02) < 0.01 && lead.inst.zones[0].vol === 0 && lead.inst.zones[1].lo === 0 && lead.inst.zones[1].hi === 127, 'FLM DirectWave -> MDAW DirectWave: one zone per layer, root key kept, full key range');
 {
   const g = tr('GmsT').inst, m = tr('MiniT').inst, s = tr('SawT').inst, pi = tr('Piano').inst;
   const { PRESETS } = await import('../js/defs.js');

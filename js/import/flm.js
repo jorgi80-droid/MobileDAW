@@ -11,12 +11,16 @@
 //              f32 pitch knob = 0.5 + semitones / 48, f32), STR1 (u8 on, f64 time ratio, f64 pitch in semitones), PRMS (f32 gain, pan, pitch knob used
 //              when stretching is off = resampled, ..., attack / decay / sustain / release at [6..9]). A clip with length 0 has never been resized:
 //              its length is its cycle length (FLM duplicates / linked clips, LINk).
-//           MODULE SMPR = f32 pan, level / mix (1 = full), f32. DirectWave ZONE root is stored 12 below MIDI (a WAV with unity note 60 -> 48), so are
-//              the note pitches of EVN2: both are shifted +12 (relative pitch unchanged; absolute pitch right for synths / General MIDI).
+//           MODULE SMPR = f32 pan, level / mix (1 = full), f32. DirectWave ZONE root and EVN2 note pitches share one scale = MIDI (NOTE_OFS below).
 //     RACK: RPRM (f32 volume, f32 pan 0..1, f32 mute 0 / 1, ...), RMOd modules in signal order (prefix i32 type, u32 instance id; HEAD, DESC names, PRST preset
 //           path, PRMS f32 params with [0] = enabled, CSTM: ZONE / PATh = DirectWave sample), RSMP = Drums sampler: SMPl per pad (PTH1, PRMS)
 import { FLM_TYPES } from './fxmap.js';
-const NOTE_OFS = 12;                                                               // FLM note / root numbering = MIDI - 12
+// FLM note numbers are MIDI note numbers: the owner's "New Song" stems prove it (FLM GMS / SuperSaw / MiniSynth and a DirectWave library piano
+// playing stored 57 / 60 / 64 sound A3 220 Hz / C4 / E4). A DirectWave ZONE root is stored on the same scale (a C4 WAV whose zone says 48 plays at
+// unity on stored note 48), so notes and roots get the same offset (0): sample pitch stays relative, synth / General MIDI pitch is absolute and right.
+// (Before: both were shifted +12, which kept samplers right but played every synth one octave too high.)
+const NOTE_OFS = 0;
+const DW_ROOT0 = 48 + NOTE_OFS;                                                    // a zone without a stored root: FLM's default (a C4 WAV plays at unity on note 48)
 const TD = typeof TextDecoder !== 'undefined' ? new TextDecoder('utf-8') : null;
 const isTag = (u, p) => { for (let k = 0; k < 4; k++) { const c = u[p + k]; if (!((c >= 48 && c <= 57) || (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || c === 95)) return false; } return true; };
 
@@ -149,8 +153,8 @@ export function flmToModel(P) {
       modules: ch.modules.filter((m) => !instMods.has(m)).map((m) => ({ name: m.name, enabled: m.enabled, ...(m.level != null && m.level < 0.999 ? { mix: m.level } : {}), ...(m.postGain != null && Math.abs(m.postGain - 0.5) > 1e-4 ? { postGain: m.postGain } : {}), ...(m.wetPan != null && Math.abs(m.wetPan - 0.5) > 1e-4 ? { wetPan: m.wetPan } : {}), preset: m.preset && m.preset !== 'Default' ? m.preset : '', params: m.params, id: m.id, flmType: m.type, ...(FLM_TYPES[m.type] && FLM_TYPES[m.type].sure === false ? { sure: false } : {}), app: 'FL Studio Mobile' })) };
     if (dw.length) {
       const lib = dw.find((m) => m.library);
-      c.instrument = { kind: 'directwave', name: 'DirectWave', layers: dw.filter((m) => m.enabled && m.sample).map((m) => ({ sample: m.sample, root: m.root ?? 60, params: m.params, level: m.level ?? 1, pan: m.pan || 0 })), library: lib ? lib.library : '', preset: dw[0].preset, enabled: dw.some((m) => m.enabled) };
-      if (!c.instrument.layers.length && !c.instrument.library && dw[0].sample) c.instrument.layers.push({ sample: dw[0].sample, root: dw[0].root ?? 60, params: dw[0].params, level: dw[0].level ?? 1, pan: dw[0].pan || 0 });
+      c.instrument = { kind: 'directwave', name: 'DirectWave', layers: dw.filter((m) => m.enabled && m.sample).map((m) => ({ sample: m.sample, root: m.root ?? DW_ROOT0, params: m.params, level: m.level ?? 1, pan: m.pan || 0 })), library: lib ? lib.library : '', preset: dw[0].preset, enabled: dw.some((m) => m.enabled) };
+      if (!c.instrument.layers.length && !c.instrument.library && dw[0].sample) c.instrument.layers.push({ sample: dw[0].sample, root: dw[0].root ?? DW_ROOT0, params: dw[0].params, level: dw[0].level ?? 1, pan: dw[0].pan || 0 });
     } else if (unk) { c.instrument = { kind: 'unknown', name: 'Instrumen FLM #' + unk.type, preset: unk.preset && unk.preset !== 'Default' ? unk.preset : '', params: unk.params, enabled: unk.enabled, flmType: unk.type };
     } else if (syn) { const k = synthOf(syn); c.instrument = { kind: k.kind, name: k.name, preset: syn.preset && syn.preset !== 'Default' ? syn.preset : '', params: syn.params, enabled: syn.enabled, flmType: syn.type, ...(k.kind === 'soundfont' ? { library: syn.presetPath } : {}) }; }
     c.pads = ch.pads.map((q, k) => ({ path: q.path, name: (q.path.split('/').pop() || 'Pad ' + (k + 1)).replace(/\.[^.]+$/, ''), gain: q.vol / LVL0, pan: q.pan * 2 - 1, pitch: (q.pitch - 0.5) * 48, env: q.params.length >= 10 ? { a: q.params[6], d: q.params[7], s: q.params[8], r: q.params[9] } : null }));   // pitch 0.5 + st / 48 (cents kept)

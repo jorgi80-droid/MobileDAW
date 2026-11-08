@@ -926,7 +926,7 @@ export function fmtParam(p, v) {
 // Values in FLM's own units: 0..100 knobs, semitones, cents, tempo values in beats ('1/4' = a quarter beat); envelope times in seconds.
 {
   const k100 = (n, d = 0) => q(n, 0, 100, d, { fmt: 'num' }), bip = (n, d = 0) => q(n, -100, 100, d, { fmt: 'int' }), tm = (n, d, max = 10) => q(n, 0.001, max, d, { curve: 'log', unit: 's' });
-  const st = (n, lo, hi, d = 0) => q(n, lo, hi, d, { step: 1, fmt: 'st' }), sus = (n, d = 1) => q(n, 0, 1, d, { unit: '%' }), lvl = (n, d = 0) => q(n, -60, 6, d, { fmt: 'dbinf' });
+  const st = (n, lo, hi, d = 0) => q(n, lo, hi, d, { step: 1, fmt: 'st' }), sus = (n, d = 1) => q(n, 0, 1, d, { unit: '%' }), lvl = (n, d = 0) => q(n, -60, 12, d, { fmt: 'dbinf' });   // up to +12 dB: room for the FLM default level (stem calibration)
   const adsr = (pre, a, d, s, r) => [tm(pre + 'Attack', a), tm(pre + 'Decay', d), sus(pre + 'Sustain', s), tm(pre + 'Release', r)];
   const SYNC = FLM_SYNC, LFO3 = ['Hertz', 'One Shot', 'Tmp Sync'];
   INSTRUMENTS[30] = { name: 'DirectWave', view: 'kit', full: true, flm: true, zones: true, params: [

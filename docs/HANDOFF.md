@@ -562,3 +562,9 @@ Permintaan pemilik: SEMUA efek dan instrumen diganti dengan set stok Ableton Liv
 - Engine: `bend(t, st, sl)` (JS) / `Engine::bend(t, st, sl)` (C++): roda (lane kind 0, +-2) + slide; instrumen dengan PB range sendiri memakai `setBendSl(st, sl)`
   (FLM synth: roda diskalakan, slide tidak), lainnya `setBend(st + sl)` / bend per suara. Tanpa slide semuanya identik bit. Golden `core-slide`, `tools/slide-test.mjs`.
 - Batas: slide menggeser semua suara track (akor ikut bergeser); glide velocity / pan belum; flag slide di file .flm belum diketahui sehingga impor belum memakainya.
+
+## Kalibrasi FLM dari stem pemilik (sesi ini)
+- `docs/IMPORT.md` bagian "Kalibrasi dari stem pemilik": not FLM = MIDI (NOTE_OFS 0, dulu +12), tipe 0 = MiniSynth, patch default FLM terkalibrasi
+  (`build.js FLM_DEFAULT`), `lvl` param FLM synth kini sampai +12 dB. Tes: `tools/flm-stem-test.mjs` (`FLM_STEMS=` arsip).
+- Dampak pada proyek FLM lama yang diimpor ulang: track synth / GM berbunyi satu oktaf lebih rendah dari sebelumnya = sesuai FL Studio Mobile. Proyek .mdaw yang
+  sudah tersimpan tidak berubah (konversi hanya saat impor).

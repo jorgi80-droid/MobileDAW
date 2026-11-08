@@ -25,6 +25,7 @@ export const FLM_TYPES = {
   35: { name: 'Reverb 2', sure: true },               // preset folder Effect Presets/Reverb 2
   42: { name: 'Tape Stop', sure: true },              // automation label "Toggle Play : Tape Stop"
   46: { name: 'Tremolo', sure: true },                // preset folder Effect Presets/Tremolo; automation label "Mix : Tremolo"
+  0: { name: 'MiniSynth', sure: true, synth: 'minisynth' },   // owner's "New Song" (FLM 4.x, app 10.19): channel "MiniSynth 4" = module type 0, 44 parameters, stem rendered
   2: { name: 'GMSynth', sure: true, synth: 'gms' },   // preset Synth Presets2/GMSynth/*.flgsynth
   23: { name: 'SuperSaw', sure: true, synth: 'supersaw' },   // preset Synth Presets2/SuperSaw/*
   52: { name: 'SoundFont Player', sure: true, synth: 'soundfont' },   // preset = Resources/SoundFonts/*.sf2 (FLM content, not in the project)

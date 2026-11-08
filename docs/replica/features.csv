@@ -77,7 +77,7 @@ Track / channel + urutan + warna + volume / pan / mute,Impor FLM,must,yes,yes,44
 Sample di arsip ZIP ditempatkan di FLM/<proyek>/ dan terhubung,Impor FLM,must,yes,yes,"59 + 42 sample, 0 hilang"
 "Drum / Step channel: pad, sample, gain, pan",Impor FLM,must,yes,yes,
 "DirectWave: zona, root key, lapisan",Impor FLM,must,yes,yes,"parameter DW (envelope, filter, LFO) disimpan mentah, belum dipetakan"
-GMS / MiniSynth / SuperSaw: instrumen + preset,Impor FLM,should,yes,partial,dikenali dari nama preset; parameter file belum dipetakan penuh
+GMS / MiniSynth / SuperSaw: instrumen + preset,Impor FLM,should,yes,partial,"type 0 = MiniSynth; FLM default patches calibrated from owner stems (level within 0.1 dB, gate); per-knob mapping still needs one-knob projects"
 Program library bawaan FLM (DirectWave Samples/...) tidak ada di arsip,Impor FLM,should,yes,partial,diganti SoundFont GM terdekat (dilaporkan)
 "Efek: Graphic EQ, Compressor, Leveller, Reverb, Multiband dll",Impor FLM,must,yes,partial,padanan persis / perkiraan / bypass; kalibrasi skala butuh render referensi FLM
 "Efek tipe FLM yang belum dikenali (id 4, 9, 16, 26, 30, 35, 44, 45)",Impor FLM,should,yes,no,"tetap placeholder ""Efek FLM #id"""

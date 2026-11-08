@@ -172,3 +172,14 @@ sesuai dokumentasi komunitas (PyFLP); belum dengan file .flp asli.
   klip stretch, kartu placeholder, proyek bisa diputar. Arsip pemilik: 26 track, 1032 klip, 620 not, 42/42 sample, 619 klip stretch, ±31 dtk.
 
 - **Otomasi Level Master** (sesi ini): jadi lane volume di strip master (`target.strip 'master'`), bukan dilewati lagi. Audit arsip asli + modul yang belum dikenali: `docs/replica/`.
+
+## Kalibrasi dari stem pemilik ("New Song", FLM app 10.19)
+Arsip berisi keempat instrumen bawaan FLM tanpa diubah (DirectWave library "Brazil Piano", GMS, SuperSaw, MiniSynth) masing-masing memainkan akor A minor
+(57 / 60 / 64), plus render MP3 FLM per instrumen. Diukur dengan `tools/flm-stem-test.mjs` (run-tests; dilewati bila arsip / ffmpeg tidak ada):
+- **Nada**: not tersimpan 57 / 60 / 64 berbunyi A3 220 Hz / C4 / E4 di FLM (synth dan piano library). Nomor not FLM = MIDI. Importer dulu menggeser +12
+  (synth satu oktaf terlalu tinggi); sekarang `NOTE_OFS = 0` untuk not DAN root zona DirectWave (nada sample tetap relatif, nada synth / GM absolut benar).
+- **Tipe modul 0 = MiniSynth** (dulu tidak dikenal: track jadi DirectWave kosong / diam).
+- **Patch default** (hanya bila modul FLM tanpa preset): SuperSaw Gain +9,5 dB + Release 3 ms (spektrum sudah cocok, jarak pita 1,1 dB); MiniSynth Cutoff 80 %
+  + Release 3 ms + Level +9,9 dB (jarak pita 5,2 -> 1,2 dB); GMS Level +2,6 dB. Hasil: level 125 ms pertama dalam 0,1 dB, gate setelah not-off sama.
+- Belum: gelombang default GMS (spektrum di atas 2,4 kHz masih lebih gelap; satu akor tidak cukup untuk membuktikan bentuk gelombangnya), program library
+  DirectWave (tetap diganti SoundFont GM; nadanya kini benar), arti tiap angka parameter (butuh proyek "satu knop per track").

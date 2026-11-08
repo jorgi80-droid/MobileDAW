@@ -13,6 +13,14 @@ import { LVL0 } from './flm.js';
 // the channel's instrument -> MDAW: DirectWave layers -> zones of MDAW's DirectWave; a library program that is not in the archive -> the
 // closest General MIDI program of the bundled SoundFont; GMS / MiniSynth / SuperSaw -> MDAW's instrument of the same name (preset by name)
 const SYNTH_TYPE = { gms: 31, minisynth: 32, supersaw: 33 };   // the FL Studio Mobile instruments of MobileDAW (js/engine/flmsyn.js)
+// FL Studio Mobile's DEFAULT patch of each synth, calibrated against the owner's stems ("New Song": the untouched instruments playing an A minor
+// chord, rendered by FLM): level of the first 125 ms, octave-band spectrum and the tail after note-off, measured on MobileDAW's render of the same notes.
+//   SuperSaw: spectrum already matched (band distance 1.1 dB), FLM is 9.2 dB louder and gates at note-off -> Gain +9.5 dB, Release 3 ms
+//   MiniSynth: FLM darker above 2.4 kHz and gated -> Cutoff 80 % (distance 5.2 -> 1.2 dB), Release 3 ms, Level +9.9 dB
+//   GMS: release tail matched, FLM 2.6 dB louder -> Level +2.6 dB (its default waveform could not be proven from one chord: left as is)
+// Used only when the FLM module has no preset (its own default), so an imported default instrument sounds like FLM's.
+const FLM_DEFAULT = { 33: { Gain: 9.5, Release: 0.003 }, 32: { Cutoff: 80, Release: 0.003, Level: 9.9 }, 31: { Level: 2.6 } };
+const byName = (type, o) => { const out = {}; for (const [n, v] of Object.entries(o || {})) { const k = INSTRUMENTS[type].params.findIndex((q) => q.n === n); if (k >= 0) out[k] = v; } return out; };
 // FLM DirectWave module parameters (normalised 0..1, [0] = on) -> MDAW DirectWave (30). Layout worked out from the owner's FLM screenshots
 // against the values stored in two real projects (defaults of a freshly loaded sample, a library program whose filter shows 40 / 0 / 50 /
 // 100, layered tracks an octave apart, legato + slide on the same instance):
@@ -80,8 +88,9 @@ export function buildMdaw(M, opts) {
     const note = (to, how) => report.instruments.push({ track: trackName, from: I.name + (I.library ? ' "' + I.library.replace(/^.*?Samples\//, '').replace(/\.\w+$/, '') + '"' : I.preset ? ' "' + I.preset + '"' : ''), to, how });
     if (SYNTH_TYPE[I.kind]) {
       const type = SYNTH_TYPE[I.kind], pr = presetFor(type, I.preset);
-      note(INSTRUMENTS[type].name + (pr ? ' (preset ' + pr.name + ')' : ' (setelan awal)'), pr ? 'preset' : 'default');
-      return { type, params: pr ? { ...pr.p } : {}, pitch: 0, from: { app: M.app, name: I.name, preset: I.preset || '', params: I.params || [] } };
+      const dflt = !pr && !(I.preset && I.preset !== 'Default');                  // FLM's own default patch: the stem-calibrated equivalent
+      note(INSTRUMENTS[type].name + (pr ? ' (preset ' + pr.name + ')' : dflt ? ' (setelan awal FLM, dikalibrasi dari stem)' : ' (setelan awal)'), pr ? 'preset' : 'default');
+      return { type, params: pr ? { ...pr.p } : dflt ? byName(type, FLM_DEFAULT[type]) : {}, pitch: 0, from: { app: M.app, name: I.name, preset: I.preset || '', params: I.params || [] } };
     }
     const layers = I.layers || (I.sample ? [{ sample: I.sample, root: 60 }] : []);
     // every DirectWave layer becomes a zone with its own pitch / fine / level / pan, also when its sample is not in the archive (a silent
