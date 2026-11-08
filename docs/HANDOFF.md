@@ -107,7 +107,7 @@ Matriks paritas + hasil acceptance: **`docs/PARITY.md`**. Peta gestur diperbarui
   `P.insertDeviceCopies` = salinan dengan id baru termasuk chain/macro rack, tipe tak dikenal dilaporkan), Reset (`P.resetDevice`),
   rantai (`P.replaceChain`). **Rack Preset** di `presets.js` (`saveRackPreset`, `rackPresets`, `applyRackPreset`; folder `/Presets/Racks`).
 - **CTRL**: `ui.js touchCtrl()/lastControl()` (knob, kit number box `liveui.js`, fader mixer mencatat tawaran otomasinya saat digerakkan),
-  `automate.js ctrlButton()` + item "Link ke track otomasi terpilih" (`P.retargetAutoTrack`, undo `atgt`). Tombol `#btn-ctrl` di transport.
+  `automate.js ctrlButton()` + item "Link ke track otomasi terpilih" (`P.retargetAutoTrack`, undo `atgt`). Tombol CTRL di toolbar sudah dihapus (diganti tombol Rewind `#btn-rew`); menu yang sama tetap lewat tekan-tahan kontrol (`ctrlButton()` dipanggil dari tes).
 - **Wave Editor**: `js/engine/waveops.js` (murni, `tools/waveops-test.mjs`), `P.editClipAudio(i, id, op, a, b)` (seleksi dipetakan ke sample
   sumber lewat ratio / reverse warp, hasil 32-bit float di `/Samples/Edits/`, region klip ikut sisip/hapus), menu `selMenu` di `audioedit.js`.
 - **Piano roll**: Ghost Notes (`ghostList`, cache dikosongkan saat not/klip berubah; pref `ghostNotes`). Velocity / panjang default
@@ -491,7 +491,7 @@ Permintaan pemilik: SEMUA efek dan instrumen diganti dengan set stok Ableton Liv
   Belum: port C++ untuk semua instrumen / efek baru (engine native otomatis kembali ke Web), Drum Rack dengan chain per pad,
   dan External Instrument (tidak mungkin di HP). Tipe instrumen lama tetap bisa dimuat (proyek lama).
 - Aturan: parameter baru selalu DITAMBAHKAN di akhir (indeks lama tetap), `migrate()` bila arti berubah; efek tanpa padanan Live 12 masuk
-  'Lainnya (lama)'; native engine otomatis kembali ke engine web untuk device yang belum di-port.
+  kategori terdekat (grup 'Lainnya (lama)' sudah dibubarkan; `HIDDEN_FX` = efek lama yang hanya mengulang efek baru); native engine otomatis kembali ke engine web untuk device yang belum di-port.
 
 ## Kerapian panel efek (sesi ini)
 - Beat Repeat, Delay, Echo, Auto Filter, Auto Pan, Chorus-Ensemble, Phaser-Flanger, Drum Buss ditata ulang mengikuti gambar referensi
@@ -513,3 +513,16 @@ Permintaan pemilik: SEMUA efek dan instrumen diganti dengan set stok Ableton Liv
 - Drum Rack chain: pad.chain = { inst: { type, params, sample }, devices }. Note pad memainkan instrumen chain di C3 + Pitch pad; Level/Pan/Mute/Solo pad
   berlaku untuk chain; rackCmd op 7 = kosongkan satu chain. Simpler di pad memakai sample sendiri (browser `padChain`). DrumSynth belum di-port C++,
   jadi track drum tetap di engine Web.
+
+## Toolbar, header track, daftar tanpa duplikat (sesi ini)
+- Toolbar: tombol Rewind (`#btn-rew`, kembali ke awal) di grup transport; tombol CTRL dihapus (menu otomasi/MIDI CC lewat tekan-tahan kontrol).
+- Header track (`js/timeline.js`): ketuk header = lipat ke bar judul, ketuk lagi = buka dengan tinggi `FULL_H` (116 px) sehingga semua kontrol
+  muncul: M/S/arm/monitor/otomasi, volume + pan, Send A/B, baris **Out** (ketuk = menu routing, `outMenu`). Tinggi baris tetap bisa diseret
+  (tepi bawah header) dan ketuk-ganda grip = tinggi normal. Pref `tapFold` (default true) mematikan ketuk-lipat bila perlu.
+- Lebar kolom header: seret tepi kirinya (`headw`, 56..260 px), ketuk-ganda tepi = otomatis, atau menu tekan-tahan > "Lebar kolom track..."
+  (Sempit / Normal / Lebar / Otomatis, Lipat/Buka semua). Disimpan di `prefs.headW`. Lebar < 119 px = mode ringkas (bar judul + meter saja).
+  Lebar otomatis diperkecil (160 / 140 / 124) supaya timeline lebih luas. Tes: `node tools/header-ui-test.mjs` (di luar run-tests).
+- Duplikat: grup efek 'Lainnya (lama)' dibubarkan (Autoduck -> Dynamics, Stereolizer / Spacer -> Utilities); Parametric EQ, Level, Analyzer
+  disembunyikan dari picker (`HIDDEN_FX`, tetap berfungsi di proyek lama). Tab Preset tidak lagi menampilkan seksi Klasik MiniSynth / SuperSaw /
+  GMS (preset yang sama sudah ada di tipe FL); DirectWave Klasik tetap ("preset tambahan", 6 preset yang belum ada di DirectWave baru).
+  Label ganda dalam kartu: tab pertama Echo kini "Time", Simpler tanpa sample menulis "Tanpa sample".

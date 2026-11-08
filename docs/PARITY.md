@@ -35,6 +35,8 @@ Stack dipertahankan: JS modul (tanpa build) + AudioWorklet + engine C++ (Android
 | Urutan modul = urutan sinyal (rantai utama dan di dalam rack) | Selesai | `chain-order-test` (suara beda bila urutan dibalik; urutan baru = rantai baru, identik) |
 | Tekan lama header modul + geser = reorder, garis sisip, undo | Selesai | rantai utama, **Audio / Instrument Rack**, chain pad Drum Rack (`js/reorder.js`); `touch-ui-test` |
 | Ketuk-ganda header = lipat / buka | Selesai | sesi sebelumnya |
+| Ketuk header = lipat / buka dengan semua kontrol (gaya Live) + kolom header bisa diseret lebarnya | Selesai | `tools/header-ui-test.mjs` |
+| Tombol Rewind di toolbar (CTRL dihapus) | Selesai | |
 | Menu modul: geser, Sisip kiri/kanan, Ganti, Copy, Paste, Reset, Simpan preset, Sisip preset, Bypass, Hapus | Selesai | `touch-ui-test` |
 | Rack Preset: simpan / muat (ganti) / sisip, Copy All / Paste All | Selesai | `touch-ui-test` (simpan → kosongkan → muat = identik) |
 | Plugin hilang di preset | Sebagian | modul tak dikenal dilewati DAN dilaporkan namanya (tidak diam-diam); placeholder yang menyimpan state belum (butuh tipe device kosong di engine) |

@@ -1015,7 +1015,7 @@ VI[18] = (k) => {
   const slice = () => k.row(k.TL('Slice By', k.S(9, { w: 96, cls: 'dk or' })), k.swapN(9, (by) => (by === 0 ? k.TL('Sensitivity', k.NT(10, { w: 62, cls: 'or' })) : by === 1 ? k.TL('Division', k.S(11, { w: 70, cls: 'dk or' })) : k.TL('Regions', k.NT(12, { w: 62, cls: 'or' })))), k.sep(), k.TL('Playback', k.S(13, { w: 70, cls: 'dk or' })));
   const warp = h('div', { class: 'lk-row lk-swarp' }, k.T(14, 'WARP', { cls: 'lk-warp', w: 60 }), h('span', { class: 'lk-lb' }, 'as'), k.NT(15, { w: 66, cls: 'or' }), lvBtn(':2', () => k.set(15, Math.max(1, Math.round(k.get(15) / 2))), { cls: 'lk-t', w: 30 }), lvBtn('×2', () => k.set(15, Math.min(64, k.get(15) * 2)), { cls: 'lk-t', w: 30 }), k.S(16, { w: 80, cls: 'dk or' }));
   // header: sample name + chooser left, Warp right; waveform; one bar: mode switch, Gain, the mode's controls (all on one baseline)
-  const sampleTab = () => k.dk(h('div', { class: 'lk-row lk-shead' }, h('span', { class: 'lk-st' }, (Z().sample && Z().sample.name) || 'Simpler'), lvBtn('Sample…', pick, { cls: 'lk-t' }), h('span', { class: 'lk-grow' }), warp), wave,
+  const sampleTab = () => k.dk(h('div', { class: 'lk-row lk-shead' }, h('span', { class: 'lk-st' }, (Z().sample && Z().sample.name) || 'Tanpa sample'), lvBtn('Sample…', pick, { cls: 'lk-t' }), h('span', { class: 'lk-grow' }), warp), wave,
     h('div', { class: 'lk-row lk-sbar' }, modeBtns, k.sep(), k.TL('Gain', k.NT(1, { w: 56, cls: 'or' })), k.sep(), k.swapN(0, (m) => (m === 0 ? classic() : m === 1 ? oneshot() : slice()))));
   // ---- Controls: three columns as in Live (Filter | LFO | Pitch Envelope + Amplitude / Pitch), each display above its control strip
   const O = (n, j, w = 50) => k.TL(n, k.NT(j, { w, cls: 'or' }));
@@ -1290,7 +1290,7 @@ V[6] = (k) => {
     () => k.row(k.K(15, { n: 'Rate', big: true }), k.K(16, { n: 'Amount', big: true })),
     () => k.row(k.K(17, { n: 'Drive', big: true }), k.K(14), k.K(2)),
   ];
-  const t = lvTabs([{ label: 'Echo' }, { label: 'Modulation' }, { label: 'Character' }], 0, (j) => page.replaceChildren(tabs[j]()), { cls: 'lk-tabs c' });
+  const t = lvTabs([{ label: 'Time' }, { label: 'Modulation' }, { label: 'Character' }], 0, (j) => page.replaceChildren(tabs[j]()), { cls: 'lk-tabs c' });
   page.replaceChildren(tabs[0]());
   return k.col(t, page);
 };

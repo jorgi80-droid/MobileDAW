@@ -274,12 +274,12 @@ const rp = await ev(async () => { const PRS = await import('./js/presets.js'), P
   const after = JSON.stringify(t.devices.map((d) => [d.type, d.params, d.chains && d.chains.map((c) => c.devices.map((x) => x.type))]));
   return { n: s.n, empty, same: before === after, msg: r.msg }; });
 ok(rp.n === 4 && rp.empty === 0 && rp.same, 'Rack Preset: save, clear, load -> chain identical (types, parameters, rack chains) ' + (rp.msg || ''));
-// 18. CTRL: move a knob, press CTRL -> automation / MIDI CC menu for THAT control; Link to the selected automation track
+// 18. CTRL (the toolbar button is gone; the same menu opens from the long-press path): move a knob, call it -> automation / MIDI CC menu for THAT control; Link to the selected automation track
 await ev(async () => { (await import('./js/devices.js')).render(); }); await wait(400);
 const kb2 = await ev(() => { const k = document.querySelector('.dev-scroll .knob'); if (!k) return null; k.setPointerCapture = () => {}; const r = k.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; });
 if (kb2) {
   await ev(async ([x, y]) => { const K = (await import('./js/uiscale.js')).emuK(); x *= K; y *= K; const k = document.querySelector('.dev-scroll .knob'); k.setPointerCapture = () => {}; k.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 4, pointerType: 'touch', clientX: x, clientY: y })); k.dispatchEvent(new PointerEvent('pointermove', { pointerId: 4, pointerType: 'touch', clientX: x, clientY: y - 20 })); k.dispatchEvent(new PointerEvent('pointerup', { pointerId: 4, pointerType: 'touch' })); }, [kb2.x, kb2.y]);   // layout px x UI scale (as ptr())
-  await page.locator('#btn-ctrl').tap(); await wait(450);
+  await ev(async () => { (await import('./js/automate.js')).ctrlButton({ left: 200, bottom: 120, top: 100, right: 240 }); }); await wait(450);
   m = await menuTexts();
   ok(m.some((x) => x.startsWith('Otomatisasi: ')) && m.includes('Hubungkan ke MIDI CC'), 'CTRL after moving a knob: automation + MIDI CC for that knob (' + m[0] + ')');
   await ev(() => [...document.querySelectorAll('#layer .menu .mi')].find((e) => e.textContent.startsWith('Otomatisasi: ')).click()); await wait(300);
@@ -287,7 +287,7 @@ if (kb2) {
   ok(!!at0 && at0.n === 1, 'CTRL -> automation track with an empty clip, selected (' + (at0 && at0.name) + ')');
   // link: select that automation track, move the mixer pan of track 1, CTRL -> "Link ke track otomasi terpilih"
   await ev(async () => { const { touchCtrl } = await import('./js/ui.js'); const { offerAutomation } = await import('./js/automate.js'); const P = await import('./js/project.js'); touchCtrl((r) => offerAutomation(r, { kind: 1, strip: P.stripOf(0), param: 0, def: P.AUTO_PAN }, 'Track 1 • Pan')); });
-  await page.locator('#btn-ctrl').tap(); await wait(450);
+  await ev(async () => { (await import('./js/automate.js')).ctrlButton({ left: 200, bottom: 120, top: 100, right: 240 }); }); await wait(450);
   m = await menuTexts(); const li = m.find((x) => x.startsWith('Link ke track otomasi terpilih'));
   ok(!!li, 'CTRL with an automation track selected offers "Link to Current Track"');
   if (li) { await ev(() => [...document.querySelectorAll('#layer .menu .mi')].find((e) => e.textContent.startsWith('Link ke')).click()); await wait(200); }

@@ -1,7 +1,7 @@
 // Left drawer: add tracks/devices, file library (samples, SoundFonts, recordings, exports), save/load projects.
 // Web version: files live inside the app (IndexedDB) and are imported with the system file picker, so they work offline.
 import { h, ask, toast, menu, modal } from './ui.js';
-import { DEVICES, INSTRUMENTS, INST_LIST, PRESETS, FX_GROUPS } from './defs.js';
+import { DEVICES, INSTRUMENTS, INST_LIST, PRESETS, FX_GROUPS, CLASSIC_TO_FLM } from './defs.js';
 import { eng, backend, MASTER } from './engine.js';
 import { dropInfo } from './timeline.js';
 import * as P from './project.js';
@@ -197,13 +197,14 @@ function tabInstr() {
   for (const k of INST_LIST) out.push(withAud(row(INSTRUMENTS[k].name, () => tapInst(k), t && t.kind === 'midi' && t.inst && t.inst.type === k ? 'terpasang' : '', '', null, dInst(k)), instAud('i' + k, k, null, '')));
   return out;
 }
+const presetLabel = (type) => (type === 4 ? 'DirectWave \u2013 preset tambahan' : INSTRUMENTS[type].name);
+const DUP_PRESETS = new Set([1, 2, 5]);           // 4 (DirectWave Klasik) stays: it has 6 presets the new DirectWave lacks
 function tabFx() {
-  const out = [], used = new Set(FX_GROUPS.flatMap((g) => g[2]));
-  const rest = Object.keys(DEVICES).map(Number).filter((k) => !used.has(k));
+  const out = [];
   out.push(h('div', { class: 'hint' }, 'Ketuk = tambah ke track terpilih. Seret ke track atau Master di arrangement. \u25B6 = dengar dulu.'));
   for (const [g, label, ks] of FX_GROUPS) {
     out.push(head(label, g));
-    for (const k of (g === 'old' ? ks.concat(rest) : ks)) if (DEVICES[k]) out.push(withAud(row(DEVICES[k].name, () => tapFx(k), '', '', null, dFx(k)), fxAud([{ type: k }])));
+    for (const k of ks) if (DEVICES[k]) out.push(withAud(row(DEVICES[k].name, () => tapFx(k), '', '', null, dFx(k)), fxAud([{ type: k }])));
   }
   return out;
 }
@@ -228,8 +229,8 @@ function tabPreset() {
     out.push(withAud(row(o.name || 'Preset', () => tapMixer(full), devs.length + ' efek', '', (rect) => fileMenu(full, rect), dMixer(full)), devs.length ? fxAud(devs, { key: 'm' + full, vol: Math.min(1, +o.vol || 0.85), pan: +o.pan || 0 }) : null));
   }
   for (const k of Object.keys(PRESETS)) {
-    const type = +k, def = INSTRUMENTS[type]; if (!def) continue;
-    out.push(head(def.name + ' (bawaan)', 'i' + type));
+    const type = +k, def = INSTRUMENTS[type]; if (!def || DUP_PRESETS.has(type)) continue;     // the "Klasik" types 1 / 2 / 5 hold only presets their FL-style twins (32 / 33 / 31) already list
+    out.push(head(presetLabel(type) + (type === 4 ? '' : ' (bawaan)'), 'i' + type));
     for (const pr of P.presetsFor(type)) out.push(withAud(row(pr.name, () => tapFactory(type, pr), pr.cat || '', '', null, dFactory(type, pr)), instAud('p' + type + '.' + pr.name, type, pr.p, pr.cat)));
   }
   return out;
@@ -605,7 +606,7 @@ const HOLD = { instr: 'Cari instrumen\u2026', fx: 'Cari efek\u2026', file: 'Cari
 function chipsFor() {
   if (tab === 'instr') return [['all', 'Semua'], ['track', 'Track baru'], ['instr', 'Instrumen']];
   if (tab === 'fx') return [['all', 'Semua'], ...FX_GROUPS.map((g) => [g[0], g[1]])];
-  if (tab === 'preset') return [['all', 'Semua'], ['usr', 'Saya'], ['mix', 'Mixer'], ...Object.keys(PRESETS).filter((k) => INSTRUMENTS[k]).map((k) => ['i' + k, INSTRUMENTS[k].name])];
+  if (tab === 'preset') return [['all', 'Semua'], ['usr', 'Saya'], ['mix', 'Mixer'], ...Object.keys(PRESETS).filter((k) => INSTRUMENTS[k] && !DUP_PRESETS.has(+k)).map((k) => ['i' + k, presetLabel(+k)])];
   return [];
 }
 function applyFilter(list, cnt) {              // hides rows / section heads that do not match the search text or the category chip

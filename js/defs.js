@@ -711,9 +711,11 @@ INSTRUMENTS[29] = { name: 'Granulator III', view: 'kit', full: true, sampler: tr
   INSTRUMENTS[12] = { name: 'Instrument Rack', view: 'irack', params: [...Array.from({ length: 100 }, () => ({ n: '-', min: 0, max: 1, def: 0, hidden: true })), ...IP] };
 }
 
-// Audio effect categories as in Live 12's browser. Older devices that have no Live 12 counterpart stay loadable under 'Lainnya (lama)'.
-export const FX_GROUPS = [['loop', 'Delay & Loop', [19, 17, 6, 18, 43, 45, 46, 52]], ['drive', 'Drive & Color', [33, 34, 29, 37, 26, 27, 35, 36, 9, 3, 28]], ['dyn', 'Dynamics', [4, 23, 24, 5, 38]],
-  ['eq', 'EQ & Filters', [1, 25, 31, 2]], ['mod', 'Pitch & Modulation', [22, 20, 21, 42]], ['rev', 'Reverb & Resonance', [40, 44, 39, 7, 47, 41]], ['modu', 'Modulators', [50, 48, 49]], ['util', 'Utilities', [51, 0, 32, 30, 16]], ['old', 'Lainnya (lama)', [8, 13, 10, 12, 14, 15]]];
+// Audio effect categories as in Live 12's browser. Older devices that have no Live 12 counterpart sit in the closest category; the ones that only repeat a newer device are in HIDDEN_FX.
+export const FX_GROUPS = [['loop', 'Delay & Loop', [19, 17, 6, 18, 43, 45, 46, 52]], ['drive', 'Drive & Color', [33, 34, 29, 37, 26, 27, 35, 36, 9, 3, 28]], ['dyn', 'Dynamics', [4, 23, 24, 5, 38, 10]],
+  ['eq', 'EQ & Filters', [1, 25, 31, 2]], ['mod', 'Pitch & Modulation', [22, 20, 21, 42]], ['rev', 'Reverb & Resonance', [40, 44, 39, 7, 47, 41]], ['modu', 'Modulators', [50, 48, 49]], ['util', 'Utilities', [51, 0, 32, 30, 16, 14, 15]]];
+// Old devices that only repeat a newer one stay loadable in saved projects but are no longer offered in the pickers: 8 Parametric EQ (= EQ Eight), 12 Level (= Utility), 13 Analyzer (= Spectrum).
+export const HIDDEN_FX = [8, 12, 13];
 
 // Parameter <-> 0..1 mapping shared by knobs, automation editing and the engine sync.
 export const normOf = (p, v) => { const x = p.curve === 'log' ? Math.log(v / p.min) / Math.log(p.max / p.min) : (v - p.min) / (p.max - p.min); return x < 0 ? 0 : x > 1 ? 1 : x; };

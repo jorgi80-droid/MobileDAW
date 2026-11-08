@@ -923,8 +923,6 @@
 .kmap .sline { gap: 8px; }
 .kmap .kmr { display: flex; gap: 6px; align-items: center; }
 .kmap .kmk { min-width: 120px; height: 30px; font-variant-numeric: tabular-nums; }
-/* CTRL (transport): automation / link / MIDI CC for the control that was moved last */
-#btn-ctrl { width: auto; min-width: 44px; padding: 0 8px; font: 700 10.5px/1 var(--font); letter-spacing: .06em; }
 /* Keys modes: Scale (equal keys), Chord / Strum strips (chord name on top, zones below) */
 .kb-seg { display: flex; gap: 2px; }
 .kb-alt { flex: 1; min-width: 0; display: flex; gap: 3px; padding: 3px; touch-action: none; }

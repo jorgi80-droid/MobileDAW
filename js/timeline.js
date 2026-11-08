@@ -20,7 +20,7 @@ const { state, PPQ, SWATCHES } = P;
 // Live 12 layout: locator strip + beat ruler on top, time ruler at the bottom (with the grid / zoom fields at its right end), track
 // headers on the RIGHT: a title bar in the track colour, the mixer buttons under it, volume / pan sliders when the row is tall enough
 // and a level meter along the right edge of every header.
-let HEAD = 150;                                                 // header width, chosen by fit() from the canvas width
+let HEAD = 140;                                                 // header width: prefs.headW (drag the header's left edge), else chosen from the canvas width
 const RULER = 36, MROW = 13, BOT = 20, HANDLE = 18, TH = 20, METW = 9;   // top ruler (locators + beats) / bottom time ruler / header title bar / meter strip
 const FOLD_H = 24, MIN_ROW = 52, ADD_H = 44, XROW_H = 48;                // folded row (title bar only) / smallest open row (title + buttons) / "+" row / Master + FX rows
 export const view = { x0: 0, ppt: 0.06, y0: 0, rowH: 72 };
@@ -75,7 +75,13 @@ const badges = () => (CW < 170 ? [] : [['gridbtn', 'Grid ' + (SNAPS[cfg.snap][0]
 let pressed = null;                                           // which corner / badge button is under the finger (drawn highlighted)
 const nX = () => 1 + Math.max(0, state.returns.length - 2);
 const xInfo = (i) => { const j = i - state.tracks.length; return j === 0 ? { master: true, strip: MASTER, name: 'Master', color: state.master.color || '#4cd964', obj: state.master } : { master: false, k: j + 1, strip: RET0 + j + 1, name: state.returns[j + 1].name, color: state.returns[j + 1].color || '#35d0e0', obj: state.returns[j + 1] }; };
-const ROW_MAX = 260;
+const ROW_MAX = 260, FULL_H = 116;                                  // tallest row a drag allows / height a tapped-open track gets: every control fits
+const HEAD_MIN = 56, HEAD_MAX = 260, HEAD_NAMES = [['Sempit', 76], ['Normal', 124], ['Lebar', 176]];
+const headAuto = () => (W >= 1100 ? 160 : W >= 760 ? 140 : 124);
+function applyHead() { HEAD = prefs.headW > 0 ? Math.round(clamp(prefs.headW, HEAD_MIN, Math.min(HEAD_MAX, Math.max(HEAD_MIN, W - 120)))) : headAuto(); CW = Math.max(60, W - HEAD); }
+const compact = () => HEAD < 119;                                  // narrow column: title bar + level meter only (activator while it fits)
+export const headWidth = () => HEAD;
+export function setHeadW(w) { prefs.headW = w > 0 ? Math.round(clamp(w, HEAD_MIN, HEAD_MAX)) : 0; savePrefs(); applyHead(); clampView(); invalidate(); }
 const rowTarget = (t) => (t.fold ? FOLD_H : t.hx ? Math.round(clamp(view.rowH * t.hx, MIN_ROW, ROW_MAX)) : view.rowH);   // t.hx = own height as a factor of the zoomed row height (drag the header's bottom edge)
 const rh = (i) => { const n = state.tracks.length; if (i >= n) return i >= n + nX() ? ADD_H : XROW_H; const t = state.tracks[i], a = fh.size ? fh.get(t.id) : undefined; return a !== undefined ? a : rowTarget(t); };
 function rowY(i) { let y = RULER - view.y0; for (let k = 0; k < i; k++) y += rh(k); return y; }
@@ -85,7 +91,7 @@ const contentH = () => { let y = 0; for (let i = 0; i <= state.tracks.length + n
 function hdr(i) {
   const t = state.tracks[i], y = rowY(i), h = rh(i), x = CW, auto = t.kind === 'auto', L = x + 5, R = x + HEAD - METW - 5, th = Math.min(TH, h - 3);
   const r = { y, h, th, title: { x, y, w: HEAD - METW, h: th }, fold: { x, y, w: 26, h: th } };
-  if (h < 46) { r.mute = { x: R - (auto ? 26 : 20), y: y + 3, w: auto ? 26 : 20, h: Math.max(10, th - 6) }; return r; }   // folded: the activator sits in the title bar, as in Live
+  if (h < 46 || compact()) { if (HEAD >= 92) r.mute = { x: R - (auto ? 26 : 20), y: y + 3, w: auto ? 26 : 20, h: Math.max(10, th - 6) }; return r; }   // folded: the activator sits in the title bar, as in Live
   const by = y + th + 5, bh = 19, bw = 22, gp = 3;                    // one grid: equal squares, equal gaps, both groups flush with the edges
   r.mute = { x: L, y: by, w: auto ? 36 : bw, h: bh };
   if (!auto) {
@@ -93,7 +99,9 @@ function hdr(i) {
     r.aut = { x: R - bw, y: by, w: bw, h: bh };
     if (t.kind !== 'audio' && R - bw - gp - 30 >= L + (bw + gp) * 3) r.mon = { x: R - bw - gp - 30, y: by, w: 30, h: bh };
     if (h >= 70) { const sy = by + bh + 5, vw = Math.round((R - L - gp) * 0.6); r.vol = { x: L, y: sy, w: vw, h: 16 }; r.pan = { x: L + vw + gp, y: sy, w: R - L - vw - gp, h: 16 }; }
-    if (h >= 96 && state.returns.length >= 2) { const sy = by + bh + 26, hw = Math.round((R - L - gp) / 2); r.sa = { x: L, y: sy, w: hw, h: 16 }; r.sb = { x: L + hw + gp, y: sy, w: R - L - hw - gp, h: 16 }; }   // tall row: Send A / B like the mixer strip
+    const sends = state.returns.length >= 2;
+    if (h >= 96 && sends) { const sy = by + bh + 26, hw = Math.round((R - L - gp) / 2); r.sa = { x: L, y: sy, w: hw, h: 16 }; r.sb = { x: L + hw + gp, y: sy, w: R - L - hw - gp, h: 16 }; }   // tall row: Send A / B like the mixer strip
+    { const oy = by + bh + (sends ? 47 : 26); if (h >= oy - y + 20 && h >= 96) r.out = { x: L, y: oy, w: R - L, h: 16 }; }   // tallest row: where the track plays into (Master or an effect track), as in Live's I/O section
   }
   return r;
 }
@@ -529,9 +537,9 @@ function drawHeads() {
     const ik = ink(t.color);
     foldTri(hx + 12, y + r.th / 2, !!t.fold, ik);
     ctx.fillStyle = ik; ctx.font = FONT(on ? 700 : 600, 11); ctx.textBaseline = 'middle';
-    const nameR = h < 46 ? r.mute.x - 4 : hx + HEAD - METW - 6;
+    const small = h < 46 || compact(), nameR = small && r.mute ? r.mute.x - 4 : hx + HEAD - METW - 6;
     ctx.fillText(cut2((P.isFrozen(i) ? '\u2744 ' : '') + t.name, nameR - hx - 28), hx + 24, y + r.th / 2 + 0.5);   // \u2744 = frozen                           // one line + ellipsis, never split mid-word (as Live's track names)
-    if (h < 46) { drawBtn(r.mute, auto ? 'On' : String(i + 1), !t.mute, T('--mute')); }
+    if (small) { if (r.mute) drawBtn(r.mute, auto ? 'On' : String(i + 1), !t.mute, T('--mute')); }
     else {
       drawBtn(r.mute, auto ? 'On' : String(i + 1), !t.mute, T('--mute'));
       if (r.solo) drawBtn(r.solo, 'S', t.solo, T('--solo'));
@@ -539,6 +547,7 @@ function drawHeads() {
       if (r.mon) drawBtn(r.mon, 'In', t.mon !== false, T('--lv-orink'), true);
       if (r.aut) drawBtn(r.aut, 'aut', lanes.has(t.id), T('--accent'));
       if (auto && h >= 46) { ctx.fillStyle = C('#8b8b92'); ctx.font = FONT(500, 10); ctx.textBaseline = 'middle'; ctx.fillText(cut2('Otomasi', HEAD - METW - 50), r.mute.x + r.mute.w + 8, r.mute.y + r.mute.h / 2 + 0.5); }
+      if (r.out) drawSlider(r.out, 0, 'Out: ' + P.outLabel(t.out), false);
       if (r.vol) drawSlider(r.vol, Math.sqrt(clamp(t.vol / VMAX, 0, 1)), dbTxt(t.vol) + ' dB', false);
       if (r.pan) drawSlider(r.pan, (clamp(t.pan, -1, 1) + 1) / 2, panTxt(t.pan), true);
       for (const [k, rc] of [[0, r.sa], [1, r.sb]]) if (rc) { const v = (t.send && t.send[k]) || 0; drawSlider(rc, v, 'AB'[k] + ' ' + Math.round(v * 100) + '%', false); }
@@ -689,6 +698,7 @@ function hit(x, y) {
     return x >= CW ? { type: 'follow' } : { type: 'tbar', tick: xt(x) };
   }
   const i = rowAt(y);
+  if (Math.abs(x - CW) <= 4) return { type: 'headw' };                                         // the header column's left edge: drag = its width
   if (x >= CW) {
     const n0 = state.tracks.length;
     if (i === n0 + nX()) return { type: 'add' };
@@ -696,7 +706,7 @@ function hit(x, y) {
     if (i >= n0) { const xi = xInfo(i); return { type: 'xhead', x: xi, mute: !xi.master && rh(i) >= 44 && inRect(xhdr(i).act, x, y, 3) }; }
     if (!state.tracks[i].fold && rowY(i) + rh(i) - y < 8) return { type: 'rowh', i };          // bottom edge of a header: row height
     const r = hdr(i);
-    for (const [k, key] of [[0, 'mute'], [1, 'solo'], [2, 'fold'], [3, 'vol'], [4, 'pan'], [5, 'arm'], [6, 'mon'], [7, 'aut'], [8, 'sa'], [9, 'sb']]) if (r[key] && inRect(r[key], x, y, key === 'vol' || key === 'pan' || key === 'sa' || key === 'sb' ? 1 : 2)) return { type: 'head', i, btn: k };
+    for (const [k, key] of [[0, 'mute'], [1, 'solo'], [2, 'fold'], [3, 'vol'], [4, 'pan'], [5, 'arm'], [6, 'mon'], [7, 'aut'], [8, 'sa'], [9, 'sb'], [10, 'out']]) if (r[key] && inRect(r[key], x, y, key === 'vol' || key === 'pan' || key === 'sa' || key === 'sb' || key === 'out' ? 1 : 2)) return { type: 'head', i, btn: k };
     return { type: 'head', i };
   }
   if (i < 0 || i >= state.tracks.length) return { type: 'empty', i, tick: xt(x) };
@@ -821,10 +831,20 @@ function kitMenu(i, x, y) {
   if (!L.length) return toast('Belum ada kit drum. Simpan dulu lewat menu track \u2192 Simpan kit drum.', 3500);
   menu([{ label: 'KIT DRUM SAYA', dim: true }, ...L.map((k) => ({ label: `${k.name} (${k.n} pad)`, fn: async () => { const o = await PRS.applyKit(k.path, i); toast(o.error || o.msg, 3800); invalidate(); } }))], r.left + x, r.top + y);
 }
+function outMenu(i, x, y) {
+  const t = state.tracks[i], r = canvasOrigin(); if (!t) return;
+  menu([{ label: 'Master', check: !(t.out >= 0), fn: () => P.setOut(i, -1) }, ...state.returns.map((rt, k) => ({ label: rt.name, check: t.out === k, fn: () => P.setOut(i, k) })),
+    ...(state.returns.length < P.MAX_FX ? [{ sep: true }, { label: 'Buat FX track baru\u2026', fn: () => { const k = P.addFxTrack(); if (k !== null) P.setOut(i, k); } }] : [])], r.left + x, r.top + y);
+}
+function headWMenu(x, y) {
+  const r = canvasOrigin();
+  menu([{ label: 'LEBAR KOLOM TRACK', dim: true }, ...HEAD_NAMES.map(([n, w]) => ({ label: n, check: Math.abs(HEAD - w) < 14 && prefs.headW > 0, fn: () => setHeadW(w) })),
+    { label: 'Otomatis', check: !(prefs.headW > 0), fn: () => setHeadW(0) }, { sep: true }, { label: 'Lipat semua track', fn: () => foldAll(true) }, { label: 'Buka semua track', fn: () => foldAll(false, true) }], r.left + x, r.top + y);
+}
 function headMenu(i, x, y) {
   const t = state.tracks[i], r = canvasOrigin();
   menu([
-    ...(t.kind !== 'auto' ? [{ label: 'Output: ' + P.outLabel(t.out) + '\u2026', fn: () => menu([{ label: 'Master', check: !(t.out >= 0), fn: () => P.setOut(i, -1) }, ...state.returns.map((rt, k) => ({ label: rt.name, check: t.out === k, fn: () => P.setOut(i, k) })), ...(state.returns.length < P.MAX_FX ? [{ sep: true }, { label: 'Buat FX track baru\u2026', fn: () => { const k = P.addFxTrack(); if (k !== null) P.setOut(i, k); } }] : [])], r.left + x, r.top + y) }] : []),
+    ...(t.kind !== 'auto' ? [{ label: 'Output: ' + P.outLabel(t.out) + '\u2026', fn: () => outMenu(i, x, y) }] : []),
     ...(t.kind === 'audio' || t.kind === 'midi' || t.kind === 'drum' ? [{ label: t.arm ? 'Matikan Arm rekam' : 'Arm untuk rekam', fn: () => P.toggleArm(i) }] : []),
     ...(t.kind === 'midi' || t.kind === 'drum' ? [{ label: 'Monitor input: ' + (t.mon === false ? 'mati' : 'nyala'), fn: () => P.toggleMonitor(i) }] : []),
     ...(t.kind !== 'auto' ? [{ label: 'Lane otomasi\u2026', fn: () => laneMenu(i, x, y) }] : []),
@@ -837,7 +857,8 @@ function headMenu(i, x, y) {
       { label: 'Muat kit drum\u2026', fn: () => kitMenu(i, x, y) }] : []),
     { label: 'Ganti nama', fn: () => ask('Nama track', t.name, (v) => v && P.renameTrack(i, v.trim())) },
     { label: 'Warna', fn: () => { const before = t.color; pickColor({ title: 'Warna track', name: t.name, color: t.color, swatches: SWATCHES, onChange: (c) => { t.color = c; invalidate(); }, onDone: (c) => { if (c !== before) { P.noteColor(t.id, before); P.emit('tracks'); } } }); } },
-    { label: t.fold ? 'Buka track' : 'Lipat track', fn: () => toggleFold(i) },
+    { label: t.fold ? 'Buka track' : 'Lipat track', fn: () => tapFold(i) },
+    { label: 'Lebar kolom track\u2026', fn: () => headWMenu(x, y) },
     { label: 'Pindah ke atas', fn: () => swapTrack(i, i - 1) },
     { label: 'Pindah ke bawah', fn: () => swapTrack(i, i + 1) },
     { sep: true },
@@ -875,7 +896,11 @@ function laneMenu(i, x, y) {
   menu(items, r.left + x, r.top + y);
 }
 function toggleFold(i) { const t = state.tracks[i]; if (!t) return; animRow(t); t.fold = !t.fold; clampView(); invalidate(); }
-function foldAll(on) { for (const t of state.tracks) { if (!!t.fold !== on) animRow(t); t.fold = on; } clampView(); invalidate(); }
+function foldAll(on, full) { for (const t of state.tracks) { if (!!t.fold !== on) animRow(t); t.fold = on; if (!on && full) openFull(t); } clampView(); invalidate(); }
+// A tapped-open track gets a row tall enough for every header control (Live's unfolded I/O section); tapping again folds it to its title bar. Dragging the
+// bottom edge still sets any height in between.
+function openFull(t) { if (t.kind !== 'auto' && (!t.hx || view.rowH * t.hx < FULL_H)) t.hx = FULL_H / view.rowH; }
+function tapFold(i) { const t = state.tracks[i]; if (!t) return; animRow(t); t.fold = !t.fold; if (!t.fold) openFull(t); clampView(); invalidate(); }
 function swapTrack(i, j) { P.swapTracks(i, j); }
 
 function addMenu(x, y) {
@@ -1110,11 +1135,12 @@ function setup() {
         case 'loop': case 'loopL': case 'loopR': P.setLoop({ on: !state.loop.on }); toast(state.loop.on ? 'Loop aktif.' : 'Loop mati.', 900); return invalidate();
         case 'follow': prefs.follow = !cfg.follow; savePrefs(); cfg.follow = prefs.follow; return invalidate();
         case 'add': return addMenu(x, y);
+        case 'headw': return;
         case 'xhead':
           if (t.mute) P.toggleReturnMute(t.x.k); else P.selectTrack(t.x.strip);
           return invalidate();
         case 'head':
-          if (t.btn === 0) P.toggleMute(t.i); else if (t.btn === 1) P.toggleSolo(t.i); else if (t.btn === 2) toggleFold(t.i); else if (t.btn === 5) P.toggleArm(t.i); else if (t.btn === 6) P.toggleMonitor(t.i); else if (t.btn === 7) laneMenu(t.i, x, y); else P.selectTrack(t.i);
+          if (t.btn === 0) P.toggleMute(t.i); else if (t.btn === 1) P.toggleSolo(t.i); else if (t.btn === 2) toggleFold(t.i); else if (t.btn === 5) P.toggleArm(t.i); else if (t.btn === 6) P.toggleMonitor(t.i); else if (t.btn === 7) laneMenu(t.i, x, y); else if (t.btn === 10) outMenu(t.i, x, y); else { P.selectTrack(t.i); if (t.btn === undefined && prefs.tapFold !== false) tapFold(t.i); }
           return invalidate();
         case 'clip':
           if (msel.size) { if (msel.has(t.c.id)) msel.delete(t.c.id); else msel.add(t.c.id); P.selectClip(t.i, t.c.id); updateBar(); return invalidate(); }   // a selection exists: taps add / remove clips
@@ -1132,6 +1158,7 @@ function setup() {
       }
     },
     dtap(x, y, t) {
+      if (t.type === 'headw') return setHeadW(0);                                                // double-tap the edge: back to the automatic width
       if (t.type === 'rowh') { const tr = state.tracks[t.i]; if (tr && tr.hx) { animRow(tr); delete tr.hx; invalidate(); } return; }   // double-tap the grip: back to the normal height
       clearTimeout(menuWait); menuWait = 0;
       if (t.type === 'clip' && hooks.openEditor) { if (msel.size) { msel.clear(); updateBar(); } P.selectClip(t.i, t.c.id); hooks.openEditor(); return; }   // double tap a clip = its editor, full screen
@@ -1164,6 +1191,7 @@ function setup() {
       touchedAt = performance.now();
       if (t.type === 'punchL' || t.type === 'punchR') { drag = { k: t.type }; return true; }
       if (t.type === 'marker') { drag = { k: 'marker', id: t.m.id }; return true; }
+      if (t.type === 'headw') { drag = { k: 'headw', x0, w0: HEAD }; return true; }
       if (t.type === 'rowh') { fh.delete(state.tracks[t.i].id); drag = { k: 'rowh', i: t.i, y0, h0: rh(t.i) }; return true; }
       if (t.type === 'loop' || t.type === 'loopL' || t.type === 'loopR') { drag = { k: t.type, s0: state.loop.start, e0: state.loop.end, t0: t.tick }; return true; }
       if (t.type === 'head' && (t.btn === 3 || t.btn === 4)) { const rc = hdr(t.i)[t.btn === 3 ? 'vol' : 'pan']; if (rc) { drag = { k: t.btn === 3 ? 'hvol' : 'hpan', i: t.i, rc }; return true; } }
@@ -1197,6 +1225,7 @@ function setup() {
         else { const v = u * 2 - 1; P.setPan(drag.i, Math.abs(v) < 0.06 ? 0 : v); }
         P.emit('mix'); invalidate(); return;
       }
+      if (drag.k === 'headw') { const w = clamp(drag.w0 + (drag.x0 - x), HEAD_MIN, HEAD_MAX); if (w !== HEAD) { prefs.headW = Math.round(w); applyHead(); clampView(); invalidate(); } return; }
       if (drag.k === 'rowh') { const tr = state.tracks[drag.i]; if (tr) { const nh = clamp(drag.h0 + (y - drag.y0), MIN_ROW, ROW_MAX); tr.hx = nh / view.rowH; clampView(); } invalidate(); return; }
       if (drag.k === 'loop') { const len = drag.e0 - drag.s0, ns = Math.max(0, snapT(drag.s0 + (tick - drag.t0))); if (ns !== state.loop.start) P.setLoop({ start: ns, end: ns + len }); edgeScroll(x); invalidate(); return; }
       if (drag.k === 'loopL') { const v = clamp(snapT(tick), 0, state.loop.end - (snapTicks() || BEAT)); if (v !== state.loop.start) P.setLoop({ start: v }); edgeScroll(x); invalidate(); return; }
@@ -1359,7 +1388,7 @@ function fit() {
   const r = hostEl.getBoundingClientRect();
   const nd = Math.min(window.devicePixelRatio || 1, 3), nw = Math.max(1, Math.round(r.width)), nh = Math.max(1, Math.round(r.height));
   if (nw === W && nh === H && nd === dpr) return;            // nothing changed: do not clear the canvases
-  dpr = nd; W = nw; H = nh; HEAD = W >= 1100 ? 172 : W >= 760 ? 152 : 132; CW = Math.max(60, W - HEAD);
+  dpr = nd; W = nw; H = nh; applyHead();
   for (const c of [canvas, ov]) { c.width = Math.round(W * dpr); c.height = Math.round(H * dpr); c.style.width = W + 'px'; c.style.height = H + 'px'; }
   clampView();
   draw(); drawHead(P.currentTick()); dirty = false; headDirty = false;   // redraw in the same frame: no black flash while resizing

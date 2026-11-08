@@ -31,7 +31,6 @@ import * as PM from './projects.js';
 import * as IMP from './import/ui.js';
 import * as KM from './keymap.js';
 import { cancelGestures, gestureTiming } from './gesture.js';
-import { ctrlButton } from './automate.js';
 import { setOctaveNaming } from './defs.js';
 setOctaveNaming(prefs.midC);
 const { state } = P;
@@ -65,7 +64,6 @@ function wireTransport() {
     b.addEventListener('contextmenu', (e) => e.preventDefault());
     b.onclick = () => { if (long) { long = false; return; } P.toggleMetro(); };
   }
-  $('#btn-ctrl').onclick = (e) => ctrlButton(e.currentTarget.getBoundingClientRect());   // FL Studio Mobile CTRL: automation / link / MIDI CC for the last moved control
   $('#btn-undo').onclick = undoOp;
   $('#btn-redo').onclick = redoOp;
   $('#btn-browser').onclick = BR.toggleBrowser;

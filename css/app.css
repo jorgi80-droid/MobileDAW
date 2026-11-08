@@ -177,7 +177,7 @@ button { font: inherit; color: inherit; }
 
 /* compact top bar on narrow screens (large UI scale or small phones) */
 [data-w="s"] #cpu { display: none; }
-[data-w="xs"] #cpu, [data-w="xs"] #btn-rew { display: none; }
+[data-w="xs"] #cpu { display: none; }
  [data-w="xs"] .readout { min-width: 50px; font-size: var(--fs-5); padding: 0 5px; } [data-w="xs"] .b { padding: 0 6px; min-width: 28px; } [data-w="xs"] .b.ic { width: 28px; }
 
 /* ===== Live-style design pass ===== */
