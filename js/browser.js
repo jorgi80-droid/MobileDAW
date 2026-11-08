@@ -399,7 +399,7 @@ function updPreview() {
   for (const b of aside.querySelectorAll('.pv')) b.classList.toggle('on', pvPlaying && b.dataset.p === pvPath);
   for (const r of aside.querySelectorAll('.frow')) r.classList.toggle('sel', r.dataset.p === pvPath);
   if (tab !== 'file' || !pvPath) { if (pvBar) { pvBar.remove(); pvBar = null; } return; }
-  if (!pvBar || !pvBar.isConnected) { pvBar = h('div', { class: 'pbar' }); aside.append(pvBar); }
+  if (!pvBar || !pvBar.isConnected) { const bm = aside.querySelector('.bmain'); if (!bm) return; pvBar = h('div', { class: 'pbar' }); bm.append(pvBar); }   // under the list, inside the list column (a sibling of the columns would squeeze the list)
   fillBar();
 }
 function presetRows(out, dir) {

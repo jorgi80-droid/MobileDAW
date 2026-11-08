@@ -75,37 +75,52 @@ const badges = () => (CW < 170 ? [] : [['gridbtn', 'Grid ' + (SNAPS[cfg.snap][0]
 let pressed = null;                                           // which corner / badge button is under the finger (drawn highlighted)
 const nX = () => 1 + Math.max(0, state.returns.length - 2);
 const xInfo = (i) => { const j = i - state.tracks.length; return j === 0 ? { master: true, strip: MASTER, name: 'Master', color: state.master.color || '#4cd964', obj: state.master } : { master: false, k: j + 1, strip: RET0 + j + 1, name: state.returns[j + 1].name, color: state.returns[j + 1].color || '#35d0e0', obj: state.returns[j + 1] }; };
-const ROW_MAX = 260, FULL_H = 116;                                  // tallest row a drag allows / height a tapped-open track gets: every control fits
-const HEAD_MIN = 56, HEAD_MAX = 260, HEAD_NAMES = [['Sempit', 76], ['Normal', 124], ['Lebar', 176]];
-const headAuto = () => (W >= 1100 ? 160 : W >= 760 ? 140 : 124);
-function applyHead() { HEAD = prefs.headW > 0 ? Math.round(clamp(prefs.headW, HEAD_MIN, Math.min(HEAD_MAX, Math.max(HEAD_MIN, W - 120)))) : headAuto(); CW = Math.max(60, W - HEAD); }
-const compact = () => HEAD < 119;                                  // narrow column: title bar + level meter only (activator while it fits)
+const ROW_MAX = 260;                                                // tallest row a drag allows
+// The header column has two looks, as in Live: FULL = a coloured name / routing column + a grey mixer column, COMPACT = the coloured name block only
+// (a tap on any header switches; the timeline gets the room). Each look has its own width: drag the column's left edge, double tap = automatic.
+const full = () => prefs.headFull !== false;
+const compact = () => !full();
+const headLim = () => (full() ? [150, 460] : [56, 160]);
+const headAuto = () => (full() ? (W >= 1100 ? 310 : W >= 760 ? 280 : 236) : (W >= 760 ? 96 : 84));
+const headPref = () => (full() ? prefs.headW : prefs.headWc) || 0;
+function applyHead() { const [lo, hi] = headLim(); HEAD = headPref() > 0 ? Math.round(clamp(headPref(), lo, Math.min(hi, Math.max(lo, W - 120)))) : headAuto(); CW = Math.max(60, W - HEAD); }
+const nameW = () => (full() ? Math.max(76, Math.round((HEAD - METW) * 0.3)) : HEAD - METW);   // coloured column width: only the name; the rest, left of the meter, is the wide mixer column
 export const headWidth = () => HEAD;
-export function setHeadW(w) { prefs.headW = w > 0 ? Math.round(clamp(w, HEAD_MIN, HEAD_MAX)) : 0; savePrefs(); applyHead(); clampView(); invalidate(); }
+export function setHeadW(w) { const [lo, hi] = headLim(); prefs[full() ? 'headW' : 'headWc'] = w > 0 ? Math.round(clamp(w, lo, hi)) : 0; savePrefs(); applyHead(); clampView(); invalidate(); }
+export function setHeadFull(on) { prefs.headFull = !!on; savePrefs(); applyHead(); clampView(); invalidate(); }
+export const headIsFull = () => full();
 const rowTarget = (t) => (t.fold ? FOLD_H : t.hx ? Math.round(clamp(view.rowH * t.hx, MIN_ROW, ROW_MAX)) : view.rowH);   // t.hx = own height as a factor of the zoomed row height (drag the header's bottom edge)
 const rh = (i) => { const n = state.tracks.length; if (i >= n) return i >= n + nX() ? ADD_H : XROW_H; const t = state.tracks[i], a = fh.size ? fh.get(t.id) : undefined; return a !== undefined ? a : rowTarget(t); };
 function rowY(i) { let y = RULER - view.y0; for (let k = 0; k < i; k++) y += rh(k); return y; }
 function rowAt(y) { let a = RULER - view.y0; const n = state.tracks.length + nX(); for (let i = 0; i <= n; i++) { const e = a + rh(i); if (y < e) return i; a = e; } return n + 1; }
 const contentH = () => { let y = 0; for (let i = 0; i <= state.tracks.length + nX(); i++) y += rh(i); return y; };
-// Header layout of one track. Controls only appear when the row is tall enough, so nothing can overlap; a folded row keeps its activator.
+// Header layout of one track. FULL look: left = coloured column (the name only), right = wide grey mixer column (activator, S, arm, automation /
+// volume, pan / Send A, B / output). Controls only appear when the row is tall enough, so nothing can overlap. COMPACT look: name block + activator.
 function hdr(i) {
-  const t = state.tracks[i], y = rowY(i), h = rh(i), x = CW, auto = t.kind === 'auto', L = x + 5, R = x + HEAD - METW - 5, th = Math.min(TH, h - 3);
-  const r = { y, h, th, title: { x, y, w: HEAD - METW, h: th }, fold: { x, y, w: 26, h: th } };
-  if (h < 46 || compact()) { if (HEAD >= 92) r.mute = { x: R - (auto ? 26 : 20), y: y + 3, w: auto ? 26 : 20, h: Math.max(10, th - 6) }; return r; }   // folded: the activator sits in the title bar, as in Live
-  const by = y + th + 5, bh = 19, bw = 22, gp = 3;                    // one grid: equal squares, equal gaps, both groups flush with the edges
+  const t = state.tracks[i], y = rowY(i), h = rh(i), x = CW, auto = t.kind === 'auto', th = Math.min(TH, h - 3), nw = nameW();
+  const r = { y, h, th, nw, title: { x, y, w: HEAD - METW, h: th }, fold: { x, y, w: 26, h: th } };
+  if (compact()) { if (HEAD >= 92) { const R = x + HEAD - METW - 5; r.mute = { x: R - (auto ? 26 : 20), y: y + 3, w: auto ? 26 : 20, h: Math.max(10, th - 6) }; } return r; }
+  const L = x + nw + 4, R = x + HEAD - METW - 4, gp = 3, bw = 22;
+  if (h < 46) {                                                      // folded row: the three switches as small squares in the mixer column
+    const q = Math.max(10, Math.min(18, h - 8)), by = y + (h - 1 - q) / 2;
+    r.mute = { x: L, y: by, w: auto ? 30 : q + 4, h: q };
+    if (!auto) { r.solo = { x: L + q + 4 + gp, y: by, w: q + 4, h: q }; r.arm = { x: L + (q + 4 + gp) * 2, y: by, w: q + 4, h: q }; }
+    return r;
+  }
+  const by = y + 2, bh = 16, sh = 14, vh = 18, sends = state.returns.length >= 2;
   r.mute = { x: L, y: by, w: auto ? 36 : bw, h: bh };
   if (!auto) {
     r.solo = { x: L + bw + gp, y: by, w: bw, h: bh }; r.arm = { x: L + (bw + gp) * 2, y: by, w: bw, h: bh };
-    r.aut = { x: R - bw, y: by, w: bw, h: bh };
-    if (t.kind !== 'audio' && R - bw - gp - 30 >= L + (bw + gp) * 3) r.mon = { x: R - bw - gp - 30, y: by, w: 30, h: bh };
-    if (h >= 70) { const sy = by + bh + 5, vw = Math.round((R - L - gp) * 0.6); r.vol = { x: L, y: sy, w: vw, h: 16 }; r.pan = { x: L + vw + gp, y: sy, w: R - L - vw - gp, h: 16 }; }
-    const sends = state.returns.length >= 2;
-    if (h >= 96 && sends) { const sy = by + bh + 26, hw = Math.round((R - L - gp) / 2); r.sa = { x: L, y: sy, w: hw, h: 16 }; r.sb = { x: L + hw + gp, y: sy, w: R - L - hw - gp, h: 16 }; }   // tall row: Send A / B like the mixer strip
-    { const oy = by + bh + (sends ? 47 : 26); if (h >= oy - y + 20 && h >= 96) r.out = { x: L, y: oy, w: R - L, h: 16 }; }   // tallest row: where the track plays into (Master or an effect track), as in Live's I/O section
+    if (R - bw >= L + (bw + gp) * 3 - 2) r.aut = { x: R - bw, y: by, w: bw, h: bh };
+    // everything else sits in the wide mixer column, right-aligned: volume + pan, Send A / B, where the track plays into (Master / an effect track)
+    let sy = by + bh + 2;
+    if (h >= 50) { const vw = Math.round((R - L - gp) * 0.6); r.vol = { x: L, y: sy, w: vw, h: vh }; r.pan = { x: L + vw + gp, y: sy, w: R - L - vw - gp, h: vh }; sy += vh + 2; }
+    if (h >= 58 && sends && r.vol) { const hw = Math.round((R - L - gp) / 2); r.sa = { x: L, y: sy, w: hw, h: sh }; r.sb = { x: L + hw + gp, y: sy, w: R - L - hw - gp, h: sh }; sy += sh + 2; }
+    if (r.vol && h >= sy - y + sh + 1) r.out = { x: L, y: sy, w: R - L, h: sh };
   }
   return r;
 }
-function xhdr(i) { const y = rowY(i), h = rh(i); return { y, h, act: { x: CW + 5, y: y + TH + 4, w: 28, h: 20 } }; }
+function xhdr(i) { const y = rowY(i), h = rh(i); return { y, h, act: full() ? { x: CW + nameW() + 4, y: y + 4, w: 28, h: 20 } : { x: CW + 5, y: y + TH + 4, w: 28, h: 20 } }; }
 const inRect = (r, x, y, p = 0) => x >= r.x - p && x <= r.x + r.w + p && y >= r.y - p && y <= r.y + r.h + p;
 
 function clampView() {
@@ -254,7 +269,7 @@ function draw() {
   for (let i = Math.max(0, rowAt(RULER)); i <= Math.min(n - 1, rowAt(LB)); i++) {
     const y = rowY(i), h = rh(i);
     ctx.fillStyle = state.sel.track === i ? C('#333337') : C('#2a2a2c'); ctx.fillRect(0, y, CW, h);
-    ctx.fillStyle = C('#141415'); ctx.fillRect(0, y + h - 2, CW, 2);                     // Live: a heavy line between tracks
+    ctx.fillStyle = C('#08080a'); ctx.fillRect(0, y + h - 2, CW, 2);                     // Live: a heavy line between tracks
   }
   const xl = [];                                                                       // captions of the Master / effect lanes, drawn after the grid
   for (let i = Math.max(n, rowAt(RULER)); i < nn && i <= rowAt(LB); i++) {             // Master / effect track rows: no clips, they only mix
@@ -272,10 +287,10 @@ function draw() {
     if (x < 0 || x > CW) return;
     const r = t - P.MM.T[j];
     if (r % P.MM.bl[j] === 0) return;
-    ctx.fillStyle = r % P.MM.bt[j] === 0 ? C('#323236') : C('#2b2b2e');
+    ctx.fillStyle = r % P.MM.bt[j] === 0 ? C('#4a4a50') : C('#3a3a3f');   // beat lines clearly visible, sub-beats fainter
     ctx.fillRect(x, RULER, 1, gy1 - RULER);
   });
-  ctx.fillStyle = C('#404045');
+  ctx.fillStyle = C('#74747c');
   for (let b = Math.max(0, P.barAt(view.x0)); tx(P.barStart(b)) < CW; b++) { const x = Math.round(tx(P.barStart(b))); if (x >= 0) ctx.fillRect(x, RULER, 1, gy1 - RULER); }
   if (P.state.sigs.length) { ctx.fillStyle = 'rgba(255,167,34,.3)'; for (const c of P.state.sigs) { const x = Math.round(tx(P.barStart(c.bar))); if (x >= 0 && x <= CW) ctx.fillRect(x, RULER, 1, gy1 - RULER); } }
   for (const m of state.markers) { const x = Math.round(tx(m.t)); if (x < 0 || x > CW) continue; ctx.fillStyle = C('#0e0e10'); ctx.fillRect(x, RULER, 1, gy1 - RULER); }   // Live: a dark line down from every locator
@@ -343,7 +358,7 @@ const PUon = () => state.punch.on && state.punch.end > state.punch.start;
 function drawRuler(g) {
   ctx.fillStyle = C('#202022'); ctx.fillRect(0, 0, CW, MROW);                              // locator strip
   ctx.fillStyle = C('#2c2c2f'); ctx.fillRect(0, MROW, CW, RULER - MROW);                   // beat time ruler
-  ctx.fillStyle = C('#141415'); ctx.fillRect(0, MROW - 1, CW, 1); ctx.fillRect(0, RULER - 1, CW, 1);
+  ctx.fillStyle = C('#08080a'); ctx.fillRect(0, MROW - 1, CW, 1); ctx.fillRect(0, RULER - 2, CW, 2);
   ctx.save(); ctx.beginPath(); ctx.rect(0, 0, CW, RULER); ctx.clip();
   if (sel) { ctx.fillStyle = 'rgba(255,255,255,.22)'; ctx.fillRect(tx(sel.a), MROW, tx(sel.b) - tx(sel.a), RULER - MROW - 1); }
   // loop brace along the bottom of the beat ruler: grey when the loop is off, lit when it is on (Live's Arrangement Loop)
@@ -517,47 +532,47 @@ function drawHeads() {
     }
     const meterWell = () => { ctx.fillStyle = C('#161617'); ctx.fillRect(hx + HEAD - METW, y, METW, h - 1); ctx.fillStyle = C('#101011'); ctx.fillRect(hx + HEAD - METW + 2, y + 3, 2.5, h - 7); ctx.fillRect(hx + HEAD - METW + 5.5, y + 3, 2.5, h - 7); };
     if (i >= n) {                                                                            // Master / effect track header
-      const x = xInfo(i), on = state.sel.track === x.strip, fx = !x.master, rt = fx ? state.returns[x.k] : null, r = xhdr(i);
+      const x = xInfo(i), on = state.sel.track === x.strip, fx = !x.master, rt = fx ? state.returns[x.k] : null, r = xhdr(i), nw = nameW(), ik = ink(x.color);
       ctx.fillStyle = on ? C('#3a3a3e') : C('#2c2c2f'); ctx.fillRect(hx, y, HEAD, h - 1);
-      ctx.fillStyle = x.color; ctx.fillRect(hx, y, HEAD - METW, Math.min(TH, h - 3));
-      ctx.fillStyle = ink(x.color); ctx.font = FONT(700, 11); ctx.textBaseline = 'middle'; ctx.fillText(cut2(x.name, HEAD - METW - 16), hx + 8, y + Math.min(TH, h - 3) / 2 + 0.5);
+      ctx.fillStyle = x.color; ctx.fillRect(hx, y, nw, h - 1);                                           // the whole name block in the colour, as in Live
+      ctx.fillStyle = ik; ctx.font = FONT(700, 11); ctx.textBaseline = 'middle'; ctx.fillText(cut2(x.name, nw - 14), hx + 8, y + Math.min(TH, h - 3) / 2 + 0.5);
       if (h >= 44) {
         if (fx) drawBtn(r.act, x.k < 2 ? 'AB'[x.k] : 'F' + (x.k - 1), !rt.mute, T('--mute'));
-        ctx.fillStyle = C('#8b8b92'); ctx.font = FONT(500, 10); ctx.textBaseline = 'middle';
-        ctx.fillText(x.master ? 'Master • ' + dbTxt(state.master.vol) + ' dB' : 'FX track • ' + dbTxt(rt.vol) + ' dB', hx + (fx ? 40 : 8), r.act.y + r.act.h / 2 + 0.5, HEAD - METW - (fx ? 46 : 14));
+        if (full()) { ctx.fillStyle = ik; ctx.globalAlpha = 0.7; ctx.font = FONT(500, 10); ctx.fillText((x.master ? '' : 'FX \u2022 ') + dbTxt(x.master ? state.master.vol : rt.vol) + ' dB', hx + 8, y + TH + 12, nw - 14); ctx.globalAlpha = 1; }
       }
       meterWell();
       ctx.fillStyle = C('#141415'); ctx.fillRect(hx, y + h - 1, HEAD, 1);
       continue;
     }
     const t = state.tracks[i], on = state.sel.track === i, r = hdr(i), auto = t.kind === 'auto';
-    ctx.fillStyle = on ? C('#3a3a3e') : C('#2c2c2f'); ctx.fillRect(hx, y, HEAD, h - 1);                    // selected track: the whole header a step lighter
-    ctx.fillStyle = t.color; ctx.fillRect(hx, y, HEAD - METW, r.th);                                      // title bar in the track colour
-    if (t.mute) { ctx.fillStyle = 'rgba(30,30,34,.35)'; ctx.fillRect(hx, y, HEAD - METW, r.th); }          // deactivated track: the title dims, as in Live
-    const ik = ink(t.color);
+    const nw = r.nw, ik = ink(t.color), fullLook = full();
+    ctx.fillStyle = on ? C('#3a3a3e') : C('#2c2c2f'); ctx.fillRect(hx, y, HEAD, h - 1);                    // selected track: the mixer column a step lighter
+    ctx.fillStyle = t.color; ctx.fillRect(hx, y, nw, h - 1);                                              // the whole name block in the track colour, as in Live
+    if (t.mute) { ctx.fillStyle = 'rgba(30,30,34,.35)'; ctx.fillRect(hx, y, nw, h - 1); }                  // deactivated track: the block dims
+    if (on) { ctx.strokeStyle = ik; ctx.globalAlpha = 0.55; ctx.lineWidth = 2; ctx.strokeRect(hx + 1, y + 1, nw - 2, h - 4); ctx.globalAlpha = 1; }   // selected: an inner outline
     foldTri(hx + 12, y + r.th / 2, !!t.fold, ik);
     ctx.fillStyle = ik; ctx.font = FONT(on ? 700 : 600, 11); ctx.textBaseline = 'middle';
-    const small = h < 46 || compact(), nameR = small && r.mute ? r.mute.x - 4 : hx + HEAD - METW - 6;
-    ctx.fillText(cut2((P.isFrozen(i) ? '\u2744 ' : '') + t.name, nameR - hx - 28), hx + 24, y + r.th / 2 + 0.5);   // \u2744 = frozen                           // one line + ellipsis, never split mid-word (as Live's track names)
-    if (small) { if (r.mute) drawBtn(r.mute, auto ? 'On' : String(i + 1), !t.mute, T('--mute')); }
-    else {
-      drawBtn(r.mute, auto ? 'On' : String(i + 1), !t.mute, T('--mute'));
-      if (r.solo) drawBtn(r.solo, 'S', t.solo, T('--solo'));
-      if (r.arm) drawBtn(r.arm, 'arm', !!t.arm, T('--rec'));
-      if (r.mon) drawBtn(r.mon, 'In', t.mon !== false, T('--lv-orink'), true);
-      if (r.aut) drawBtn(r.aut, 'aut', lanes.has(t.id), T('--accent'));
-      if (auto && h >= 46) { ctx.fillStyle = C('#8b8b92'); ctx.font = FONT(500, 10); ctx.textBaseline = 'middle'; ctx.fillText(cut2('Otomasi', HEAD - METW - 50), r.mute.x + r.mute.w + 8, r.mute.y + r.mute.h / 2 + 0.5); }
-      if (r.out) drawSlider(r.out, 0, 'Out: ' + P.outLabel(t.out), false);
-      if (r.vol) drawSlider(r.vol, Math.sqrt(clamp(t.vol / VMAX, 0, 1)), dbTxt(t.vol) + ' dB', false);
-      if (r.pan) drawSlider(r.pan, (clamp(t.pan, -1, 1) + 1) / 2, panTxt(t.pan), true);
-      for (const [k, rc] of [[0, r.sa], [1, r.sb]]) if (rc) { const v = (t.send && t.send[k]) || 0; drawSlider(rc, v, 'AB'[k] + ' ' + Math.round(v * 100) + '%', false); }
+    const nameR = !fullLook && r.mute ? r.mute.x - 4 : hx + nw - 6;
+    ctx.fillText(cut2((P.isFrozen(i) ? '\u2744 ' : '') + t.name, nameR - hx - 28), hx + 24, y + r.th / 2 + 0.5);   // \u2744 = frozen; one line + ellipsis, never split mid-word
+    if (r.mute) drawBtn(r.mute, auto ? 'On' : String(i + 1), !t.mute, T('--mute'));
+    if (r.solo) drawBtn(r.solo, 'S', t.solo, T('--solo'));
+    if (r.arm) drawBtn(r.arm, 'arm', !!t.arm, T('--rec'));
+    if (r.aut) drawBtn(r.aut, 'aut', lanes.has(t.id), T('--accent'));
+    if (auto && fullLook && h >= 46) { ctx.fillStyle = ik; ctx.globalAlpha = 0.7; ctx.font = FONT(500, 10); ctx.textBaseline = 'middle'; ctx.fillText('Otomasi', hx + 8, y + TH + 12, nw - 14); ctx.globalAlpha = 1; }
+    if (r.out) {                                                                                           // output: a dark field in the mixer column, the destination written in it
+      ctx.fillStyle = C('#19191a'); ctx.fillRect(r.out.x, r.out.y, r.out.w, r.out.h); ctx.strokeStyle = C('#141415'); ctx.lineWidth = 1; ctx.strokeRect(r.out.x + 0.5, r.out.y + 0.5, r.out.w - 1, r.out.h - 1);
+      ctx.fillStyle = C('#f2f2f4'); ctx.font = FONT(700, 9.5); ctx.textAlign = 'center'; ctx.fillText(cut2(P.outLabel(t.out), r.out.w - 24), r.out.x + r.out.w / 2 - 4, r.out.y + r.out.h / 2 + 0.5); ctx.textAlign = 'left';
+      ctx.fillStyle = C('#8b8b92'); ctx.beginPath(); ctx.moveTo(r.out.x + r.out.w - 12, r.out.y + 5); ctx.lineTo(r.out.x + r.out.w - 6, r.out.y + 5); ctx.lineTo(r.out.x + r.out.w - 9, r.out.y + 9); ctx.closePath(); ctx.fill();
     }
+    if (r.vol) drawSlider(r.vol, Math.sqrt(clamp(t.vol / VMAX, 0, 1)), dbTxt(t.vol) + ' dB', false);
+    if (r.pan) drawSlider(r.pan, (clamp(t.pan, -1, 1) + 1) / 2, panTxt(t.pan), true);
+    for (const [k, rc] of [[0, r.sa], [1, r.sb]]) if (rc) { const v = (t.send && t.send[k]) || 0; drawSlider(rc, v, 'AB'[k] + ' ' + Math.round(v * 100) + '%', false); }
     if (!auto) meterWell(); else { ctx.fillStyle = C('#161617'); ctx.fillRect(hx + HEAD - METW, y, METW, h - 1); }
-    ctx.fillStyle = C('#141415'); ctx.fillRect(hx, y + h - 2, HEAD, 2);                  // the same heavy line as the lane
+    ctx.fillStyle = C('#08080a'); ctx.fillRect(hx, y + h - 2, HEAD, 2);                  // the same heavy line as the lane
     if (!t.fold && h >= MIN_ROW && (on || (drag && drag.k === 'rowh' && drag.i === i))) { ctx.fillStyle = drag && drag.k === 'rowh' && drag.i === i ? T('--accent') : C('#46464c'); ctx.fillRect(hx + (HEAD - METW) / 2 - 8, y + h - 3, 16, 1); }   // grip of the selected track: drag the bottom edge = row height
   }
   ctx.restore();
-  ctx.fillStyle = C('#141415'); ctx.fillRect(hx, 0, 1, H);                                   // hairline between clip area and headers
+  ctx.fillStyle = C('#08080a'); ctx.fillRect(hx - 1, 0, 2, H);                                // line between clip area and headers
   // top corner: Snap switch (tap: snap, follow, select / fold options)
   ctx.fillStyle = C('#2c2c2f'); ctx.fillRect(hx + 1, 0, HEAD - 1, RULER); ctx.fillStyle = C('#141415'); ctx.fillRect(hx, RULER - 1, HEAD, 1);
   drawSwitch(snapRect(), 'Snap ' + SNAPS[cfg.snap][0], cfg.snap !== SNAPS.length - 1, pressed === 'corner');
@@ -706,7 +721,7 @@ function hit(x, y) {
     if (i >= n0) { const xi = xInfo(i); return { type: 'xhead', x: xi, mute: !xi.master && rh(i) >= 44 && inRect(xhdr(i).act, x, y, 3) }; }
     if (!state.tracks[i].fold && rowY(i) + rh(i) - y < 8) return { type: 'rowh', i };          // bottom edge of a header: row height
     const r = hdr(i);
-    for (const [k, key] of [[0, 'mute'], [1, 'solo'], [2, 'fold'], [3, 'vol'], [4, 'pan'], [5, 'arm'], [6, 'mon'], [7, 'aut'], [8, 'sa'], [9, 'sb'], [10, 'out']]) if (r[key] && inRect(r[key], x, y, key === 'vol' || key === 'pan' || key === 'sa' || key === 'sb' || key === 'out' ? 1 : 2)) return { type: 'head', i, btn: k };
+    for (const [k, key] of [[0, 'mute'], [1, 'solo'], [2, 'fold'], [3, 'vol'], [4, 'pan'], [5, 'arm'], [7, 'aut'], [8, 'sa'], [9, 'sb'], [10, 'out']]) if (r[key] && inRect(r[key], x, y, key === 'vol' || key === 'pan' || key === 'sa' || key === 'sb' || key === 'out' ? 1 : 2)) return { type: 'head', i, btn: k };
     return { type: 'head', i };
   }
   if (i < 0 || i >= state.tracks.length) return { type: 'empty', i, tick: xt(x) };
@@ -837,16 +852,17 @@ function outMenu(i, x, y) {
     ...(state.returns.length < P.MAX_FX ? [{ sep: true }, { label: 'Buat FX track baru\u2026', fn: () => { const k = P.addFxTrack(); if (k !== null) P.setOut(i, k); } }] : [])], r.left + x, r.top + y);
 }
 function headWMenu(x, y) {
-  const r = canvasOrigin();
-  menu([{ label: 'LEBAR KOLOM TRACK', dim: true }, ...HEAD_NAMES.map(([n, w]) => ({ label: n, check: Math.abs(HEAD - w) < 14 && prefs.headW > 0, fn: () => setHeadW(w) })),
-    { label: 'Otomatis', check: !(prefs.headW > 0), fn: () => setHeadW(0) }, { sep: true }, { label: 'Lipat semua track', fn: () => foldAll(true) }, { label: 'Buka semua track', fn: () => foldAll(false, true) }], r.left + x, r.top + y);
+  const r = canvasOrigin(), set = full() ? [['Sempit', 160], ['Normal', 208], ['Lebar', 260]] : [['Sempit', 64], ['Normal', 96], ['Lebar', 130]], cur = headPref();
+  menu([{ label: 'KOLOM TRACK', dim: true }, { label: 'Kontrol penuh', check: full(), fn: () => setHeadFull(true) }, { label: 'Ringkas (hanya nama)', check: !full(), fn: () => setHeadFull(false) }, { sep: true },
+    ...set.map(([n, w]) => ({ label: 'Lebar ' + n.toLowerCase(), check: cur > 0 && Math.abs(cur - w) < 14, fn: () => setHeadW(w) })),
+    { label: 'Lebar otomatis', check: !(cur > 0), fn: () => setHeadW(0) }, { sep: true }, { label: 'Lipat semua track', fn: () => foldAll(true) }, { label: 'Buka semua track', fn: () => foldAll(false) }], r.left + x, r.top + y);
 }
 function headMenu(i, x, y) {
   const t = state.tracks[i], r = canvasOrigin();
   menu([
     ...(t.kind !== 'auto' ? [{ label: 'Output: ' + P.outLabel(t.out) + '\u2026', fn: () => outMenu(i, x, y) }] : []),
     ...(t.kind === 'audio' || t.kind === 'midi' || t.kind === 'drum' ? [{ label: t.arm ? 'Matikan Arm rekam' : 'Arm untuk rekam', fn: () => P.toggleArm(i) }] : []),
-    ...(t.kind === 'midi' || t.kind === 'drum' ? [{ label: 'Monitor input: ' + (t.mon === false ? 'mati' : 'nyala'), fn: () => P.toggleMonitor(i) }] : []),
+    ...(t.kind === 'midi' || t.kind === 'drum' ? [{ label: 'Monitor input: ' + { in: 'In', auto: 'Auto', off: 'Off' }[P.monMode(t)] + '\u2026', fn: () => menu(['in', 'auto', 'off'].map((m) => ({ label: { in: 'In (selalu bunyi)', auto: 'Auto (bunyi saat arm)', off: 'Off (hanya rekam)' }[m], check: P.monMode(t) === m, fn: () => P.setMonitor(i, m) })), r.left + x, r.top + y) }] : []),
     ...(t.kind !== 'auto' ? [{ label: 'Lane otomasi\u2026', fn: () => laneMenu(i, x, y) }] : []),
     ...(t.kind !== 'auto' ? [P.isFrozen(i) ? { label: 'Lepas freeze (Unfreeze)', fn: () => { P.unfreezeTrack(i); toast('Track kembali live.'); } }
       : { label: 'Freeze track', fn: async () => { toast('Membekukan track\u2026', 20000); const r = await P.freezeTrack(i); toast(r.error || `Track dibekukan (${r.secs.toFixed(1)} dtk audio). Instrumen dan efeknya tidak lagi memakai CPU.`, 4000); invalidate(); } }] : []),
@@ -857,7 +873,7 @@ function headMenu(i, x, y) {
       { label: 'Muat kit drum\u2026', fn: () => kitMenu(i, x, y) }] : []),
     { label: 'Ganti nama', fn: () => ask('Nama track', t.name, (v) => v && P.renameTrack(i, v.trim())) },
     { label: 'Warna', fn: () => { const before = t.color; pickColor({ title: 'Warna track', name: t.name, color: t.color, swatches: SWATCHES, onChange: (c) => { t.color = c; invalidate(); }, onDone: (c) => { if (c !== before) { P.noteColor(t.id, before); P.emit('tracks'); } } }); } },
-    { label: t.fold ? 'Buka track' : 'Lipat track', fn: () => tapFold(i) },
+    { label: t.fold ? 'Buka track' : 'Lipat track', fn: () => toggleFold(i) },
     { label: 'Lebar kolom track\u2026', fn: () => headWMenu(x, y) },
     { label: 'Pindah ke atas', fn: () => swapTrack(i, i - 1) },
     { label: 'Pindah ke bawah', fn: () => swapTrack(i, i + 1) },
@@ -896,11 +912,7 @@ function laneMenu(i, x, y) {
   menu(items, r.left + x, r.top + y);
 }
 function toggleFold(i) { const t = state.tracks[i]; if (!t) return; animRow(t); t.fold = !t.fold; clampView(); invalidate(); }
-function foldAll(on, full) { for (const t of state.tracks) { if (!!t.fold !== on) animRow(t); t.fold = on; if (!on && full) openFull(t); } clampView(); invalidate(); }
-// A tapped-open track gets a row tall enough for every header control (Live's unfolded I/O section); tapping again folds it to its title bar. Dragging the
-// bottom edge still sets any height in between.
-function openFull(t) { if (t.kind !== 'auto' && (!t.hx || view.rowH * t.hx < FULL_H)) t.hx = FULL_H / view.rowH; }
-function tapFold(i) { const t = state.tracks[i]; if (!t) return; animRow(t); t.fold = !t.fold; if (!t.fold) openFull(t); clampView(); invalidate(); }
+function foldAll(on) { for (const t of state.tracks) { if (!!t.fold !== on) animRow(t); t.fold = on; } clampView(); invalidate(); }
 function swapTrack(i, j) { P.swapTracks(i, j); }
 
 function addMenu(x, y) {
@@ -1140,7 +1152,9 @@ function setup() {
           if (t.mute) P.toggleReturnMute(t.x.k); else P.selectTrack(t.x.strip);
           return invalidate();
         case 'head':
-          if (t.btn === 0) P.toggleMute(t.i); else if (t.btn === 1) P.toggleSolo(t.i); else if (t.btn === 2) toggleFold(t.i); else if (t.btn === 5) P.toggleArm(t.i); else if (t.btn === 6) P.toggleMonitor(t.i); else if (t.btn === 7) laneMenu(t.i, x, y); else if (t.btn === 10) outMenu(t.i, x, y); else { P.selectTrack(t.i); if (t.btn === undefined && prefs.tapFold !== false) tapFold(t.i); }
+          if (t.btn === 0) P.toggleMute(t.i); else if (t.btn === 1) P.toggleSolo(t.i); else if (t.btn === 2) toggleFold(t.i); else if (t.btn === 5) P.toggleArm(t.i);
+          else if (t.btn === 7) laneMenu(t.i, x, y); else if (t.btn === 10) outMenu(t.i, x, y);
+          else { P.selectTrack(t.i); if (t.btn === undefined && prefs.tapFold !== false) setHeadFull(!full()); }     // a tap on the header body: compact <-> full column
           return invalidate();
         case 'clip':
           if (msel.size) { if (msel.has(t.c.id)) msel.delete(t.c.id); else msel.add(t.c.id); P.selectClip(t.i, t.c.id); updateBar(); return invalidate(); }   // a selection exists: taps add / remove clips
@@ -1194,8 +1208,8 @@ function setup() {
       if (t.type === 'headw') { drag = { k: 'headw', x0, w0: HEAD }; return true; }
       if (t.type === 'rowh') { fh.delete(state.tracks[t.i].id); drag = { k: 'rowh', i: t.i, y0, h0: rh(t.i) }; return true; }
       if (t.type === 'loop' || t.type === 'loopL' || t.type === 'loopR') { drag = { k: t.type, s0: state.loop.start, e0: state.loop.end, t0: t.tick }; return true; }
-      if (t.type === 'head' && (t.btn === 3 || t.btn === 4)) { const rc = hdr(t.i)[t.btn === 3 ? 'vol' : 'pan']; if (rc) { drag = { k: t.btn === 3 ? 'hvol' : 'hpan', i: t.i, rc }; return true; } }
-      if (t.type === 'head' && (t.btn === 8 || t.btn === 9)) { const rc = hdr(t.i)[t.btn === 8 ? 'sa' : 'sb']; if (rc) { drag = { k: 'hsend', s: t.btn - 8, i: t.i, rc }; return true; } }
+      if (t.type === 'head' && (t.btn === 3 || t.btn === 4)) { const rc = hdr(t.i)[t.btn === 3 ? 'vol' : 'pan']; if (rc) { const tr = state.tracks[t.i]; drag = { k: t.btn === 3 ? 'hvol' : 'hpan', i: t.i, rc, x0, y0, u0: t.btn === 3 ? Math.sqrt(clamp(tr.vol / VMAX, 0, 1)) : (clamp(tr.pan, -1, 1) + 1) / 2, fine: false }; return true; } }
+      if (t.type === 'head' && (t.btn === 8 || t.btn === 9)) { const rc = hdr(t.i)[t.btn === 8 ? 'sa' : 'sb']; if (rc) { const tr = state.tracks[t.i]; drag = { k: 'hsend', s: t.btn - 8, i: t.i, rc, x0, y0, u0: (tr.send && tr.send[t.btn - 8]) || 0 }; return true; } }
       if (t.type === 'ruler') { drag = { k: 'rpend', a: snapT(t.tick), tick0: t.tick, p0: view.ppt }; return true; }   // direction decides: Live zoom (vertical) or time selection (horizontal)
       if (t.type === 'clip' && msel.has(t.c.id)) {                // group move / group resize of every picked clip
         checkpoint(); P.selectClip(t.i, t.c.id);
@@ -1218,14 +1232,16 @@ function setup() {
     drag(x, y, dx, dy) {
       if (!drag) return;
       const tick = xt(x);
-      if (drag.k === 'hsend') { P.setSend(drag.i, drag.s, Math.round(clamp((x - drag.rc.x) / drag.rc.w, 0, 1) * 100) / 100); P.emit('mix'); invalidate(); return; }
-      if (drag.k === 'hvol' || drag.k === 'hpan') {
-        const u = clamp((x - drag.rc.x) / drag.rc.w, 0, 1);
-        if (drag.k === 'hvol') { const v = u * u * VMAX; P.setVol(drag.i, Math.abs(v - 1) < 0.03 ? 1 : v); }
-        else { const v = u * 2 - 1; P.setPan(drag.i, Math.abs(v) < 0.06 ? 0 : v); }
+      if (drag.k === 'hsend' || drag.k === 'hvol' || drag.k === 'hpan') {
+        // relative drag from the value the slider had (no jump under the finger); moving the finger well above / below the slider = fine control (1/5 speed)
+        const fine = Math.abs(y - drag.y0) > 26, u = clamp(drag.u0 + (x - drag.x0) / drag.rc.w / (fine ? 5 : 1), 0, 1);
+        if (fine !== drag.fine) { drag.u0 = drag.k === 'hvol' ? Math.sqrt(clamp(state.tracks[drag.i].vol / VMAX, 0, 1)) : drag.k === 'hpan' ? (clamp(state.tracks[drag.i].pan, -1, 1) + 1) / 2 : ((state.tracks[drag.i].send || [])[drag.s] || 0); drag.x0 = x; drag.fine = fine; return; }
+        if (drag.k === 'hsend') P.setSend(drag.i, drag.s, Math.round(u * 100) / 100);
+        else if (drag.k === 'hvol') { const v = u * u * VMAX; P.setVol(drag.i, Math.abs(v - 1) < 0.015 ? 1 : v); }
+        else { const v = u * 2 - 1; P.setPan(drag.i, Math.abs(v) < 0.03 ? 0 : v); }
         P.emit('mix'); invalidate(); return;
       }
-      if (drag.k === 'headw') { const w = clamp(drag.w0 + (drag.x0 - x), HEAD_MIN, HEAD_MAX); if (w !== HEAD) { prefs.headW = Math.round(w); applyHead(); clampView(); invalidate(); } return; }
+      if (drag.k === 'headw') { const [lo, hi] = headLim(), w = clamp(drag.w0 + (drag.x0 - x), lo, hi); if (w !== HEAD) { prefs[full() ? 'headW' : 'headWc'] = Math.round(w); applyHead(); clampView(); invalidate(); } return; }
       if (drag.k === 'rowh') { const tr = state.tracks[drag.i]; if (tr) { const nh = clamp(drag.h0 + (y - drag.y0), MIN_ROW, ROW_MAX); tr.hx = nh / view.rowH; clampView(); } invalidate(); return; }
       if (drag.k === 'loop') { const len = drag.e0 - drag.s0, ns = Math.max(0, snapT(drag.s0 + (tick - drag.t0))); if (ns !== state.loop.start) P.setLoop({ start: ns, end: ns + len }); edgeScroll(x); invalidate(); return; }
       if (drag.k === 'loopL') { const v = clamp(snapT(tick), 0, state.loop.end - (snapTicks() || BEAT)); if (v !== state.loop.start) P.setLoop({ start: v }); edgeScroll(x); invalidate(); return; }

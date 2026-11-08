@@ -516,13 +516,23 @@ Permintaan pemilik: SEMUA efek dan instrumen diganti dengan set stok Ableton Liv
 
 ## Toolbar, header track, daftar tanpa duplikat (sesi ini)
 - Toolbar: tombol Rewind (`#btn-rew`, kembali ke awal) di grup transport; tombol CTRL dihapus (menu otomasi/MIDI CC lewat tekan-tahan kontrol).
-- Header track (`js/timeline.js`): ketuk header = lipat ke bar judul, ketuk lagi = buka dengan tinggi `FULL_H` (116 px) sehingga semua kontrol
-  muncul: M/S/arm/monitor/otomasi, volume + pan, Send A/B, baris **Out** (ketuk = menu routing, `outMenu`). Tinggi baris tetap bisa diseret
-  (tepi bawah header) dan ketuk-ganda grip = tinggi normal. Pref `tapFold` (default true) mematikan ketuk-lipat bila perlu.
-- Lebar kolom header: seret tepi kirinya (`headw`, 56..260 px), ketuk-ganda tepi = otomatis, atau menu tekan-tahan > "Lebar kolom track..."
-  (Sempit / Normal / Lebar / Otomatis, Lipat/Buka semua). Disimpan di `prefs.headW`. Lebar < 119 px = mode ringkas (bar judul + meter saja).
-  Lebar otomatis diperkecil (160 / 140 / 124) supaya timeline lebih luas. Tes: `node tools/header-ui-test.mjs` (di luar run-tests).
+- Header track (`js/timeline.js`), meniru Live (gambar acuan pemilik): dua tampilan kolom header. **Penuh** = kolom berwarna sempit (HANYA nama, ~40%
+  lebar) + kolom mixer abu-abu yang lebar di kanan (aktivator, S, arm, otomasi; volume + pan; Send A/B; field Output "Master"); semua muat di
+  baris 72 px (tombol In/Auto/Off tidak ditampilkan lagi di header). **Ringkas** = hanya blok nama berwarna (+ aktivator kecil). Ketuk badan header
+  mana pun = ganti Penuh <-> Ringkas (`prefs.headFull`, `setHeadFull`); segitiga = lipat satu track; tinggi baris tetap diseret dari tepi bawah.
+  Pref `tapFold` mematikan ketuk-ganti.
+- Monitor tiga mode lewat menu tekan-tahan header "Monitor input" (`P.setMonitor/monMode/monSounds`, `t.mon`: undefined = In, 'auto', false = Off; Auto = bunyi hanya saat track arm; undo
+  lewat 'val' k 'mon'). Baris Out: ketuk = menu routing (`outMenu`).
+- Lebar kolom: tiap tampilan punya lebar sendiri (`prefs.headW` penuh 150..460, otomatis 236 / 280 / 310 px, `prefs.headWc` ringkas 56..160); seret tepi kiri kolom,
+  ketuk-ganda tepi = otomatis, atau menu tekan-tahan "Lebar kolom track...". Tes: `node tools/header-ui-test.mjs` (di luar run-tests).
 - Duplikat: grup efek 'Lainnya (lama)' dibubarkan (Autoduck -> Dynamics, Stereolizer / Spacer -> Utilities); Parametric EQ, Level, Analyzer
   disembunyikan dari picker (`HIDDEN_FX`, tetap berfungsi di proyek lama). Tab Preset tidak lagi menampilkan seksi Klasik MiniSynth / SuperSaw /
   GMS (preset yang sama sudah ada di tipe FL); DirectWave Klasik tetap ("preset tambahan", 6 preset yang belum ada di DirectWave baru).
   Label ganda dalam kartu: tab pertama Echo kini "Time", Simpler tanpa sample menulis "Tanpa sample".
+- Preview sample di Browser: bar waveform / Tambah (`.pbar`) kini ditaruh di dalam kolom `.bmain` di bawah daftar (dulu jadi kolom ketiga dan
+  memotong daftar sample). Tes: `node tools/browser-preview-test.mjs`.
+- Garis lebih tegas: grid timeline (sub-beat #3a3a3f, beat #4a4a50, bar #74747c), pemisah track / header / ruler lebih gelap dan 2 px, token
+  tema gelap `--lv-edge` / `--lv-div` / `--sep` / `--line` lebih kontras. Tinggi panel Device tetap 57% (DEVH) karena kartu instrumen terpotong bila lebih
+  rendah; ruang arrangement bertambah lewat mode header Ringkas dan tombol tutup panel bawah.
+- Slider header (volume, pan, Send A/B) menyeret RELATIF dari nilai awal (tidak melompat ke jari); geser jari > 26 px di atas / bawah slider = kontrol halus
+  (1/5 kecepatan). Slider volume/pan setinggi 18 px dan ~190 px lebar di lebar otomatis. Tes presisi ada di `tools/header-ui-test.mjs`.

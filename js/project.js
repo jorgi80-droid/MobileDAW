@@ -690,10 +690,19 @@ export function toggleArm(i) {
   });
   if (t.arm) selectTrack(i); else emit('mix');
 }
+// Monitor modes as in Live: In (live input always sounds), Auto (sounds only while the track is armed), Off. Stored in t.mon: undefined = In, 'auto', false = Off.
+export const monMode = (t) => (t.mon === false ? 'off' : t.mon === 'auto' ? 'auto' : 'in');
+export const monSounds = (t) => (t.mon === 'auto' ? !!t.arm : t.mon !== false);
+export function setMonitor(i, mode) {
+  const t = state.tracks[i]; if (!t || (t.kind !== 'midi' && t.kind !== 'drum')) return;
+  const old = monMode(t); if (old === mode) return;
+  if (HK.on) HK.add({ t: 'val', k: 'mon', s: stripOf(i), v: old });
+  if (mode === 'off') t.mon = false; else if (mode === 'auto') t.mon = 'auto'; else delete t.mon;
+  emit('mix');
+}
 export function toggleMonitor(i) {
   const t = state.tracks[i]; if (!t || (t.kind !== 'midi' && t.kind !== 'drum')) return;
-  if (HK.on) HK.add({ t: 'tog', k: 'mon', s: t.id });
-  flipTrackFlag(i, 'mon');
+  setMonitor(i, monMode(t) === 'off' ? 'in' : 'off');
 }
 export function toggleReturnMute(k) { const r = state.returns[k]; if (HK.on) HK.add({ t: 'tog', k: 'mute', s: 'ret' + k }); r.mute = !r.mute; eng.trackMute(RET0 + k, r.mute); emit('mix'); }
 export function toggleMute(i) { const t = state.tracks[i]; if (HK.on) HK.add({ t: 'tog', k: 'mute', s: t.id }); t.mute = !t.mute; eng.trackMute(i, t.mute); if (t.kind === 'auto') syncAutomation(); emit('mix'); }
@@ -1877,7 +1886,7 @@ export function noteEvent(i, pitch, vel, on) {
   const t = state.tracks[i];
   if (!t || (t.kind !== 'midi' && t.kind !== 'drum')) return;
   if (t.kind === 'drum') pitch = drumPitch(pitch, i);
-  if (t.mon !== false || !on) eng.preview(i, pitch, on ? vel : 0, on);   // Monitor off: live input is recorded but does not sound (note-offs always pass)
+  if (monSounds(t) || !on) eng.preview(i, pitch, on ? vel : 0, on);   // Monitor off: live input is recorded but does not sound (note-offs always pass)
   if (rec.on && rec.kind === 'midi' && rec.track === i && performance.now() >= rec.cinUntil && !cinOn) {
     const tick = currentTick();
     if (on) { if (inPunch(tick)) rec.open.set(pitch, { tick, vel, pass: rec.pass }); }
@@ -2027,6 +2036,7 @@ export function swapRec(e) {
       else if (e.k === 'pan') { cur = t.pan; setPan(i, e.v); }
       else if (e.k === 'width') { cur = t.width ?? 1; setWidth(i, e.v); }
       else if (e.k === 'inv') { cur = t.inv | 0; setInvert(i, e.v); }
+      else if (e.k === 'mon') { cur = monMode(t); setMonitor(i, e.v); }
       else if (e.k === 'send') { cur = t.send ? t.send[e.p] : 0; setSend(i, e.p, e.v); }
       else if (e.k === 'dev') { const di = t.devices.findIndex((x) => x.id === e.d); if (di < 0) return; cur = t.devices[di].params[e.p]; setDeviceParam(i, di, e.p, e.v); }
       else if (e.k === 'inst') { if (!t.inst) return; const had = e.p in t.inst.params; cur = instVal(t, e.p); setInstParam(i, e.p, e.v); if (e.u) delete t.inst.params[e.p]; e.u = !had; }   // a parameter that was never touched goes back to "not stored", so saved files stay the same
