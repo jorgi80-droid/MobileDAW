@@ -8,7 +8,7 @@ installScaleShim();
 
 // Fixed margins in CSS px (same for every phone): the arrangement runs edge to edge, only a small top margin remains.
 // The camera cut-out is NOT padded any more (that padding was the empty band on both sides).
-const INSET = { l: 0, r: 0, t: 0, b: 0 };
+const INSET = { l: 0, r: 0, t: 2, b: 0 };
 const root = document.documentElement;
 let meta = null, resetting = false, hMax = 0, hmW = 0, lastVvH = 0;
 const isFull = () => !!document.fullscreenElement || ['fullscreen', 'standalone'].some((m) => window.matchMedia && window.matchMedia(`(display-mode: ${m})`).matches);

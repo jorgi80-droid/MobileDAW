@@ -536,6 +536,6 @@ Permintaan pemilik: SEMUA efek dan instrumen diganti dengan set stok Ableton Liv
   rendah; ruang arrangement bertambah lewat mode header Ringkas dan tombol tutup panel bawah.
 - Slider header (volume, pan, Send A/B) menyeret RELATIF dari nilai awal (tidak melompat ke jari); geser jari > 26 px di atas / bawah slider = kontrol halus
   (1/5 kecepatan). Slider volume/pan setinggi 18 px dan ~190 px lebar di lebar otomatis. Tes presisi ada di `tools/header-ui-test.mjs`.
-- Chrome lebih tipis supaya arrangement lebih penuh: toolbar atas 32 px (`--top-h`, kontrol `--cb-h` 26 px, tombol transport 44 px), margin atas layout 0
-  (`INSET.t`), ruler atas 31 px (`RULER`/`MROW`) dan ruler bawah 18 px (`BOT`), tab bar Device/Keys 28 px, dan saat panel bawah ditutup hanya 31 px
-  (dulu 46). Semua konstanta ada di `css/app.css`, `css/ableton.css`, `js/timeline.js`, `js/layout.js`.
+- Chrome lebih tipis supaya arrangement lebih penuh: toolbar atas 35 px (`--top-h`, kontrol `--cb-h` 28 px = batas sentuh, tombol transport 47 px), margin atas layout 2
+  (`INSET.t`), ruler atas 34 px (`RULER`/`MROW`) dan ruler bawah 19 px (`BOT`), tab bar Device/Keys 31 px, dan saat panel bawah ditutup 35 px
+  (dulu 46). Ukuran ini kompromi: versi 32/26/31/18/28 dinilai terlalu kecil. Semua konstanta ada di `css/app.css`, `css/ableton.css`, `js/timeline.js`, `js/layout.js`.

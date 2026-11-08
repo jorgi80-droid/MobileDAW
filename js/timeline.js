@@ -21,7 +21,7 @@ const { state, PPQ, SWATCHES } = P;
 // headers on the RIGHT: a title bar in the track colour, the mixer buttons under it, volume / pan sliders when the row is tall enough
 // and a level meter along the right edge of every header.
 let HEAD = 140;                                                 // header width: prefs.headW (drag the header's left edge), else chosen from the canvas width
-const RULER = 31, MROW = 11, BOT = 18, HANDLE = 18, TH = 20, METW = 9;   // top ruler (locators + beats) / bottom time ruler / header title bar / meter strip
+const RULER = 34, MROW = 12, BOT = 19, HANDLE = 18, TH = 20, METW = 9;   // top ruler (locators + beats) / bottom time ruler / header title bar / meter strip
 const FOLD_H = 24, MIN_ROW = 52, ADD_H = 44, XROW_H = 48;                // folded row (title bar only) / smallest open row (title + buttons) / "+" row / Master + FX rows
 export const view = { x0: 0, ppt: 0.06, y0: 0, rowH: 72 };
 let CW = 0;                                                    // width of the clip area = canvas width - HEAD
