@@ -350,11 +350,12 @@ int DrumSynth::padFor(int p) const {
   if (al >= 0) for (int k = 0; k < N_PADS; k++) if (pads[k].pitch == al) return k;
   return -1;
 }
+void DrumSynth::noteOnSt(int p, double vel, double st) { sto = st; noteOn(p, vel); sto = 0; }   // per-step pitch, as instruments.js
 void DrumSynth::noteOn(int p, double vel) {
   int k = padFor(p); if (k < 0) return;
   DrumPad& q = pads[k]; if (q.mute) return;
-  DrumChain& cx = ch[k];
-  if (cx.inst) { if (cx.note >= 0) cx.inst->noteOff(cx.note); cx.note = (int)clamp(60 + jsRound(q.pit) + pst, 0, 127); cx.inst->noteOn(cx.note, vel); return; }
+  DrumChain& cx = ch[k]; const double so = sto;
+  if (cx.inst) { if (cx.note >= 0) cx.inst->noteOff(cx.note); cx.note = (int)clamp(60 + jsRound(q.pit) + pst + jsRound(so), 0, 127); cx.inst->noteOn(cx.note, vel); return; }
   Sample* s = q.sid >= 0 && q.sid < 256 ? bank->s[q.sid] : nullptr;
   if (q.sid >= 0 && (!s || s->frames < 4)) return;
   if (!s && q.kind < 0) return;
@@ -362,7 +363,7 @@ void DrumSynth::noteOn(int p, double vel) {
   DrumVoice& x = alloc();
   x.on = true; x.age = ++counter; x.vel = vel; x.pad = k; x.pitch = p; x.t = 0; x.ph = 0;
   x.dly = q.shift > 0 ? (int)jsRound(q.shift * sr) : 0; x.hl = q.hold > 0 ? (int)jsRound(q.hold * sr) : 0; x.cf = 0;
-  x.rt = rate * std::pow(2, q.pit / 12); x.lvl = q.lvl; x.dec = q.dec;
+  x.rt = rate * std::pow(2, (so != 0 ? q.pit + so : q.pit) / 12); x.lvl = q.lvl; x.dec = q.dec;
   x.pl = q.pan <= 0 ? 1 : 1 - q.pan; x.pr = q.pan >= 0 ? 1 : 1 + q.pan;
   if (s) {
     x.smp = true; x.held = true; x.sid = q.sid;

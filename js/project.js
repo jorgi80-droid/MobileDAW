@@ -320,9 +320,9 @@ export function syncClips(i) {
   } else {
     for (const c of t.clips) {
       if (c.muted) continue;
-      n += clipNoteEvents(c, t.kind, f);
+      n += clipNoteEvents(c, t.kind, f, true);
     }
-    eng.trackNotes(i, f, n);
+    eng.trackNotes(i, f, n, 6);
     const cf = []; let cn = 0;                                   // controller lanes (pitch bend, CC7 / 10 / 11) of the clips
     const KIND = { bend: 0, 7: 1, 10: 2, 11: 3 };
     for (const c of t.clips) {
@@ -341,7 +341,7 @@ export function syncClips(i) {
 // cycle, read from the source: sourcePos = (local + lp) % cycle. A note sounds in a piece of the clip when it starts inside that piece and
 // is cut at the piece end (cycle end / clip end), so nothing hangs over into the next cycle and nothing triggers twice.
 const DRUM_STEP = 240;   // one step of the step sequencer (a 16th) in ticks
-export function clipNoteEvents(c, kind, f = []) {
+export function clipNoteEvents(c, kind, f = [], st6 = false) {   // st6: a 6th value per note = pitch offset in semitones (drum step Pitch lane)
   let n = 0;
   const xp = kind === 'drum' ? 0 : (c.xpose | 0);   // xpose = clip transpose (semitones, playback only)
   for (const g of loopSegs(c)) {
@@ -351,10 +351,11 @@ export function clipNoteEvents(c, kind, f = []) {
       const at = g.o + nt.t - g.s, sw = swingShift(c, at);
       if (kind === 'drum' && nt.rpt > 1) {                       // step graph Note Repeat: rpt triggers spread over the step (both engines get plain note events)
         const q = Math.min(8, nt.rpt | 0), sub = DRUM_STEP / q;
-        for (let k = 0; k < q; k++) { const t0 = nt.t + k * sub; if (t0 >= e) break; f.push(c.start + at + Math.round(k * sub) + sw, Math.max(1, Math.min(nt.d, sub * 0.9, e - t0)), nt.p, nt.v, nt.pan || 0); n++; }
+        for (let k = 0; k < q; k++) { const t0 = nt.t + k * sub; if (t0 >= e) break; f.push(c.start + at + Math.round(k * sub) + sw, Math.max(1, Math.min(nt.d, sub * 0.9, e - t0)), nt.p, nt.v, nt.pan || 0); if (st6) f.push(nt.pt || 0); n++; }
         continue;
       }
       f.push(c.start + at + sw, Math.min(nt.d, e - nt.t), xp ? Math.max(0, Math.min(127, nt.p + xp)) : nt.p, nt.v, nt.pan || 0);
+      if (st6) f.push(kind === 'drum' ? nt.pt || 0 : 0);
       n++;
     }
   }

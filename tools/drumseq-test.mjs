@@ -60,6 +60,15 @@ const base = (d) => { P(d, 6, 0, 0); P(d, 6, 11, 50); P(d, 7, 0, 0); P(d, 7, 11,
   ok(rms(s0, 100, 2000) > 0.05 && rms(s1, 100, 2000) === 0, 'shift: the hit does not start before its delay');
   ok(rms(s1, 3000, 6000) > 0.05, 'shift: the hit starts after the delay');
 }
+// ---- per-step pitch (step graph Pitch lane, stride-6 note events -> noteOnSt): +12 = an octave up, 0 = bit-identical to a plain hit
+{
+  const one = (st) => { const d = mk(base); const n = Math.round(0.4 * SR), L = new Float32Array(n), R = new Float32Array(n); if (st === null) d.noteOn(50, 0.9); else d.noteOnSt(50, 0.9, st); for (let c = 0; c < n; c += 256) d.render(L, R, c, Math.min(n, c + 256)); return L; };
+  const up = one(12), dn = one(-12), z = one(0), plain = one(null);
+  ok(goertzel(up, 4800, 14400, 440) > 0.05 && goertzel(up, 4800, 14400, 220) < goertzel(up, 4800, 14400, 440) * 0.05, 'pitch +12: the pad sounds an octave higher (220 Hz sample -> 440 Hz)');
+  ok(goertzel(dn, 4800, 14400, 110) > 0.05, 'pitch -12: an octave lower (110 Hz)');
+  let same = true; for (let i = 0; i < z.length; i++) if (z[i] !== plain[i]) { same = false; break; }
+  ok(same, 'pitch 0 is bit-identical to a plain hit');
+}
 // ---- defaults leave everything as it was
 {
   const ev = [[0, 'on', 50], [0.2, 'on', 52], [0.4, 'on', 50], [0.6, 'on', 36], [0.8, 'on', 42]];

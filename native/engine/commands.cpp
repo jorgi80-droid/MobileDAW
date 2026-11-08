@@ -70,20 +70,20 @@ static int count(const Arg& a, const Arg& n, int stride) {   // n entries, never
 
 static NoteData* prepNotes(const Arg& flat, const Arg& nArg, int stride) {
   int n = count(flat, nArg, stride);
-  struct Ev { double t, on, p, v, pan; };
+  struct Ev { double t, on, p, v, pan, st; };
   std::vector<Ev> ev; ev.reserve(n * 2);
   auto* d = new NoteData();
   for (int i = 0; i < n; i++) {
     size_t b = (size_t)i * stride; double st = arrAt(flat, b), ln = arrAt(flat, b + 1), pv = stride > 4 ? arrAt(flat, b + 4) : 0;
-    double pn = (pv == pv && pv != 0) ? pv : 0;
-    ev.push_back({ st, 1, arrAt(flat, b + 2), arrAt(flat, b + 3), pn });
-    ev.push_back({ st + jsMax(ln, 1), 0, arrAt(flat, b + 2), 0, 0 });
-    d->notes.push_back({ st, st + jsMax(ln, 1), arrAt(flat, b + 2), arrAt(flat, b + 3), pn });
+    double pn = (pv == pv && pv != 0) ? pv : 0, sv = stride > 5 ? arrAt(flat, b + 5) : 0, so = (sv == sv && sv != 0) ? sv : 0;
+    ev.push_back({ st, 1, arrAt(flat, b + 2), arrAt(flat, b + 3), pn, so });
+    ev.push_back({ st + jsMax(ln, 1), 0, arrAt(flat, b + 2), 0, 0, 0 });
+    d->notes.push_back({ st, st + jsMax(ln, 1), arrAt(flat, b + 2), arrAt(flat, b + 3), pn, so });
   }
   std::stable_sort(ev.begin(), ev.end(), [](const Ev& a, const Ev& b) { return a.t < b.t || (a.t == b.t && a.on < b.on); });
   int m = (int)ev.size(); d->n = m;
-  d->tick.resize(m); d->p.resize(m); d->v.resize(m); d->on.resize(m); d->pan.resize(m);
-  for (int i = 0; i < m; i++) { d->tick[i] = ev[i].t; d->on[i] = (uint8_t)ev[i].on; d->p[i] = (uint8_t)(uint32_t)toInt32(ev[i].p); d->v[i] = (float)ev[i].v; d->pan[i] = (float)ev[i].pan; }
+  d->tick.resize(m); d->p.resize(m); d->v.resize(m); d->on.resize(m); d->pan.resize(m); d->st.resize(m);
+  for (int i = 0; i < m; i++) { d->tick[i] = ev[i].t; d->on[i] = (uint8_t)ev[i].on; d->p[i] = (uint8_t)(uint32_t)toInt32(ev[i].p); d->v[i] = (float)ev[i].v; d->pan[i] = (float)ev[i].pan; d->st[i] = (float)ev[i].st; }
   return d;
 }
 

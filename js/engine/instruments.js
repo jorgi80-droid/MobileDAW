@@ -177,11 +177,13 @@ export class DrumSynth extends Base {
     if (op === 2) d.setParam(a, b); else if (op === 3) d.bypass = !!a;
   }
   setTempo(b) { this.bpm = b; for (const x of this.ch) { if (x.inst && x.inst.setTempo) x.inst.setTempo(b); for (const d of x.dev) if (d.setTempo) d.setTempo(b); } }
+  // per-step pitch (step graph Pitch lane): the hit plays its pad st semitones higher / lower; 0 = exactly the plain noteOn
+  noteOnSt(p, vel, st) { this.sto = st; try { this.noteOn(p, vel); } finally { this.sto = 0; } }
   noteOn(p, vel) {
     const k = this.padFor(p); if (k < 0) return;
     const q = this.pads[k]; if (q.mute) return;
-    const cx = this.ch[k];
-    if (cx.inst) { if (cx.note >= 0) cx.inst.noteOff(cx.note); cx.note = clamp(60 + Math.round(q.pit) + this.pst, 0, 127); cx.inst.noteOn(cx.note, vel); return; }
+    const cx = this.ch[k], so = this.sto || 0;
+    if (cx.inst) { if (cx.note >= 0) cx.inst.noteOff(cx.note); cx.note = clamp(60 + Math.round(q.pit) + this.pst + Math.round(so), 0, 127); cx.inst.noteOn(cx.note, vel); return; }
     const s = q.sid >= 0 ? this.bank[q.sid] : null;
     if (q.sid >= 0 && (!s || s.frames < 4)) return;       // sample not loaded (yet): stay silent
     if (!s && q.kind < 0) return;
@@ -189,7 +191,7 @@ export class DrumSynth extends Base {
     const v = this.alloc(this.v);
     v.on = true; v.age = ++this.counter; v.vel = vel; v.pad = k; v.pitch = p; v.t = 0; v.ph = 0;
     v.dly = q.shift > 0 ? Math.round(q.shift * this.sr) : 0; v.hl = q.hold > 0 ? Math.round(q.hold * this.sr) : 0; v.cf = 0;
-    v.rt = this.rate * Math.pow(2, q.pit / 12); v.lvl = q.lvl; v.dec = q.dec;
+    v.rt = this.rate * Math.pow(2, (so ? q.pit + so : q.pit) / 12); v.lvl = q.lvl; v.dec = q.dec;
     v.pl = q.pan <= 0 ? 1 : 1 - q.pan; v.pr = q.pan >= 0 ? 1 : 1 + q.pan;
     if (s) {
       v.smp = true; v.held = true; v.sid = q.sid;

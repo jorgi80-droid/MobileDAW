@@ -23,8 +23,8 @@ constexpr int RACK_MAX_REMOVED = 8 * 16 + 1;
 
 struct NoteData {                     // trackNotes: events sorted (offs before ons) + note list for catch-up
   int n = 0;
-  std::vector<double> tick; std::vector<uint8_t> p; std::vector<float> v; std::vector<uint8_t> on; std::vector<float> pan;
-  std::vector<std::array<double, 5>> notes;   // [start, end, pitch, vel, pan]
+  std::vector<double> tick; std::vector<uint8_t> p; std::vector<float> v; std::vector<uint8_t> on; std::vector<float> pan, st;
+  std::vector<std::array<double, 6>> notes;   // [start, end, pitch, vel, pan, pitch offset]
 };
 struct Clip { double start, len; int sample; double gain, offset, fadeIn, fadeOut, pan; };
 struct ClipData { std::vector<Clip> c; };
@@ -62,7 +62,7 @@ struct Strip {
   PreEv pre[64]; int npre = 0;
   float bufL[BLOCK], bufR[BLOCK];
   double peakL = 0, peakR = 0;
-  int32_t sevT[512]; uint8_t sevP[512]; float sevV[512]; uint8_t sevOn[512]; float sevPn[512];
+  int32_t sevT[512]; uint8_t sevP[512]; float sevV[512]; uint8_t sevOn[512]; float sevPn[512]; float sevSt[512];
   double nPan = 0;
   int lat = 0, pd = 0; PdcLine pdl;
   double width = 1, sw = 1, pL = 1, pR = 1; int inv = 0;   // core.js stereo stage: width (smoothed sw), phase invert (bit 0 L, bit 1 R)   // PDC: chain latency, compensation delay, its ring (storage owned by the engine)

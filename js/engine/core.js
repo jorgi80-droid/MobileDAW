@@ -14,7 +14,7 @@ function newStrip() {
   return {
     inst: null, ev: null, clips: [], dev: [], vol: 0.85, pan: 0, gl: 0, gr: 0, send: [0, 0], out: -1, mute: false, solo: false, mg: 1, sg0: 0, sg1: 0,   // mg: mute / solo fade, sg0/sg1: smoothed send levels
     silent: 0, wasAudible: true, pitch: 0, bend: 0, ccl: null, ccG: 1, ccP: 0, tpMap: Uint8Array.from({ length: 128 }, (_, i) => i), active: false, pre: [], bufL: new Float32Array(BLOCK), bufR: new Float32Array(BLOCK), peakL: 0, peakR: 0,
-    sevT: new Int32Array(512), sevP: new Uint8Array(512), sevV: new Float32Array(512), sevOn: new Uint8Array(512), sevPn: new Float32Array(512), nPan: 0,
+    sevT: new Int32Array(512), sevP: new Uint8Array(512), sevV: new Float32Array(512), sevOn: new Uint8Array(512), sevPn: new Float32Array(512), sevSt: new Float32Array(512), nPan: 0,
     lat: 0, pd: 0, pdl: new PdcLine(),   // PDC: latency of this strip's chain, compensation delay applied after it, its delay ring
     width: 1, sw: 1, inv: 0, pL: 1, pR: 1,   // stereo width (0 mono .. 1 .. 2 wide, smoothed sw) and phase invert (bit 0 L, bit 1 R; ramped polarity pL / pR)
   };
@@ -181,16 +181,16 @@ export class Engine {
   }
   bendNew(s) { const n = s.inst.counter, r = Math.pow(2, s.bend / 12); for (const v of s.inst.v) if (v.on && v.age === n) s.inst.bendVoice(v, r); }
   preview(t, pitch, vel, on) { if (this.ok(t) && t < MASTER && this.s[t].inst && this.s[t].pre.length < 64) this.s[t].pre.push({ p: pitch | 0, v: vel, on: !!on }); }
-  // flat = [start tick, length ticks, pitch, velocity, pan] * n   (pan -1..1; stride 4 is accepted for old callers)
+  // flat = [start tick, length ticks, pitch, velocity, pan, (stride 6: pitch offset in semitones, drum pads)] * n   (pan -1..1; stride 4 is accepted for old callers)
   trackNotes(t, flat, n, stride = 5) {
     if (!this.ok(t) || t >= MASTER) return;
     const ev = [];
-    for (let i = 0; i < n; i++) { const b = i * stride, st = flat[b], ln = flat[b + 1], pn = stride > 4 ? flat[b + 4] || 0 : 0; ev.push([st, 1, flat[b + 2], flat[b + 3], pn]); ev.push([st + Math.max(ln, 1), 0, flat[b + 2], 0, 0]); }
-    const nl = []; for (let i = 0; i < n; i++) { const b = i * stride; nl.push([flat[b], flat[b] + Math.max(flat[b + 1], 1), flat[b + 2], flat[b + 3], stride > 4 ? flat[b + 4] || 0 : 0]); }
+    for (let i = 0; i < n; i++) { const b = i * stride, st = flat[b], ln = flat[b + 1], pn = stride > 4 ? flat[b + 4] || 0 : 0, so = stride > 5 ? flat[b + 5] || 0 : 0; ev.push([st, 1, flat[b + 2], flat[b + 3], pn, so]); ev.push([st + Math.max(ln, 1), 0, flat[b + 2], 0, 0, 0]); }
+    const nl = []; for (let i = 0; i < n; i++) { const b = i * stride; nl.push([flat[b], flat[b] + Math.max(flat[b + 1], 1), flat[b + 2], flat[b + 3], stride > 4 ? flat[b + 4] || 0 : 0, stride > 5 ? flat[b + 5] || 0 : 0]); }
     this.s[t].notes = nl;   // used to start notes that are already sounding when playback begins mid-note
     ev.sort((a, b) => a[0] - b[0] || a[1] - b[1]);   // note-offs sort before note-ons at the same tick
-    const m = ev.length, o = { n: m, tick: new Float64Array(m), p: new Uint8Array(m), v: new Float32Array(m), on: new Uint8Array(m), pan: new Float32Array(m) };
-    for (let i = 0; i < m; i++) { o.tick[i] = ev[i][0]; o.on[i] = ev[i][1]; o.p[i] = ev[i][2]; o.v[i] = ev[i][3]; o.pan[i] = ev[i][4]; }
+    const m = ev.length, o = { n: m, tick: new Float64Array(m), p: new Uint8Array(m), v: new Float32Array(m), on: new Uint8Array(m), pan: new Float32Array(m), st: new Float32Array(m) };
+    for (let i = 0; i < m; i++) { o.tick[i] = ev[i][0]; o.on[i] = ev[i][1]; o.p[i] = ev[i][2]; o.v[i] = ev[i][3]; o.pan[i] = ev[i][4]; o.st[i] = ev[i][5]; }
     this.s[t].ev = m ? o : null;
   }
   // MIDI controller lanes of a track: flat = [tick, kind, value] * n. kind 0 = pitch bend (-1..1 = +-2 semitones), 1 = volume (CC7, 0..127), 2 = pan (CC10), 3 = expression (CC11).
@@ -361,8 +361,8 @@ export class Engine {
     if (this.playing && s.ccl) this.applyCC(s, idx, this.f2t(pos));
     if (s.inst) {
       let ne = 0;
-      const eo = s.sevT, ep = s.sevP, ev = s.sevV, eon = s.sevOn, epn = s.sevPn;
-      for (const q of s.pre) if (ne < 512) { eo[ne] = 0; ep[ne] = q.p; ev[ne] = q.v; eon[ne] = q.on ? 1 : 0; epn[ne] = NaN; ne++; }
+      const eo = s.sevT, ep = s.sevP, ev = s.sevV, eon = s.sevOn, epn = s.sevPn, est = s.sevSt;
+      for (const q of s.pre) if (ne < 512) { eo[ne] = 0; ep[ne] = q.p; ev[ne] = q.v; eon[ne] = q.on ? 1 : 0; epn[ne] = NaN; est[ne] = 0; ne++; }
       s.pre.length = 0;
       if (this.playing && s.ev) {
         const E = s.ev, lo = this.f2t(pos - 1), hi = this.f2t(pos + n - 1);
@@ -370,15 +370,15 @@ export class Engine {
         while (a < b) { const m = (a + b) >> 1; if (E.tick[m] > lo) b = m; else a = m + 1; }
         if (this.catchUp && s.notes) for (const q of s.notes) {   // play/seek/loop wrap landed inside a note: start it now
           if (ne >= 512) break;
-          if (Math.ceil(this.t2f(q[0])) < pos && Math.ceil(this.t2f(q[1])) > pos) { eo[ne] = 0; ep[ne] = q[2]; ev[ne] = q[3]; eon[ne] = 1; epn[ne] = q[4]; ne++; }
+          if (Math.ceil(this.t2f(q[0])) < pos && Math.ceil(this.t2f(q[1])) > pos) { eo[ne] = 0; ep[ne] = q[2]; ev[ne] = q[3]; eon[ne] = 1; epn[ne] = q[4]; est[ne] = q[5] || 0; ne++; }
         }
         for (let i = a; i < E.n && E.tick[i] <= hi && ne < 512; i++) {
           const sp = Math.ceil(this.t2f(E.tick[i])) - pos;
           if (sp < 0 || sp >= n) continue;
-          eo[ne] = sp; ep[ne] = E.p[i]; ev[ne] = E.v[i]; eon[ne] = E.on[i]; epn[ne] = E.on[i] ? E.pan[i] : NaN; ne++;
+          eo[ne] = sp; ep[ne] = E.p[i]; ev[ne] = E.v[i]; eon[ne] = E.on[i]; epn[ne] = E.on[i] ? E.pan[i] : NaN; est[ne] = E.on[i] && E.st ? E.st[i] : 0; ne++;
         }
         for (let i = 1; i < ne; i++) for (let k = i; k > 0 && eo[k] < eo[k - 1]; k--) {   // insertion sort by offset (stable)
-          let t = eo[k]; eo[k] = eo[k - 1]; eo[k - 1] = t; t = ep[k]; ep[k] = ep[k - 1]; ep[k - 1] = t; t = ev[k]; ev[k] = ev[k - 1]; ev[k - 1] = t; t = eon[k]; eon[k] = eon[k - 1]; eon[k - 1] = t; t = epn[k]; epn[k] = epn[k - 1]; epn[k - 1] = t;
+          let t = eo[k]; eo[k] = eo[k - 1]; eo[k - 1] = t; t = ep[k]; ep[k] = ep[k - 1]; ep[k - 1] = t; t = ev[k]; ev[k] = ev[k - 1]; ev[k - 1] = t; t = eon[k]; eon[k] = eon[k - 1]; eon[k - 1] = t; t = epn[k]; epn[k] = epn[k - 1]; epn[k - 1] = t; t = est[k]; est[k] = est[k - 1]; est[k - 1] = t;
         }
       }
       const sh = s.inst.pitchNative ? 0 : s.pitch, tm = s.tpMap;
@@ -387,7 +387,7 @@ export class Engine {
         let cur = 0;
         for (let i = 0; i < ne; i++) {
           if (eo[i] > cur) { s.inst.render(L, R, cur, eo[i]); this.balance(L, R, cur, eo[i], s.nPan); cur = eo[i]; }
-          if (eon[i]) { const q = clamp(ep[i] + sh, 0, 127); tm[ep[i] & 127] = q; s.inst.noteOn(q, ev[i]); if (s.bend && s.inst.bendVoice) this.bendNew(s); if (epn[i] === epn[i]) s.nPan = epn[i]; if (this.midiFx) this.midiTo(idx, q, ev[i]); } else { const q = tm[ep[i] & 127]; tm[ep[i] & 127] = ep[i]; s.inst.noteOff(q); if (this.midiFx) this.midiTo(idx, q, 0); }   // a note's pan applies from its note-on (the latest note decides while several overlap)
+          if (eon[i]) { const q = clamp(ep[i] + sh, 0, 127); tm[ep[i] & 127] = q; if (est[i] && s.inst.noteOnSt) s.inst.noteOnSt(q, ev[i], est[i]); else s.inst.noteOn(q, ev[i]); if (s.bend && s.inst.bendVoice) this.bendNew(s); if (epn[i] === epn[i]) s.nPan = epn[i]; if (this.midiFx) this.midiTo(idx, q, ev[i]); } else { const q = tm[ep[i] & 127]; tm[ep[i] & 127] = ep[i]; s.inst.noteOff(q); if (this.midiFx) this.midiTo(idx, q, 0); }   // a note's pan applies from its note-on (the latest note decides while several overlap)
         }
         if (cur < n) { s.inst.render(L, R, cur, n); this.balance(L, R, cur, n, s.nPan); }
         if (s.inst.endBlock) s.inst.endBlock(L, R, n);

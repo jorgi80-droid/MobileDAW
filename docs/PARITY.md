@@ -67,7 +67,7 @@ Stack dipertahankan: JS modul (tanpa build) + AudioWorklet + engine C++ (Android
 | Ketuk step, lukis, Swing (groove global / per klip), Fill 1/2/4, Clear | Selesai | sesi sebelumnya |
 | Menu channel: Load Sample, Clone, Set MIDI Key (ketik / learn dari controller), Hapus | Selesai | `touch-ui-test` |
 | Graph editor: Velocity, **Note Repeat 1–8** | Selesai | `pattern-test` (event yang dikirim ke kedua engine) |
-| Graph editor: Pan / Pitch per step | Sebagian | lane Pan per step ada (menu nama lane di graph editor; engine memakai pan per not dari awal step, sama di JS dan C++); Pitch per step belum (butuh perubahan event engine) |
+| Graph editor: Pan / Pitch per step | Selesai | lane Pan dan Pitch (-12..+12 semitone) di graph editor drum; Pitch = event not stride 6 → `DrumSynth.noteOnSt` di JS dan C++ (golden `inst-drumpitch` identik, `drumseq-test`); Pan memakai pan per not dari awal step |
 | ADSR pad, Reverse, Pitch, Start/End | Selesai | panel pad (sesi sebelumnya) |
 | Cut Groups A/B/C, Poly, Hold, Shift per pad (tab **Seq**) | Selesai | `drumseq-test` (perilaku), golden `inst-drumcut` (JS = C++ identik); **AUX per pad belum** (butuh routing send per pad) |
 | Simpan / muat Drum Kit (Save Template / My Drumsets) | Selesai | menu header track drum; `drumkit-test`, `channel-ui-test`; pad dengan chain instrumen dilewati dan dihitung |

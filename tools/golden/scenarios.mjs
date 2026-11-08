@@ -252,6 +252,16 @@ export const SCENARIOS = [
       e.rackCmd(0, -1, 3, 8, 0, 1, 0); play(e, 0.5); e.rackCmd(0, -1, 7, 8, 0, 0, 0); play(e, 0.5); e.rackCmd(0, -1, 0, 0, 0, 0, 0);
       e.stop(); play(e, 1);
     } },
+  { name: 'inst-drumpitch', info: 'Drum Sampler per-step pitch (stride-6 note events, step graph Pitch lane): sample pad and built-in pads hit at -12 / -5 / 0 / +7 / +12 semitones, pan per step, old stride-5 track next to it',
+    run(e) {
+      samples(e); testSample(e); e.tempo(120); e.trackInst(0, 3); e.trackInst(1, 3);
+      e.instParam(0, 200 + 6 * 16 + 0, 3); e.instParam(0, 200 + 6 * 16 + 11, 50);
+      const f = [], sts = [-12, -5, 0, 7, 12, 3, -2, 0];
+      for (let k = 0; k < 16; k++) f.push(k * PPQ / 2, PPQ / 4, [50, 36, 38, 42][k % 4], 0.8, k % 3 ? 0 : -0.5, sts[k % 8]);
+      e.trackNotes(0, f, 16, 6);
+      const g = []; for (let k = 0; k < 8; k++) g.push(k * PPQ, PPQ / 2, 36, 0.9, 0); e.trackNotes(1, g, 8);
+      e.play(); play(e, 8, [128, 77, 256]);
+    } },
   { name: 'inst-drumcut', info: 'Drum Sampler Seq settings (FL Studio Mobile): cut groups (sample pads, built-in pads, mixed), poly off (a pad cuts itself), hold (sample and built-in), shift (delay), changed while playing',
     run(e) {
       samples(e); testSample(e); e.tempo(120); e.trackInst(0, 3);

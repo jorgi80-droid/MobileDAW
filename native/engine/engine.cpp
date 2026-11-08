@@ -354,8 +354,8 @@ void Engine::track(Strip& st, int idx, double p0, int n, double sp, bool anySolo
   if (playing && st.ccl) applyCC(st, idx, f2t(p0));
   if (st.inst) {
     int ne = 0;
-    int32_t* eo = st.sevT; uint8_t* ep = st.sevP; float* ev = st.sevV; uint8_t* eon = st.sevOn; float* epn = st.sevPn;
-    for (int k = 0; k < st.npre; k++) if (ne < 512) { const PreEv& q = st.pre[k]; eo[ne] = 0; ep[ne] = toUint8(q.p); ev[ne] = (float)q.v; eon[ne] = q.on ? 1 : 0; epn[ne] = NAN; ne++; }
+    int32_t* eo = st.sevT; uint8_t* ep = st.sevP; float* ev = st.sevV; uint8_t* eon = st.sevOn; float* epn = st.sevPn; float* est = st.sevSt;
+    for (int k = 0; k < st.npre; k++) if (ne < 512) { const PreEv& q = st.pre[k]; eo[ne] = 0; ep[ne] = toUint8(q.p); ev[ne] = (float)q.v; eon[ne] = q.on ? 1 : 0; epn[ne] = NAN; est[ne] = 0; ne++; }
     st.npre = 0;
     NoteData* E = st.ev;
     if (playing && E && E->n) {
@@ -364,15 +364,15 @@ void Engine::track(Strip& st, int idx, double p0, int n, double sp, bool anySolo
       while (a < b) { int m = (a + b) >> 1; if (E->tick[m] > lo) b = m; else a = m + 1; }
       if (catchUp) for (auto& q : E->notes) {
         if (ne >= 512) break;
-        if (std::ceil(t2f(q[0])) < p0 && std::ceil(t2f(q[1])) > p0) { eo[ne] = 0; ep[ne] = toUint8(q[2]); ev[ne] = (float)q[3]; eon[ne] = 1; epn[ne] = (float)q[4]; ne++; }
+        if (std::ceil(t2f(q[0])) < p0 && std::ceil(t2f(q[1])) > p0) { eo[ne] = 0; ep[ne] = toUint8(q[2]); ev[ne] = (float)q[3]; eon[ne] = 1; epn[ne] = (float)q[4]; est[ne] = (float)q[5]; ne++; }
       }
       for (int i = a; i < E->n && E->tick[i] <= hi && ne < 512; i++) {
         double spo = std::ceil(t2f(E->tick[i])) - p0;
         if (spo < 0 || spo >= n) continue;
-        eo[ne] = (int32_t)spo; ep[ne] = E->p[i]; ev[ne] = E->v[i]; eon[ne] = E->on[i]; epn[ne] = E->on[i] ? E->pan[i] : NAN; ne++;
+        eo[ne] = (int32_t)spo; ep[ne] = E->p[i]; ev[ne] = E->v[i]; eon[ne] = E->on[i]; epn[ne] = E->on[i] ? E->pan[i] : NAN; est[ne] = E->on[i] ? E->st[i] : 0; ne++;
       }
       for (int i = 1; i < ne; i++) for (int k = i; k > 0 && eo[k] < eo[k - 1]; k--) {
-        std::swap(eo[k], eo[k - 1]); std::swap(ep[k], ep[k - 1]); std::swap(ev[k], ev[k - 1]); std::swap(eon[k], eon[k - 1]); std::swap(epn[k], epn[k - 1]);
+        std::swap(eo[k], eo[k - 1]); std::swap(ep[k], ep[k - 1]); std::swap(ev[k], ev[k - 1]); std::swap(eon[k], eon[k - 1]); std::swap(epn[k], epn[k - 1]); std::swap(est[k], est[k - 1]);
       }
     }
     double sh = st.inst->pitchNative ? 0 : st.pitch; uint8_t* tmap = st.tpMap;
@@ -381,7 +381,7 @@ void Engine::track(Strip& st, int idx, double p0, int n, double sp, bool anySolo
     for (int i = 0; i < ne; i++) {
       if (eo[i] > cur) { st.inst->render(L, R, cur, eo[i]); balance(L, R, cur, eo[i], st.nPan); cur = eo[i]; }
       if (eon[i]) {
-        double q = clamp(ep[i] + sh, 0, 127); tmap[ep[i] & 127] = toUint8(q); st.inst->noteOn((int)q, ev[i]);
+        double q = clamp(ep[i] + sh, 0, 127); tmap[ep[i] & 127] = toUint8(q); if (est[i] != 0) st.inst->noteOnSt((int)q, ev[i], est[i]); else st.inst->noteOn((int)q, ev[i]);
         if (st.bend && st.inst->canBend()) bendNew(st);
         if (epn[i] == epn[i]) st.nPan = epn[i];
         if (midiFx) midiTo(idx, (int)q, ev[i]);

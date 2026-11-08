@@ -545,7 +545,9 @@ Permintaan pemilik: SEMUA efek dan instrumen diganti dengan set stok Ableton Liv
   tanpa pan klip identik bit). JS `core.js` + C++ `Clip.pan` (`engine.h`, `commands.cpp prepClips`, `engine.cpp`), golden `core-clip-pan` (124 skenario, semua identik),
   `tools/clip-pan-test.mjs`. UI: slider Pan di panel Audio klip (`audioedit.js`); impor FLM mengisi `c.pan` dari PRMS klip.
 - Graph editor drum: lane Pan per step (menu di nama lane); memakai `note.pan` yang sudah ada (engine menerapkan pan not dari awal step, bukan per suara).
-  Pitch per step dan Slide Notes belum: butuh event engine baru (JS + C++ + golden).
+  Pitch per step (sesi ini): lane Pitch (-12..+12) di graph editor; event not stride 6 (`clipNoteEvents(c, kind, f, true)` + `eng.trackNotes(i, f, n, 6)`),
+  `sevSt` di core.js / engine.cpp, `noteOnSt` (Instrument default = noteOn; DrumSynth menggeser pitch pad / chain). Golden `inst-drumpitch` identik, nilai 0 identik bit.
+  Slide Notes belum.
 - Header track seperti Live: kontrol kecil berukuran TETAP (tombol 16 px, field 15 px, teks 10 px; tidak membesar mengikuti tinggi baris): baris 1 = aktivator / S /
   arm / otomasi, baris 2 = volume + pan, baris 3 = Send A | Send B (sel sempit) | Output (Master, sisa lebar). Kolom header otomatis ~1/5 layar (262 / 240 / 208 px),
   kolom nama 36 %. Baris pendek melepas baris 3 lalu baris 2. Baris terlipat: meter level HORIZONTAL (L di atas R) di samping tombol M/S/arm (`r.hm`,

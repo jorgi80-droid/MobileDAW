@@ -164,7 +164,7 @@ class OfflineTarget {
   loop(on, s, e) { this.e.loop(on, s, e); } metro(on) { this.e.setMetro(on); } metroVol(v) { this.e.setMetroVol(v); } masterLimit(on) { this.e.masterLimit(on); } pdc(on) { this.e.setPdc(on); }
   trackVol(t, v) { this.e.trackVol(t, v); } trackPan(t, v) { this.e.trackPan(t, v); } trackWidth(t, v) { this.e.trackWidth(t, v); } trackInvert(t, f) { this.e.trackInvert(t, f); } trackMute(t, m) { this.e.trackMute(t, m); } trackSolo(t, m) { this.e.trackSolo(t, m); }
   trackInst(t, ty) { this.e.trackInst(t, ty); } instParam(t, i, v) { this.e.instParam(t, i, v); }
-  trackNotes(t, f, n) { this.e.trackNotes(t, f, n); } trackClips(t, f, n, stride) { this.e.trackClips(t, f, n, stride); } trackCC(t, f, n) { this.e.trackCC(t, f, n); } resetTrack(t) { this.e.resetTrack(t); }
+  trackNotes(t, f, n, stride) { this.e.trackNotes(t, f, n, stride); } trackClips(t, f, n, stride) { this.e.trackClips(t, f, n, stride); } trackCC(t, f, n) { this.e.trackCC(t, f, n); } resetTrack(t) { this.e.resetTrack(t); }
   insertDevice(t, i, ty) { this.e.insertDevice(t, i, ty); } removeDevice(t, i) { this.e.removeDevice(t, i); } devParam(t, d, p, v) { this.e.devParam(t, d, p, v); } devBypass(t, d, b) { this.e.devBypass(t, d, b); } rackCmd(t, d, op, c, j, a, b) { this.e.rackCmd(t, d, op, c, j, a, b); }
   send(t, k, v) { this.e.trackSend(t, k, v); } trackOut(t, k) { this.e.trackOut(t, k); } automation(f, n) { this.e.automation(f, n); }
   // konfigurasi stem: track = hanya track itu (tanpa send, tanpa rantai master); return = hanya bus efek k (track tidak langsung ke master)

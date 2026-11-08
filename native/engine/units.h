@@ -20,6 +20,7 @@ class Instrument {
   virtual void setTempo(double bpm) {}
   virtual void setParam(int i, double v) = 0;
   virtual void noteOn(int pitch, double vel) = 0;
+  virtual void noteOnSt(int pitch, double vel, double st) { (void)st; noteOn(pitch, vel); }   // per-note pitch offset (only the drum sampler uses it)
   virtual void noteOff(int pitch) = 0;
   virtual void render(float* L, float* R, int a, int b) = 0;   // adds frames a..b-1
   virtual bool active() = 0;

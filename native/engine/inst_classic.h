@@ -108,6 +108,8 @@ class DrumSynth : public PolyBase<DrumVoice, 24> {
   void setTempo(double b) override;
   int padFor(int p) const;
   void noteOn(int p, double vel) override;
+  void noteOnSt(int p, double vel, double st) override;
+  double sto = 0;
   void noteOff(int p) override;
   void allOff() override;
   bool active() override;

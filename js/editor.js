@@ -368,13 +368,18 @@ function drawSteps(t, c) {
     const r = laneRow(), pitch = PD[r] ? PD[r].pitch : -1, y0 = GB, inner = LH - 10;
     ctx.fillStyle = C('#161617'); ctx.fillRect(0, y0, W, LH); ctx.fillStyle = C('#0e0e0f'); ctx.fillRect(0, y0, W, 1);
     ctx.fillStyle = C('#2d2d30'); ctx.fillRect(0, y0 + 1, LANE_HEAD - 1, LH - 1);
-    ctx.fillStyle = C('#8b8b92'); ctx.font = '600 10px system-ui'; ctx.textBaseline = 'top'; ctx.fillText((laneMode === 'rpt' ? 'Repeat' : laneMode === 'pan' ? 'Pan' : 'Velocity') + ' \u25BE', 8, y0 + 6); ctx.fillStyle = C('#d6d6da'); ctx.font = '600 11px system-ui'; ctx.fillText(PD[r] ? PD[r].name : '', 8, y0 + 22, LANE_HEAD - 12);
+    ctx.fillStyle = C('#8b8b92'); ctx.font = '600 10px system-ui'; ctx.textBaseline = 'top'; ctx.fillText((laneMode === 'rpt' ? 'Repeat' : laneMode === 'pan' ? 'Pan' : laneMode === 'pit' ? 'Pitch' : 'Velocity') + ' \u25BE', 8, y0 + 6); ctx.fillStyle = C('#d6d6da'); ctx.font = '600 11px system-ui'; ctx.fillText(PD[r] ? PD[r].name : '', 8, y0 + 22, LANE_HEAD - 12);
     ctx.save(); ctx.beginPath(); ctx.rect(LANE_HEAD, y0 + 1, W - LANE_HEAD, LH - 1); ctx.clip();
     for (let s = Math.max(0, Math.floor(sv.x0 / sv.stepW)); s < shown; s++) {
       const x = LANE_HEAD + s * sv.stepW - sv.x0; if (x > W) break; if (x + sv.stepW < LANE_HEAD) continue;
       const hit = byRow[r] && s < steps ? byRow[r].find((q) => Math.abs(q.t - s * STEP) < STEP / 2) : null;
       ctx.fillStyle = Math.floor(s / SPBT) % 2 ? C('#1d1d20') : C('#19191b'); ctx.fillRect(x + 1, y0 + 4, sv.stepW - 2, inner + 2);
       if (hit && laneMode === 'rpt') { const q = hit.rpt > 1 ? hit.rpt : 1, bh = Math.max(3, q / 8 * inner), bw = Math.max(3, Math.min(14, sv.stepW * 0.5)), bx = Math.round(x + sv.stepW / 2 - bw / 2); ctx.fillStyle = t.color; ctx.fillRect(bx, y0 + 5 + inner - bh, bw, bh); if (sv.stepW >= 18) { ctx.fillStyle = C('#e8e8ec'); ctx.font = '600 9px system-ui'; ctx.textBaseline = 'bottom'; ctx.fillText(String(q), bx + bw / 2 - 2.5, y0 + 4 + inner - bh); } }
+      else if (hit && laneMode === 'pit') {                                          // Pitch lane: semitones from the centre line (-12 .. +12), the number on the bar
+        const mid = y0 + 5 + inner / 2, st = Math.max(-12, Math.min(12, hit.pt || 0)), bw = Math.max(3, Math.min(10, sv.stepW * 0.35)), bx = Math.round(x + sv.stepW / 2 - bw / 2), bh = Math.max(2, Math.abs(st) / 12 * inner / 2);
+        ctx.fillStyle = C('#3a3a3f'); ctx.fillRect(x + 1, Math.round(mid), sv.stepW - 2, 1); ctx.fillStyle = t.color; ctx.fillRect(bx, st >= 0 ? mid - bh : mid, bw, bh);
+        if (st && sv.stepW >= 18) { ctx.fillStyle = C('#e8e8ec'); ctx.font = '600 9px system-ui'; ctx.textBaseline = st > 0 ? 'bottom' : 'top'; ctx.textAlign = 'center'; ctx.fillText((st > 0 ? '+' : '') + st, x + sv.stepW / 2, st > 0 ? mid - bh - 1 : mid + bh + 1); ctx.textAlign = 'left'; }
+      }
       else if (hit && laneMode === 'pan') {                                          // Pan lane: a bar from the centre line, up = right, down = left
         const mid = y0 + 5 + inner / 2, pv = Math.max(-1, Math.min(1, hit.pan || 0)), bw = Math.max(3, Math.min(10, sv.stepW * 0.35)), bx = Math.round(x + sv.stepW / 2 - bw / 2), bh = Math.max(2, Math.abs(pv) * inner / 2);
         ctx.fillStyle = C('#3a3a3f'); ctx.fillRect(x + 1, Math.round(mid), sv.stepW - 2, 1); ctx.fillStyle = t.color; ctx.fillRect(bx, pv >= 0 ? mid - bh : mid, bw, bh);
@@ -785,7 +790,8 @@ function laneVel(x, y) {                           // set the value of the step 
   const n = c.notes.find((q) => q.p === p && Math.abs(q.t - s * STEP) < STEP / 2); if (!n) return;
   const u = clamp(1 - (y - (H - LH) - 5) / (LH - 10), 0, 1);
   if (laneMode === 'rpt') { const q = Math.max(1, Math.min(8, Math.round(1 + u * 7))); if (q > 1) n.rpt = q; else delete n.rpt; }
-  else if (laneMode === 'pan') { const v = u * 2 - 1; if (Math.abs(v) < 0.08) delete n.pan; else n.pan = v; }        // per-step pan (centre = none): the engine applies the step's pan from its start
+  else if (laneMode === 'pan') { const v = u * 2 - 1; if (Math.abs(v) < 0.08) delete n.pan; else n.pan = v; }
+  else if (laneMode === 'pit') { const st = Math.round((u * 2 - 1) * 12); if (st) n.pt = st; else delete n.pt; }      // per-step pitch in semitones (both engines: DrumSynth noteOnSt)        // per-step pan (centre = none): the engine applies the step's pan from its start
   else n.v = Math.max(0.05, u);
   P.touchClips(cur().track); P.emit('notes'); invalidate();
 }
@@ -803,7 +809,7 @@ function stepHandlers() {
   return {
     hit: (x, y) => (cur() ? hitStep(x, y) : null),
     tap(x, y, t) {
-      if (t.type === 'vhead') { const r = canvas.getBoundingClientRect(); menu([{ label: 'Velocity', check: laneMode === 'vel', fn: () => { laneMode = 'vel'; invalidate(); } }, { label: 'Pan (kiri / kanan per step)', check: laneMode === 'pan', fn: () => { laneMode = 'pan'; invalidate(); } }, { label: 'Note Repeat (1-8 per step)', check: laneMode === 'rpt', fn: () => { laneMode = 'rpt'; invalidate(); } }], r.left + x, r.top + y - 70); return; }
+      if (t.type === 'vhead') { const r = canvas.getBoundingClientRect(); menu([{ label: 'Velocity', check: laneMode === 'vel', fn: () => { laneMode = 'vel'; invalidate(); } }, { label: 'Pan (kiri / kanan per step)', check: laneMode === 'pan', fn: () => { laneMode = 'pan'; invalidate(); } }, { label: 'Pitch (semitone per step)', check: laneMode === 'pit', fn: () => { laneMode = 'pit'; invalidate(); } }, { label: 'Note Repeat (1-8 per step)', check: laneMode === 'rpt', fn: () => { laneMode = 'rpt'; invalidate(); } }], r.left + x, r.top + y - 70); return; }
       if (t.type === 'vlane') { checkpoint(); laneVel(x, y); return; }
       if (t.type === 'lane') { openPad(t.r, true); return; }
       if (t.type !== 'cell') return;
