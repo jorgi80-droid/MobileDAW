@@ -1121,3 +1121,39 @@ html.reduce-motion .menu, html.reduce-motion .modal, html.reduce-motion .fw, htm
 /* a panel whose tabs went up into the title bar needs less top padding (the strip no longer sits on it) */
 .lk[data-htabs] { padding-top: 3px !important; padding-bottom: 5px !important; }
 .lv-dev.smp[data-htabs] > .lv-pane, .lv-dev.smp[data-htabs] > .lv-pane > .lv-sec { padding-top: 2px; padding-bottom: 2px; }
+/* stepped dial with its steps printed round it (Glue Compressor) */
+.lk .knob.lk-sclk .lk-sclw { position: relative; display: inline-block; align-self: center; width: max-content; padding: 12px 18px 12px; margin: -4px 0 -4px; }
+.lk .knob.lk-sclk .lk-sclw > svg { display: block; }
+.lk .knob.lk-sclk .lk-scl { position: absolute; transform: translate(-50%, -50%); font: 600 9px/1 var(--font); font-style: normal; color: var(--lv-dim); white-space: nowrap; pointer-events: none; }
+.lk .knob.lk-sclk > :last-child:not(.lk-sclw):not(svg) { display: none; }
+.lk-gclip { display: flex; align-items: center; justify-content: center; gap: 5px; }
+.lk .lv-btn.lk-pink.on { background: #ff8fc8; color: #1a0d14; border-color: #c8578f; }
+/* Tuner (Live): one dark display filling the device, the option strip inside it at the bottom */
+.lk-tuner { align-items: stretch !important; }
+.lk-tdk { padding: 0 !important; gap: 0 !important; overflow: hidden; }
+.lk-tdk > .lv-disp { width: 100% !important; }
+.lk-tstrip { gap: 4px !important; padding: 3px 6px; border-top: 1px solid rgba(255,255,255,.06); background: #222224; align-items: center; }
+.lk .lk-tstrip .lv-btn { height: 18px !important; min-width: 0 !important; padding: 0 6px !important; background: transparent !important; border-color: transparent !important; color: var(--lv-dim) !important; box-shadow: none !important; }
+.lk .lk-tstrip .lv-btn.on { background: #4fc3f0 !important; color: #10232b !important; border-color: #4fc3f0 !important; }
+.lk .lk-tstrip .lk-tico.on { background: transparent !important; color: #ffad32 !important; border-color: transparent !important; }
+.lk-tuner > .lk-tdk { flex: 1 1 auto; display: flex; flex-direction: column; justify-content: space-between; background: #262628; }
+.lk-tuner > .lk-tdk > .lv-disp { flex: 0 0 auto; margin: auto 0; }
+.lk-tstrip .lk-lb { color: var(--lv-dim); }
+.lk-tstrip .cy, .lk-tstrip .cy * { color: #4fc3f0 !important; }
+.lk .lk-tdk { background: #262628 !important; background-image: none !important; border-color: #141415 !important; box-shadow: none !important; }
+.lk .lk-tdk > .lk-tstrip { align-self: stretch; width: auto; }
+.lk .lk-tdk > .lv-disp { border: 0 !important; box-shadow: none !important; border-radius: 0 !important; }
+/* EQ Eight band cells (Live): shape icon with menu arrow over a small on box + band number */
+.lk .lk-eq8 .lk-cell { display: flex; flex-direction: column; align-items: stretch; gap: 3px; }
+.lk .lv-btn.lk-eqico { height: 20px; min-width: 44px; padding: 0 4px; display: inline-flex; align-items: center; justify-content: space-between; gap: 2px; background: var(--lv-ctl); color: var(--lv-ink); }
+.lk .lv-btn.lk-eqico .tri { width: 0; height: 0; border-left: 3px solid transparent; border-right: 3px solid transparent; border-top: 4px solid currentColor; opacity: .7; }
+.lk .lv-btn.lk-eqon { position: relative; height: 18px; padding-left: 18px !important; background: transparent !important; border-color: transparent !important; color: var(--lv-ink) !important; box-shadow: none !important; }
+.lk .lv-btn.lk-eqon::before { content: ''; position: absolute; left: 4px; top: 3px; width: 11px; height: 11px; border: 1px solid #8a8a90; border-radius: 2px; background: transparent; }
+.lk .lv-btn.lk-eqon.on::before { background: #4fc3f0; border-color: #4fc3f0; }
+.lk.lk-fill.lk-row > .lk-col.lk-eqr, .lk .lk-eqr { justify-content: flex-start !important; gap: 8px; align-items: stretch; }
+/* Filter Delay (Live): one grid, titles once, three lines */
+.lk-fdg { display: grid !important; grid-template-columns: repeat(7, auto); column-gap: 10px; row-gap: 5px; align-items: center; justify-items: center; }
+.lk-fdg > .lk-fdh { font: 600 10px/1 var(--font); color: var(--lv-ink); justify-self: center; }
+.lk-fdg > .lk-col { gap: 3px !important; }
+.lk .lk-ch.lk-g4 { display: grid !important; grid-template-columns: repeat(4, 22px); gap: 2px; }
+.lk .lk-ch.lk-g4 .lv-btn { min-width: 0 !important; width: 22px; height: 18px; padding: 0 !important; }

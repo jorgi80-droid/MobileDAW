@@ -25,6 +25,14 @@ import { prefs } from './prefs.js';
 const calm = () => prefs.reduceMotion || (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
 const glide = (cur, tgt, up = 0.5, down = 0.14) => (calm() ? tgt : cur + (tgt - cur) * (tgt > cur ? up : down));
 
+// scaleK: a stepped dial with its steps printed round it (Live's Glue Compressor Attack / Release / Ratio); the dial's own value line is hidden
+function scaleK(k, j, steps) {
+  const el = k.K(j), sv = el.querySelector('svg'), w = h('span', { class: 'lk-sclw' });
+  sv.replaceWith(w); w.append(sv);
+  steps.forEach((t, n) => { const th = (225 + (steps.length > 1 ? n / (steps.length - 1) : 0) * 270) * Math.PI / 180, x = Math.sin(th) * 25, y = -Math.cos(th) * 23;
+    w.append(h('i', { class: 'lk-scl', style: `left:calc(50% + ${x.toFixed(1)}px);top:calc(50% + ${y.toFixed(1)}px)` }, t)); });
+  el.classList.add('lk-sclk'); return el;
+}
 // tn: the name a section gets when the rack is too small for the whole panel and it is shown as tabs (devices.js tabify)
 const tn = (el, n) => { el.dataset.tn = n; return el; };
 const SR = 48000, F0 = 20, F1 = 20000;
@@ -88,11 +96,16 @@ const V = {};
 const WT_TAB = new Map();                                   // Wavetable: the tab shown per track
 // Filter Delay: three lines L / L+R / R, each: input on, filter on + display, sync grid / time, feedback, pan, volume; dry at the end
 V[18] = (k) => {
-  const line = (n, name) => { const o = n * 10; return k.row(k.col(k.T(o, name, { w: 34 }), k.T(o + 1, 'On', { w: 34 }), k.N(o + 2, { w: 58 }), k.N(o + 3, { w: 44 })),
-    bandDisp(k, 110, 52, o + 2, o + 3, { on: o + 1 }),
-    k.col(k.T(o + 4, 'Sync', { w: 44 }), k.swap(o + 4, () => k.S(o + 5, { w: 50 }), () => k.N(o + 6, { w: 60 }))),
-    k.K(o + 7, { n: 'Feedback' }), k.K(o + 8, { n: 'Pan' }), k.K(o + 9, { n: 'Volume' })); };
-  return k.row(k.col(line(0, 'L'), line(1, 'L+R'), line(2, 'R')), k.sep(), k.sec('Dry', k.K(30, { n: 'Dry' })));
+  // Live: ONE grid - the column titles once on top (Input, Filter, Delay Time, Feedback, Pan, Volume) and the three lines L / L+R / R under
+  // them; per line the channel and filter switches side by side over Freq and Width, the filter display, the 16th-note grid (1..16) over
+  // Sync + ms, then Feedback / Pan / Volume dials without titles; Dry in the last column
+  const H = (t) => h('span', { class: 'lk-fdh' }, t), cells = [H('Input'), H('Filter'), H('Delay Time'), H('Feedback'), H('Pan'), H('Volume'), H('')];
+  ['L', 'L+R', 'R'].forEach((name, n) => { const o = n * 10;
+    cells.push(k.col(k.row(k.T(o, name, { w: 34 }), k.T(o + 1, 'On', { w: 40 })), k.N(o + 2, { w: 78 }), k.N(o + 3, { w: 78 })),
+      bandDisp(k, 120, 62, o + 2, o + 3, { on: o + 1 }),
+      k.col(k.CH(o + 5, ['1', '2', '3', '4', '5', '6', '8', '16'], { cls: 'lk-g4' }), k.row(k.T(o + 4, 'Sync', { w: 44 }), k.N(o + 6, { w: 62 }))),
+      k.K(o + 7, { n: '' }), k.K(o + 8, { n: '' }), k.K(o + 9, { n: '' }), n === 2 ? k.K(30, { n: 'Dry' }) : h('span')); });
+  return h('div', { class: 'lk-fdg' }, ...cells);
 };
 // Gate: level display with the threshold and return lines, attack / hold / release / floor, flip
 V[23] = (k) => {
@@ -110,14 +123,20 @@ V[23] = (k) => {
 // Glue Compressor: attack / release / ratio stepped knobs, needle meter, threshold / makeup, range / soft clip / dry-wet
 V[24] = (k) => {
   let grv = 0, shown = 0;
-  const vu = k.D(150, 74, (g, w, hh) => {
-    const cx = w / 2, cy = hh + 30, R = hh + 18;
+  const vu = k.D(210, 100, (g, w, hh) => {
+    const cx = w / 2, cy = hh + 46, R = hh + 30;
     g.strokeStyle = DISPC.grid2; g.lineWidth = 1; g.beginPath(); g.arc(cx, cy, R - 6, Math.PI * 1.28, Math.PI * 1.72); g.stroke();
     for (const [v, t] of [[0, '0'], [5, '5'], [10, '10'], [15, '15'], [20, '20']]) { const a = Math.PI * 1.28 + (v / 20) * Math.PI * 0.44; label(g, t, cx + Math.cos(a) * (R - 2), cy + Math.sin(a) * (R - 2), DISPC.ink, 9, 'center'); }
     const a = Math.PI * 1.28 + (Math.min(20, shown) / 20) * Math.PI * 0.44; g.strokeStyle = DISPC.bl; g.lineWidth = 2; g.beginPath(); g.moveTo(cx + Math.cos(a) * 18, cy + Math.sin(a) * 18 - 0); g.lineTo(cx + Math.cos(a) * (R - 10), cy + Math.sin(a) * (R - 10)); g.stroke();
   });
   k.every(40, () => { const r = k.out(); if (r.length) grv = r[0]; shown += (grv - shown) * 0.35; vu.paint(); });
-  return k.row(k.col(k.K(0), k.K(1), k.K(2)), k.sep(), k.col(vu, k.row(k.K(3, { big: true }), k.K(4, { big: true }))), k.sep(), k.col(k.T(6, 'Soft Clip'), k.K(5), k.K(7)));
+  // Live: Attack / Release / Ratio are stepped dials with their steps printed round the dial (no value line); Threshold and Makeup sit inside
+  // the dark VU box; Clip with a pink Soft switch on the right above Range and Dry/Wet
+  const lampC = h('span', { class: 'lk-lamp' }), fC = () => lampC.classList.toggle('on', k.get(6) > 0.5); fC(); k.reg(Object.assign(lampC, { update: fC }), 6);
+  const clip = h('div', { class: 'lk-gclip' }, lampC, h('span', { class: 'lk-lb' }, 'Clip'));
+  const soft = k.T(6, 'Soft', { cls: 'lk-pink', w: 56 });
+  return k.row(k.col(scaleK(k, 0, ['.01', '.1', '.3', '1', '3', '10', '30']), scaleK(k, 1, ['.1', '.2', '.4', '.6', '.8', '1.2', 'A']), scaleK(k, 2, ['2', '4', '10'])),
+    tn(k.dk(vu, k.row(k.K(3, { big: true }), k.K(4, { big: true }))), 'Meter'), k.sep(), k.col(clip, soft, k.K(5), k.K(7)));
 };
 // Channel EQ: curve display with the HP switch and the mid frequency readout, Low / Mid / High / Output
 V[25] = (k) => {
@@ -192,21 +211,27 @@ V[29] = (k) => {
 const NN = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 V[30] = (k) => {
   const ui = { strobe: false, hz: true }; let hz = 0, cl = 0, ph = 0;
-  const disp = k.D(300, 132, (g, w, hh) => {
+  const disp = k.D(380, 172, (g, w, hh) => {
     const ref = k.get(0), midi = hz > 0 ? 69 + 12 * Math.log2(hz / ref) : 0, n = Math.round(midi), cents = hz > 0 ? (midi - n) * 100 : 0;
-    const cx = w / 2, cy = 112, R = 92;
+    const c = w * 0.37, sg = 38, R = (c * c + sg * sg) / (2 * sg), cx = w / 2, cy = 34 + R, span = Math.asin(c / R);   // Live: a wide, shallow dashed arc
     if (ui.strobe) { ph += cents * 0.02; for (let j = 0; j < 24; j++) { const x = ((j * 14 + ph * 10) % (w + 14) + w + 14) % (w + 14) - 7; g.fillStyle = hz > 0 && Math.abs(cents) < 3 ? '#5fd08a' : DISPC.or; g.fillRect(x, 26, 7, 40); } }
     else {
-      g.strokeStyle = DISPC.or; g.lineWidth = 2; g.beginPath(); g.arc(cx, cy, R, Math.PI * 1.2, Math.PI * 1.8); g.stroke();
-      label(g, '0', cx, 18, DISPC.ink, 10, 'center'); label(g, '-50', 18, 62, DISPC.ink, 10); label(g, '+50', w - 34, 62, DISPC.ink, 10);
-      if (hz > 0) { const a = Math.PI * 1.5 + (Math.max(-50, Math.min(50, cents)) / 50) * Math.PI * 0.3; g.fillStyle = Math.abs(cents) < 3 ? '#5fd08a' : DISPC.or; g.beginPath(); g.arc(cx + Math.cos(a) * R, cy + Math.sin(a) * R, 9, 0, 7); g.fill(); }
+      g.strokeStyle = DISPC.or; g.lineWidth = 2.4; g.setLineDash([22, 7]); g.beginPath(); g.arc(cx, cy, R, Math.PI * 1.5 - span, Math.PI * 1.5 + span); g.stroke(); g.setLineDash([]);
+      label(g, '0', cx, 22, DISPC.ink, 11, 'center'); label(g, '-50', cx - c - 4, 34 + sg + 16, DISPC.ink, 11, 'right'); label(g, '+50', cx + c + 4, 34 + sg + 16, DISPC.ink, 11);
+      if (hz > 0) { const a = Math.PI * 1.5 + (Math.max(-50, Math.min(50, cents)) / 50) * span; g.fillStyle = Math.abs(cents) < 3 ? '#5fd08a' : DISPC.or; g.beginPath(); g.arc(cx + Math.cos(a) * R, cy + Math.sin(a) * R, 11, 0, 7); g.fill(); }
     }
-    label(g, hz > 0 ? NN[((n % 12) + 12) % 12] : '—', cx - 34, hh - 18, DISPC.or, 30, 'right');
-    label(g, hz > 0 ? (ui.hz ? hz.toFixed(1) + ' Hz' : (cents >= 0 ? '+' : '') + cents.toFixed(1) + ' ct') : '', cx - 20, hh - 18, DISPC.or, 28);
+    if (!(hz > 0)) label(g, '—', cx, hh - 22, DISPC.or, 30, 'center');
+    else label(g, NN[((n % 12) + 12) % 12], cx - 34, hh - 22, DISPC.or, 30, 'right');
+    label(g, hz > 0 ? (ui.hz ? hz.toFixed(1) + ' Hz' : (cents >= 0 ? '+' : '') + cents.toFixed(1) + ' ct') : '', cx - 20, hh - 22, DISPC.or, 28);
   });
-  k.every(80, () => { const r = k.out(); if (r.length) { hz = r[0]; cl = r[1]; } disp.paint(); });
+  k.every(80, () => { const r = k.out(); if (r.length) { hz = r[0]; cl = r[1]; } disp.paint(); if (typeof strip !== 'undefined') strip.querySelectorAll('.lk-tico').forEach((x, q) => x.classList.toggle('on', (q === 1) === ui.strobe)); });
   const opt = (label2, key) => { const b = h('button', { class: 'lv-btn lk-t' + (ui[key] ? ' on' : ''), onclick: () => { ui[key] = !ui[key]; b.classList.toggle('on', ui[key]); disp.paint(); } }, label2); return b; };
-  return k.col(disp, k.row(opt('Strobe', 'strobe'), opt('Hz', 'hz'), h('span', { class: 'lk-grow' }), k.LN('Reference', k.N(0, { w: 64 }))));
+  // Live: ONE dark display; its bottom strip holds the view icons (arc / strobe), the Strobe and Hz chips and Reference in cyan
+  const ico = (svg, key, on) => { const b = h('button', { class: 'lv-btn lk-tico' + (ui.strobe === on ? ' on' : ''), 'aria-label': key, onclick: () => { ui.strobe = on; strip.querySelectorAll('.lk-tico').forEach((x, q) => x.classList.toggle('on', (q === 1) === on)); sb.classList.toggle('on', on); disp.paint(); } }); b.innerHTML = `<svg viewBox="0 0 16 10" width="16" height="10">${svg}</svg>`; return b; };
+  const sb = opt('Strobe', 'strobe');
+  const strip = h('div', { class: 'lk-row lk-tstrip' }, ico('<path d="M2 8 Q8 0 14 8" fill="none" stroke="currentColor" stroke-width="1.6"/>', 'arc', false), ico('<path d="M1 5h3l2-4 3 8 2-4h4" fill="none" stroke="currentColor" stroke-width="1.4"/>', 'strobe', true),
+    sb, opt('Hz', 'hz'), h('span', { class: 'lk-grow' }), h('span', { class: 'lk-lb' }, 'Reference'), k.NT(0, { w: 62, cls: 'cy' }));
+  return h('div', { class: 'lk-col lk-tuner' }, h('div', { class: 'lk-dk lk-tdk' }, disp, strip));
 };
 
 // ================================================================================================ redesigned originals
@@ -299,8 +324,10 @@ V[7] = (k) => {
     k.col(disp, k.row(k.K(0, { n: 'Size' }), k.K(1), k.T(5, 'Freeze'))), k.sep(), k.col(k.K(4, { n: 'Stereo' }), k.K(2)));
 };
 // EQ Eight: band knobs (selected band) | curve display with numbered rings, band cells (on + type) | Scale, Gain
+// EQ Eight band shapes as Live draws them on the band buttons: low cut 48 / 12, low shelf, bell, notch, high shelf, high cut 12 / 48
+const EQ8_ICO = ['M1 9 L5 2 H15', 'M1 9 Q4 2 7 2 H15', 'M1 3 H5 C7 3 8 7 10 7 H15', 'M1 8 H4 C6 8 6 2 8 2 C10 2 10 8 12 8 H15', 'M1 3 H6 L8 9 L10 3 H15', 'M1 7 H6 C8 7 9 3 11 3 H15', 'M1 2 H9 Q12 2 15 9', 'M1 2 H11 L15 9'];
 V[31] = (k) => {
-  let sel = 2; const W = 300, H = 120, ctlBox = h('div', { class: 'lk-col' });
+  let sel = 2; const W = 420, H = 150, ctlBox = h('div', { class: 'lk-col' });
   const yd = (db) => H / 2 - db / 15 * (H / 2 - 8), dy = (y) => (H / 2 - y) / (H / 2 - 8) * 15;
   const disp = k.D(W, H, (g) => {
     grid(g, W, H); g.fillStyle = DISPC.grid; for (const v of [-12, -6, 0, 6, 12]) g.fillRect(0, Math.round(yd(v)), W, 1); for (const v of [12, 6, 0, -6, -12]) label(g, String(v), 3, yd(v) - 2, DISPC.ink, 8);
@@ -312,8 +339,14 @@ V[31] = (k) => {
     onMove: (x, y, ddx, ddy, s) => { k.set(sel * 5 + 2, Math.max(10, Math.min(22000, s.f * Math.pow(2, ddx / (W / 10))))); k.set(sel * 5 + 3, Math.max(-15, Math.min(15, s.g - ddy * 15 / (H / 2 - 8)))); } });
   function fillCtl() { ctlBox.replaceChildren(h('div', { class: 'lk-st c' }, 'Band ' + (sel + 1)), k.K(sel * 5 + 2, { n: 'Freq' }), k.K(sel * 5 + 3, { n: 'Gain' }), k.K(sel * 5 + 4, { n: 'Q' })); disp.paint(); }
   fillCtl();
-  const cells = h('div', { class: 'lk-eq8' }, ...Array.from({ length: 8 }, (_, b) => { const c = h('div', { class: 'lk-cell' }, k.S(b * 5 + 1, { w: 34, short: ['LC48', 'LC12', 'LS', 'Bell', 'Ntch', 'HS', 'HC12', 'HC48'] }), k.T(b * 5, String(b + 1), { w: 34 })); c.addEventListener('pointerdown', () => { if (sel !== b) { sel = b; fillCtl(); } }, true); return c; }));
-  return k.row(ctlBox, k.sep(), k.col(disp, cells), k.sep(), k.col(k.TL('Scale', k.N(40, { w: 60 })), k.TL('Gain', k.N(41, { w: 60 }))));
+  // Live: under the display one cell per band - the filter-shape icon with its menu arrow, then the band's on box and number
+  const cells = h('div', { class: 'lk-eq8' }, ...Array.from({ length: 8 }, (_, b) => {
+    const j = b * 5 + 1, ib = h('button', { class: 'lv-btn lk-eqico', 'aria-label': 'Band ' + (b + 1) + ' type' });
+    const paint = () => { ib.innerHTML = `<svg viewBox="0 0 16 10" width="20" height="12"><path d="${EQ8_ICO[Math.round(k.get(j))]}" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg><i class="tri"></i>`; };
+    paint(); k.reg(Object.assign(ib, { update: paint }), j);
+    ib.onclick = () => { const r = ib.getBoundingClientRect(); menu(DEVICES[31].params[j].items.map((o, q) => ({ label: o, check: q === Math.round(k.get(j)), fn: () => k.set(j, q) })), r.left, r.bottom + 1); };
+    const c = h('div', { class: 'lk-cell' }, ib, k.T(b * 5, String(b + 1), { cls: 'lk-eqon', w: 34 })); c.addEventListener('pointerdown', () => { if (sel !== b) { sel = b; fillCtl(); } }, true); return c; }));
+  return k.row(ctlBox, k.sep(), k.col(disp, cells), k.sep(), h('div', { class: 'lk-col lk-eqr' }, k.TL('Scale', k.N(40, { w: 64 })), k.TL('Gain', k.N(41, { w: 64 }))));
 };
 // Spectrum: Block / Channel / Avg / Graph / Max / Scale X / Auto | spectrum display (L+R or one channel, bins or line, peak hold)
 V[32] = (k) => {
@@ -695,7 +728,7 @@ V[49] = (k) => {
 V[50] = (k) => {
   let env = [], lv = [];
   const disp = k.D(300, 118, (g, w, hh) => {
-    const n = lv.length; if (!n) return; g.fillStyle = '#6b6b70'; for (let j = 0; j < n; j++) { const v = Math.min(1, lv[j] * 1.2); g.fillRect(j / n * w, hh - 2 - v * (hh - 8), Math.max(1, w / n - 0.5), v * (hh - 8)); }
+    const n = lv.length; if (!n) return; g.fillStyle = '#6b6b70'; for (let j = 0; j < n; j++) { const v = Math.max(0, Math.min(1, (20 * Math.log10(lv[j] + 1e-6) + 48) / 48)); g.fillRect(j / n * w, hh - 2 - v * (hh - 8), Math.max(1, w / n - 0.5), v * (hh - 8)); }
     const lo = k.get(MOD_MAP[50] + 3), hi = k.get(MOD_MAP[50] + 4); lvPath(g, env.map((v, j) => [j / (env.length - 1) * w, hh - 2 - (lo + (hi - lo) * v) * (hh - 8)]), DISPC.or, null, 1.6);
   });
   k.every(50, () => { const r = k.out(); if (r.length >= 257) { env = r.slice(1, 129); lv = r.slice(129, 257); disp.paint(); } });

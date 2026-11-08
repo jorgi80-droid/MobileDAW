@@ -76,7 +76,8 @@ for (const [kind, t] of jobs) {
     const lk = card.querySelector('.lk, .lv-dev'), zoom = lk ? (parseFloat(lk.style.zoom) || 1) : 1, hBody = Math.round(bodyH), hNeed = lk ? Math.round(lk.offsetHeight) : 0;
     const lab = card.querySelector('.knob .kl, .knob .klabel, .lk-k > span, .knob > span'), labPx = lab ? Math.round(lab.getBoundingClientRect().height * 10) / 10 : 0;
     const ks = [...new Set([...card.querySelectorAll('*')].filter((e) => e._k != null).map((e) => e._k))].sort((a, b) => a - b), tabs = card.querySelectorAll('.lk-autotabs .lv-tab').length;
-    return { ks, tabs, zoom, hBody, hNeed, labPx, title, w: Math.round(cr.width), h: Math.round(cr.height), fonts: [...fonts.entries()].sort((a, b) => a[0] - b[0]), usedH: Math.round(used * 100), usedW: R.length ? Math.round((x1 - x0) / cr.width * 100) : 0, n: leaf.length, ...issues };
+    const rect = [cr.left, cr.top, cr.width, cr.height].map((v) => Math.round(v * 10) / 10), iw = innerWidth;
+    return { rect, iw, ks, tabs, zoom, hBody, hNeed, labPx, title, w: Math.round(cr.width), h: Math.round(cr.height), fonts: [...fonts.entries()].sort((a, b) => a[0] - b[0]), usedH: Math.round(used * 100), usedW: R.length ? Math.round((x1 - x0) / cr.width * 100) : 0, n: leaf.length, ...issues };
   };
   const r = await ev(measure, [kind, t]);
   // every tab page of the panel (tabs in the title bar or in the panel) is measured too: the worst zoom and all issues count
