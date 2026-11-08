@@ -1,7 +1,7 @@
 // Left drawer: add tracks/devices, file library (samples, SoundFonts, recordings, exports), save/load projects.
 // Web version: files live inside the app (IndexedDB) and are imported with the system file picker, so they work offline.
 import { h, ask, toast, menu, modal } from './ui.js';
-import { DEVICES, INSTRUMENTS, INST_LIST, PRESETS, FX_GROUPS, CLASSIC_TO_FLM } from './defs.js';
+import { DEVICES, INSTRUMENTS, INST_LIST, PRESETS, FX_GROUPS } from './defs.js';
 import { eng, backend, MASTER } from './engine.js';
 import { dropInfo } from './timeline.js';
 import * as P from './project.js';
@@ -99,7 +99,7 @@ function dragEnd(e) {
 }
 
 // ---- audition: plays a short phrase on a scratch strip (the first unused track slot) so the project is never touched
-const SCRATCH_OK = new Set([1, 2, 3, 5, 7, 8, 11]);                      // sampler / SoundFont instruments need their own samples, so they have no audition
+const SCRATCH_OK = new Set([3, 7, 8, 11, 31, 32, 33]);                      // sampler / SoundFont instruments need their own samples, so they have no audition
 let au = null, auKey = '';
 const scratchStrip = () => (state.tracks.length < 64 ? state.tracks.length : -1);
 function stopAudition() {
@@ -141,8 +141,8 @@ function audBtn(sp) {
 }
 const withAud = (r, sp) => { if (sp) r.prepend(audBtn(sp)); return r; };
 function updAud() { if (aside) for (const b of aside.querySelectorAll('.pv[data-a]')) b.classList.toggle('on', b.dataset.a === auKey); }
-const synthP = () => { const f = (PRESETS[1] || []).find((x) => x.name === 'Brass Stab'); return f ? f.p : {}; };   // source sound for effect audition
-const fxAud = (devs, extra) => ({ key: 'fx' + JSON.stringify(devs.map((d) => d.type)) + (extra && extra.key || ''), type: 1, p: synthP(), devs, chord: true, tail: 1800, ...(extra || {}) });
+const synthP = () => { const f = (PRESETS[32] || []).find((x) => x.from && x.from.name === 'Brass Stab'); return f ? f.p : {}; };   // source sound for effect audition (MiniSynth)
+const fxAud = (devs, extra) => ({ key: 'fx' + JSON.stringify(devs.map((d) => d.type)) + (extra && extra.key || ''), type: 32, p: synthP(), devs, chord: true, tail: 1800, ...(extra || {}) });
 const instAud = (key, type, p, cat) => (SCRATCH_OK.has(type) ? { key, type, p, bass: cat === 'Bass', drum: type === 3 } : null);
 
 // ---- add by tap (selected track) or by drag (any track)
@@ -197,8 +197,6 @@ function tabInstr() {
   for (const k of INST_LIST) out.push(withAud(row(INSTRUMENTS[k].name, () => tapInst(k), t && t.kind === 'midi' && t.inst && t.inst.type === k ? 'terpasang' : '', '', null, dInst(k)), instAud('i' + k, k, null, '')));
   return out;
 }
-const presetLabel = (type) => (type === 4 ? 'DirectWave \u2013 preset tambahan' : INSTRUMENTS[type].name);
-const DUP_PRESETS = new Set([1, 2, 5]);           // 4 (DirectWave Klasik) stays: it has 6 presets the new DirectWave lacks
 function tabFx() {
   const out = [];
   out.push(h('div', { class: 'hint' }, 'Ketuk = tambah ke track terpilih. Seret ke track atau Master di arrangement. \u25B6 = dengar dulu.'));
@@ -229,8 +227,8 @@ function tabPreset() {
     out.push(withAud(row(o.name || 'Preset', () => tapMixer(full), devs.length + ' efek', '', (rect) => fileMenu(full, rect), dMixer(full)), devs.length ? fxAud(devs, { key: 'm' + full, vol: Math.min(1, +o.vol || 0.85), pan: +o.pan || 0 }) : null));
   }
   for (const k of Object.keys(PRESETS)) {
-    const type = +k, def = INSTRUMENTS[type]; if (!def || DUP_PRESETS.has(type)) continue;     // the "Klasik" types 1 / 2 / 5 hold only presets their FL-style twins (32 / 33 / 31) already list
-    out.push(head(presetLabel(type) + (type === 4 ? '' : ' (bawaan)'), 'i' + type));
+    const type = +k, def = INSTRUMENTS[type]; if (!def) continue;
+    out.push(head(def.name + ' (bawaan)', 'i' + type));
     for (const pr of P.presetsFor(type)) out.push(withAud(row(pr.name, () => tapFactory(type, pr), pr.cat || '', '', null, dFactory(type, pr)), instAud('p' + type + '.' + pr.name, type, pr.p, pr.cat)));
   }
   return out;
@@ -606,7 +604,7 @@ const HOLD = { instr: 'Cari instrumen\u2026', fx: 'Cari efek\u2026', file: 'Cari
 function chipsFor() {
   if (tab === 'instr') return [['all', 'Semua'], ['track', 'Track baru'], ['instr', 'Instrumen']];
   if (tab === 'fx') return [['all', 'Semua'], ...FX_GROUPS.map((g) => [g[0], g[1]])];
-  if (tab === 'preset') return [['all', 'Semua'], ['usr', 'Saya'], ['mix', 'Mixer'], ...Object.keys(PRESETS).filter((k) => INSTRUMENTS[k] && !DUP_PRESETS.has(+k)).map((k) => ['i' + k, presetLabel(+k)])];
+  if (tab === 'preset') return [['all', 'Semua'], ['usr', 'Saya'], ['mix', 'Mixer'], ...Object.keys(PRESETS).filter((k) => INSTRUMENTS[k]).map((k) => ['i' + k, INSTRUMENTS[k].name])];
   return [];
 }
 function applyFilter(list, cnt) {              // hides rows / section heads that do not match the search text or the category chip

@@ -19,7 +19,7 @@ const r = await page.evaluate(async () => {
   const P = await import('./js/project.js'), E = await import('./js/engine.js'), eng = E.eng;
   P.newProject(true); while (P.state.tracks.length) P.removeTrack(0);
   P.state.master.devices = [];
-  P.addTrack('midi'); const i = P.state.tracks.length - 1; P.setInstrument(i, 2);
+  P.addTrack('midi'); const i = P.state.tracks.length - 1; P.setInstrument(i, 33);
   const c = P.addClip(i, 0, P.BAR * 2); for (let k = 0; k < 8; k++) c.notes.push({ t: k * 480, d: 400, p: 50 + (k % 4) * 3, v: 0.8 });
   P.addDevice(i, 3); P.addDevice(i, 7); P.setVol(i, 0.7); P.setPan(i, -0.3); P.syncAll(); P.emit('all');
   const mix = async (name) => { const done = new Promise((res) => { window.onExportDone = res; }); eng.exportJob({ dir: '/Exports', name, format: 'wav', bits: 32, startTick: 0, endTick: P.BAR * 2, bpm: P.state.bpm, secs: P.tickToSec(P.BAR * 2), tailSec: 3, normalize: false, zip: false, items: [{ name, kind: 'mix' }] }); const res = await done; const b = await eng.readBytes(res.path); const dv = new DataView(b.buffer || b), n = dv.getUint32(40, true) / 4, x = new Float32Array(n); for (let k = 0; k < n; k++) x[k] = dv.getFloat32(44 + k * 4, true); return x; };

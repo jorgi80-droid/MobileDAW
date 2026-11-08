@@ -1086,7 +1086,7 @@ export function migrateClassicInst(inst) {
     },
   });
   CLASSIC_IDX.fn = (to, vals) => { const p = {}; for (const [n, v] of Object.entries(vals)) { const k = idx(to, n); if (k < 0) throw new Error('preset conv ' + n); const q = INSTRUMENTS[to].params[k]; p[k] = Math.max(q.min, Math.min(q.max, q.step ? Math.round(v / q.step) * q.step : v)); } return p; };
-  for (const [to, from] of [[32, 1], [33, 2], [31, 5]]) {
+  for (const [to, from] of [[32, 1], [33, 2], [31, 5], [30, 4]]) {
     const dF = INSTRUMENTS[from].params, out = PRESETS[to] || [], names = new Set(out.map((x) => x.name));
     for (const pr of PRESETS[from] || []) {
       const p = CLASSIC_IDX.fn(to, conv[to](pr.p || {}, dF));
@@ -1096,4 +1096,5 @@ export function migrateClassicInst(inst) {
     const order = []; for (const x of out) if (!order.includes(x.cat)) order.push(x.cat);   // one heading per category in the menu
     PRESETS[to] = order.flatMap((c) => out.filter((x) => x.cat === c));
   }
+  for (const k of Object.keys(CLASSIC_TO_FLM)) delete PRESETS[k];               // the classic instruments are gone from the app: their presets live on only in the FLM lists above
 }

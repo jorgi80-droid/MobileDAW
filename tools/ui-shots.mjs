@@ -30,9 +30,9 @@ await page.evaluate(async () => {                         // the test project
   wr(0, 'RIFF'); dv.setUint32(4, 36 + n * 2, true); wr(8, 'WAVE'); wr(12, 'fmt '); dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, 1, true); dv.setUint32(24, sr, true); dv.setUint32(28, sr * 2, true); dv.setUint16(32, 2, true); dv.setUint16(34, 16, true); wr(36, 'data'); dv.setUint32(40, n * 2, true);
   for (let k = 0; k < n; k++) { const t = k / sr, env = Math.exp(-(t % 0.5) * 9); dv.setInt16(44 + k * 2, Math.sin(2 * Math.PI * 110 * t) * env * 0.8 * 32000, true); }
   await E.eng.saveBytes('/Samples/Loop Tone.wav', buf);
-  P.addTrack('midi').name = 'Lead'; const li = P.state.tracks.length - 1; P.setInstrument(li, 2);
+  P.addTrack('midi').name = 'Lead'; const li = P.state.tracks.length - 1; P.setInstrument(li, 33);
   for (const [st, len] of [[0, BAR * 2], [BAR * 3, BAR], [BAR * 4, BAR * 2]]) { const c = P.addClip(li, st, len); for (let k = 0; k < len / 480; k++) c.notes.push({ t: k * 480, d: 400, p: 60 + [0, 3, 7, 10, 12, 10, 7, 3][k % 8], v: 0.5 + 0.5 * ((k * 37) % 10) / 10 }); }
-  P.addTrack('midi').name = 'Pad Chords'; const pi = P.state.tracks.length - 1; P.setInstrument(pi, 1);
+  P.addTrack('midi').name = 'Pad Chords'; const pi = P.state.tracks.length - 1; P.setInstrument(pi, 32);
   { const c = P.addClip(pi, 0, BAR * 4); c.name = 'Chords'; [[48, 51, 55], [46, 50, 53], [44, 48, 51], [43, 46, 50]].forEach((ch, b) => ch.forEach((p) => c.notes.push({ t: b * BAR, d: BAR - 60, p, v: 0.7 }))); }
   P.addTrack('audio').name = 'Loop Tone'; await P.addAudioClip(P.state.tracks.length - 1, '/Samples/Loop Tone.wav', BAR);
   P.addDevice(1, 4); P.addDevice(1, 2); P.addDevice(li, 6); P.addDevice(li, 7);

@@ -6,7 +6,7 @@ import { valueAt as curveAt, densify } from './autocurve.js';
 import { encodeWav } from './engine/wav.js';
 import * as WOPS from './engine/waveops.js';
 import { log } from './log.js';
-import { INSTRUMENTS, DEVICES, DRUM_PADS, INST, PRESETS, normOf, valOf, MOD_MAP, IRACK_DEF, migrateClassicInst, migrateFlmInst, FLM_FMT } from './defs.js';
+import { INSTRUMENTS, DEVICES, DRUM_PADS, INST, PRESETS, normOf, valOf, MOD_MAP, IRACK_DEF, migrateClassicInst, migrateFlmInst, FLM_FMT, CLASSIC_TO_FLM } from './defs.js';
 
 export const PPQ = 960, MAX_TRACKS = 64;
 export let BEAT = PPQ, BAR = PPQ * 4;   // live bindings: they change with the time signature (setSig), so always read them at use time
@@ -733,6 +733,7 @@ export function toggleSolo(i) { const t = state.tracks[i]; if (HK.on) HK.add({ t
 export const isSampler = (type) => type === INST.DIRECTWAVE || type === INST.FLM_DW || type === INST.KEYSTONE || type === INST.SAMPLER || type === INST.SIMPLER || type === INST.IMPULSE || type === INST.GRANULATOR;
 export function setInstrument(i, type) {
   const t = state.tracks[i];
+  type = CLASSIC_TO_FLM[type] || type;                                         // the classic Mini Synth / SuperSaw / GMS / DirectWave are gone: their FL Studio Mobile twin
   if (HK.on) HK.add({ t: 'inst', s: t.id, v: t.inst });
   t.inst = { type, params: {}, pitch: (t.inst && t.inst.pitch) || 0 };
   if (isSampler(type)) t.inst.zones = type === INST.IMPULSE ? Array.from({ length: 8 }, newZone) : [newZone()];

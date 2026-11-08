@@ -2,7 +2,7 @@
 //   instrument preset = synth type + its knob values + pitch
 //   mixer preset      = volume, pan, sends and the whole effect chain (devices with their settings) of one track
 import { eng } from './engine.js';
-import { INSTRUMENTS, DEVICES, FLM_FMT, migrateFlmParams } from './defs.js';
+import { INSTRUMENTS, DEVICES, FLM_FMT, migrateFlmParams, migrateClassicInst } from './defs.js';
 import * as P from './project.js';
 import { log } from './log.js';
 
@@ -32,7 +32,20 @@ export function saveMixerPreset(i, name) {
   return { path };
 }
 function read(path) {
-  try { const o = JSON.parse(eng.readText(path)); return o && o.app === 'mobiledaw' ? flmUp(o) : null; } catch (_) { return null; }
+  try { const o = JSON.parse(eng.readText(path)); return o && o.app === 'mobiledaw' ? classicUp(flmUp(o)) : null; } catch (_) { return null; }
+}
+// presets of the removed classic Mini Synth / SuperSaw / GMS / DirectWave -> the FL Studio Mobile instrument of the same name, exactly
+// as an old project is opened (defs.js migrateClassicInst). The file itself is not rewritten.
+function classicUp(o) {
+  const up = (x) => {
+    const inst = { type: x.type, params: Object.fromEntries((Array.isArray(x.p) ? x.p : []).map((v, k) => [k, v])) };
+    if (!migrateClassicInst(inst)) return false;
+    x.type = inst.type; x.p = INSTRUMENTS[inst.type].params.map((q, k) => num(inst.params[k], q.def));
+    return true;
+  };
+  if (o.kind === 'instrument' && up(o) && typeof o.inst === 'string') o.inst = INSTRUMENTS[o.type].name;
+  if (o.kind === 'rack' && o.inst && up(o.inst) && o.inst.name) o.inst.name = INSTRUMENTS[o.inst.type].name;
+  return o;
 }
 // presets saved before the FL Studio Mobile manual corrections: GMS / MiniSynth / SuperSaw values -> the current format (defs.js)
 function flmUp(o) {

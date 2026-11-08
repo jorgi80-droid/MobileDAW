@@ -527,7 +527,7 @@ Permintaan pemilik: SEMUA efek dan instrumen diganti dengan set stok Ableton Liv
   ketuk-ganda tepi = otomatis, atau menu tekan-tahan "Lebar kolom track...". Tes: `node tools/header-ui-test.mjs` (di luar run-tests).
 - Duplikat: grup efek 'Lainnya (lama)' dibubarkan (Autoduck -> Dynamics, Stereolizer / Spacer -> Utilities); Parametric EQ, Level, Analyzer
   disembunyikan dari picker (`HIDDEN_FX`, tetap berfungsi di proyek lama). Tab Preset tidak lagi menampilkan seksi Klasik MiniSynth / SuperSaw /
-  GMS (preset yang sama sudah ada di tipe FL); DirectWave Klasik tetap ("preset tambahan", 6 preset yang belum ada di DirectWave baru).
+  GMS (preset yang sama sudah ada di tipe FL). DirectWave Klasik kemudian juga dihapus (lihat "Instrumen klasik dihapus").
   Label ganda dalam kartu: tab pertama Echo kini "Time", Simpler tanpa sample menulis "Tanpa sample".
 - Preview sample di Browser: bar waveform / Tambah (`.pbar`) kini ditaruh di dalam kolom `.bmain` di bawah daftar (dulu jadi kolom ketiga dan
   memotong daftar sample). Tes: `node tools/browser-preview-test.mjs`.
@@ -585,3 +585,13 @@ Permintaan pemilik: SEMUA efek dan instrumen diganti dengan set stok Ableton Liv
 
 - Screenshot pemilik (New Song 1): tipe 18 = Tape Delay, 16 = Trance Delay (tebakan 11 dicabut); arti angka Reverb, MiniSynth (osc / filter) dan konfirmasi
   DirectWave: `docs/replica/FLM-PARAM-EVIDENCE.md`. Importer memakai p6..p12 + p17 MiniSynth untuk preset FLM yang tidak ada di MobileDAW. Tes di `flm-stem-test`.
+
+## Instrumen klasik dihapus (sesi ini)
+- Mini Synth / SuperSaw / GMS / DirectWave Klasik (tipe 1 / 2 / 5 / 4) tidak muncul lagi di mana pun di aplikasi: tab Preset tidak punya seksi
+  "DirectWave – preset tambahan" lagi (6 presetnya dikonversi ke DirectWave FLM tipe 30, sama seperti preset klasik lain ke 31 / 32 / 33), `PRESETS[1/2/4/5]`
+  dihapus setelah konversi (akhir defs.js), audisi efek di Browser memakai MiniSynth (32, preset "Brass Stab" hasil konversi), `SCRATCH_OK` kini 3/7/8/11/31/32/33.
+- `P.setInstrument` memetakan tipe klasik ke kembarannya (`CLASSIC_TO_FLM`), jadi tidak ada jalur di aplikasi yang bisa membuat instrumen klasik lagi.
+- File lama tetap terbuka: proyek .mdaw (`project.js migrateClassic`, sudah ada) dan kini juga preset .json pengguna (instrumen + Rack preset;
+  `presets.js classicUp`, file tidak ditulis ulang).
+- Kode engine klasik (JS `instruments.js` MiniSynth / SuperSaw / Gms, C++ `inst_classic.*`) TIDAK dihapus: kelas Sampler dipakai Keystone (9), DrumSynth (3) di file
+  yang sama, dan banyak tes engine + skenario golden memakai tipe 1/2 sebagai sumber sinyal sederhana. Engine-nya hanya tidak terjangkau dari UI.
