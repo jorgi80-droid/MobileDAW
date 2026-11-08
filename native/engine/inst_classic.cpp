@@ -323,7 +323,7 @@ static const int DEF_PITCH[6] = { 36, 38, 39, 42, 46, 41 };
 static const double KIT_MIX[6] = { 0.56, 0.39, 0.32, 0.19, 0.2, 0.42 };
 static inline double satN(double x, double k) { return std::tanh(k * x) / std::tanh(k); }
 DrumSynth::DrumSynth(double r0, Bank* b) : PolyBase(r0), bank(b) {
-  isRack = true; pitchNative = true;
+  isRack = true; pitchNative = true; cutN = (int)jsMax(1, jsRound(r0 * 0.006));
   for (int k = 0; k < 6; k++) { pads[k].pitch = DEF_PITCH[k]; pads[k].kind = k; }
 }
 DrumSynth::~DrumSynth() { for (auto& x : ch) { delete x.inst; for (int j = 0; j < x.n; j++) delete x.dev[j]; } }
@@ -337,7 +337,9 @@ void DrumSynth::setParam(int i, double x) {
       case 0: q.sid = toInt32(x); break; case 1: q.kind = (int)clamp(toInt32(x), -1, 5); break; case 2: q.pan = clamp(x, -1, 1); break;
       case 3: q.start = clamp(x, 0, 1); break; case 4: q.end = clamp(x, 0, 1); break; case 5: q.rev = x > 0.5; break;
       case 6: q.a = clamp(x, 0, 4); break; case 7: q.d = clamp(x, 0, 4); break; case 8: q.s = clamp(x, 0, 1); break; case 9: q.r = clamp(x, 0, 4); break;
-      case 10: q.mute = x > 0.5; break; case 11: q.pitch = toInt32(x); break; default: break;
+      case 10: q.mute = x > 0.5; break; case 11: q.pitch = toInt32(x); break;
+      case 12: q.cut = (int)clamp(toInt32(x), 0, 3); break; case 13: q.poly = x > 0.5; break; case 14: q.hold = clamp(x, 0, 4); break; case 15: q.shift = clamp(x, 0, 0.25); break;
+      default: break;
     }
   }
 }
@@ -356,8 +358,10 @@ void DrumSynth::noteOn(int p, double vel) {
   Sample* s = q.sid >= 0 && q.sid < 256 ? bank->s[q.sid] : nullptr;
   if (q.sid >= 0 && (!s || s->frames < 4)) return;
   if (!s && q.kind < 0) return;
+  if (q.cut > 0 || !q.poly) choke(k, q);
   DrumVoice& x = alloc();
   x.on = true; x.age = ++counter; x.vel = vel; x.pad = k; x.pitch = p; x.t = 0; x.ph = 0;
+  x.dly = q.shift > 0 ? (int)jsRound(q.shift * sr) : 0; x.hl = q.hold > 0 ? (int)jsRound(q.hold * sr) : 0; x.cf = 0;
   x.rt = rate * std::pow(2, q.pit / 12); x.lvl = q.lvl; x.dec = q.dec;
   x.pl = q.pan <= 0 ? 1 : 1 - q.pan; x.pr = q.pan >= 0 ? 1 : 1 + q.pan;
   if (s) {
@@ -379,6 +383,18 @@ void DrumSynth::noteOn(int p, double vel) {
     else x.bp.bandpass(sr, 2400, 0.9);
   }
 }
+void DrumSynth::chokeVoice(DrumVoice& o) {
+  if (o.smp) { double rel = jsMax(o.lv, 1e-4) / (0.006 * sr); o.held = false; if (o.st < 3) { o.st = 3; o.rel = rel; } else o.rel = jsMax(o.rel, rel); }
+  else if (o.cf == 0) o.cf = cutN;
+}
+void DrumSynth::choke(int k, const DrumPad& q) {
+  int g = q.cut;
+  for (auto& o : v) {
+    if (!o.on) continue;
+    if ((o.pad == k && !q.poly) || (g > 0 && o.pad != k && pads[o.pad].cut == g)) chokeVoice(o);
+  }
+  if (g > 0) for (int m = 0; m < N_PADS; m++) { DrumChain& cm = ch[m]; if (m != k && cm.inst && cm.note >= 0 && pads[m].cut == g) { cm.inst->noteOff(cm.note); cm.note = -1; } }
+}
 void DrumSynth::noteOff(int p) {
   int k = padFor(p); if (k >= 0 && ch[k].inst && ch[k].note >= 0) { ch[k].inst->noteOff(ch[k].note); ch[k].note = -1; }
   for (auto& x : v) if (x.on && x.smp && x.held && x.pitch == p && x.st < 3) {
@@ -393,6 +409,8 @@ void DrumSynth::renderSample(DrumVoice& x, float* L, float* R, int from, int to)
   if (!s) { x.on = false; return; }
   const float* sl = s->l; const float* sr_ = s->r ? s->r : s->l; double g = x.g;
   for (int i = from; i < to; i++) {
+    if (x.dly > 0) { x.dly--; continue; }
+    if (x.hl > 0 && --x.hl == 0 && x.st < 3) { x.held = false; x.st = 3; x.rel = jsMax(x.lv, 1e-4) / (jsMax(x.er, 0.004) * sr); }
     switch (x.st) {
       case 0: x.lv += 1 / (x.ea * sr); if (x.lv >= 1) { x.lv = 1; x.st = x.ed > 0 && x.es < 1 ? 1 : 2; } break;
       case 1: x.lv -= (1 - x.es) / (x.ed * sr); if (x.lv <= x.es) { x.lv = x.es; x.st = 2; } break;
@@ -425,6 +443,8 @@ void DrumSynth::render(float* L, float* R, int from, int to) {
     if (!x.on) continue;
     if (x.smp) { renderSample(x, L, R, from, to); continue; }
     for (int i = from; i < to; i++) {
+      if (x.dly > 0) { x.dly--; continue; }
+      if (x.hl > 0 && --x.hl == 0 && x.cf == 0) x.cf = cutN;
       double t = x.t++, ts = t * x.rt / (sr * x.dec), tr = t / sr, rt = x.rt;
       double nz = (lcg(x.nseed) / 2147483648.0) - 1;
       double y = 0, len = 0.5;
@@ -462,7 +482,10 @@ void DrumSynth::render(float* L, float* R, int from, int to) {
       }
       if (ts > len) { x.on = false; break; }
       y *= x.vel * gain * x.lvl * KIT_MIX[x.kind];
+      bool fin = false;
+      if (x.cf > 0) { y *= x.cf / (double)cutN; fin = --x.cf == 0; }
       L[i] = (float)(L[i] + y * x.pl); R[i] = (float)(R[i] + y * x.pr);
+      if (fin) { x.on = false; break; }
     }
   }
 }

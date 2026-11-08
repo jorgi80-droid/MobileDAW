@@ -89,5 +89,6 @@ const webApi = web && {
 };
 if (webApi) target = webApi;
 if (web && web.setReplay) web.setReplay(() => { if (hooks.replay) hooks.replay(); });   // Android: brings the native engine up to date when it is switched on
-export const eng = new Proxy({}, { get: (_, k) => { const v = target[k]; return v !== undefined ? v : () => null; } });
+const over = {};   // properties set on `eng` (tests replace the file system, for instance) win over the backend
+export const eng = new Proxy({}, { get: (_, k) => { if (k in over) return over[k]; const v = target[k]; return v !== undefined ? v : () => null; }, set: (_, k, v) => { over[k] = v; return true; } });
 export const backendError = () => webBroken;

@@ -18,9 +18,12 @@ const K = {
   d: { n: 'DEC', min: 0, max: 2, def: 0, unit: 's' },
   s: { n: 'SUS', min: 0, max: 1, def: 1, unit: '%' },
   r: { n: 'REL', min: 0, max: 2, def: 0, unit: 's' },
+  hold: { n: 'Hold', min: 0, max: 2, def: 0, unit: 's' },
+  shift: { n: 'Shift', min: 0, max: 0.25, def: 0, unit: 's' },
 };
 let tab = 'mix';
-const TABS = [['mix', 'Mixer'], ['smp', 'Sample'], ['env', 'Envelope']];
+const TABS = [['mix', 'Mixer'], ['smp', 'Sample'], ['env', 'Envelope'], ['seq', 'Seq']];
+const CUTS = [['Off', 0], ['A', 1], ['B', 2], ['C', 3]];
 
 export function padPanel(track, k, { onClose, onChange }) {
   const root = h('div', { class: 'pp' });
@@ -54,6 +57,11 @@ export function padPanel(track, k, { onClose, onChange }) {
         ...(q.sample && P.padHasSynth(track, k) ? [B('Bawaan', () => { if (P.resetPadSound(track, k)) redraw(); })] : [])));
       if (q.sample) body.append(h('div', { class: 'knobs' }, kn('pit'), kn('start'), kn('end')), h('div', { class: 'pp-r' }, B('REV', () => { P.setPad(track, k, 'rev', !q.rev); redraw(); }, q.rev)));
       else body.append(h('div', { class: 'knobs' }, kn('pit'), kn('dec')));
+    } else if (tab === 'seq') {                     // FL Studio Mobile Stepsequencer "Seq" tab: Hold, Cut Group, Poly, Shift
+      body.append(h('div', { class: 'knobs' }, kn('hold'), kn('shift')),
+        h('div', { class: 'pp-r' }, h('span', { class: 'sv' }, 'Cut Group'), ...CUTS.map(([l, v]) => B(l, () => { P.setPad(track, k, 'cut', v); redraw(); }, (q.cut || 0) === v)),
+          B('Poly', () => { P.setPad(track, k, 'poly', q.poly === false); redraw(); }, q.poly !== false)),
+        h('div', { class: 'sv pp-hint' }, 'Cut Group: pad dalam grup yang sama saling membungkam (mis. hi-hat tertutup memotong yang terbuka). Poly mati: pad memotong dirinya sendiri saat dipukul lagi. Hold: pad dilepas sekian detik setelah dipukul (0 = mati). Shift: pukulan ditunda.'));
     } else if (q.sample) {
       body.append(h('div', { class: 'knobs' }, kn('a'), kn('d'), kn('s'), kn('r')), h('div', { class: 'sv pp-hint' }, 'REL 0 = sample dimainkan sampai habis. REL > 0 = sample memudar saat step berakhir.'));
     } else {

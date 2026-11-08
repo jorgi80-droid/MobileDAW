@@ -6,7 +6,7 @@ import { INSTRUMENTS, DEVICES, FLM_FMT, migrateFlmParams } from './defs.js';
 import * as P from './project.js';
 import { log } from './log.js';
 
-export const DIR_INST = '/Presets/Instruments', DIR_MIX = '/Presets/Mixer', DIR_RACK = '/Presets/Racks';
+export const DIR_INST = '/Presets/Instruments', DIR_MIX = '/Presets/Mixer', DIR_RACK = '/Presets/Racks', DIR_KIT = '/Presets/Kits';
 const clean = (n) => (n || '').trim().replace(/[\\/:*?"<>|]+/g, '').slice(0, 60);
 const num = (v, d) => (Number.isFinite(+v) ? +v : d);
 
@@ -122,4 +122,48 @@ export function applyRackPreset(path, i, mode = 'replace', at = 0) {
   P.emit('devices');
   const miss = r.skipped.length ? ` ${r.skipped.length} modul dilewati (tidak dikenal / rantai penuh): ${r.skipped.join(', ')}.` : '';
   return { msg: `Rack preset "${o.name}": ${r.added} modul${mode === 'replace' ? ' (rantai diganti)' : ' disisipkan'}.${miss}` };
+}
+
+// Drum kits (FL Studio Mobile "Save Template" / "My Drumsets"): the pads of a drum track with every setting (level, pan, pitch, decay, start / end,
+// reverse, ADSR, cut group, poly, hold, shift, mute) and the sample FILE of each pad (path + name); the audio itself stays in the sample folder.
+// Pads that hold an instrument chain are not saved (they need that instrument's full state). Loading is one undo step.
+export function saveKit(i, name) {
+  const t = P.tr(i); name = clean(name);
+  if (!t || t.kind !== 'drum') return { error: 'Pilih track drum dulu.' };
+  if (!name) return { error: 'Nama kosong.' };
+  const all = P.padsOf(i), pads = [];
+  for (const q of all) {
+    if (q.chain && q.chain.inst) continue;
+    const { sample, chain, solo, ...rest } = q;
+    pads.push({ ...rest, sample: sample ? { path: sample.path, name: sample.name } : null });
+  }
+  if (!pads.length) return { error: 'Tidak ada pad yang bisa disimpan.' };
+  const path = `${DIR_KIT}/${name}.json`;
+  eng.writeText(path, JSON.stringify({ app: 'mobiledaw', kind: 'kit', name, pads }));
+  log('info', 'kit drum disimpan', path);
+  return { path, n: pads.length, skipped: all.length - pads.length };
+}
+export function kitList() {
+  const d = eng.listDir(DIR_KIT), out = [];
+  for (const it of (d && d.items) || []) {
+    if (!/\.json$/i.test(it.name)) continue;
+    const o = read(DIR_KIT + '/' + it.name);
+    if (o && o.kind === 'kit' && Array.isArray(o.pads)) out.push({ name: o.name || it.name.replace(/\.json$/i, ''), path: DIR_KIT + '/' + it.name, n: o.pads.length });
+  }
+  return out.sort((a, b) => a.name.localeCompare(b.name));
+}
+export async function applyKit(path, i) {
+  const o = read(path), t = P.tr(i);
+  if (!o || o.kind !== 'kit' || !Array.isArray(o.pads)) return { error: 'File kit drum rusak.' };
+  if (!t || t.kind !== 'drum') return { error: 'Pilih track drum dulu.' };
+  const list = []; let missing = 0;
+  for (const q of o.pads.slice(0, P.MAX_PADS)) {
+    if (!q || !Number.isFinite(q.pitch)) continue;
+    let sample = null;
+    if (q.sample && q.sample.path) { sample = await P.loadSampleObj(q.sample.path); if (!sample) missing++; }
+    list.push({ ...q, sample, solo: false, kind: q.sample ? -1 : q.kind });   // a sample pad has no built-in sound (kind -1); a missing file leaves it silent
+  }
+  if (!list.length) return { error: 'Kit ini kosong.' };
+  P.setPadKit(i, list);
+  return { msg: `Kit "${o.name}": ${list.length} pad dimuat.` + (missing ? ` ${missing} sample tidak ditemukan (pad itu diam).` : ''), missing };
 }

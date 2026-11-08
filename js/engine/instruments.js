@@ -113,7 +113,10 @@ export class SuperSaw extends Base {
 // hat, open hat, tom) or a sample from the bank. Parameters:
 //   90 global pitch;  0..47: pad*3 + (0 level dB, 1 pitch semitones, 2 decay factor)  (the original scheme, kept for old projects and automation)
 //   200 + pad*16 + f: 0 sample id (-1 none), 1 synth kind (-1 silent), 2 pan, 3 start 0..1, 4 end 0..1, 5 reverse, 6 attack s,
-//                     7 decay s, 8 sustain 0..1, 9 release s (0 = ignore note-off, play the sample through), 10 mute, 11 midi pitch (-1 = pad unused)
+//                     7 decay s, 8 sustain 0..1, 9 release s (0 = ignore note-off, play the sample through), 10 mute, 11 midi pitch (-1 = pad unused),
+//                     12 cut group (0 none, 1..3 = A / B / C: a pad of the group silences the others of the group), 13 poly (1 = a re-trigger overlaps
+//                     itself, 0 = it cuts itself), 14 hold s (0 = off; > 0 releases the pad that long after the hit, like a held key), 15 shift s (0..0.25:
+//                     the hit starts that much after its step). As in the FL Studio Mobile Stepsequencer "Seq" tab; a choke is a 6 ms fade, never a click.
 const N_PADS = 16, DEF_PITCH = [36, 38, 39, 42, 46, 41];
 // level of each built-in sound (kick, snare, clap, closed hat, open hat, tom) as in a mixed drum machine: kick -5.6 dBFS peak, snare / clap /
 // tom a little under it, hats about 8 dB under the kick, so kick + clap + hat hitting together still leave headroom
@@ -130,9 +133,10 @@ export class DrumSynth extends Base {
     this.ch = Array.from({ length: N_PADS }, () => ({ inst: null, dev: [], L: new Float32Array(128), R: new Float32Array(128), note: -1 }));
     this.v = Array.from({ length: 24 }, () => ({ on: false, held: false, kind: 0, t: 0, vel: 0, ph: 0, age: 0, env: new Adsr(), n: { seed: 1 }, bp: new Biquad(), hp: 0,
       smp: false, pad: 0, sid: -1, pos: 0, dir: 1, lo: 0, hi: 0, ratio: 1, lv: 0, st: 0, ea: 0, ed: 0, es: 1, er: 0, rel: 0, g: 1, pl: 1, pr: 1,
-      f2: new Biquad(), f3: new Biquad(), ph2: 0, mp: new Float64Array(6) }));
+      f2: new Biquad(), f3: new Biquad(), ph2: 0, mp: new Float64Array(6), dly: 0, hl: 0, cf: 0 }));
+    this.cutN = Math.max(1, Math.round(sr * 0.006));
     this.gain = 1; this.rate = 1; this.pitchNative = true;   // gain 1: velocity 1 = the pad sample at unity, the built-in kit peaks about -1 dBFS
-    this.pads = Array.from({ length: N_PADS }, (_, k) => ({ pitch: k < 6 ? DEF_PITCH[k] : -1, kind: k < 6 ? k : -1, sid: -1, lvl: 1, pit: 0, dec: 1, pan: 0, start: 0, end: 1, rev: false, a: 0, d: 0, s: 1, r: 0, mute: false }));
+    this.pads = Array.from({ length: N_PADS }, (_, k) => ({ pitch: k < 6 ? DEF_PITCH[k] : -1, kind: k < 6 ? k : -1, sid: -1, lvl: 1, pit: 0, dec: 1, pan: 0, start: 0, end: 1, rev: false, a: 0, d: 0, s: 1, r: 0, mute: false, cut: 0, poly: true, hold: 0, shift: 0 }));
   }
   setParam(i, x) {
     if (!Number.isFinite(x)) return;
@@ -149,6 +153,7 @@ export class DrumSynth extends Base {
         case 3: q.start = clamp(x, 0, 1); break; case 4: q.end = clamp(x, 0, 1); break; case 5: q.rev = x > 0.5; break;
         case 6: q.a = clamp(x, 0, 4); break; case 7: q.d = clamp(x, 0, 4); break; case 8: q.s = clamp(x, 0, 1); break; case 9: q.r = clamp(x, 0, 4); break;
         case 10: q.mute = x > 0.5; break; case 11: q.pitch = x | 0; break;
+        case 12: q.cut = clamp(x | 0, 0, 3); break; case 13: q.poly = x > 0.5; break; case 14: q.hold = clamp(x, 0, 4); break; case 15: q.shift = clamp(x, 0, 0.25); break;
         default: break;
       }
     }
@@ -180,8 +185,10 @@ export class DrumSynth extends Base {
     const s = q.sid >= 0 ? this.bank[q.sid] : null;
     if (q.sid >= 0 && (!s || s.frames < 4)) return;       // sample not loaded (yet): stay silent
     if (!s && q.kind < 0) return;
+    if (q.cut > 0 || !q.poly) this.choke(k, q);
     const v = this.alloc(this.v);
     v.on = true; v.age = ++this.counter; v.vel = vel; v.pad = k; v.pitch = p; v.t = 0; v.ph = 0;
+    v.dly = q.shift > 0 ? Math.round(q.shift * this.sr) : 0; v.hl = q.hold > 0 ? Math.round(q.hold * this.sr) : 0; v.cf = 0;
     v.rt = this.rate * Math.pow(2, q.pit / 12); v.lvl = q.lvl; v.dec = q.dec;
     v.pl = q.pan <= 0 ? 1 : 1 - q.pan; v.pr = q.pan >= 0 ? 1 : 1 + q.pan;
     if (s) {
@@ -204,6 +211,19 @@ export class DrumSynth extends Base {
       else v.bp.bandpass(sr, 2400, 0.9);                                                       // tom: stick
     }
   }
+  // Cut group / Poly: fade a sounding voice out in ~6 ms (samples through their release stage, built-in sounds with a gain ramp)
+  chokeVoice(o) {
+    if (o.smp) { const rel = Math.max(o.lv, 1e-4) / (0.006 * this.sr); o.held = false; if (o.st < 3) { o.st = 3; o.rel = rel; } else o.rel = Math.max(o.rel, rel); }
+    else if (o.cf === 0) o.cf = this.cutN;
+  }
+  choke(k, q) {
+    const g = q.cut;
+    for (const o of this.v) {
+      if (!o.on) continue;
+      if ((o.pad === k && !q.poly) || (g > 0 && o.pad !== k && this.pads[o.pad].cut === g)) this.chokeVoice(o);
+    }
+    if (g > 0) for (let m = 0; m < N_PADS; m++) { const cm = this.ch[m]; if (m !== k && cm.inst && cm.note >= 0 && this.pads[m].cut === g) { cm.inst.noteOff(cm.note); cm.note = -1; } }
+  }
   noteOff(p) {
     const k = this.padFor(p); if (k >= 0 && this.ch[k].inst && this.ch[k].note >= 0) { this.ch[k].inst.noteOff(this.ch[k].note); this.ch[k].note = -1; }
     for (const v of this.v) if (v.on && v.smp && v.held && v.pitch === p && v.st < 3) {
@@ -218,6 +238,8 @@ export class DrumSynth extends Base {
     if (!s) { v.on = false; return; }
     const sl = s.l, sr_ = s.r || s.l, sr = this.sr, g = v.g, pl = v.pl, pr = v.pr, lo = v.lo, hi = v.hi, dir = v.dir, ratio = v.ratio;
     for (let i = from; i < to; i++) {
+      if (v.dly > 0) { v.dly--; continue; }
+      if (v.hl > 0 && --v.hl === 0 && v.st < 3) { v.held = false; v.st = 3; v.rel = Math.max(v.lv, 1e-4) / (Math.max(v.er, 0.004) * sr); }
       switch (v.st) {
         case 0: v.lv += 1 / (v.ea * sr); if (v.lv >= 1) { v.lv = 1; v.st = v.ed > 0 && v.es < 1 ? 1 : 2; } break;
         case 1: v.lv -= (1 - v.es) / (v.ed * sr); if (v.lv <= v.es) { v.lv = v.es; v.st = 2; } break;
@@ -254,6 +276,8 @@ export class DrumSynth extends Base {
       // transient (click / snap / stick), a pitched body that sweeps down, and soft saturation that adds the upper harmonics a phone
       // speaker can play (a pure 50 Hz sine is inaudible there). ts = time in seconds scaled by the pad's Decay; rt = pad pitch.
       for (let i = from; i < to; i++) {
+        if (v.dly > 0) { v.dly--; continue; }
+        if (v.hl > 0 && --v.hl === 0 && v.cf === 0) v.cf = this.cutN;
         const t = v.t++, ts = t * v.rt / (sr * v.dec), tr = t / sr, rt = v.rt;
         const nz = (lcg(v.n) / 2147483648) - 1;
         let y = 0, len = 0.5;
@@ -291,7 +315,10 @@ export class DrumSynth extends Base {
         }
         if (ts > len) { v.on = false; break; }
         y *= v.vel * this.gain * v.lvl * KIT_MIX[v.kind];   // mix balance of the kit (headroom: a full beat stays below 0 dBFS)
+        let fin = false;
+        if (v.cf > 0) { y *= v.cf / this.cutN; fin = --v.cf === 0; }   // choked (cut group / poly off / hold): a 6 ms fade, then the voice ends
         L[i] += y * v.pl; R[i] += y * v.pr;
+        if (fin) { v.on = false; break; }
       }
     }
   }

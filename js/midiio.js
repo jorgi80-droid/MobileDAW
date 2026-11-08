@@ -22,10 +22,11 @@ function tempoEvents() {
   }
   return out;
 }
-export function buildProjectMidi() {
+export function buildProjectMidi(only) {                 // only: one track object (Save as MIDI of the channel menu); none = the whole project
   const tracks = []; let chN = 0;
   for (const t of state.tracks) {
     if (t.kind !== 'midi' && t.kind !== 'drum') continue;
+    if (only && t !== only) continue;
     const notes = [], lanes = new Map();
     for (const c of t.clips) {
       if (c.muted) continue;
@@ -50,6 +51,17 @@ export function exportMidi() {
   if (!eng.downloadBlob) { toast('Ekspor MIDI tersedia di versi web.'); return; }
   eng.downloadBlob(new Blob([bytes], { type: 'audio/midi' }), fileStem() + '.mid');
   toast(`MIDI diekspor: ${tracks.length} track.`, 3000);
+}
+
+// FL Studio Mobile channel menu "Save as MIDI": this track only (notes, controllers, tempo, meter, markers)
+export function exportTrackMidi(i) {
+  const t = state.tracks[i];
+  if (!t || (t.kind !== 'midi' && t.kind !== 'drum')) { toast('Hanya track synth atau drum yang bisa disimpan sebagai MIDI.', 3500); return; }
+  const { tracks, bytes } = buildProjectMidi(t);
+  if (!tracks.length) { toast('Track ini belum punya not untuk disimpan.', 3500); return; }
+  if (!eng.downloadBlob) { toast('Simpan MIDI tersedia di versi web.'); return; }
+  eng.downloadBlob(new Blob([bytes], { type: 'audio/midi' }), (t.name.replace(/[^\w\- ]+/g, '').trim() || 'Track') + '.mid');
+  toast(`MIDI disimpan: ${t.name}.`, 3000);
 }
 
 // ------------------------------------------------------------------ import
@@ -142,4 +154,36 @@ export async function importMidi() {
   modal('Impor MIDI', h('div', {}, file.name + ' berisi ' + info + ' Terapkan juga tempo, birama, dan marker file ini ke proyek yang sedang terbuka?'), [
     { label: 'Batal' }, { label: 'Hanya track', fn: done(false) }, { label: 'Track + tempo', go: true, fn: done(true) },
   ]);
+}
+
+// FL Studio Mobile channel menu "Import MIDI Tracks": the notes of a .mid file become ONE clip on this track (its own instrument plays them), at
+// the playhead's bar. A drum track takes the file's drum notes (GM -> pads), a synth track its melodic channels; tempo, meter and markers of the
+// file are not touched. One undo step.
+export async function importMidiInto(i) {
+  const t = state.tracks[i];
+  if (!t || (t.kind !== 'midi' && t.kind !== 'drum')) { toast('Pilih track synth atau drum untuk menerima not MIDI.', 3500); return; }
+  const file = await new Promise((res) => {
+    const inp = document.createElement('input'); inp.type = 'file'; inp.accept = pickerAccept('.mid,.midi,audio/midi'); inp.style.display = 'none'; document.body.append(inp);
+    inp.onchange = () => { const f = inp.files && inp.files[0]; inp.remove(); res(f || null); };
+    inp.addEventListener('cancel', () => { inp.remove(); res(null); });
+    inp.click();
+  });
+  if (!file) return;
+  let m;
+  try { m = decodeSmf(await file.arrayBuffer()); } catch (e) { toast(e.message || 'Berkas MIDI tidak bisa dibaca.', 5000); return; }
+  const drum = t.kind === 'drum';
+  const pool = m.tracks.filter((x) => (x.ch === 9) === drum), src = pool.length ? pool : m.tracks;
+  let notes = src.flatMap((x) => x.notes), dropped = 0;
+  if (drum) { const keep = []; for (const n of notes) { const p = GM_DRUM[n.p]; if (p === undefined) dropped++; else keep.push({ ...n, p }); } notes = keep; }
+  if (!notes.length) { toast(drum ? 'Tidak ada not drum yang cocok dengan pad di file ini.' : 'File MIDI ini tidak berisi not.', 4000); return; }
+  P.HK.group(() => {
+    checkpoint();
+    const a0 = P.barFloor(Math.min(...notes.map((n) => n.t))), end = Math.max(...notes.map((n) => n.t + n.d)), at = P.barFloor(P.currentTick());
+    const len = Math.max(P.barLenAt(a0), P.barCeil(end) - a0);
+    const c = P.addClip(i, at, len); c.name = (file.name || 'MIDI').replace(/\.[^.]+$/, '').slice(0, 40);
+    for (const n of notes) c.notes.push({ t: n.t - a0, d: n.d, p: n.p, v: Math.max(0.05, Math.min(1, n.v)) });
+    c.notes.sort((x, y) => x.t - y.t);
+    P.clipChanged(i); P.emit('clips');
+  });
+  toast(`MIDI diimpor ke ${t.name}: ${notes.length} not.` + (dropped ? ` ${dropped} not drum di luar pad dilewati.` : ''), 3500);
 }

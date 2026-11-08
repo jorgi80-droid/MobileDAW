@@ -252,6 +252,24 @@ export const SCENARIOS = [
       e.rackCmd(0, -1, 3, 8, 0, 1, 0); play(e, 0.5); e.rackCmd(0, -1, 7, 8, 0, 0, 0); play(e, 0.5); e.rackCmd(0, -1, 0, 0, 0, 0, 0);
       e.stop(); play(e, 1);
     } },
+  { name: 'inst-drumcut', info: 'Drum Sampler Seq settings (FL Studio Mobile): cut groups (sample pads, built-in pads, mixed), poly off (a pad cuts itself), hold (sample and built-in), shift (delay), changed while playing',
+    run(e) {
+      samples(e); testSample(e); e.tempo(120); e.trackInst(0, 3);
+      const S = (pad, f, v) => e.instParam(0, 200 + pad * 16 + f, v);
+      S(6, 0, 3); S(6, 11, 50); S(6, 12, 1);                                   // sample pad, cut group A
+      S(7, 0, 0); S(7, 11, 52); S(7, 12, 1); S(7, 9, 0.3); S(7, 2, 0.4);        // sample pad, cut group A, release 0.3 s
+      S(8, 0, 2); S(8, 11, 54); S(8, 13, 0);                                   // sample pad, poly off
+      S(9, 0, 3); S(9, 11, 55); S(9, 14, 0.12); S(9, 9, 0.05);                 // sample pad, hold 0.12 s, release 50 ms
+      S(10, 0, 1); S(10, 11, 56); S(10, 15, 0.03);                             // sample pad, shift 30 ms
+      S(0, 12, 2); S(5, 12, 2); S(7, 12, 1);                                   // built-in kick + tom: cut group B
+      S(1, 13, 0); S(2, 14, 0.05); S(3, 15, 0.02); S(4, 12, 1);                // snare poly off, clap hold, hat shift, open hat cut group A (chokes the sample pads of A)
+      const pat = [36, 41, 50, 52, 54, 55, 56, 38, 39, 42, 46, 36, 52, 54, 41, 50];
+      const f = []; for (let k = 0; k < 64; k++) f.push(k * PPQ / 8, PPQ * (k % 3 ? 0.2 : 0.7), pat[k % 16], 0.45 + (k % 4) * 0.17, 0); e.trackNotes(0, f, f.length / 5);
+      e.play(); play(e, 3, [128, 77, 256]);
+      S(6, 12, 0); S(8, 13, 1); S(2, 14, 0); S(0, 12, 0); play(e, 1.5);
+      S(6, 12, 3); S(7, 12, 3); S(9, 14, 0); S(10, 15, 0.25); play(e, 1.5);
+      e.stop(); play(e, 1);
+    } },
   { name: 'core-width-invert', info: 'channel stereo width (0 / 0.4 / 2, smoothed) and phase invert (L, R, both; ramped) on tracks, a return and the master, plus width automation (lane kind 7)',
     run(e) {
       samples(e); e.tempo(120); e.trackClips(0, clipsA, 3); e.trackClips(1, clipsB, 3); e.trackSend(0, 0, 0.5); e.insertDevice(65, 0, 7);

@@ -13,6 +13,8 @@ import { BAR, BEAT } from './project.js';   // live bindings (they follow the ti
 import { pickColor } from './colorpick.js';
 import { MASTER, RET0 } from './engine.js';
 import { INSTRUMENTS, DEVICES } from './defs.js';
+import { exportTrackMidi, importMidiInto } from './midiio.js';
+import * as PRS from './presets.js';
 const { state, PPQ, SWATCHES } = P;
 
 // Live 12 layout: locator strip + beat ruler on top, time ruler at the bottom (with the grid / zoom fields at its right end), track
@@ -798,6 +800,27 @@ function xheadMenu(xi, x, y) {
   ], r.left + x, r.top + y);
 }
 function addFx() { const k = P.addFxTrack(); if (k === null) return toast('Batas FX track tercapai.'); P.selectTrack(RET0 + k); toast('FX track dibuat. Arahkan track ke sini lewat tombol \u2192 di Mixer atau menu Output (tekan lama nama track).', 3600); }
+// FL Studio Mobile channel menu "Sync All Samples": every audio clip of the track follows the project tempo (pitch stays). A clip whose tempo
+// cannot be detected (not a rhythmic loop) is left as it is and counted.
+async function syncTrackSamples(i) {
+  const t = state.tracks[i], todo = t ? t.clips.filter((c) => (c.sample || c.dsample) && !c.warpAuto) : [];
+  if (!todo.length) return toast('Semua sample di track ini sudah di-sync.', 2200);
+  toast(`Menyamakan ${todo.length} sample ke tempo proyek\u2026`, 30000); checkpoint();
+  let ok = 0, skip = 0;
+  for (const c of todo) {
+    await new Promise((r) => setTimeout(r, 0));                                 // let the UI breathe between clips
+    if (!(c.srcBpm > 0)) { const d = P.detectClipBpm(i, c.id); if (d.error) { skip++; continue; } P.setClipSrcBpm(i, c.id, d.bpm); }
+    const out = await P.syncClipToTempo(i, c.id, c.srcBpm, true);
+    if (out.error) skip++; else ok++;
+  }
+  invalidate(); toast(`${ok} sample disamakan ke ${state.bpm} BPM` + (skip ? `, ${skip} dilewati (tempo tidak terdeteksi)` : '') + '.', 4200);
+}
+// "My Drumsets": the saved kits; picking one replaces the pads of this drum track (one undo step)
+function kitMenu(i, x, y) {
+  const r = canvasOrigin(), L = PRS.kitList();
+  if (!L.length) return toast('Belum ada kit drum. Simpan dulu lewat menu track \u2192 Simpan kit drum.', 3500);
+  menu([{ label: 'KIT DRUM SAYA', dim: true }, ...L.map((k) => ({ label: `${k.name} (${k.n} pad)`, fn: async () => { const o = await PRS.applyKit(k.path, i); toast(o.error || o.msg, 3800); invalidate(); } }))], r.left + x, r.top + y);
+}
 function headMenu(i, x, y) {
   const t = state.tracks[i], r = canvasOrigin();
   menu([
@@ -807,6 +830,11 @@ function headMenu(i, x, y) {
     ...(t.kind !== 'auto' ? [{ label: 'Lane otomasi\u2026', fn: () => laneMenu(i, x, y) }] : []),
     ...(t.kind !== 'auto' ? [P.isFrozen(i) ? { label: 'Lepas freeze (Unfreeze)', fn: () => { P.unfreezeTrack(i); toast('Track kembali live.'); } }
       : { label: 'Freeze track', fn: async () => { toast('Membekukan track\u2026', 20000); const r = await P.freezeTrack(i); toast(r.error || `Track dibekukan (${r.secs.toFixed(1)} dtk audio). Instrumen dan efeknya tidak lagi memakai CPU.`, 4000); invalidate(); } }] : []),
+    ...(t.kind !== 'auto' ? [{ label: 'Duplikat track', fn: () => { const r = P.duplicateTrack(i); toast(r.error || 'Track diduplikasi.', r.error ? 3200 : 1400); invalidate(); } }] : []),
+    ...(t.kind === 'midi' || t.kind === 'drum' ? [{ label: 'Simpan sebagai MIDI', fn: () => exportTrackMidi(i) }, { label: 'Impor MIDI ke track ini\u2026', fn: () => importMidiInto(i) }] : []),
+    ...(t.kind === 'audio' && t.clips.some((c) => c.sample) ? [{ label: 'Sync semua sample', fn: () => syncTrackSamples(i) }] : []),
+    ...(t.kind === 'drum' ? [{ label: 'Simpan kit drum\u2026', fn: () => ask('Nama kit drum', t.name, (v) => { const r = PRS.saveKit(i, String(v || '').trim()); toast(r.error || `Kit tersimpan di Presets/Kits (${r.n} pad${r.skipped ? `, ${r.skipped} pad chain dilewati` : ''}).`, 3500); }) },
+      { label: 'Muat kit drum\u2026', fn: () => kitMenu(i, x, y) }] : []),
     { label: 'Ganti nama', fn: () => ask('Nama track', t.name, (v) => v && P.renameTrack(i, v.trim())) },
     { label: 'Warna', fn: () => { const before = t.color; pickColor({ title: 'Warna track', name: t.name, color: t.color, swatches: SWATCHES, onChange: (c) => { t.color = c; invalidate(); }, onDone: (c) => { if (c !== before) { P.noteColor(t.id, before); P.emit('tracks'); } } }); } },
     { label: t.fold ? 'Buka track' : 'Lipat track', fn: () => toggleFold(i) },

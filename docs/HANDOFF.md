@@ -45,6 +45,23 @@ Baca juga `README-ANDROID.md` (build, install, status fase 2).
 | Ekspor: Mono, pilihan sample rate (resampler Kaiser HQ), rentang Area loop | selesai (`tools/export-test.mjs`) |
 | Kontrol sentuh gaya FL Studio Mobile: pengaturan gestur, ketuk-ganda bersih, batal gestur, Kontrol Klip tidak modal, Snap ketuk/tahan, reorder device, seleksi latar, titik otomasi banyak, menu pad drum, Simpan cepat geser + cadangan, pintasan keyboard yang bisa diubah | selesai (`docs/GESTURES.md`, `tools/gesture-test.mjs`, `tools/touch-ui-test.mjs`) |
 
+## Workflow ala FL Studio Mobile: manual resmi sebagai acuan (sesi ini)
+Sumber: PDF manual resmi (Playlist, Editors, Rack, Home Panel, dst.) yang diberikan pemilik. Celah workflow yang ditemukan dan ditutup:
+- **Drum Sampler, tab "Seq"** (Hold, Cut Group A/B/C, Poly, Shift). Field pad 12–15 di blok `200 + pad*16` (`instruments.js` DrumSynth + padanan
+  C++ `inst_classic.{h,cpp}`). Choke = fade 6 ms (tanpa klik): sample lewat tahap release, suara bawaan lewat rampa gain `cf`. Hold melepas
+  pad sekian detik setelah dipukul (sample: release min 4 ms; bawaan: fade). Shift = tunda (0–250 ms; shift negatif butuh look-ahead, tidak ada).
+  Default (cut 0, poly on, hold 0, shift 0) **identik bit** dengan sebelumnya. Tes: `drumseq-test` (perilaku), golden `inst-drumcut` (JS = C++).
+  UI: `drumpad.js` tab Seq; `project.js` `newPad` / `sendPad` / `PAD_FIELD_PARAM`. AUX per pad belum.
+- **Menu header track** (long-press): **Duplikat track** (`P.duplicateTrack`: salinan independen di bawah aslinya, id baru, sample dipakai bersama,
+  freeze/arm/solo tidak ikut, lane otomasi tetap di aslinya, sidechain Autoduck mengikuti lewat `remapSources`, satu langkah urung),
+  **Simpan sebagai MIDI** (per track, `midiio.js buildProjectMidi(only)`), **Impor MIDI ke track ini** (not jadi satu klip di playhead, drum lewat peta GM),
+  **Sync semua sample** (audio, deteksi BPM + `syncClipToTempo` per klip, yang tak terdeteksi dilewati dan dihitung), **Simpan / Muat kit drum**
+  (`presets.js saveKit / kitList / applyKit`, `/Presets/Kits/*.json`, pad + file sample; pad ber-chain dilewati; `P.setPadKit` + record undo `kit`).
+  Tes: `track-dup-test`, `drumkit-test`, `channel-ui-test` (Chromium, bukan bagian run-tests).
+- `js/engine.js`: Proxy `eng` kini menerima penetapan properti (`set` trap) agar tes bisa mengganti filesystem; tidak mengubah perilaku app.
+- Masih terbuka dari manual: Slide Notes, Pan/Pitch per step, envelope Vol/Pan/Pitch per klip, rekam otomasi saat merekam, Notes Track di bawah
+  channel drum, AUX per pad, mod wheel, monitoring input (lihat `docs/PARITY.md`).
+
 ## Modul besar di jendela mengambang (sesi ini)
 Aturan pemilik (diperjelas): **hanya modul berukuran besar** (mis. MiniMeters) yang otomatis tampil di jendela mengambang; instrumen dan
 efek yang muat di kartu rak tetap tampil di bawah seperti biasa. Saat jendela modul besar dikecilkan, kartunya menampilkan

@@ -595,6 +595,36 @@ export function removeTrack(i) {
   const r = detachTrack(i);
   if (HK.on) HK.add({ t: 'trk', present: false, r });
 }
+// Duplicate Track (Live: Ctrl+D): a full copy right below the original - instrument (zones, pads, chains), effects, clips, mixer settings and
+// sends; the decoded samples are shared, not copied. Frozen audio, record-arm and solo are not carried over, the track's automation lanes stay with
+// the original. One undo step. -> { track } or { error }
+export function duplicateTrack(i) {
+  const src = state.tracks[i];
+  if (!src) return { error: 'Track tidak ada.' };
+  if (src.kind === 'auto') return { error: 'Track otomasi tidak bisa diduplikasi.' };
+  if (state.tracks.length >= MAX_TRACKS) return { error: `Jumlah track maksimum (${MAX_TRACKS}) tercapai.` };
+  const copy = (o) => {                                           // deep copy; decoded samples (shared audio data) are kept by reference
+    if (Array.isArray(o)) return o.map(copy);
+    if (o && typeof o === 'object') { const r = {}; for (const k of Object.keys(o)) r[k] = k === 'sample' || k === 'dsample' ? o[k] : copy(o[k]); return r; }
+    return o;
+  };
+  const n = copy(src);
+  n.id = uid(); n.name = (src.name + ' 2').slice(0, 40); n.arm = false; n.solo = false; delete n.frozen;
+  for (const c of n.clips) c.id = uid();
+  for (const d of n.devices) reidDev(d);
+  if (n.inst) {
+    if (n.inst.chains) { const had = 'id' in n.inst; reidDev(n.inst); if (!had) delete n.inst.id; }          // Instrument Rack: new chain / device ids, macro links follow
+    for (const q of n.inst.pads || []) if (q && q.chain) for (const x of q.chain.devices || []) x.id = uid(); // Drum Rack pad chains
+  }
+  const at = i + 1, oldIds = state.tracks.map((t) => t.id);
+  state.tracks.splice(at, 0, n);
+  remapSources(oldIds);                                           // Autoduck sidechain sources are track numbers: they follow their tracks
+  if (HK.on) HK.add({ t: 'trk', present: true, r: { gone: n, items: [{ t: n, at }], src: [] } });
+  syncAll(); scheduleBake(60);
+  state.sel.track = at; state.sel.clip = null;
+  emit('tracks'); emit('sel');
+  return { track: n };
+}
 export function swapTracks(i, j) {
   if (!state.tracks[i] || !state.tracks[j] || i === j) return;
   if (HK.on) HK.add({ t: 'tswap', a: state.tracks[i].id, b: state.tracks[j].id });
@@ -774,7 +804,7 @@ export function setInstParam(i, pi, v) {
 // ---- drum pads: every drum track owns up to 16 pads; a pad is a built-in synth sound or a sample, with gain / pan / sample / envelope settings
 export const MAX_PADS = 16;
 const PAD_FREE = [37, 43, 45, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59];   // MIDI pitches given to added pads (35, 40 and 44 stay GM aliases)
-export const newPad = (o) => ({ pitch: 36, name: 'Pad', kind: -1, sample: null, gain: 0, pan: 0, pit: 0, dec: 1, start: 0, end: 1, rev: false, a: 0, d: 0, s: 1, r: 0, mute: false, solo: false, ...o });
+export const newPad = (o) => ({ pitch: 36, name: 'Pad', kind: -1, sample: null, gain: 0, pan: 0, pit: 0, dec: 1, start: 0, end: 1, rev: false, a: 0, d: 0, s: 1, r: 0, mute: false, solo: false, cut: 0, poly: true, hold: 0, shift: 0, ...o });
 export function padsOf(i) {
   const t = state.tracks[i];
   if (!t || t.kind !== 'drum' || !t.inst) return [];
@@ -793,6 +823,7 @@ function sendPad(i, k) {
   eng.instParam(i, b + 3, q.start); eng.instParam(i, b + 4, q.end); eng.instParam(i, b + 5, q.rev ? 1 : 0);
   eng.instParam(i, b + 6, q.a); eng.instParam(i, b + 7, q.d); eng.instParam(i, b + 8, q.s); eng.instParam(i, b + 9, q.r);
   eng.instParam(i, b + 10, q.mute || (solo && !q.solo) ? 1 : 0); eng.instParam(i, b + 11, q.pitch);
+  eng.instParam(i, b + 12, q.cut || 0); eng.instParam(i, b + 13, q.poly === false ? 0 : 1); eng.instParam(i, b + 14, q.hold || 0); eng.instParam(i, b + 15, q.shift || 0);   // Seq: cut group, poly, hold, shift (projects before these had none: defaults)
 }
 export function syncPads(i) {
   const t = state.tracks[i];
@@ -850,7 +881,7 @@ export function padChainDevParam(i, k, j, p, v) {
   padChainEdit(i, k, 'd' + j + '.' + p, (c) => { const d = c.devices[j]; if (d) d.params[p] = v; });
   eng.rackCmd(i, -1, 2, k, j, p, v);
 }
-const PAD_FIELD_PARAM = { sample: 0, kind: 1, pan: 2, start: 3, end: 4, rev: 5, a: 6, d: 7, s: 8, r: 9, pitch: 11 };
+const PAD_FIELD_PARAM = { sample: 0, kind: 1, pan: 2, start: 3, end: 4, rev: 5, a: 6, d: 7, s: 8, r: 9, pitch: 11, cut: 12, poly: 13, hold: 14, shift: 15 };
 export function setPad(i, k, field, v) {
   const q = padsOf(i)[k]; if (!q) return;
   if (HK.on && q[field] !== v && !HK.hit('pd' + state.tracks[i].id + '.' + k + field)) HK.add({ t: 'val', k: 'pad', s: state.tracks[i].id, d: k, p: field, v: q[field] });
@@ -861,6 +892,16 @@ export function setPad(i, k, field, v) {
   const b = 200 + k * 16;
   if (field === 'gain') eng.instParam(i, k * 3, v); else if (field === 'pit') eng.instParam(i, k * 3 + 1, v); else if (field === 'dec') eng.instParam(i, k * 3 + 2, v);
   else if (field in PAD_FIELD_PARAM) eng.instParam(i, b + PAD_FIELD_PARAM[field], typeof v === 'boolean' ? (v ? 1 : 0) : v);
+}
+// Replace the whole pad list (loading a drum kit / template). One undo step that swaps the complete list back (record 'kit').
+export function setPadKit(i, list) {
+  const t = state.tracks[i];
+  if (!t || t.kind !== 'drum' || !t.inst) return false;
+  const old = padsOf(i);
+  if (HK.on) HK.add({ t: 'kit', s: t.id, v: old });
+  t.inst.pads = list.slice(0, MAX_PADS).map((q) => newPad(q));
+  syncPads(i); emit('devices');
+  return true;
 }
 const cleanName = (n) => String(n || 'Sample').replace(/\.[^.]+$/, '').slice(0, 14);
 export async function addPadSample(i, path) {
@@ -942,7 +983,8 @@ export function addDevice(i, type) {
   emit('devices');
 }
 // ---- module menu (FL Studio Mobile Rack: Insert Above / Below, Replace, Copy / Paste, Reset) and rack presets. Every call is one undo step.
-const cloneDev = (d) => { const c = JSON.parse(JSON.stringify(d)); c.id = uid(); if (c.chains) for (const ch of c.chains) { const old = ch.id; ch.id = uid(); for (const m of c.macroMap || []) if (m && m.c === old) m.c = ch.id; for (const x of ch.devices || []) { const oid = x.id; x.id = uid(); for (const m of c.macroMap || []) if (m && m.id === oid && m.c === ch.id) m.id = x.id; } } return c; };
+const reidDev = (c) => { c.id = uid(); if (c.chains) for (const ch of c.chains) { const old = ch.id; ch.id = uid(); for (const m of c.macroMap || []) if (m && m.c === old) m.c = ch.id; for (const x of ch.devices || []) { const oid = x.id; x.id = uid(); for (const m of c.macroMap || []) if (m && m.id === oid && m.c === ch.id) m.id = x.id; } } return c; };   // fresh ids for a copied device / rack (chains, chain devices, macro links)
+const cloneDev = (d) => reidDev(JSON.parse(JSON.stringify(d)));
 export const devicesSnapshot = (i, a = 0, b = Infinity) => tr(i).devices.slice(a, b).map((d) => JSON.parse(JSON.stringify(d)));
 // insert copies of devices (from a copy / a preset) at position `at`; unknown types are skipped and reported (never dropped silently)
 export function insertDeviceCopies(i, at, list) {
@@ -2024,6 +2066,7 @@ export function swapRec(e) {
       else { attachTrack(e.r); e.present = true; }
       return;
     }
+    case 'kit': { if (!t || !t.inst) return; const cur = t.inst.pads; t.inst.pads = e.v; e.v = cur; syncPads(i); emit('devices'); return; }
     case 'tswap': { const a = state.tracks.findIndex((x) => x.id === e.a), b = state.tracks.findIndex((x) => x.id === e.b); if (a >= 0 && b >= 0) swapTracks(a, b); return; }
     case 'dpres': {
       if (!t) return;

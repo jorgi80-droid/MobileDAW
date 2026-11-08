@@ -89,18 +89,21 @@ class Gms : public PolyBase<GmsVoice, 8> {
 
 // ---------------------------------------------------------------- Drum Sampler (3): 16 pads, built-in kit / samples / a chain per pad
 constexpr int N_PADS = 16;
-struct DrumPad { int pitch = -1, kind = -1, sid = -1; double lvl = 1, pit = 0, dec = 1, pan = 0, start = 0, end = 1; bool rev = false; double a = 0, d = 0, s = 1, r = 0; bool mute = false; };
+struct DrumPad { int pitch = -1, kind = -1, sid = -1; double lvl = 1, pit = 0, dec = 1, pan = 0, start = 0, end = 1; bool rev = false; double a = 0, d = 0, s = 1, r = 0; bool mute = false; int cut = 0; bool poly = true; double hold = 0, shift = 0; };
 struct DrumChain { Instrument* inst = nullptr; Device* dev[16] = {}; int n = 0; float L[128] = {}, R[128] = {}; int note = -1; };
 struct DrumVoice : VoiceBase {
   int kind = 0; double t = 0, ph = 0; uint32_t nseed = 1; Biquad bp; double hp = 0; bool smp = false; int pad = 0, sid = -1; double pos = 0, dir = 1, lo = 0, hi = 0, ratio = 1, lv = 0; int st = 0;
   double ea = 0, ed = 0, es = 1, er = 0, rel = 0, g = 1, pl = 1, pr = 1; Biquad f2, f3; double ph2 = 0, mp[6] = {}, rt = 1, lvl = 1, dec = 1;
+  int dly = 0, hl = 0, cf = 0;   // Shift delay (frames), Hold countdown (frames), choke fade counter (frames)
 };
 class DrumSynth : public PolyBase<DrumVoice, 24> {
  public:
   DrumSynth(double rate, Bank* b);
   ~DrumSynth() override;
-  Bank* bank; double gain = 1, rate = 1, bpm = 120; int pst = 0;
+  Bank* bank; double gain = 1, rate = 1, bpm = 120; int pst = 0; int cutN = 288;
   DrumPad pads[N_PADS]; DrumChain ch[N_PADS];
+  void chokeVoice(DrumVoice& o);
+  void choke(int k, const DrumPad& q);
   void setParam(int i, double x) override;
   void setTempo(double b) override;
   int padFor(int p) const;
