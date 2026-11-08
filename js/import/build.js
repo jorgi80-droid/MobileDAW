@@ -48,7 +48,7 @@ export function dwParamsFromFlm(raw) {
 function presetFor(type, name) {
   const L = PRESETS[type] || [], n = String(name || '').toLowerCase().replace(/\.\w+$/, '').replace(/^.*\//, '').trim();
   if (!n) return null;
-  return L.find((p) => p.name.toLowerCase() === n) || L.find((p) => n.includes(p.name.toLowerCase()) || p.name.toLowerCase().includes(n)) || L.find((p) => n.split(/\s+/).some((w) => w.length > 3 && p.name.toLowerCase().includes(w))) || null;
+  return L.find((p) => p.name.toLowerCase() === n) || L.find((p) => n.includes(p.name.toLowerCase()) || p.name.toLowerCase().includes(n)) || null   // no single-word guess: "Lead Super" must not become "EDM Lead";
 }
 const PPQ = 960, VMAX = 1.4, DEF_VOL = 0.85, MAX_FX = 8, MAX_TRACKS = 64, MAX_PADS = 16;
 const PALETTE = ['#1fbccf', '#e3c000', '#f07200', '#f02ec8', '#0b9fdb', '#8d5de0', '#a3df00', '#b8573c'];
@@ -89,7 +89,7 @@ export function buildMdaw(M, opts) {
     if (SYNTH_TYPE[I.kind]) {
       const type = SYNTH_TYPE[I.kind], pr = presetFor(type, I.preset);
       const dflt = !pr && !(I.preset && I.preset !== 'Default');                  // FLM's own default patch: the stem-calibrated equivalent
-      note(INSTRUMENTS[type].name + (pr ? ' (preset ' + pr.name + ')' : dflt ? ' (setelan awal FLM, dikalibrasi dari stem)' : ' (setelan awal)'), pr ? 'preset' : 'default');
+      note(INSTRUMENTS[type].name + (pr ? ' (preset ' + pr.name + ')' : dflt ? ' (setelan awal FLM, dikalibrasi dari stem)' : ' (preset FLM "' + String(I.preset).replace(/\.\w+$/, '').replace(/^.*\//, '') + '" belum ada di MobileDAW: setelan awal)'), pr ? 'preset' : 'default');
       return { type, params: pr ? { ...pr.p } : dflt ? byName(type, FLM_DEFAULT[type]) : {}, pitch: 0, from: { app: M.app, name: I.name, preset: I.preset || '', params: I.params || [] } };
     }
     const layers = I.layers || (I.sample ? [{ sample: I.sample, root: 60 }] : []);

@@ -574,3 +574,11 @@ Permintaan pemilik: SEMUA efek dan instrumen diganti dengan set stok Ableton Liv
   arrangement dalam keadaan referensi. Hasil dan iterasi: `docs/replica/CLIP-RECON.md` (48,3 -> 59,6).
 - Perubahan dari diff: gelombang stereo dua jalur (`stereoPyr` di timeline.js, piramida per kanal dibuat sekali per sample, hanya bila tinggi isi >= 34 px);
   baris Master / FX 26 px (`XROW_H`), aktivator FX dan field level di kolom mixer, keterangan "x track aktif" hanya bila baris >= 40 px.
+
+## New Song 1 dari pemilik (sesi ini)
+- Rack tiap instrumen berisi 23 modul efek FLM (preset Default, beberapa preset bawaan). Yang pasti dari preset bawaan: 15 Stereoizer, 36 Multiband Compressor
+  (MBand Comp), 34 Spacer, 46 Tremolo, 43 Wow & Flutter (sudah dikenal). Nilai bawaan semua modul dicatat di `docs/replica/FLM-DEFAULTS.md`.
+- 10 tipe belum bernama di rack ini (3, 9, 13, 16, 18, 27, 28, 30, 41, 44): posisi slotnya ada di `docs/replica/UNKNOWN-FLM-MODULES.md` (arsip "New Song 1").
+  Urutan rack tidak alfabetis, jadi nama TIDAK ditebak dari urutan.
+- Importer: pencocokan preset synth tidak lagi menebak dari satu kata ("Lead Super" dulu jadi "EDM Lead"); preset FLM yang tidak ada di MobileDAW
+  dilaporkan apa adanya ("preset FLM ... belum ada di MobileDAW: setelan awal").
