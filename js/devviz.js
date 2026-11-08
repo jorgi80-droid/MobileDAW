@@ -8,7 +8,7 @@ import { buildTables, WT_FRAMES } from './engine/instruments.js';
 import { state as PS } from './project.js';
 
 const SR = 48000;
-const W = 156, H = 42;                       // size of one display in CSS px (compact panel, see .sp in app.css)
+const W = 156, H = 104;                      // size of one display in CSS px: tall enough that the panel is filled on the phone (Find X8 audit; was 42)
 // Display palette: Live keeps its device displays dark in every theme, so curves are always read on the same background.
 // These are fixed colours on purpose (not mapped through C()): a light theme only changes the panels around the display.
 export const DISP = { bg: '#17171a', grid: '#303035', grid2: '#3a3a40', ink: '#a2a2aa' };

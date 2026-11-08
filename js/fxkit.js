@@ -83,6 +83,7 @@ function bandDisp(k, w, hh, kf, kw, o = {}) {
 
 // ================================================================================================ views
 const V = {};
+const WT_TAB = new Map();                                   // Wavetable: the tab shown per track
 // Filter Delay: three lines L / L+R / R, each: input on, filter on + display, sync grid / time, feedback, pan, volume; dry at the end
 V[18] = (k) => {
   const line = (n, name) => { const o = n * 10; return k.row(k.col(k.T(o, name, { w: 34 }), k.T(o + 1, 'On', { w: 34 }), k.N(o + 2, { w: 58 }), k.N(o + 3, { w: 44 })),
@@ -1184,10 +1185,16 @@ VI[11] = (k) => {
   const matrix = k.dk(h('div', { class: 'lk-row lk-shead' }, h('span', { class: 'lk-st' }, 'Matrix')), mx);
   const glob = k.dk(h('div', { class: 'lk-row lk-shead' }, h('span', { class: 'lk-st' }, 'Unison')), h('div', { class: 'lk-row lk-sev' }, k.TL('Mode', k.S(26, { w: 84, cls: 'dk or' })), O('Voices', 27, 36), O('Amount', 28, 44)),
     h('div', { class: 'lk-row lk-shead' }, h('span', { class: 'lk-st' }, 'Global')), h('div', { class: 'lk-row lk-sev' }, k.TL('Poly', k.T(23, 'Mono', { w: 48 })), O('Voices', 25, 36), k.K(24, { n: 'Glide' }), k.K(29, { n: 'Volume' })));
-  return h('div', { class: 'lk-col lk-wt' },
-    h('div', { class: 'lk-wr lk-wr1' }, osc(0), osc(1), sub),
+  // phone (Find X8 Device panel ~250 px): the three rows would only fit at 0.6x (text 6 px, the last row cut), so one row is shown at a time
+  // under Live-style tabs; every control keeps the common panel size and the tab is remembered per track
+  const rows = [h('div', { class: 'lk-wr lk-wr1' }, osc(0), osc(1), sub),
     h('div', { class: 'lk-wr lk-wr2' }, env('Amp', 35), env('Env 2', 39), env('Env 3', 43), lfo('LFO 1', 47), lfo('LFO 2', 50)),
-    h('div', { class: 'lk-wr lk-wr3' }, filt1, filt2, matrix, glob));
+    h('div', { class: 'lk-wr lk-wr3' }, filt1, filt2, matrix, glob)];
+  const mk = 'wt:' + (k.ctx.i ?? '') + ':' + (k.d ? k.d.id || '' : ''), cur = WT_TAB.get(mk) || 0;
+  const show = (j) => { WT_TAB.set(mk, j); rows.forEach((r, q) => { r.style.display = q === j ? '' : 'none'; }); k.redraw(); };
+  const tabs = lvTabs([{ label: 'Oscillators' }, { label: 'Envelopes / LFOs' }, { label: 'Filter / Matrix' }], cur, (j) => show(j), { cls: 'lk-wtabs' });
+  show(cur);
+  return h('div', { class: 'lk-col lk-wt' }, tabs, ...rows);
 };
 // Drum Synths (DS Kick / Snare / Tom / HH / Clap / FM): the hit drawn from the real engine (rendered offline with the current settings,
 // tap the display = audition), one row of knobs, list parameters as joined buttons, Volume after a divider
@@ -1232,11 +1239,13 @@ VI[25] = (k) => {
     h('div', { class: 'lk-pr2' }, k.dk(hitDisp(k, Electric, 236, 96)), k.dk(rows)));
 };
 // Tension: Exciter | String (dark strip) | Termination | Pickup | Volume
-VI[26] = (k) => h('div', { class: 'lk-col lk-phys' },
-  h('div', { class: 'lk-pr' }, box(k.row(ttl('Exciter'), k.S(0, { w: 86 })), k.row(k.K(1), k.K(2), k.K(3), k.K(4), k.K(5, { n: 'Damping' })))),
-  h('div', { class: 'lk-pr2' }, k.dk(hitDisp(k, Tension, 200, 80, 52, 1.2)), k.dk(h('div', { class: 'lk-row lk-sev' }, h('span', { class: 'lk-elh' }, 'String'),
-    k.TL('Decay', k.NT(6, { w: 54 })), k.TL('Ratio', k.NT(7, { w: 54 })), k.TL('Inharm', k.NT(8, { w: 54 })), k.TL('Damping', k.NT(9, { w: 54 }))))),
-  h('div', { class: 'lk-pr' }, box(k.row(k.T(10, 'Termination', { w: 92 })), k.row(k.K(11), k.K(12), k.K(13))), box(k.row(k.T(14, 'Pickup', { w: 64 })), k.row(k.K(15, { n: 'Position' }))), box(ttl('Global'), k.row(k.K(16, { big: true })))));
+// phone layout: two columns of the same height (three stacked rows only fitted at 0.77x): left Exciter over Termination / Pickup / Global,
+// right the string display over its four values
+VI[26] = (k) => h('div', { class: 'lk-row lk-phys lk-tens' },
+  h('div', { class: 'lk-col' }, h('div', { class: 'lk-pr' }, box(k.row(ttl('Exciter'), k.S(0, { w: 86 })), k.row(k.K(1), k.K(2), k.K(3), k.K(4), k.K(5, { n: 'Damping' })))),
+    h('div', { class: 'lk-pr' }, box(k.row(k.T(10, 'Termination', { w: 92 })), k.row(k.K(11), k.K(12), k.K(13))), box(k.row(k.T(14, 'Pickup', { w: 64 })), k.row(k.K(15, { n: 'Position' }))), box(ttl('Global'), k.row(k.K(16, { big: true }))))),
+  h('div', { class: 'lk-col lk-pr2' }, k.dk(hitDisp(k, Tension, 220, 104, 52, 1.2)), k.dk(h('div', { class: 'lk-row lk-sev' }, h('span', { class: 'lk-elh' }, 'String'),
+    k.TL('Decay', k.NT(6, { w: 54 })), k.TL('Ratio', k.NT(7, { w: 54 })), k.TL('Inharm', k.NT(8, { w: 54 })), k.TL('Damping', k.NT(9, { w: 54 }))))));
 // Collision: Mallet | Noise | Resonator (type, mode display, Decay / Material) with Bright / Inharm / Ratio / Volume below
 VI[27] = (k) => {
   const g = k.get;

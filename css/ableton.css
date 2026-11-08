@@ -1075,3 +1075,25 @@ html.reduce-motion #btn-play.on, html.reduce-motion #btn-rec.on { animation: non
 .scrim:has(+ .modal) { -webkit-backdrop-filter: blur(10px) saturate(.85); backdrop-filter: blur(10px) saturate(.85); }
 html.reduce-motion .menu, html.reduce-motion .modal, html.reduce-motion .fw, html.reduce-motion .mm-pop, html.reduce-motion .scrim { -webkit-backdrop-filter: none !important; backdrop-filter: none !important; }
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) { .menu, .modal, .fw, .mm-pop { background-color: var(--lv-body, #2a2a2c) !important; } }
+
+/* fitKit: a panel shorter than the Device panel spreads its controls over the height (same text size everywhere, no empty band) */
+.lk.lk-fill { align-items: stretch; align-content: stretch; }
+.lk.lk-fill.lk-row > .lk-col, .lk.lk-fill.lk-row > .lk-sec, .lk.lk-fill.lk-row > .lk-dk { justify-content: space-evenly; }
+.lk.lk-fill.lk-col { justify-content: space-evenly; }
+.lk.lk-fill > .lk-sep { align-self: stretch; }
+/* audit (Find X8): a knob grows to its label and a switch to its text instead of cutting them ("Pitch Decay", "Finger Mass", "4x10 Bass") */
+.lk .knob.lk-k { min-width: 52px; width: auto; }
+.lk .knob.lk-k .k-n, .lk .knob.lk-k .k-v { overflow: visible; text-overflow: clip; max-width: none; padding: 0 1px; }
+.lk .lk-ch .lv-btn, .lk .lv-btn.lk-t { white-space: nowrap; min-width: max-content; }
+
+/* Wavetable on the phone: one row at a time under tabs (Oscillators / Envelopes / Filter + Matrix) */
+.lk-wt { width: 1000px; }
+.lk-wt > .lk-wtabs { align-self: flex-start; }
+.lk-tens { align-items: stretch !important; gap: var(--sp-3); } .lk-tens > .lk-col { justify-content: space-between; gap: var(--sp-3); } .lk-tens > .lk-pr2 { flex-direction: column; }
+.lk-tens .lk-col > .lk-pr { display: flex; gap: var(--sp-3); } .lk-tens .lk-col > .lk-pr > * { flex: 1 1 auto; }   /* Exciter as wide as the row below it */
+.lk-tens .lk-pr2 > .lk-dk { flex: 1 1 auto; justify-content: center; }
+.lk .lk-ch.spc .lv-btn { flex: 1 1 auto; min-width: max-content; padding: 0 6px; }   /* separate switches share the width by their text (Cabinet "4x10 Bass") */
+/* older synth panels (SoundFont / Moisture / Osphere / Keystone): sections spread over the panel height like the Live panels */
+.card.syn > .sps, .card.syn .inst-row > .sps { align-items: stretch; }
+.card.syn .sp { justify-content: space-evenly; }
+.card.syn .sp { justify-content: flex-start; gap: var(--sp-3); }   /* display under the title, readout + knobs right below: no gaps between them */

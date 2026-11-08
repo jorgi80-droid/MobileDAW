@@ -681,3 +681,17 @@ Permintaan pemilik: SEMUA efek dan instrumen diganti dengan set stok Ableton Liv
   animasi; tanpa dukungan backdrop-filter warnanya kembali padat.
 - Glow ruler (permintaan pemilik): HANYA di kiri-kanan playhead, di dalam ruler (sorot bulat 20..34 px warna klip yang dilewati, menyala dengan level
   Master). Tidak ada pita warna di bar lain (sudah atau belum dilewati) dan tidak ada cahaya di grid / lane.
+
+## Audit UI di HP pemilik (Oppo Find X8) (sesi ini)
+- `tools/ui-audit.mjs` (Playwright, 920 x 419 CSS px, DPR 3 = Find X8 lanskap): buka setiap efek dan instrumen di panel Device, cek teks terpotong /
+  keluar kartu, kontrol bertumpuk, kontrol terpotong, ukuran huruf efektif (zoom ikut), dan isi tinggi panel. `SHOTDIR=` menyimpan screenshot layar
+  per modul. Catatan: rect di app memakai piksel layout (uiscale K), jadi screenshot per kartu dibuat layar penuh.
+- Hasil awal -> akhir: 21 -> 6 temuan (6 sisa = overlay yang memang ada di Live: tombol play / kotak Harmonics di dalam display Spectral, gagang
+  MiniMeters, tombol 1/2 Drift), ukuran huruf 6,5..12,5 px -> 8..12 px (14 / 17 = angka besar Meld dan MiniMeters), panel isi < 70 % 16 -> 8.
+- `devices.js fitKit`: SATU zoom untuk semua panel (tinggi panel / DESIGN_H 250, 0,6..1,2); panel yang lebih tinggi menyusut sendiri (min 0,6),
+  panel yang lebih pendek tidak diperbesar tetapi kontrolnya disebar ke tinggi panel (`lk-fill`). Dulu tiap panel di-zoom sendiri 0,7..1,15.
+- Wavetable: tiga baris jadi tab (Oscillators / Envelopes-LFOs / Filter-Matrix) - dulu baris bawah terpotong walau di 0,6x. Tension: dua kolom.
+  Knob melebar mengikuti labelnya, tombol mengikuti teksnya (tidak terpotong: "Pitch Decay", "Finger Mass", "4x10 Bass").
+  Panel synth lama (Keystone / Moisture / Osphere): display 104 px (dulu 42), isi 52 -> 82..84 %.
+- Belum: SoundFont (hanya tombol file + 2 knob, isi 23 %), Redux / Autoduck / Tape Stop / Looper / Overdrive masih 58..69 %; Echo, Filter Delay,
+  Simpler, Operator, Sampler, Wavetable masih perlu 0,84..0,9x (sedikit lebih kecil dari panel lain).

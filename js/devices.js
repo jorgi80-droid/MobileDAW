@@ -421,13 +421,18 @@ function fitKit() {
   if (!root) return;
   const sc = root.querySelector(':scope > .dev-scroll'); if (!sc) return;
   const cs = getComputedStyle(sc), avail0 = sc.clientHeight - parseFloat(cs.paddingTop || 0) - parseFloat(cs.paddingBottom || 0);
-  for (const card of sc.querySelectorAll(':scope > .card.lkcard:not(.flm-card), :scope > .card.lvcard:not(.flm-card)')) {
+  // ONE zoom for every panel (Live: every device has the same text and knob size): the panel height against the design height of a full
+  // panel (DESIGN_H). A panel taller than that shrinks a little more on its own (never below 0.7); a shorter one keeps the common zoom and
+  // spreads its controls over the height (lk-fill) instead of being blown up, so text and knobs stay the same size in every device.
+  const DESIGN_H = 250, cards = [...sc.querySelectorAll(':scope > .card.lkcard:not(.flm-card), :scope > .card.lvcard:not(.flm-card)')];
+  for (const card of cards) {
     const lk = card.querySelector(':scope > .lk, :scope > .lv-dev'); if (!lk) continue;
-    lk.style.zoom = '';
+    lk.style.zoom = ''; lk.style.minHeight = ''; lk.classList.remove('lk-fill');
     const head = card.querySelector(':scope > h4'), avail = avail0 - (head ? head.offsetHeight : 0) - 4, need = lk.offsetHeight;
     if (!(need > 0) || !(avail > 40)) continue;
-    const z = Math.max(0.7, Math.min(1.15, avail / need));
-    if (Math.abs(z - 1) > 0.03) lk.style.zoom = z.toFixed(3);
+    const Z = Math.max(0.6, Math.min(1.2, avail / DESIGN_H)), z = need * Z > avail ? Math.max(0.6, avail / need) : Z;
+    if (Math.abs(z - 1) > 0.01) lk.style.zoom = z.toFixed(3);
+    if (need * z < avail - 6) { lk.style.minHeight = Math.floor(avail / z) + 'px'; lk.classList.add('lk-fill'); }
   }
 }
 let fitRO = null;
