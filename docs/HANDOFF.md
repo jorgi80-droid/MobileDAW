@@ -630,3 +630,17 @@ Permintaan pemilik: SEMUA efek dan instrumen diganti dengan set stok Ableton Liv
   membuat JS membaca undefined).
 - Batas: level / pan berlaku untuk seluruh track (bukan per suara), velocity dipetakan sebagai rasio gain (respon velocity tiap instrumen tidak diikuti).
 - Tes: `slide-test` (lane + -6 dB + pan kanan), golden `core-slide-vp`.
+
+## Sub-track di bawah track drum / synth (sesi ini)
+- Data di dalam track (urutan track dan strip engine tidak berubah): `t.subs = [{ id, name, kind: 'steps' | 'notes', mute }]` (maks 8, hanya drum / midi),
+  klip di sub-track punya `c.sub = id`. `project.js addSub / removeSub / setSub / setClipSub / subsOf / subOfClip`; `syncClips` mengirim not semua baris
+  ke instrumen track itu (baris yang di-mute dilewati, termasuk lane CC dan slide). Buka file: `fixSubs` membersihkan entri rusak, klip yang menunjuk
+  sub-track yang hilang kembali ke baris utama. `moveClipToTrack` ke track lain = baris utama track tujuan. Duplikat track ikut menyalin sub-track.
+  Undo: snapshot klip di `history.js` kini juga menyimpan `t.subs` (pemanggil `checkpoint()` dulu, seperti edit klip).
+- Arrangement (`timeline.js`): tinggi track = baris utama + n x `SUBH` (setengah tinggi baris, 24..56 px); `rhMain`, `laneBox`, `laneAt`, `subHdr`.
+  Header sub-track: tepi warna, "↳ nama", jenis editor, tombol M; ketuk = menu (mute, ganti nama, Editor Step / Notes, hapus), M = mute. Ketuk ganda /
+  tekan lama di baris sub-track = klip baru di baris itu; seret klip naik / turun memindah antar baris track yang sama. Track dilipat = sub-track
+  disembunyikan (klipnya tampil di baris tipis). Menu header track: "Tambah sub-track…" (Step track / Notes track).
+- Editor (`editor.js stepsMode`): klip sub-track drum dibuka di editor sub-track itu (Step / Notes); pilihan Step / Notes klip biasa dikembalikan sesudahnya.
+- Belum: impor sub-track dari file .flm (formatnya belum diketahui), mixer per sub-track (sengaja: FLM memakai channel yang sama).
+- Tes: `tools/subtrack-test.mjs` (run-tests), `tools/subtrack-ui-test.mjs` (Playwright, `SHOT=` untuk screenshot).

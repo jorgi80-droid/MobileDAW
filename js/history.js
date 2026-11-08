@@ -9,7 +9,7 @@ import { log } from './log.js';
 const undo = [], redo = [], MAX = 80, GAP = 900;     // GAP: ms without a change before the next change of the same control becomes a new step
 let lastKey = null, lastT = 0, pending = false, grp = null, depth = 0;
 
-const snap = () => ({ n: state.tracks.length, pads: state.tracks.map((t) => (t.kind === 'drum' && t.inst && Array.isArray(t.inst.pads) ? t.inst.pads.map((q) => ({ ...q })) : null)), tracks: state.tracks.map((t) => t.clips.map((c) => {
+const snap = () => ({ n: state.tracks.length, subs: state.tracks.map((t) => (Array.isArray(t.subs) ? t.subs.map((x) => ({ ...x })) : null)), pads: state.tracks.map((t) => (t.kind === 'drum' && t.inst && Array.isArray(t.inst.pads) ? t.inst.pads.map((q) => ({ ...q })) : null)), tracks: state.tracks.map((t) => t.clips.map((c) => {
   const o = { ...c };
   if (c.notes) o.notes = c.notes.map((x) => ({ ...x }));
   if (c.pts) o.pts = c.pts.map((x) => ({ ...x }));   // automation points are edited in place, so they must be copied too
@@ -56,6 +56,7 @@ function restore(s) {
   if (s.n !== state.tracks.length) return;
   state.tracks.forEach((t, i) => {
     t.clips = s.tracks[i];
+    if (s.subs) { if (s.subs[i]) t.subs = s.subs[i]; else delete t.subs; }   // sub-track rows (older entries have none: left as they are)
     const old = s.pads && s.pads[i];                       // pad list: only a removed / added pad is undone, knob settings keep their current values
     if (old && t.inst && Array.isArray(t.inst.pads) && old.map((q) => q.pitch).join() !== t.inst.pads.map((q) => q.pitch).join()) {
       const now = new Map(t.inst.pads.map((q) => [q.pitch, q]));

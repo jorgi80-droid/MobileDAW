@@ -68,7 +68,15 @@ const inScale = (p) => { const s = SCALES[cfg.scale]; return !s || s.includes(((
 function toScale(p) { if (inScale(p)) return p; for (let d = 1; d < 7; d++) { if (inScale(p - d)) return p - d; if (inScale(p + d)) return p + d; } return p; }
 const isAuto = () => { const c = cur(); return c && state.tracks[c.track].kind === 'auto'; };
 const isDrum = () => { const c = cur(); return c && state.tracks[c.track].kind === 'drum'; };
-const stepsMode = () => isDrum() && cfg.mode !== 'notes';
+// a clip of a drum sub-track opens in that sub-track's editor (Step / Notes) the first time it is shown; the Step / Notes buttons still switch
+let subSeen = null, userMode = null;                 // userMode: the Step / Notes choice of ordinary clips, given back after a sub-track clip
+const stepsMode = () => {
+  if (!isDrum()) return false;
+  const c = cur(), s = c && P.subOfClip(state.tracks[c.track], c.clip);
+  if (s && subSeen !== c.clip.id) { if (subSeen === null) userMode = cfg.mode; subSeen = c.clip.id; cfg.mode = s.kind === 'notes' ? 'notes' : 'steps'; }
+  else if (!s && c && subSeen !== null) { subSeen = null; if (userMode !== null) cfg.mode = userMode; userMode = null; }
+  return cfg.mode !== 'notes';
+};
 const pName = (p) => noteName(p);   // octave numbering follows Settings (middle C = C3 / C4 / C5)
 const padList = () => { const c = cur(); return c && state.tracks[c.track].kind === 'drum' ? P.padsOf(c.track) : []; };
 const keyLabel = (p) => { if (isDrum()) { const d = padList().find((x) => x.pitch === p); if (d) return d.name; } return pName(p); };

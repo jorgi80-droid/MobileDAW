@@ -25,7 +25,7 @@ Stack dipertahankan: JS modul (tanpa build) + AudioWorklet + engine C++ (Android
 | Insert / Duplicate / Delete / Delete Space / Trim rentang waktu | Selesai | menu seleksi ruler (sesi sebelumnya) |
 | Snap ketuk = on/off, tekan lama = pilihan; zoom, fit proyek / klip / seleksi | Selesai | `touch-ui-test` |
 | Bayangan posisi asal + gelembung posisi saat menyeret | Selesai | `touch-ui-test` |
-| Sub-track (Notes Track / Step Track di bawah drum channel) | Belum | model data satu track = satu jenis klip; perlu desain struktur track baru |
+| Sub-track (Notes Track / Step Track di bawah drum channel) | Selesai | menu header track -> Tambah sub-track (Step / Notes): baris di bawah track drum atau synth dengan klip sendiri, dimainkan instrumen dan channel mixer track itu; M per baris, ganti nama, editor Step / Notes, hapus (klip pindah ke baris utama). `subtrack-test`, `subtrack-ui-test` |
 | Save as MIDI per track | Selesai | menu header track → "Simpan sebagai MIDI" (`track-dup-test`, `channel-ui-test`); ekspor seluruh proyek tetap ada |
 | Pan per klip audio (balance di atas pan track, slider Pan di panel audio klip, impor FLM memakainya) | Selesai | `clip-pan-test` (pan 0 identik bit dengan sebelumnya), golden `core-clip-pan` JS = C++ |
 | Menu channel: Duplikat track, Impor MIDI ke track ini, Sync semua sample | Selesai | `track-dup-test` (salinan independen, id baru, sidechain mengikuti, satu langkah urung), `channel-ui-test` |

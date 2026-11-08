@@ -319,21 +319,21 @@ export function syncClips(i) {
     eng.trackClips(i, f, n, 8);
   } else {
     for (const c of t.clips) {
-      if (c.muted) continue;
+      if (c.muted || subMuted(t, c)) continue;                     // a muted sub-track row: its clips are left out
       n += clipNoteEvents(c, t.kind, f, true);
     }
     eng.trackNotes(i, f, n, 6);
     const cf = []; let cn = 0;                                   // controller lanes (pitch bend, CC7 / 10 / 11) of the clips
     const KIND = { bend: 0, 7: 1, 10: 2, 11: 3 };
     for (const c of t.clips) {
-      if (c.muted || !c.cc) continue;
+      if (c.muted || !c.cc || subMuted(t, c)) continue;
       const segs = loopSegs(c);
       for (const l of c.cc) {
         const kd = l.k === 'bend' ? 0 : KIND[l.n]; if (kd === undefined) continue;
         for (const g of segs) for (const q of l.pts) if (q.t >= g.s && q.t <= g.s + g.len) { cf.push(c.start + g.o + q.t - g.s, kd, q.v); cn++; }
       }
     }
-    for (const c of t.clips) if (!c.muted && t.kind === 'midi' && c.notes && c.notes.some((q) => q.sl)) cn += slideLane(c, cf);   // Slide notes -> lane kind 4 (exact semitones)
+    for (const c of t.clips) if (!c.muted && !subMuted(t, c) && t.kind === 'midi' && c.notes && c.notes.some((q) => q.sl)) cn += slideLane(c, cf);   // Slide notes -> lane kind 4 (exact semitones)
     eng.trackCC(i, cf, cn);
   }
 }
@@ -1370,12 +1370,56 @@ export function pasteClip(i, data, start) {
   return c;
 }
 
+// ---- Sub-tracks (FL Studio Mobile): extra rows under a drum / synth track with clips of their own, played by the same instrument and
+// mixer channel. t.subs = [{ id, name, kind: 'steps' | 'notes', mute }]; a clip in a sub-track carries c.sub = that id (no c.sub = the
+// track's own row). Data only: the engine gets the clips of all rows of the track together (muted rows left out). Callers checkpoint()
+// before a change (the undo snapshot holds t.subs next to the clips).
+export const SUB_MAX = 8;
+// file -> state: only drum / synth tracks keep sub-tracks; broken entries are dropped, a clip pointing at a sub-track that is gone goes back
+// to the track's own row (nothing is lost).
+function fixSubs(t) {
+  const ok = (t.kind === 'drum' || t.kind === 'midi') && Array.isArray(t.subs);
+  const L = ok ? t.subs.filter((s) => s && s.id != null).slice(0, SUB_MAX).map((s) => ({ id: s.id, name: String(s.name || 'Sub').slice(0, 32), kind: s.kind === 'notes' ? 'notes' : 'steps', mute: !!s.mute })) : [];
+  if (L.length) t.subs = L; else delete t.subs;
+  const ids = new Set(L.map((s) => s.id));
+  for (const c of t.clips) if (c && c.sub != null && !ids.has(c.sub)) delete c.sub;
+}
+export const subsOf = (t) => (t && Array.isArray(t.subs) ? t.subs : []);
+export const subOfClip = (t, c) => (c && c.sub ? subsOf(t).find((s) => s.id === c.sub) || null : null);
+const subMuted = (t, c) => { const s = subOfClip(t, c); return !!(s && s.mute); };
+export function addSub(i, kind) {
+  const t = state.tracks[i]; if (!t || (t.kind !== 'drum' && t.kind !== 'midi')) return null;
+  const L = subsOf(t); if (L.length >= SUB_MAX) return null;
+  const k = kind === 'notes' ? 'notes' : 'steps', s = { id: uid(), name: (k === 'notes' ? 'Notes' : 'Steps') + ' ' + (L.length + 1), kind: k, mute: false };
+  t.subs = [...L, s]; emit('tracks'); return s;
+}
+export function removeSub(i, id) {                                         // its clips go back to the track's own row (nothing is deleted)
+  const t = state.tracks[i]; if (!t || !subsOf(t).some((s) => s.id === id)) return;
+  t.subs = subsOf(t).filter((s) => s.id !== id); if (!t.subs.length) delete t.subs;
+  for (const c of t.clips) if (c.sub === id) delete c.sub;
+  syncClips(i); emit('tracks'); emit('clips');
+}
+export function setSub(i, id, key, v) {
+  const t = state.tracks[i], s = subsOf(t).find((x) => x.id === id); if (!s) return;
+  if (key === 'name') s.name = String(v || '').trim().slice(0, 32) || s.name;
+  else if (key === 'kind') s.kind = v === 'notes' ? 'notes' : 'steps';
+  else if (key === 'mute') { s.mute = !!v; syncClips(i); }
+  emit('tracks'); emit('clips');
+}
+export function setClipSub(i, c, id) {
+  const t = state.tracks[i]; if (!t || !c) return;
+  if (id && !subsOf(t).some((s) => s.id === id)) id = null;
+  if ((c.sub || null) === (id || null)) return;
+  if (id) c.sub = id; else delete c.sub;
+  syncClips(i); emit('clips');
+}
 export function moveClipToTrack(from, id, to) {
   const a = state.tracks[from], b = state.tracks[to];
   if (!a || !b || a === b || a.kind !== b.kind) return false;
   const k = a.clips.findIndex((c) => c.id === id);
   if (k < 0) return false;
-  b.clips.push(a.clips.splice(k, 1)[0]);
+  const mc = a.clips.splice(k, 1)[0]; if (mc.sub && !subsOf(b).some((s) => s.id === mc.sub)) delete mc.sub;   // the sub-track row stays with its track
+  b.clips.push(mc);
   state.sel.track = to;
   syncClips(from); syncClips(to);
   return true;
@@ -1478,7 +1522,7 @@ async function deserializeInner(text, onProgress) {
   if (!(o.flm >= FLM_FMT)) for (const t of state.tracks) migrateFlmInst(t && t.inst);   // FLM synth parameters saved before the manual corrections
   migrateClassic(state.tracks);
   state.ccLinks = o.cc || {};
-  for (const t of state.tracks) { const oc = OLD_COLORS.indexOf(t.color); if (oc >= 0) t.color = COLORS[oc]; else if (t.color === '#8ea2c0') t.color = AUTO_COLOR; t.send = t.send || [0, 0]; t.clips = Array.isArray(t.clips) ? t.clips : []; t.devices = Array.isArray(t.devices) ? t.devices : []; }
+  for (const t of state.tracks) { const oc = OLD_COLORS.indexOf(t.color); if (oc >= 0) t.color = COLORS[oc]; else if (t.color === '#8ea2c0') t.color = AUTO_COLOR; t.send = t.send || [0, 0]; t.clips = Array.isArray(t.clips) ? t.clips : []; t.devices = Array.isArray(t.devices) ? t.devices : []; fixSubs(t); }
   for (const r of state.returns) r.devices = Array.isArray(r.devices) ? r.devices : [];
   for (const t of state.tracks) t.out = Number.isInteger(t.out) && t.out >= 0 && t.out < state.returns.length ? t.out : -1;   // projects from before routing existed: everything goes to the Master
   const missing = [];
@@ -1533,7 +1577,7 @@ async function deserializeInner(text, onProgress) {
     }
   }
   let maxId = 0;
-  for (const t of state.tracks) { maxId = Math.max(maxId, t.id || 0); for (const c of t.clips) maxId = Math.max(maxId, c.id || 0); }
+  for (const t of state.tracks) { maxId = Math.max(maxId, t.id || 0); for (const c of t.clips) maxId = Math.max(maxId, c.id || 0); for (const x of subsOf(t)) maxId = Math.max(maxId, +x.id || 0); }
   for (const c of chains) for (const d of c.devices) maxId = Math.max(maxId, d.id || 0);
   for (const t of state.tracks) for (const q of (t.kind === 'drum' && t.inst && t.inst.pads) || []) if (q.chain) for (const d of q.chain.devices) maxId = Math.max(maxId, d.id || 0);
   _id = 1 + maxId;

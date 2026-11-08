@@ -11,7 +11,7 @@ Quick action: Playlist / Piano Roll / Step / Automation / Wave Editor,"Gestur gl
 Insert / Duplicate / Delete / Delete Space / Trim rentang waktu,Playlist,must,yes,yes,menu seleksi ruler (sesi sebelumnya)
 "Snap ketuk = on/off, tekan lama = pilihan; zoom, fit proyek / klip / seleksi",Playlist,must,yes,yes,touch-ui-test
 Bayangan posisi asal + gelembung posisi saat menyeret,Playlist,must,yes,yes,touch-ui-test
-Sub-track (Notes Track / Step Track di bawah drum channel),Playlist,must,yes,no,model data satu track = satu jenis klip; perlu desain struktur track baru
+Sub-track (Notes Track / Step Track di bawah drum channel),Playlist,must,yes,yes,"baris di bawah track drum / synth (t.subs, c.sub) memakai instrumen + mixer track itu; tambah / mute / ganti nama / editor Step-Notes / hapus; subtrack-test, subtrack-ui-test"
 Save as MIDI per track,Playlist,must,yes,yes,"menu header track → ""Simpan sebagai MIDI"" (track-dup-test, channel-ui-test); ekspor seluruh proyek tetap ada"
 "Menu channel: Duplikat track, Impor MIDI ke track ini, Sync semua sample",Playlist,must,yes,yes,"track-dup-test (salinan independen, id baru, sidechain mengikuti, satu langkah urung), channel-ui-test"
 Urutan modul = urutan sinyal (rantai utama dan di dalam rack),Channel Rack / Rack efek,must,yes,yes,"chain-order-test (suara beda bila urutan dibalik; urutan baru = rantai baru, identik)"

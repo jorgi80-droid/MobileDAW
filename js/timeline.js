@@ -89,11 +89,24 @@ const headPref = () => (full() ? prefs.headW : prefs.headWc) || 0;
 function applyHead() { const [lo, hi] = headLim(); HEAD = headPref() > 0 ? Math.round(clamp(headPref(), lo, Math.min(hi, Math.max(lo, W - 120)))) : headAuto(); CW = Math.max(60, W - HEAD); }
 const nameW = () => (full() ? Math.max(76, Math.round((HEAD - METW) * 0.36)) : HEAD - METW);   // coloured column width: only the name; the rest, left of the meter, is the wide mixer column
 export const headWidth = () => HEAD;
-export const headerLayout = (i) => (state.tracks[i] ? hdr(i) : null);   // tests: where the header controls of track i are
+export const headerLayout = (i) => (state.tracks[i] ? hdr(i) : null);
+export const subLayout = (i) => (state.tracks[i] ? P.subsOf(state.tracks[i]).map((_, k) => subHdr(i, k)) : []);   // tests: the sub-track rows of track i (y, h, M button)   // tests: where the header controls of track i are
 export function setHeadW(w) { const [lo, hi] = headLim(); prefs[full() ? 'headW' : 'headWc'] = w > 0 ? Math.round(clamp(w, lo, hi)) : 0; savePrefs(); applyHead(); clampView(); invalidate(); }
 export function setHeadFull(on) { prefs.headFull = !!on; savePrefs(); applyHead(); clampView(); invalidate(); }
 export const headIsFull = () => full();
-const rowTarget = (t) => (t.fold ? FOLD_H : t.hx ? Math.round(clamp(view.rowH * t.hx, MIN_ROW, ROW_MAX)) : view.rowH);   // t.hx = own height as a factor of the zoomed row height (drag the header's bottom edge)
+const rowTarget = (t) => (t.fold ? FOLD_H : t.hx ? Math.round(clamp(view.rowH * t.hx, MIN_ROW, ROW_MAX)) : view.rowH) + subN(t) * SUBH();
+// Sub-tracks (project.js subsOf, FL Studio Mobile): rows under the track's own row, SUBH high each, with clips of their own that play through
+// the track's instrument and mixer channel. A folded track hides them (their clips then lie in the thin row). rhMain = the track's own row.
+const subN = (t) => (t && !t.fold && t.kind !== 'auto' ? P.subsOf(t).length : 0);
+const SUBH = () => Math.round(clamp(view.rowH * 0.5, 24, 56));
+const rhMain = (i) => { const t = state.tracks[i], n = subN(t); return n ? Math.max(16, rh(i) - n * SUBH()) : rh(i); };
+function laneBox(i, c) {
+  const y = rowY(i), t = state.tracks[i], n = subN(t); if (!n) return { y, h: rh(i) };
+  const k = c && c.sub ? P.subsOf(t).findIndex((s) => s.id === c.sub) : -1, mh = rhMain(i);
+  return k < 0 ? { y, h: mh } : { y: y + mh + k * SUBH(), h: SUBH() };
+}
+function laneAt(i, y) { const t = state.tracks[i], n = subN(t); if (!n) return null; const k = Math.floor((y - rowY(i) - rhMain(i)) / SUBH()); return k >= 0 && k < n ? P.subsOf(t)[k].id : null; }
+function subHdr(i, k) { const y = rowY(i) + rhMain(i) + k * SUBH(), h = SUBH(), q = Math.min(16, h - 8), R = CW + HEAD - METW - 6; return { y, h, mute: { x: R - 22, y: y + (h - q) / 2, w: 22, h: q } }; }   // t.hx = own height as a factor of the zoomed row height (drag the header's bottom edge)
 const rh = (i) => { const n = state.tracks.length; if (i >= n) return i >= n + nX() ? ADD_H : XROW_H; const t = state.tracks[i], a = fh.size ? fh.get(t.id) : undefined; return a !== undefined ? a : rowTarget(t); };
 function rowY(i) { let y = RULER - view.y0; for (let k = 0; k < i; k++) y += rh(k); return y; }
 function rowAt(y) { let a = RULER - view.y0; const n = state.tracks.length + nX(); for (let i = 0; i <= n; i++) { const e = a + rh(i); if (y < e) return i; a = e; } return n + 1; }
@@ -101,7 +114,7 @@ const contentH = () => { let y = 0; for (let i = 0; i <= state.tracks.length + n
 // Header layout of one track. FULL look: left = coloured column (the name only), right = wide grey mixer column (activator, S, arm, automation /
 // volume, pan / Send A, B / output). Controls only appear when the row is tall enough, so nothing can overlap. COMPACT look: name block + activator.
 function hdr(i) {
-  const t = state.tracks[i], y = rowY(i), h = rh(i), x = CW, auto = t.kind === 'auto', th = Math.min(TH, h - 3), nw = nameW();
+  const t = state.tracks[i], y = rowY(i), h = rhMain(i), x = CW, auto = t.kind === 'auto', th = Math.min(TH, h - 3), nw = nameW();
   const r = { y, h, th, nw, title: { x, y, w: HEAD - METW, h: th }, fold: { x, y, w: 26, h: th } };
   if (compact()) { if (HEAD >= 92) { const R = x + HEAD - METW - 5; r.mute = { x: R - (auto ? 26 : 20), y: y + 3, w: auto ? 26 : 20, h: Math.max(10, th - 6) }; } return r; }
   const L = x + nw + 4, R = x + HEAD - METW - 4, gp = 3;
@@ -288,6 +301,8 @@ function draw() {
   for (let i = Math.max(0, rowAt(RULER)); i <= Math.min(n - 1, rowAt(LB)); i++) {
     const y = rowY(i), h = rh(i);
     ctx.fillStyle = state.sel.track === i ? C('#333337') : C('#2a2a2c'); ctx.fillRect(0, y, CW, h);
+    const sn = subN(state.tracks[i]);
+    if (sn) { const mh = rhMain(i), sh = SUBH(), L = P.subsOf(state.tracks[i]); for (let k = 0; k < sn; k++) { const sy = y + mh + k * sh; ctx.fillStyle = C('#262628'); ctx.fillRect(0, sy, CW, sh); if (L[k].mute) { ctx.fillStyle = 'rgba(0,0,0,.18)'; ctx.fillRect(0, sy, CW, sh); } ctx.fillStyle = C('#1a1a1c'); ctx.fillRect(0, sy - 1, CW, 1); } }   // sub-track rows: a shade darker, a thin line above each
     ctx.fillStyle = C('#08080a'); ctx.fillRect(0, y + h - 2, CW, 2);                     // Live: a heavy line between tracks
   }
   const xl = [];                                                                       // captions of the Master / effect lanes, drawn after the grid
@@ -335,7 +350,7 @@ function draw() {
   ctx.restore();
   // clips
   const first = Math.max(0, rowAt(RULER)), last = Math.min(n - 1, rowAt(LB));
-  for (let i = first; i <= last; i++) { const y = rowY(i), h = rh(i); for (const c of state.tracks[i].clips) drawClip(state.tracks[i], c, y, h); }
+  for (let i = first; i <= last; i++) for (const c of state.tracks[i].clips) { const b = laneBox(i, c); drawClip(state.tracks[i], c, b.y, b.h); }   // a clip of a sub-track sits in its row
   if (sel) { const a = Math.max(0, tx(sel.a)), b = Math.min(CW, tx(sel.b)); ctx.fillStyle = 'rgba(255,255,255,.2)'; ctx.fillRect(a, RULER, Math.max(0, b - a), gy1 - RULER); ctx.fillStyle = 'rgba(255,255,255,.55)'; ctx.fillRect(Math.round(a), RULER, 1, gy1 - RULER); ctx.fillRect(Math.round(b), RULER, 1, gy1 - RULER); }   // Live: the selection is a white wash with bright edges
   if (marq) {
     const ax = tx(marq.t0), bx = tx(marq.t1), ay = RULER - view.y0 + marq.y0, by = RULER - view.y0 + marq.y1;
@@ -547,6 +562,18 @@ function drawSwitch(r, label, on, isPressed) {   // Live-style switch: LED + tex
   ctx.fillStyle = on ? C('#e0e0e4') : C('#8b8b92'); ctx.font = FONT(600, 10); ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
   ctx.fillText(label, r.x + r.w / 2 + 6, ly + 0.5, r.w - 24); ctx.textAlign = 'left';
 }
+function drawSubHeads(i) {                     // sub-track rows of a track header: a slim colour edge, the name (Steps / Notes) and an activator
+  const t = state.tracks[i], L = P.subsOf(t), hx = CW, ik = C('#c8c8ce');
+  L.forEach((s, k) => {
+    const r = subHdr(i, k);
+    ctx.fillStyle = C('#262628'); ctx.fillRect(hx, r.y, HEAD, r.h); ctx.fillStyle = t.color; ctx.fillRect(hx, r.y, 5, r.h);
+    ctx.fillStyle = C('#1a1a1c'); ctx.fillRect(hx, r.y - 1, HEAD, 1);
+    ctx.fillStyle = s.mute ? C('#77777e') : ik; ctx.font = FONT(600, 10.5); ctx.textBaseline = 'middle';
+    ctx.fillText(cut2('\u21B3 ' + s.name, r.mute.x - hx - 18), hx + 12, r.y + r.h / 2 + 0.5);
+    if (full() && r.mute.x - hx > 120) { ctx.fillStyle = C('#77777e'); ctx.font = FONT(500, 9.5); ctx.textAlign = 'right'; ctx.fillText(s.kind === 'notes' ? 'Notes' : 'Step', r.mute.x - 6, r.y + r.h / 2 + 0.5); ctx.textAlign = 'left'; }
+    drawBtn(r.mute, 'M', !s.mute, T('--mute'));
+  });
+}
 function drawHeads() {
   const hx = CW, n = state.tracks.length, LB = LANE_B();
   ctx.fillStyle = C('#1f1f21'); ctx.fillRect(hx, 0, HEAD, H);
@@ -554,7 +581,8 @@ function drawHeads() {
   const nn = n + nX(), lanes = new Set();
   for (const q of state.tracks) if (q.kind === 'auto' && q.target) lanes.add(q.target.strip);
   for (let i = Math.max(0, rowAt(RULER)); i <= Math.min(nn, rowAt(LB)); i++) {
-    const y = rowY(i), h = rh(i);
+    const y = rowY(i), h = i < n ? rhMain(i) : rh(i);
+    if (i < n && subN(state.tracks[i])) drawSubHeads(i);
     if (i === nn) {                                                                          // "+" row: one wide button
       const r = { x: hx + 6, y: y + 8, w: HEAD - METW - 12, h: Math.min(28, h - 16) };
       ctx.fillStyle = C('#2c2c2f'); ctx.fillRect(r.x, r.y, r.w, r.h); ctx.strokeStyle = C('#3c3c41'); ctx.lineWidth = 1; ctx.strokeRect(r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
@@ -754,28 +782,31 @@ function hit(x, y) {
     if (i === n0 + nX()) return { type: 'add' };
     if (i < 0 || i > n0 + nX()) return { type: 'none' };
     if (i >= n0) { const xi = xInfo(i); return { type: 'xhead', x: xi, mute: !xi.master && inRect(xhdr(i).act, x, y, 3) }; }
+    if (subN(state.tracks[i]) && y >= rowY(i) + rhMain(i)) { const id = laneAt(i, y), k = P.subsOf(state.tracks[i]).findIndex((s) => s.id === id); if (k >= 0) return { type: 'subhead', i, id, mute: inRect(subHdr(i, k).mute, x, y, 4) }; }
     if (!state.tracks[i].fold && rowY(i) + rh(i) - y < 8) return { type: 'rowh', i };          // bottom edge of a header: row height
     const r = hdr(i);
     for (const [k, key] of [[0, 'mute'], [1, 'solo'], [2, 'fold'], [3, 'vol'], [4, 'pan'], [5, 'arm'], [7, 'aut'], [8, 'sa'], [9, 'sb'], [10, 'out']]) if (r[key] && inRect(r[key], x, y, key === 'vol' || key === 'pan' || key === 'sa' || key === 'sb' || key === 'out' ? 2 : 3)) return { type: 'head', i, btn: k };
     return { type: 'head', i };
   }
   if (i < 0 || i >= state.tracks.length) return { type: 'empty', i, tick: xt(x) };
-  const tick = xt(x);
+  const tick = xt(x), ln = laneAt(i, y), sub = subN(state.tracks[i]) > 0;
   const clips = state.tracks[i].clips;
   for (let k = clips.length - 1; k >= 0; k--) {
     const c = clips[k];
+    if (sub && (c.sub || null) !== ln) continue;                                      // sub-tracks: only the clips of the row under the finger
     if (tick >= c.start && tick <= c.start + c.len) {
       const wpx = tx(c.start + c.len) - tx(c.start), hz = Math.min(HANDLE, wpx / 2.5);   // handles never take more than 40% of a narrow clip, so it stays movable
       if (state.sel.clip === c.id && state.tracks[i].kind === 'audio' && wpx > 30) {   // fade handles (top corners of the body): drag = fade length
         const spt = 60 / state.bpm / PPQ, y0 = rowY(i) + 1, top = y0 + (rh(i) >= 40 ? 14 : 0) + 5, fx = tx(c.start) + Math.max(5, Math.min(wpx / 2, (c.fadeIn || 0) / spt * view.ppt)), gx = tx(c.start + c.len) - Math.max(5, Math.min(wpx / 2, (c.fadeOut || 0) / spt * view.ppt));
         if (Math.abs(y - top) < 11) { if (Math.abs(x - fx) < 12) return { type: 'clip', i, c, tick, zone: 'fadeIn' }; if (Math.abs(x - gx) < 12) return { type: 'clip', i, c, tick, zone: 'fadeOut' }; }
       }
-      if (state.sel.clip === c.id && rh(i) >= 40 && wpx > 44) { const mx = Math.min(tx(c.start + c.len), CW) - 12, my = rowY(i) + 8; if (Math.abs(x - mx) < 13 && Math.abs(y - my) < 11) return { type: 'clip', i, c, tick, zone: 'menu' }; }
+      const lb = laneBox(i, c);
+      if (state.sel.clip === c.id && lb.h >= 40 && wpx > 44) { const mx = Math.min(tx(c.start + c.len), CW) - 12, my = lb.y + 8; if (Math.abs(x - mx) < 13 && Math.abs(y - my) < 11) return { type: 'clip', i, c, tick, zone: 'menu' }; }
       const edgeR = tx(c.start + c.len) - x < hz, edgeL = !edgeR && x - tx(c.start) < hz;
       return { type: 'clip', i, c, tick, zone: edgeR ? 'right' : edgeL ? 'left' : 'body' };
     }
   }
-  return { type: 'empty', i, tick };
+  return { type: 'empty', i, tick, sub: ln };
 }
 
 const canvasOrigin = () => canvas.getBoundingClientRect();
@@ -892,6 +923,24 @@ function headWMenu(x, y) {
     ...set.map(([n, w]) => ({ label: 'Lebar ' + n.toLowerCase(), check: cur > 0 && Math.abs(cur - w) < 14, fn: () => setHeadW(w) })),
     { label: 'Lebar otomatis', check: !(cur > 0), fn: () => setHeadW(0) }, { sep: true }, { label: 'Lipat semua track', fn: () => foldAll(true) }, { label: 'Buka semua track', fn: () => foldAll(false) }], r.left + x, r.top + y);
 }
+// sub-tracks: add (Step = drum steps, Notes = piano roll), and the menu of one sub-track row
+function addSubMenu(i, x, y) {
+  const r = canvasOrigin(), go = (k) => { checkpoint(); const s = P.addSub(i, k); if (s && state.tracks[i].fold) toggleFold(i); if (s) toast(`Sub-track "${s.name}" ditambahkan: klipnya dimainkan instrumen ${state.tracks[i].name}.`, 2400); invalidate(); };
+  menu([{ label: 'SUB-TRACK BARU', dim: true }, { label: 'Step track (step sequencer)', fn: () => go('steps') }, { label: 'Notes track (piano roll)', fn: () => go('notes') }], r.left + x, r.top + y);
+}
+function subMenu(i, id, x, y) {
+  const t = state.tracks[i], s = P.subsOf(t).find((q) => q.id === id), r = canvasOrigin(); if (!s) return;
+  const n = t.clips.filter((c) => c.sub === id).length;
+  menu([
+    { label: s.name.toUpperCase(), dim: true },
+    { label: s.mute ? 'Aktifkan' : 'Matikan (mute)', fn: () => { checkpoint(); P.setSub(i, id, 'mute', !s.mute); invalidate(); } },
+    { label: 'Ganti nama', fn: () => ask('Nama sub-track', s.name, (v) => { if (v) { checkpoint(); P.setSub(i, id, 'name', v); invalidate(); } }) },
+    { label: 'Editor: Step', check: s.kind !== 'notes', fn: () => { checkpoint(); P.setSub(i, id, 'kind', 'steps'); } },
+    { label: 'Editor: Notes (piano roll)', check: s.kind === 'notes', fn: () => { checkpoint(); P.setSub(i, id, 'kind', 'notes'); } },
+    { sep: true },
+    { label: 'Hapus sub-track' + (n ? ` (${n} klip pindah ke baris utama)` : ''), fn: () => { checkpoint(); P.removeSub(i, id); invalidate(); } },
+  ], r.left + x, r.top + y);
+}
 function headMenu(i, x, y) {
   const t = state.tracks[i], r = canvasOrigin();
   menu([
@@ -902,6 +951,7 @@ function headMenu(i, x, y) {
     ...(t.kind !== 'auto' ? [P.isFrozen(i) ? { label: 'Lepas freeze (Unfreeze)', fn: () => { P.unfreezeTrack(i); toast('Track kembali live.'); } }
       : { label: 'Freeze track', fn: async () => { toast('Membekukan track\u2026', 20000); const r = await P.freezeTrack(i); toast(r.error || `Track dibekukan (${r.secs.toFixed(1)} dtk audio). Instrumen dan efeknya tidak lagi memakai CPU.`, 4000); invalidate(); } }] : []),
     ...(t.kind !== 'auto' ? [{ label: 'Duplikat track', fn: () => { const r = P.duplicateTrack(i); toast(r.error || 'Track diduplikasi.', r.error ? 3200 : 1400); invalidate(); } }] : []),
+    ...(t.kind === 'midi' || t.kind === 'drum' ? [{ label: 'Tambah sub-track\u2026', dim: P.subsOf(t).length >= P.SUB_MAX, fn: () => addSubMenu(i, x, y) }] : []),
     ...(t.kind === 'midi' || t.kind === 'drum' ? [{ label: 'Simpan sebagai MIDI', fn: () => exportTrackMidi(i) }, { label: 'Impor MIDI ke track ini\u2026', fn: () => importMidiInto(i) }] : []),
     ...(t.kind === 'audio' && t.clips.some((c) => c.sample) ? [{ label: 'Sync semua sample', fn: () => syncTrackSamples(i) }] : []),
     ...(t.kind === 'drum' ? [{ label: 'Simpan kit drum\u2026', fn: () => ask('Nama kit drum', t.name, (v) => { const r = PRS.saveKit(i, String(v || '').trim()); toast(r.error || `Kit tersimpan di Presets/Kits (${r.n} pad${r.skipped ? `, ${r.skipped} pad chain dilewati` : ''}).`, 3500); }) },
@@ -1086,20 +1136,21 @@ function buildSelBar(host) {
 // next clip. Audio tracks open the sample picker at that bar instead (an audio clip needs a file).
 const dtapMs = () => gestureTiming().dtapMs + 10;               // a little longer than the recogniser's double-tap window (Settings -> Sentuhan)
 let menuWait = 0;
-function newClipAt(i, tick) {
+function newClipAt(i, tick, sub = null) {
   const tk = state.tracks[i]; if (!tk) return;
+  const inRow = (c) => (c.sub || null) === (sub || null);
   const at = Math.max(0, P.barFloor(Math.max(0, tick)));
   if (tk.kind === 'audio') { if (hooks.pickAudio) hooks.pickAudio(at); return; }
-  if (tk.clips.some((c) => at >= c.start && at < c.start + c.len)) return;
-  const next = tk.clips.reduce((m, c) => (c.start > at && c.start < m ? c.start : m), Infinity), len = Math.min(P.barLenAt(at), next - at);
+  if (tk.clips.some((c) => inRow(c) && at >= c.start && at < c.start + c.len)) return;
+  const next = tk.clips.reduce((m, c) => (inRow(c) && c.start > at && c.start < m ? c.start : m), Infinity), len = Math.min(P.barLenAt(at), next - at);
   if (!(len > 0)) return;
-  checkpoint(); P.addClip(i, at, len); invalidate();
+  checkpoint(); const nc = P.addClip(i, at, len); if (sub && nc) P.setClipSub(i, nc, sub); invalidate();
 }
 // long-press on an empty spot (no drag): new clip / paste exactly where the finger was
-function emptyMenu(i, tick, sx, sy) {
+function emptyMenu(i, tick, sx, sy, sub = null) {
   const tk = state.tracks[i], at = Math.max(0, snapT(tick));
   menu([
-    { label: tk.kind === 'audio' ? 'Tambah sample\u2026' : 'Klip baru (1 bar)', fn: () => { if (tk.kind === 'audio') hooks.pickAudio && hooks.pickAudio(at); else { checkpoint(); P.addClip(i, at, P.barLenAt(at)); } } },
+    { label: tk.kind === 'audio' ? 'Tambah sample\u2026' : 'Klip baru (1 bar)', fn: () => { if (tk.kind === 'audio') hooks.pickAudio && hooks.pickAudio(at); else { checkpoint(); const nc = P.addClip(i, at, P.barLenAt(at)); if (sub && nc) P.setClipSub(i, nc, sub); } } },
     { label: 'Paste', dim: !clipM, fn: () => pasteClips(i, at) },
     { label: 'Tambah marker di playhead', fn: () => { P.addMarker(Math.round(P.currentTick())); invalidate(); } }, { label: 'Marker sebelumnya', fn: () => P.jumpMarker(-1) }, { label: 'Marker berikutnya', fn: () => P.jumpMarker(1) }, { sep: true }, { label: 'Pilih semua klip', fn: () => selAll() },
   ], sx, sy);
@@ -1186,6 +1237,10 @@ function setup() {
         case 'xhead':
           if (t.mute) P.toggleReturnMute(t.x.k); else P.selectTrack(t.x.strip);
           return invalidate();
+        case 'subhead':
+          if (t.mute) { checkpoint(); const s = P.subsOf(state.tracks[t.i]).find((q) => q.id === t.id); if (s) P.setSub(t.i, t.id, 'mute', !s.mute); }
+          else { P.selectTrack(t.i); subMenu(t.i, t.id, x, y); }
+          return invalidate();
         case 'head':
           if (t.btn === 0) P.toggleMute(t.i); else if (t.btn === 1) P.toggleSolo(t.i); else if (t.btn === 2) toggleFold(t.i); else if (t.btn === 5) P.toggleArm(t.i);
           else if (t.btn === 7) laneMenu(t.i, x, y); else if (t.btn === 10) outMenu(t.i, x, y);
@@ -1211,7 +1266,7 @@ function setup() {
       if (t.type === 'rowh') { const tr = state.tracks[t.i]; if (tr && tr.hx) { animRow(tr); delete tr.hx; invalidate(); } return; }   // double-tap the grip: back to the normal height
       clearTimeout(menuWait); menuWait = 0;
       if (t.type === 'clip' && hooks.openEditor) { if (msel.size) { msel.clear(); updateBar(); } P.selectClip(t.i, t.c.id); hooks.openEditor(); return; }   // double tap a clip = its editor, full screen
-      if (t.type === 'empty' && t.i >= 0 && t.i < state.tracks.length && !msel.size) newClipAt(t.i, t.tick);            // double tap empty space = a new 1-bar clip there
+      if (t.type === 'empty' && t.i >= 0 && t.i < state.tracks.length && !msel.size) newClipAt(t.i, t.tick, t.sub);            // double tap empty space = a new 1-bar clip there
     },
     long(x, y, t) {
       touchedAt = performance.now();
@@ -1222,6 +1277,7 @@ function setup() {
       if (t.type === 'marker') { drag = { k: 'marker', id: t.m.id }; return true; }
       if (t.type === 'xhead') xheadMenu(t.x, x, y);
       else if (t.type === 'head') headMenu(t.i, x, y);
+      else if (t.type === 'subhead') subMenu(t.i, t.id, x, y);
       else if (t.type === 'clip') {
         // long-press a clip = pick it (more clips: just tap them); the floating bar offers copy / cut / paste / delete ...
         if (msel.has(t.c.id)) msel.delete(t.c.id); else msel.add(t.c.id);
@@ -1230,7 +1286,7 @@ function setup() {
         // long-press on empty space: keep the finger as a drag = rubber-band rectangle; lift without moving = new clip / paste menu
         P.selectTrack(t.i); msel.clear(); updateBar();
         const tk = xt(x), yw = y - RULER + view.y0;
-        marq = { t0: tk, t1: tk, y0: yw, y1: yw, sx: r.left + x, sy: r.top + y, i: t.i, tick: t.tick, moved: false };
+        marq = { t0: tk, t1: tk, y0: yw, y1: yw, sx: r.left + x, sy: r.top + y, i: t.i, tick: t.tick, sub: t.sub || null, moved: false };
         drag = { k: 'marq' }; invalidate();
         return true;
       }
@@ -1331,6 +1387,7 @@ function setup() {
         drag.c.start = ns;
         const r = clamp(rowAt(y), 0, state.tracks.length - 1);
         if (r !== drag.i && P.moveClipToTrack(drag.i, drag.c.id, r)) drag.i = r;
+        if (r === drag.i && subN(state.tracks[drag.i])) P.setClipSub(drag.i, drag.c, laneAt(drag.i, y));            // up / down between the track's own row and its sub-tracks
         P.touchClips(drag.i); P.emit('notes');
       } else if (drag.k === 'stretch') {
         const s = snapTicks() || 1, r0 = drag.c.warp ? drag.c.warp.ratio || 1 : 1;
@@ -1374,7 +1431,7 @@ function setup() {
       if (drag && drag.k === 'sel') { if (sel && sel.b - sel.a < BEAT / 4) sel = null; else selMenu(); }
       if (drag && drag.k === 'marq') {
         const m = marq; marq = null; drag = null;
-        if (m && !m.moved && !cancel) { msel.clear(); updateBar(); emptyMenu(m.i, m.tick, m.sx, m.sy); } else updateBar();
+        if (m && !m.moved && !cancel) { msel.clear(); updateBar(); emptyMenu(m.i, m.tick, m.sx, m.sy, m.sub); } else updateBar();
         invalidate(); return;
       }
       if (drag && drag.k === 'stretch') {
