@@ -3,7 +3,8 @@
 import { attachGestures } from './gesture.js';
 import { h, menu, toast, bar, clamp, modal, ask, slider } from './ui.js';
 import { C } from './theme.js';
-import { wavePath, peaksPath } from './waveform.js';
+import { wavePath, peaksPath, buildPyramid } from './waveform.js';
+const chPyr = new WeakMap();                                         // per-channel pyramids of a stereo sample (two lanes, as Live), built once
 import { checkpoint, revertLast, undoOp } from './history.js';
 import * as P from './project.js';
 const { state, PPQ } = P;
@@ -31,37 +32,49 @@ function clampView(c) {
 
 
 // A fully saturated clip colour (pure red, lime...) glares as a big waveform: pull saturation and lightness down a little.
-function toneDown(hex) {
-  const m = /^#([0-9a-f]{6})$/i.exec(hex || ''); if (!m) return hex;
-  const n = parseInt(m[1], 16), r = (n >> 16) / 255, g2 = ((n >> 8) & 255) / 255, b = (n & 255) / 255;
-  const mx = Math.max(r, g2, b), mn = Math.min(r, g2, b), l = (mx + mn) / 2, d = mx - mn;
-  let hh = 0, ss = 0;
-  if (d) { ss = d / (1 - Math.abs(2 * l - 1)); hh = mx === r ? ((g2 - b) / d) % 6 : mx === g2 ? (b - r) / d + 2 : (r - g2) / d + 4; hh *= 60; if (hh < 0) hh += 360; }
-  return `hsl(${Math.round(hh)} ${Math.round(ss * 62)}% ${Math.round(Math.min(l, 0.62) * 88)}%)`;
-}
 // ------------------------------------------------------------------ drawing
 function draw() {
   const r = cur(); if (!r || !W) return;
   const c = r.clip, e0 = eff(c), D = e0.duration, pk = e0.peaks || [];
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.fillStyle = C('#202022'); ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = C('#2b2b2e'); ctx.fillRect(0, 0, W, H);
   const top = RULER, hh = H - RULER, mid = top + hh / 2;
-  // ruler: adaptive seconds
-  ctx.fillStyle = C('#2c2c2f'); ctx.fillRect(0, 0, W, RULER); ctx.fillStyle = C('#141415'); ctx.fillRect(0, RULER - 1, W, 1);
-  const steps = [0.01, 0.02, 0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 30, 60], stp = steps.find((s) => s * v.pps >= 60) || 60;
-  ctx.fillStyle = C('#9a9aa2'); ctx.font = '10px system-ui'; ctx.textBaseline = 'middle';
-  for (let t = Math.ceil(v.x0 / stp) * stp; xs(t) < W; t += stp) { const x = Math.round(xs(t)) + 0.5; ctx.fillRect(x, RULER - 5, 1, 5); ctx.fillText(stp < 1 ? t.toFixed(2) + 's' : t.toFixed(stp < 1 ? 2 : 0) + 's', x + 3, RULER / 2); ctx.fillStyle = C('#2c2c30'); ctx.fillRect(x, RULER, 1, hh); ctx.fillStyle = C('#9a9aa2'); }
-  ctx.fillStyle = C('#232326'); ctx.fillRect(0, Math.round(top + hh * 0.25), W, 1); ctx.fillRect(0, Math.round(top + hh * 0.75), W, 1);   // faint +/-50% guides
-  ctx.fillStyle = C('#3a3a3f'); ctx.fillRect(0, mid, W, 1);
-  // waveform: min/max pyramid, drawn as one smooth shape (grey = outside the clip region, track colour = inside)
   const [o, e] = region(c), x0 = Math.round(xs(o)), x1 = Math.round(xs(e));
-  const col = toneDown(state.tracks[r.track].color);
+  // Live's Sample view: the ruler counts bars / beats of the song from the clip start (bar.beat, bar.beat.16th when zoomed in), every other bar is
+  // shaded, beat lines are faint; the waveform is neutral (light on dark themes, dark on light ones: C() maps it), one lane per channel.
+  ctx.fillStyle = C('#2c2c2f'); ctx.fillRect(0, 0, W, RULER); ctx.fillStyle = C('#141415'); ctx.fillRect(0, RULER - 1, W, 1);
+  const bsec = PPQ * secPerTick(), bar = P.BAR / PPQ, bpx = bsec * v.pps, songBeat = (s) => c.start / PPQ + (s - o) / bsec;
+  if (bpx > 2) {
+    const sub = bpx >= 90 ? 4 : 1, b0 = Math.floor(songBeat(v.x0)) - 1;
+    ctx.font = '10px system-ui'; ctx.textBaseline = 'middle';
+    for (let b = b0; ; b++) {
+      const s0 = o + (b - c.start / PPQ) * bsec, x = xs(s0); if (x > W) break;
+      const inBar = ((b % bar) + bar) % bar, barN = Math.floor(b / bar) + 1;
+      if (inBar === 0 && Math.floor(b / bar) % 2) { ctx.fillStyle = 'rgba(0,0,0,.10)'; ctx.fillRect(Math.round(x), top, Math.round(bpx * bar), hh); }
+      for (let q = 0; q < sub; q++) {
+        const xq = Math.round(x + q * bpx / sub) + 0.5; if (xq < 0 || xq > W) continue;
+        const major = q === 0 && inBar === 0, beat = q === 0;
+        ctx.fillStyle = major ? C('#4a4a50') : beat ? C('#38383d') : C('#313135'); ctx.fillRect(xq, top, 1, hh);
+        ctx.fillStyle = C('#9a9aa2'); ctx.fillRect(xq, RULER - (major ? 7 : 4), 1, major ? 7 : 4);
+        const lbl = major ? String(barN) : beat && bpx >= 34 ? barN + '.' + (inBar + 1) : !beat && bpx >= 260 ? barN + '.' + (inBar + 1) + '.' + (q + 1) : '';
+        if (lbl) ctx.fillText(lbl, xq + 3, RULER / 2);
+      }
+    }
+  }
+  // waveform: min/max pyramid as one smooth shape per channel (dimmer outside the clip region), a centre line per lane
+  const two = e0.pyr && !e0.pyr.mono && e0.pyr.r !== e0.pyr.l && hh >= 80 ? (chPyr.get(e0.pyr) || (chPyr.set(e0.pyr, [buildPyramid(e0.pyr.l, e0.pyr.l), buildPyramid(e0.pyr.r, e0.pyr.r)]), chPyr.get(e0.pyr))) : null;
+  const lanes = two ? [[two[0], top + hh / 4, hh / 4], [two[1], top + hh * 3 / 4, hh / 4]] : [[e0.pyr, mid, hh / 2]];
+  for (const [, m] of lanes) { ctx.fillStyle = C('#3a3a3f'); ctx.fillRect(0, Math.round(m), W, 1); }
+  if (two) { ctx.fillStyle = C('#1e1e20'); ctx.fillRect(0, Math.round(mid), W, 1); }
   if (e0.pyr || pk.length) {
-    const N = e0.pyr ? e0.pyr.l.length : pk.length, geo = { x0: 0, x1: W, s0: v.x0 / D * N, spp: N / D / v.pps, mid, amp: hh * 0.5 * 0.94 };
-    const path = e0.pyr ? wavePath(e0.pyr, geo) : peaksPath(pk, geo);
-    ctx.fillStyle = C('#5a5a60'); ctx.fill(path);
-    ctx.save(); ctx.beginPath(); ctx.rect(Math.max(0, x0), top, Math.max(0, Math.min(W, x1) - Math.max(0, x0)), hh); ctx.clip();
-    ctx.fillStyle = col; ctx.fill(path); ctx.restore();
+    const N = e0.pyr ? e0.pyr.l.length : pk.length;
+    for (const [py, m, half] of lanes) {
+      const geo = { x0: 0, x1: W, s0: v.x0 / D * N, spp: N / D / v.pps, mid: m, amp: half * 0.92 };
+      const path = py ? wavePath(py, geo) : peaksPath(pk, geo);
+      ctx.fillStyle = C('#6a6a70'); ctx.fill(path);
+      ctx.save(); ctx.beginPath(); ctx.rect(Math.max(0, x0), top, Math.max(0, Math.min(W, x1) - Math.max(0, x0)), hh); ctx.clip();
+      ctx.fillStyle = C('#d2d2d6'); ctx.fill(path); ctx.restore();
+    }
   }
   // outside the region: dim
   ctx.fillStyle = 'rgba(0,0,0,.38)';

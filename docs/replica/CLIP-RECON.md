@@ -32,3 +32,10 @@ track. Klon: `node tools/replica-arr-shot.mjs out.png live` (keadaan yang sama, 
 Sisa perbedaan (alasan): kolom I/O Live (Audio From / Monitor / Audio To) sengaja tidak ada karena pemilik minta header tanpa In / Auto / Off dan Master di
 kolom mixer; Return A / B tidak tampil sebagai baris arrangement di MobileDAW (send A / B ada di tiap track); strip judul klip MobileDAW menampilkan nama
 sampel. Skor bukan target piksel: tampilan Live adalah trade dress-nya; yang ditiru adalah struktur dan perilaku.
+
+## Penyempurnaan desain dari 133 screenshot Live + referensi detail klip (sesi ini, tata letak tidak diubah)
+| Bagian | Live (referensi) | Perubahan di MobileDAW |
+|---|---|---|
+| Editor sampel (Sample view) | penggaris bar.beat dari posisi klip di lagu, bar berselang diarsir, garis beat tipis, gelombang netral per kanal dengan garis tengah | penggaris kini bar / beat (bar.beat.16th saat zoom besar) menggantikan detik; arsir bar berselang; gelombang netral (terang di tema gelap, gelap di tema terang lewat `C()`), dua jalur untuk sample stereo dengan garis tengah; warna track tidak lagi mewarnai gelombang |
+| Klip audio di arrangement | garis tengah tipis di tiap jalur gelombang; fade berbentuk kurva dengan bagian terpotong diarsir | garis tengah per jalur (mono / stereo); fade digambar sebagai kurva (Bezier), arsiran di atas kurva |
+| Piano roll, mixer, kartu device | baris kunci hitam lebih gelap, strip mixer, kartu efek bergaya Live | sudah sesuai dari sesi sebelumnya; tidak diubah |

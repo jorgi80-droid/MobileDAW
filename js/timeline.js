@@ -226,9 +226,9 @@ function drawClip(t, c, y, hh) {
       if (es.pyr) {
         const N = es.pyr.l.length, two = bh >= 34 ? stereoPyr(es.pyr) : null;
         if (two) {                                                      // stereo, row tall enough: left channel in the upper half, right in the lower (as Live)
-          const hh = bh / 2;
+          const hh = bh / 2; ctx.save(); ctx.globalAlpha = 0.55; for (let k = 0; k < 2; k++) ctx.fillRect(px0, Math.round(by + hh * k + hh / 2), px1 - px0, 1); ctx.restore();   // centre line of each lane
           for (let k = 0; k < 2; k++) ctx.fill(wavePath(two[k], { x0: px0, x1: px1, s0: sec0 / es.duration * N, spp: spp0 * N, mid: by + hh * k + hh / 2, amp: hh * 0.5 * 0.94 }));
-        } else ctx.fill(wavePath(es.pyr, { x0: px0, x1: px1, s0: sec0 / es.duration * N, spp: spp0 * N, mid: by + bh / 2, amp: bh * 0.5 * 0.96 }));
+        } else { ctx.save(); ctx.globalAlpha = 0.55; ctx.fillRect(px0, Math.round(by + bh / 2), px1 - px0, 1); ctx.restore(); ctx.fill(wavePath(es.pyr, { x0: px0, x1: px1, s0: sec0 / es.duration * N, spp: spp0 * N, mid: by + bh / 2, amp: bh * 0.5 * 0.96 })); }
       } else if (es.peaks) {
         const N = es.peaks.length;
         ctx.fill(peaksPath(es.peaks, { x0: px0, x1: px1, s0: sec0 / es.duration * N, spp: spp0 * N, mid: by + bh / 2, amp: bh * 0.5 * 0.96 }));
@@ -251,8 +251,9 @@ function drawClip(t, c, y, hh) {
   if (t.kind === 'audio' && bh > 8) {                             // fades (Live): the faded part is shaded above the fade line; handles on the selected clip
     const spt = 60 / state.bpm / PPQ, fiw = Math.min(w / 2, (c.fadeIn || 0) / spt * view.ppt), fow = Math.min(w / 2, (c.fadeOut || 0) / spt * view.ppt), top = y0 + hd + 1, bot = y0 + h0 - 1;
     ctx.fillStyle = 'rgba(0,0,0,.24)'; ctx.strokeStyle = INK; ctx.lineWidth = 1.2;
-    if (fiw > 1) { ctx.beginPath(); ctx.moveTo(x, top); ctx.lineTo(x + fiw, top); ctx.lineTo(x, bot); ctx.closePath(); ctx.fill(); ctx.beginPath(); ctx.moveTo(x, bot); ctx.lineTo(x + fiw, top); ctx.stroke(); }
-    if (fow > 1) { ctx.beginPath(); ctx.moveTo(x + w, top); ctx.lineTo(x + w - fow, top); ctx.lineTo(x + w, bot); ctx.closePath(); ctx.fill(); ctx.beginPath(); ctx.moveTo(x + w - fow, top); ctx.lineTo(x + w, bot); ctx.stroke(); }
+    // Live draws a fade as a curve (slow start, fast rise) with the cut-away part shaded above it
+    if (fiw > 1) { const cv = () => { ctx.moveTo(x, bot); ctx.bezierCurveTo(x + fiw * 0.55, bot, x + fiw * 0.45, top, x + fiw, top); }; ctx.beginPath(); cv(); ctx.lineTo(x, top); ctx.closePath(); ctx.fill(); ctx.beginPath(); cv(); ctx.stroke(); }
+    if (fow > 1) { const cv = () => { ctx.moveTo(x + w - fow, top); ctx.bezierCurveTo(x + w - fow * 0.45, top, x + w - fow * 0.55, bot, x + w, bot); }; ctx.beginPath(); cv(); ctx.lineTo(x + w, top); ctx.closePath(); ctx.fill(); ctx.beginPath(); cv(); ctx.stroke(); }
     if (isSel && w > 30) {
       const sq = (hx, hy, on) => { ctx.fillStyle = on ? C('#bfe3f5') : tint(t.color, 0.6); ctx.fillRect(Math.round(hx) - 4, Math.round(hy) - 4, 8, 8); ctx.strokeStyle = shade(t.color, 0.7); ctx.lineWidth = 1; ctx.strokeRect(Math.round(hx) - 3.5, Math.round(hy) - 3.5, 7, 7); };
       sq(x + Math.max(5, fiw), top + 4, fiw > 1); sq(x + w - Math.max(5, fow), top + 4, fow > 1);
