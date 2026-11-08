@@ -31,7 +31,7 @@ Semua kontrol mixer bisa diotomasi (tekan lama atau CTRL),Mixer,should,yes,yes,t
 Ruler: Select / Insert / Duplicate / Delete space / Trim / Tebak skala / Snap ke skala,Piano Roll,must,yes,yes,sesi sebelumnya
 Lane Velocity / Pan,Piano Roll,must,yes,yes,sesi sebelumnya
 **Ghost Notes** (bisa dimatikan di Pengaturan → Editor),Piano Roll,must,yes,yes,dicek visual; data dari clipNoteEvents yang sama dengan engine
-Slide Notes (pitch / velocity / pan glide),Piano Roll,must,yes,partial,pitch glide done (golden core-slide); velocity / pan glide not
+Slide Notes (pitch / velocity / pan glide),Piano Roll,must,yes,yes,"pitch (kind 4), velocity (kind 5, gain ratio) and pan (kind 6) glide; golden core-slide + core-slide-vp, slide-test; whole track, not per voice"
 Strength quantize parsial,Piano Roll,must,yes,yes,alat Quantize (Jumlah %); tanpa tes otomatis
 "Ketuk step, lukis, Swing (groove global / per klip), Fill 1/2/4, Clear",Step Sequencer / Drum,must,yes,yes,sesi sebelumnya
 "Menu channel: Load Sample, Clone, Set MIDI Key (ketik / learn dari controller), Hapus",Step Sequencer / Drum,must,yes,yes,touch-ui-test

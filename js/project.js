@@ -345,21 +345,32 @@ const DRUM_STEP = 240;   // one step of the step sequencer (a 16th) in ticks
 // FL Studio Mobile Slide notes: a slide note does not play a note of its own; over its length it glides the pitch of the note that is sounding
 // (the latest plain note under it) to the slide note's pitch, which then holds until that note ends. Written as lane kind 4 (semitones, exact,
 // both engines bend every sounding voice of the track). Returns the number of points appended to f as [tick, 4, semitones].
+// Slide notes glide the sounding note's pitch (kind 4, semitones), and, when the slide note's velocity / pan differ from that note's,
+// its level (kind 5, gain ratio slide velocity / note velocity) and pan (kind 6, offset) the same way (FL Studio: a slide note carries its
+// note properties). Kinds 5 / 6 are only written when some slide changes them, so older projects get exactly the lane they had.
 export function slideLane(c, f) {
-  let n = 0;
+  const L = [[], [], []], dflt = [0, 1, 0];
   for (const g of loopSegs(c)) {
     const e = g.s + g.len, at = (t) => c.start + g.o + Math.min(t, e) - g.s;
     const plain = c.notes.filter((q) => !q.sl).sort((a, b) => a.t - b.t);
     const slides = c.notes.filter((q) => q.sl && q.t >= g.s && q.t < e).sort((a, b) => a.t - b.t);
-    let base = null, cur = 0;
+    let base = null, cur = dflt.slice();
+    const back = () => { const x = at(base.t + base.d); for (let k = 0; k < 3; k++) if (cur[k] !== dflt[k]) L[k].push(x, cur[k], x + 1, dflt[k]); };
     for (const s of slides) {
       let b = null; for (const q of plain) { if (q.t > s.t) break; if (q.t + q.d > s.t) b = q; }
       if (!b) continue;
-      if (b !== base) { if (base && cur) { f.push(at(base.t + base.d), 4, cur, at(base.t + base.d) + 1, 4, 0); n += 2; } base = b; cur = 0; }
-      const end = Math.min(s.t + Math.max(1, s.d), b.t + b.d), to = s.p - b.p;
-      f.push(at(s.t), 4, cur, at(end), 4, to); n += 2; cur = to;
+      if (b !== base) { if (base) back(); base = b; cur = dflt.slice(); }
+      const end = Math.min(s.t + Math.max(1, s.d), b.t + b.d);
+      const to = [s.p - b.p, b.v > 0 ? s.v / b.v : 1, (s.pan || 0) - (b.pan || 0)];
+      for (let k = 0; k < 3; k++) L[k].push(at(s.t), cur[k], at(end), to[k]);
+      cur = to;
     }
-    if (base && cur) { f.push(at(base.t + base.d), 4, cur, at(base.t + base.d) + 1, 4, 0); n += 2; }
+    if (base) back();
+  }
+  let n = 0;
+  for (let k = 0; k < 3; k++) {
+    const v = L[k]; if (k > 0 && !v.some((x, j) => j % 2 === 1 && x !== dflt[k])) continue;   // velocity / pan never change: no lane
+    for (let j = 0; j < v.length; j += 2) { f.push(v[j], 4 + k, v[j + 1]); n++; }
   }
   return n;
 }

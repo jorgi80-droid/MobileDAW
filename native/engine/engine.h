@@ -29,7 +29,7 @@ struct NoteData {                     // trackNotes: events sorted (offs before 
 struct Clip { double start, len; int sample; double gain, offset, fadeIn, fadeOut, pan; };
 struct ClipData { std::vector<Clip> c; };
 struct CCLane { std::vector<double> t, v; };
-struct CCData { CCLane* lane[5] = {}; ~CCData() { for (auto* l : lane) delete l; } };
+struct CCData { CCLane* lane[7] = {}; ~CCData() { for (auto* l : lane) delete l; } };
 struct Lane { int kind, track, dev, param; std::vector<std::pair<double, double>> pts; double last; };
 struct LaneData { std::vector<Lane> lanes; };
 

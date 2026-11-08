@@ -198,8 +198,9 @@ export class Engine {
   // Evaluated once per block (linear between points). n = 0 removes the lanes.
   trackCC(t, flat, n) {
     if (!this.ok(t) || t >= MASTER) return;
-    const s = this.s[t], by = [[], [], [], [], []];                    // kind 4 = slide notes (semitones, exact)
-    for (let i = 0; i < n; i++) { const k = flat[i * 3 + 1] | 0; if (k >= 0 && k < 5) by[k].push([flat[i * 3], flat[i * 3 + 2]]); }
+    n = Math.trunc(Math.max(0, Math.min(n === n ? +n || 0 : 0, Math.floor(flat.length / 3))));   // never more points than the array holds (commands.cpp count)
+    const s = this.s[t], by = [[], [], [], [], [], [], []];            // kind 4 = slide notes (semitones, exact), 5 = slide velocity (gain ratio), 6 = slide pan (offset)
+    for (let i = 0; i < n; i++) { const k = flat[i * 3 + 1] | 0; if (k >= 0 && k < 7) by[k].push([flat[i * 3], flat[i * 3 + 2]]); }
     const ccl = by.map((a) => { if (!a.length) return null; a.sort((x, y) => x[0] - y[0]); return { t: Float64Array.from(a, (q) => q[0]), v: Float64Array.from(a, (q) => q[1]) }; });
     s.ccl = ccl.some(Boolean) ? ccl : null;
     if (!s.ccl) this.ccReset(s, t);
@@ -213,8 +214,9 @@ export class Engine {
   applyCC(s, idx, tick) {
     const c = s.ccl;
     if (c[0] || c[4]) { const st = c[0] ? clamp(this.ccAt(c[0], tick), -1, 1) * 2 : 0, sl = c[4] ? clamp(this.ccAt(c[4], tick), -24, 24) : 0; if (Math.abs(st + sl - s.bend) > 1e-4) this.bend(idx, st, sl); }
-    let g = 1; if (c[1]) g *= clamp(this.ccAt(c[1], tick) / 127, 0, 1); if (c[3]) g *= clamp(this.ccAt(c[3], tick) / 127, 0, 1);
-    s.ccG = g; s.ccP = c[2] ? clamp((this.ccAt(c[2], tick) - 64) / 63, -1, 1) : 0;
+    let g = 1; if (c[1]) g *= clamp(this.ccAt(c[1], tick) / 127, 0, 1); if (c[3]) g *= clamp(this.ccAt(c[3], tick) / 127, 0, 1); if (c[5]) g *= clamp(this.ccAt(c[5], tick), 0, 4);
+    let p = c[2] ? clamp((this.ccAt(c[2], tick) - 64) / 63, -1, 1) : 0; if (c[6]) p = clamp(p + clamp(this.ccAt(c[6], tick), -2, 2), -1, 1);
+    s.ccG = g; s.ccP = p;
   }
   // flat = [start tick, length ticks, sample id, gain, offset seconds, fade in seconds, fade out seconds, (stride 8: pan -1..1 balance)] * n
   trackClips(t, flat, n, stride = 7) {

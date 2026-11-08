@@ -620,3 +620,13 @@ Permintaan pemilik: SEMUA efek dan instrumen diganti dengan set stok Ableton Liv
 - Kartu: "[Plugin tidak tersedia] <nama>", "tipe modul N", teks bahwa datanya disimpan utuh. Placeholder FLM lama (`missing` tanpa `orig`) tidak berubah.
 - Belum: instrumen dengan tipe tidak dikenal (track synth / chain Instrument Rack) masih seperti sebelumnya (chain rack: instrumen dikosongkan).
 - Tes: `tools/placeholder-test.mjs`.
+
+## Slide Notes: velocity + pan (sesi ini)
+- `P.slideLane` kini juga menulis trackCC kind 5 (rasio gain = velocity not slide / velocity not yang berbunyi) dan kind 6 (offset pan = pan not slide -
+  pan not itu), dengan pola titik yang sama seperti kind 4, kembali ke 1 / 0 di akhir not. Lane 5 / 6 hanya dikirim bila ada slide yang mengubah nilainya,
+  jadi proyek lama yang slide-nya ber-velocity / pan sama mendapat lane persis seperti dulu.
+- Engine (JS `core.js applyCC`, C++ `engine.cpp applyCC`, `commands.cpp prepCC`, `CCData lane[7]`): kind 5 dikalikan ke `ccG` (0..4), kind 6 ditambah ke
+  `ccP` (dibatasi -1..1). JS `trackCC` kini membatasi n ke panjang array seperti `commands.cpp count` (ketahuan saat membuat golden: n yang kebesaran
+  membuat JS membaca undefined).
+- Batas: level / pan berlaku untuk seluruh track (bukan per suara), velocity dipetakan sebagai rasio gain (respon velocity tiap instrumen tidak diikuti).
+- Tes: `slide-test` (lane + -6 dB + pan kanan), golden `core-slide-vp`.

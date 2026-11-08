@@ -58,7 +58,7 @@ Stack dipertahankan: JS modul (tanpa build) + AudioWorklet + engine C++ (Android
 | Ruler: Select / Insert / Duplicate / Delete space / Trim / Tebak skala / Snap ke skala | Selesai | sesi sebelumnya |
 | Lane Velocity / Pan | Selesai | sesi sebelumnya |
 | **Ghost Notes** (bisa dimatikan di Pengaturan → Editor) | Selesai | dicek visual; data dari `clipNoteEvents` yang sama dengan engine |
-| Slide Notes (pitch / velocity / pan glide) | Sebagian | glide pitch: not slide menggeser nada yang berbunyi ke nadanya selama panjang not (lane kind 4, semitone persis, JS = C++: golden `core-slide`, `slide-test`); glide velocity / pan belum; slide berlaku untuk semua suara track |
+| Slide Notes (pitch / velocity / pan glide) | Selesai | not slide menggeser nada (lane kind 4, semitone persis), level (kind 5 = rasio velocity not slide / not yang berbunyi) dan pan (kind 6 = selisih pan) not yang berbunyi selama panjang not slide; lane 5/6 hanya ditulis bila ada slide yang mengubahnya. JS = C++: golden `core-slide`, `core-slide-vp`; `slide-test`. Batas: berlaku untuk seluruh track (akor ikut), velocity dipetakan sebagai rasio gain |
 | Strength quantize parsial | Selesai | alat Quantize di editor (Jumlah 0-100 %, `editor.js` TOOLS); belum ada tes otomatis |
 
 ## 8. Step Sequencer / Drum

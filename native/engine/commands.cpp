@@ -101,10 +101,10 @@ static ClipData* prepClips(const Arg& flat, const Arg& nArg, int stride) {
 
 static CCData* prepCC(const Arg& flat, const Arg& nArg) {
   int n = count(flat, nArg, 3);
-  std::vector<std::pair<double, double>> by[5];
-  for (int i = 0; i < n; i++) { int k = toInt32(arrAt(flat, i * 3 + 1)); if (k >= 0 && k < 5) by[k].push_back({ arrAt(flat, i * 3), arrAt(flat, i * 3 + 2) }); }
+  std::vector<std::pair<double, double>> by[7];                      // core.js: kind 4 slide pitch, 5 slide velocity (gain ratio), 6 slide pan
+  for (int i = 0; i < n; i++) { int k = toInt32(arrAt(flat, i * 3 + 1)); if (k >= 0 && k < 7) by[k].push_back({ arrAt(flat, i * 3), arrAt(flat, i * 3 + 2) }); }
   auto* d = new CCData(); bool any = false;
-  for (int k = 0; k < 5; k++) {
+  for (int k = 0; k < 7; k++) {
     if (by[k].empty()) continue;
     std::stable_sort(by[k].begin(), by[k].end(), [](const std::pair<double, double>& x, const std::pair<double, double>& y) { return x.first < y.first; });
     auto* l = new CCLane(); for (auto& q : by[k]) { l->t.push_back(q.first); l->v.push_back(q.second); }

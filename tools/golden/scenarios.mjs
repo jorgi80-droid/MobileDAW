@@ -306,6 +306,14 @@ export const SCENARIOS = [
   { name: 'core-clip-pan', info: 'audio clips with a pan of their own (stride 8: balance, centre untouched): hard left, half right, centre next to an old stride-7 track',
     run(e) { samples(e); e.tempo(126); e.trackClips(0, [0, BAR, 0, 0.8, 0, 0, 0, -1, BAR, BAR, 2, 0.9, 0.1, 0.02, 0.02, 0.5, BAR * 2, BAR, 1, 1, 0, 0.02, 0.02, 0], 3, 8); e.trackClips(1, [0, BAR * 3, 2, 0.7, 0, 0, 0], 1); e.play(); play(e, 6, [128, 77]); } },
   ...fxScenarios(),
+  { name: 'core-slide-vp', info: 'slide notes with velocity / pan glide (trackCC kinds 5 = gain ratio, 6 = pan offset) next to a CC7 / CC10 lane, then removed',
+    run(e) {
+      e.tempo(118); e.trackInst(0, 33); e.trackInst(1, 32); e.trackPan(1, -0.3);
+      e.trackNotes(0, [0, PPQ * 8, 55, 0.9, 0, PPQ * 8, PPQ * 4, 60, 0.7, 0.2], 2); e.trackNotes(1, [0, PPQ * 12, 48, 0.8, 0], 1);
+      e.trackCC(0, [PPQ, 4, 0, PPQ * 2, 4, 5, PPQ, 5, 1, PPQ * 2, 5, 0.4, PPQ * 3, 5, 0.4, PPQ * 4, 5, 1.6, PPQ * 2, 6, 0, PPQ * 4, 6, 0.8, PPQ * 8, 6, 0.8, PPQ * 8 + 1, 6, 0, PPQ * 9, 6, -2.5], 11);
+      e.trackCC(1, [0, 1, 100, PPQ * 6, 1, 60, 0, 2, 64, PPQ * 6, 2, 20, PPQ, 5, 1, PPQ * 5, 5, 0.25, PPQ, 6, 0, PPQ * 5, 6, 1.5], 8);
+      e.play(); play(e, 4, [128, 77, 256]); e.trackCC(1, [], 0); play(e, 1.5);
+    } },
   { name: 'core-fx-mix', info: 'per-module Mix / Gain (devParam 1000 / 1001) on every effect: Reverb, Compressor with 10 ms look-ahead (dry delayed to match), Limiter, a Saturator inside a rack chain and in a drum pad chain; ramps, automation of Mix, back to Mix 1 (plain path) and on again',
     run(e) {
       e.tempo(122); e.trackInst(0, 2); e.trackInst(1, 3);

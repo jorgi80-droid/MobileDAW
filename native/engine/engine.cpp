@@ -210,8 +210,9 @@ double Engine::ccAt(const CCLane& l, double tick) {
 void Engine::applyCC(Strip& st, int idx, double tick) {
   CCData* c = st.ccl;
   if (c->lane[0] || c->lane[4]) { double v = c->lane[0] ? clamp(ccAt(*c->lane[0], tick), -1, 1) * 2 : 0, sl = c->lane[4] ? clamp(ccAt(*c->lane[4], tick), -24, 24) : 0; if (std::fabs(v + sl - st.bend) > 1e-4) bend(idx, v, sl); }
-  double g = 1; if (c->lane[1]) g *= clamp(ccAt(*c->lane[1], tick) / 127, 0, 1); if (c->lane[3]) g *= clamp(ccAt(*c->lane[3], tick) / 127, 0, 1);
-  st.ccG = g; st.ccP = c->lane[2] ? clamp((ccAt(*c->lane[2], tick) - 64) / 63, -1, 1) : 0;
+  double g = 1; if (c->lane[1]) g *= clamp(ccAt(*c->lane[1], tick) / 127, 0, 1); if (c->lane[3]) g *= clamp(ccAt(*c->lane[3], tick) / 127, 0, 1); if (c->lane[5]) g *= clamp(ccAt(*c->lane[5], tick), 0, 4);
+  double p = c->lane[2] ? clamp((ccAt(*c->lane[2], tick) - 64) / 63, -1, 1) : 0; if (c->lane[6]) p = clamp(p + clamp(ccAt(*c->lane[6], tick), -2, 2), -1, 1);
+  st.ccG = g; st.ccP = p;
 }
 void Engine::trackClips(int t, ClipData* d) { if (!ok(t) || t >= MASTER) { retire.put(d); return; } retire.put(s[t].clips); s[t].clips = d; }
 void Engine::automation(LaneData* d) { retire.put(lanes); lanes = d; }
