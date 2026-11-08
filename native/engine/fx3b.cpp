@@ -39,7 +39,7 @@ void VinylDist::process(float* L, float* R, int n) {
   }
 }
 void DrumBuss::process(float* L, float* R, int n) {
-  double trim = dbToLin(p[2]); bool comp = p[3] > 0.5; double dv = 1 + p[0] * 9; int ty = (int)jsRound(p[1]); double crn = p[4] * 2, trs = p[6], boom = p[7] * 3, out = dbToLin(p[10]), mix = p[11];
+  double trim = dbToLin(p[2]); bool comp = p[3] > 0.5; double dv = 1 + p[0] * 9; int ty = (int)jsRound(p[1]); double crn = p[4] * 2, trs = p[6], boom = p[7] * 3, out = dbToLin(p[10]), mix = p[11]; bool aud = p[12] > 0.5;
   double ec = 1 - coefMs(30, sr), fa = 1 - coefMs(1, sr), sl = 1 - coefMs(60, sr), bpk = 0, opk = 0;
   auto sh = [&](double x) { return ty == 0 ? fastTanh(x * dv) / jsMax(1, dv * 0.6) : ty == 1 ? fastTanh(x * dv) / jsMax(1, dv * 0.45) : clamp(x * dv, -1, 1) / jsMax(1, dv * 0.4); };
   for (int i = 0; i < n; i++) {
@@ -50,7 +50,7 @@ void DrumBuss::process(float* L, float* R, int n) {
     l = dmp[0].process(l); r = dmp[1].process(r);
     double a = jsMax(std::fabs(l), std::fabs(r)); fast += (a - fast) * fa; slow += (a - slow) * sl;
     double tg = clamp(1 + trs * ((fast - slow) / jsMax(1e-4, slow)) * 0.8, 0.2, 3); l *= tg; r *= tg;
-    if (boom > 0) { double b = bm.process((l + r) * 0.5) * boom; l += b; r += b; if (std::fabs(b) > bpk) bpk = std::fabs(b); }
+    if (boom > 0 || aud) { double b0 = bm.process((l + r) * 0.5); if (boom > 0) { double b = b0 * boom; l += b; r += b; if (std::fabs(b) > bpk) bpk = std::fabs(b); } if (aud) { double a2 = b0 * (boom > 0 ? boom : 1); l = a2; r = a2; } }
     l *= out; r *= out; double o = jsMax(std::fabs(l), std::fabs(r)); if (o > opk) opk = o;
     L[i] = (float)(L[i] * (1 - mix) + l * mix); R[i] = (float)(R[i] * (1 - mix) + r * mix);
   }

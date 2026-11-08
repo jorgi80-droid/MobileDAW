@@ -652,3 +652,9 @@ Permintaan pemilik: SEMUA efek dan instrumen diganti dengan set stok Ableton Liv
 - Mix & Gain: tekan lama knob Mix di dialog = lane otomasi (target kind 4, param `MIX_P`; `autoCurrent` membaca `wetOf(d).mix`). Tes di `fx-mix-test`.
 - Tersisa dari tampilan FX: MiniMeters tetap tampilannya sendiri (suite meter); Parametric EQ / Level / Analyzer disembunyikan dari picker dan
   tetap memakai tampilan lama; chip Mix belum ada di kartu efek di dalam rack / chain pad.
+
+## Replika panel FX dari referensi pemilik, putaran 2 (sesi ini)
+- Detail, skor sebelum / sesudah dan sisa perbedaan: `docs/replica/FX-PANELS.md` (bagian Putaran 2). Skor: `tools/replica-fx-score.sh`.
+- Engine: ChannelEq punya `readOut` spektrum 128 bin (JS fx3.js + C++ fx3.h/fx3.cpp, hanya tampilan); Drum Buss parameter 12 "Audition"
+  (Boom Audition: keluaran = band Boom saja; mati = jalur lama bit sama). Golden 125/125 identik.
+- ui-shots: `PLAY=1` memutar lagu demo (dari awal untuk tiap modul), `CARD=1` memotret kartu efek di ukuran panel normal.

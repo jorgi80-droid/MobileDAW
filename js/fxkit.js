@@ -28,7 +28,7 @@ const mag = (b, f) => { const w = 2 * Math.PI * f / SR, c1 = Math.cos(w), c2 = M
 const grid = (g, w, hh) => { g.fillStyle = DISPC.grid; for (const f of [100, 1000, 10000]) g.fillRect(Math.round(lx(f, w)), 0, 1, hh); };
 const label = (g, t, x, y, col = DISPC.ink, sz = 9, al = 'left') => { g.fillStyle = col; g.font = `600 ${sz}px system-ui,sans-serif`; g.textAlign = al; g.textBaseline = 'alphabetic'; g.fillText(t, x, y); g.textAlign = 'left'; };
 
-// ---- the kit: controls bound to device parameters -------------------------------------------------
+// ---- the kit: controls bound to device parameters (a bipolar knob gets Live's small centre triangle above its dial) ---------
 function kit(ctx) {
   const { i, di, d, def } = ctx, draws = [], ctls = [];
   const get = (k) => d.params[k];
@@ -37,7 +37,7 @@ function kit(ctx) {
   const auto = (k) => (ctx.autoFn ? ctx.autoFn(k) : ctx.nested ? null : (rect) => offerAutomation(rect, { kind: 4, strip: P.stripOf(i), devId: d.id, param: k, def: def.params[k] }, `${def.name} ${def.params[k].n}`));   // devices inside a rack have no automation lanes (map them to a macro)
   const reg = (el, k) => { el._k = k; ctls.push(el); return el; };
   const lbl = (k, o) => (o && o.n != null ? o.n : def.params[k].n.replace(/^(L\+R|L|R) /, ''));
-  const K = (k, o = {}) => { const el = knob({ ...def.params[k], n: lbl(k, o) }, () => get(k), (v) => set(k, v), fmtParam, C('#7ac5ff'), auto(k)); el.classList.add('lk-k'); if (o.big) el.classList.add('big'); if (o.col) el.style.setProperty('--lv-arc', o.col); return reg(el, k); };
+  const K = (k, o = {}) => { const el = knob({ ...def.params[k], n: lbl(k, o) }, () => get(k), (v) => set(k, v), fmtParam, C('#7ac5ff'), auto(k)); el.classList.add('lk-k'); { const q = def.params[k], sv = el.querySelector('svg'); if (q.min < 0 && q.max > 0 && !q.curve && sv) sv.before(h('i', { class: 'lk-bipm' })); } if (o.big) el.classList.add('big'); if (o.col) el.style.setProperty('--lv-arc', o.col); return reg(el, k); };
   const T = (k, text, o = {}) => reg(lvTog(text, () => (get(k) > 0.5) !== !!o.inv, (b) => set(k, b !== !!o.inv ? 1 : 0), { cls: 'lk-t ' + (o.cls || ''), w: o.w }), k);
   // one button that steps through a list and shows the current entry (Live: Resonators Mode A / B)
   const CY = (k, labels, o = {}) => { const p = def.params[k], b = lvBtn('', () => { const j = Math.round(get(k) - p.min) + 1; set(k, (j >= labels.length ? 0 : j) + p.min); b.update(); }, { cls: 'lk-t on ' + (o.cls || ''), w: o.w });
@@ -114,17 +114,35 @@ V[24] = (k) => {
 };
 // Channel EQ: curve display with the HP switch and the mid frequency readout, Low / Mid / High / Output
 V[25] = (k) => {
-  const disp = k.D(268, 92, (g, w, hh) => {
-    grid(g, w, hh); const b = [new Biquad(), new Biquad(), new Biquad(), new Biquad()];
+  // Live: one dark display holding the analyser (grey, the track's spectrum), the EQ curve (cyan line), dB / Hz scales, and a bottom strip
+  // with the HP filter switch (orange icon box) and the Mid frequency in orange
+  let spec = null;
+  const disp = k.D(300, 118, (g, w, hh) => {
+    const B = hh - 2, yd = (db) => B / 2 - db / 14.5 * (B / 2 - 4);
+    if (spec) { const pts = [[0, B]]; for (let b = 0; b < spec.length; b++) pts.push([(b + 0.5) / spec.length * w, B - Math.max(0, Math.min(1, (spec[b] + 84) / 78)) * (B - 6)]); pts.push([w, B]);
+      g.fillStyle = 'rgba(150,150,156,.55)'; g.beginPath(); g.moveTo(pts[0][0], pts[0][1]); for (const q of pts) g.lineTo(q[0], q[1]); g.closePath(); g.fill(); }
+    grid(g, w, B); const b = [new Biquad(), new Biquad(), new Biquad(), new Biquad()];
     b[0].highpass(SR, 80, 0.707); b[1].lowShelf(SR, 100, 0.7, k.get(1)); b[2].peaking(SR, k.get(3), 0.9, k.get(2)); if (k.get(4) >= 0) b[3].highShelf(SR, 6000, 0.7, k.get(4)); else b[3].lowpass(SR, 20000 * Math.pow(2, k.get(4) / 3), 0.707);
-    const yd = (db) => hh / 2 - db / 15 * (hh / 2 - 6), pts = [];
-    for (let x = 0; x <= w; x += 2) { const f = xl(x, w); let m = 1; for (let j = k.get(0) > 0.5 ? 0 : 1; j < 4; j++) m *= mag(b[j], f); pts.push([x, yd(20 * Math.log10(m + 1e-9) + k.get(5))]); }
-    g.fillStyle = DISPC.grid; g.fillRect(0, Math.round(yd(0)), w, 1); lvPath(g, pts, DISPC.bl, hh, 1.8); lvRing(g, lx(k.get(3), w), yd(k.get(2)), 4.5);
+    const pts = []; for (let x = 0; x <= w; x += 2) { const f = xl(x, w); let m = 1; for (let j = k.get(0) > 0.5 ? 0 : 1; j < 4; j++) m *= mag(b[j], f); pts.push([x, yd(20 * Math.log10(m + 1e-9) + k.get(5))]); }
+    g.fillStyle = DISPC.grid; g.fillRect(0, Math.round(yd(0)), w, 1); lvPath(g, pts, DISPC.bl, null, 2);
+    for (const [db, t] of [[12, '12'], [0, '0'], [-12, '-12']]) label(g, t, 4, yd(db) + (db === 12 ? 11 : db === -12 ? -2 : 4), DISPC.ink, 11);
+    for (const [f, t] of [[100, '100'], [1000, '1k'], [10000, '10k']]) label(g, t, lx(f, w) - 8, B - 4, DISPC.ink, 11);
   }, { onDown: () => ({ f: k.get(3), g: k.get(2) }), onMove: (x, y, dx, dy, s) => { k.set(3, Math.max(120, Math.min(7500, s.f * Math.pow(2, dx / 22)))); k.set(2, Math.max(-12, Math.min(12, s.g - dy * 0.25))); } });
-  return k.col(disp, h('div', { class: 'lk-bar' }, k.T(0, 'HP 80 Hz'), k.N(3, { w: 76 })), k.row(k.K(1, { big: true }), k.K(2, { big: true }), k.K(4, { big: true }), k.sep(), k.K(5, { big: true })));
+  // Live's analyser is smooth: each bin takes the loudest of its neighbours, then a 7-bin average across frequency and a slow fall over time
+  k.every(60, () => { const r = k.out(); if (r.length < 64) return; const n = r.length, m = new Float32Array(n), a = new Float32Array(n);
+    for (let b = 0; b < n; b++) m[b] = Math.max(r[Math.max(0, b - 1)], r[b], r[Math.min(n - 1, b + 1)]);
+    for (let b = 0; b < n; b++) { let t = 0, c = 0; for (let j = -3; j <= 3; j++) { const q = b + j; if (q >= 0 && q < n) { t += m[q]; c++; } } a[b] = t / c; }
+    if (!spec || spec.length !== n) spec = a; else for (let b = 0; b < n; b++) spec[b] = a[b] > spec[b] ? a[b] : spec[b] + (a[b] - spec[b]) * 0.25;
+    disp.paint(); });
+  const ico = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); ico.setAttribute('viewBox', '0 0 24 14'); ico.setAttribute('width', '22'); ico.setAttribute('height', '13');
+  ico.innerHTML = '<path d="M2 12 C 8 12, 9 3, 15 3 L 22 3" fill="none" stroke="currentColor" stroke-width="2"/>';
+  const hp = k.T(0, '', { w: 34, cls: 'lk-hpi' }); hp.append(ico);
+  return k.col(h('div', { class: 'lk-dk lk-ceq' }, disp, h('div', { class: 'lk-ceqs' }, hp, h('span', { class: 'lk-grow' }), k.NT(3, { w: 90, cls: 'or' }), h('span', { class: 'lk-grow' }), h('span', { style: 'width:34px' }))),
+    k.row(k.K(1, { big: true }), k.K(2, { big: true }), k.K(4, { big: true }), k.sep(), k.K(5, { big: true })));
 };
-// Erosion: response display, mode buttons, Freq / Width / Amount
-V[26] = (k) => k.row(k.col(bandDisp(k, 196, 66, 1, 2, { peak: true, wmin: 0.08, wmax: 10 }), k.CH(0, ['Noise', 'Wide Noise', 'Sine'])), k.sep(), k.row(k.K(1), k.K(2), k.K(3, { big: true })));
+// Erosion (Live: Erosion Legacy): display across the top, the three modes under it, Freq / Width / Amount as value boxes in a row
+V[26] = (k) => k.col(bandDisp(k, 226, 92, 1, 2, { peak: true, wmin: 0.08, wmax: 10 }), k.CH(0, ['Noise', 'Wide Noise', 'Sine'], { cls: 'spc' }),
+  k.row(k.TL('Freq', k.N(1, { w: 62 })), k.TL('Width', k.N(2, { w: 62 })), k.TL('Amount', k.N(3, { w: 62 }))));
 // Redux: sample-rate section (rate, jitter, pre filter) and bit section (bits, quantize, shape, DC shift), dry/wet
 V[27] = (k) => k.row(k.sec('Sample Rate', k.row(k.K(0, { big: true }), k.col(k.K(1), k.T(2, 'Pre Filter')))), k.sep(),
   k.sec('Bit Reduction', k.row(k.col(k.T(4, 'Quantize'), k.K(3)), k.col(k.K(5), k.T(6, 'DC Shift')))), k.sep(), k.sec(null, k.K(7)));
@@ -137,15 +155,28 @@ V[28] = (k) => {
 };
 // Drum Buss: drive + type, trim / comp, crunch / damp / transients, boom section with meters, output / dry-wet
 V[29] = (k) => {
-  let bm = -80, ov = -80;
-  const met = k.D(96, 150, (g, w, hh) => {
-    const y = (db) => 6 + (Math.min(0, Math.max(-60, db)) / -60) * (hh - 22);
-    g.fillStyle = '#ffad32'; g.fillRect(14, y(bm), 22, hh - 16 - y(bm)); g.fillStyle = '#5fd08a'; g.fillRect(58, y(ov), 22, hh - 16 - y(ov));
-    label(g, 'Bass', 25, 12, DISPC.ink, 10, 'center'); label(g, 'Out', 69, 12, DISPC.ink, 10, 'center');
-  });
-  k.every(50, () => { const r = k.out(); if (r.length) { bm = r[0]; ov = r[1]; met.paint(); } });
+  // Live: framed Bass meter (orange, a darker cap = the Boom band) and Out meter (two green bars L / R) with peak lines, the output arrow at
+  // the Out meter (drag it), Boom % and output dB under the meters, Dry / Wet in a strip below a line
+  let bm = -80, ov = -80, pb = -80, po = -80; const po0 = k.def.params[10];
+  const met = k.D(132, 150, (g, w, hh) => {
+    const top = 22, bot = hh - 26, y = (db) => top + ((6 - Math.min(6, Math.max(-60, db))) / 66) * (bot - top);
+    const frame = (x, ww) => { g.fillStyle = '#121214'; g.fillRect(x - 2, top - 2, ww + 4, bot - top + 4); g.strokeStyle = '#4a4a50'; g.lineWidth = 1; g.strokeRect(x - 1.5, top - 1.5, ww + 3, bot - top + 3); };
+    frame(18, 26); g.fillStyle = '#ffad32'; g.fillRect(19, y(bm), 24, bot - y(bm)); g.fillStyle = '#a8731f'; g.fillRect(19, y(bm), 24, Math.min(10, bot - y(bm)));
+    g.fillStyle = '#ffd08a'; g.fillRect(19, Math.round(y(pb)), 24, 1.5);
+    frame(70, 26); for (const x of [71, 84]) { g.fillStyle = '#5fd08a'; g.fillRect(x, y(ov), 11, bot - y(ov)); g.fillStyle = '#b8f0c8'; g.fillRect(x, Math.round(y(po)), 11, 1.5); }
+    const oy = y(k.get(10)); g.fillStyle = '#c8c8ce'; g.beginPath(); g.moveTo(100, oy); g.lineTo(110, oy - 6); g.lineTo(110, oy + 6); g.closePath(); g.fill();
+    label(g, 'Bass', 31, 14, '#c8c8ce', 11, 'center'); label(g, 'Out', 83, 14, '#c8c8ce', 11, 'center');
+    label(g, k.get(7) * 100 >= 0 ? (k.get(7) * 100).toFixed(1) + ' %' : '', 31, hh - 8, '#c8c8ce', 10.5, 'center'); label(g, k.get(10).toFixed(2) + ' dB', 86, hh - 8, '#c8c8ce', 10.5, 'center');
+  }, { onDown: () => ({ o: k.get(10) }), onMove: (x, y, dx, dy, s) => k.set(10, Math.max(po0.min, Math.min(po0.max, s.o - dy * 0.15))) });
+  k.every(50, () => { const r = k.out(); if (r.length) { bm = r[0]; ov = r[1]; pb = Math.max(pb - 0.8, bm); po = Math.max(po - 0.8, ov); met.paint(); } });
+  // Live Boom section: the note of the Boom frequency (tap = Force To Note: Freq to that note exactly) and the headphone = Boom Audition
+  const NN2 = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'], midi = () => Math.round(69 + 12 * Math.log2(k.get(8) / 440));
+  const note = h('button', { class: 'lv-btn lk-pill', title: 'Force To Note' }); const nUp = () => { const m = midi(); note.textContent = NN2[((m % 12) + 12) % 12] + (Math.floor(m / 12) - 2); }; nUp();
+  note.addEventListener('click', () => { k.set(8, Math.max(30, Math.min(90, 440 * Math.pow(2, (midi() - 69) / 12)))); nUp(); }); k.reg(Object.assign(note, { update: nUp }), 8);
+  const aud = k.T(12, '', { w: 26, cls: 'lk-hph' }); aud.title = 'Boom Audition'; { const sv = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); sv.setAttribute('viewBox', '0 0 16 16'); sv.setAttribute('width', '14'); sv.setAttribute('height', '14'); sv.innerHTML = '<path d="M3 10 V8 a5 5 0 0 1 10 0 V10" fill="none" stroke="currentColor" stroke-width="1.6"/><rect x="2" y="9" width="3" height="5" rx="1" fill="currentColor"/><rect x="11" y="9" width="3" height="5" rx="1" fill="currentColor"/>'; aud.append(sv); }
+  const box = h('div', { class: 'lk-dk lk-dbm' }, met, h('div', { class: 'lk-dbw' }, h('span', {}, 'Dry / Wet'), k.NT(11, { w: 54 })));
   return k.row(k.col(k.K(0, { big: true }), k.CH(1, ['Soft', 'Medium', 'Hard'], { v: true }), k.TL('Trim', k.N(2, { w: 62 })), k.T(3, 'Comp')), k.sep(),
-    k.col(k.K(4), k.K(5), k.K(6)), k.sep(), k.col(k.K(7), k.K(8), k.K(9)), k.sep(), k.col(k.K(10)), k.dk(met, k.LN('Dry / Wet', k.NT(11, { w: 54 }))));
+    k.col(k.K(4), k.K(5), k.K(6)), k.sep(), k.col(k.K(7), k.K(8), k.TL('Decay', k.N(9, { w: 62 })), k.row(note, aud)), box);
 };
 // Tuner: arc meter with the cents dot, note + frequency, reference; display options: strobe / histogram and Hz / cents readout
 const NN = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
@@ -174,8 +205,13 @@ V[0] = (k) => k.row(
   k.sec('Input', k.row(k.T(2, 'ØL', { w: 34 }), k.T(4, 'ØR', { w: 34 })), k.S(5, { w: 76 }), k.K(6), k.T(3, 'Mono', { w: 72 }), k.row(k.T(7, 'Bass Mono'), k.N(8, { w: 56 }))), k.sep(),
   k.sec('Output', k.K(0, { n: 'Gain' }), k.K(1), k.row(k.T(9, 'Mute', { w: 40 }), k.T(10, 'DC', { w: 30 }))));
 // EQ Three: GainLow / GainMid / GainHi with L / M / H kill switches, FreqLow, 24 / 48, FreqHi
-V[2] = (k) => k.col(k.row(k.col(k.K(0), k.T(6, 'L', { w: 30 })), k.col(k.K(1), k.T(7, 'M', { w: 30 })), k.col(k.K(2), k.T(8, 'H', { w: 30 }))),
-  k.row(k.K(4), k.CH(9, ['24', '48'], { v: true }), k.K(5)));
+// EQ Three (Live): an orange lamp above each band (lit while the band is on), GainLow / Mid / Hi with L M H under them; FreqLow, the small
+// 24 / 48 slope pair, FreqHi
+V[2] = (k) => {
+  const lamp = (on) => { const el = h('span', { class: 'lk-lamp' }); const f = () => el.classList.toggle('on', k.get(on) > 0.5); f(); k.reg(Object.assign(el, { update: f }), on); return el; };
+  const band = (g, on, t) => k.col(lamp(on), k.K(g), k.T(on, t, { w: 30 }));
+  return k.col(k.row(band(0, 6, 'L'), band(1, 7, 'M'), band(2, 8, 'H')), k.row(k.K(4), k.CH(9, ['24', '48'], { v: true, cls: 'lk-sm' }), k.K(5)));
+};
 // Saturator: curve display, Drive, type, soft clip | Tone, Output, Dry/Wet
 V[3] = (k) => {
   const disp = k.D(150, 90, (g, w, hh) => {

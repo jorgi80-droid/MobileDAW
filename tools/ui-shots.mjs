@@ -14,7 +14,7 @@ const server = http.createServer((q, r) => {
   r.writeHead(200, { 'content-type': TYPES[path.extname(f)] || 'application/octet-stream' }); fs.createReadStream(f).pipe(r);
 }).listen(0, '127.0.0.1');
 await new Promise((ok) => server.once('listening', ok));
-const browser = await chromium.launch();
+const browser = await chromium.launch(process.env.PLAY ? { args: ['--autoplay-policy=no-user-gesture-required'] } : {});   // PLAY=1: the song plays during the device shots (meters / displays show audio)
 const page = await (await browser.newContext({ viewport: { width: +(process.env.VW || 1180), height: +(process.env.VH || 560) }, deviceScaleFactor: 2, hasTouch: true })).newPage();
 const errs = [];
 page.on('pageerror', (e) => errs.push(e.message)); page.on('console', (m) => { if (m.type() === 'error') errs.push(m.text()); });
@@ -137,10 +137,12 @@ if (go('devs')) {                                        // every instrument and
     if (process.env.TAB) await ev((n) => { const b = [...document.querySelectorAll('.lk-tabs .lv-tab')].find((x) => x.textContent === n); if (b) b.click(); }, process.env.TAB);
     await shot('inst-' + k); await btn('btn-max'); await shot('inst-' + k + '-max'); await btn('btn-max');
   }
+  if (process.env.PLAY) { await ev(async () => { const P = await import('./js/project.js'); P.seekTo && P.seekTo(0); P.play(); }); await page.waitForTimeout(800); }
   for (const k of list.fx) {
     await ev(async (k) => { const P = await import('./js/project.js'); P.state.tracks[2].devices = []; P.addDevice(2, k); P.syncAll(); P.emit('all'); }, k);
+    if (process.env.PLAY) { await ev(async () => { const P = await import('./js/project.js'); if (P.seekTo) P.seekTo(0); if (!P.state.playing) P.play(); }); await page.waitForTimeout(1200); }   // from the start for every device: the demo song is short
+    if (process.env.CARD) { const c = page.locator('.dev-scroll > .card').filter({ hasText: (await ev(async (k) => (await import('./js/defs.js')).DEVICES[k].name, k)) }).last(); if (await c.count()) { await c.evaluate((el) => el.scrollIntoView({ inline: 'end', block: 'nearest' })); await page.waitForTimeout(250); const bb = await c.boundingBox(); if (bb && bb.width > 0) await page.screenshot({ path: path.join(out, 'card-' + k + '.png'), clip: bb }); } }   // CARD: the effect card alone, normal panel height (as Live's device view)
     await shot('fx-' + k); await btn('btn-max'); await shot('fx-' + k + '-max');
-    if (process.env.CARD) { const c = page.locator('.dev-scroll > .card').filter({ hasText: (await ev(async (k) => (await import('./js/defs.js')).DEVICES[k].name, k)) }).last(); if (await c.count()) await c.screenshot({ path: path.join(out, 'card-' + k + '.png') }); }
     await btn('btn-max');
   }
 }

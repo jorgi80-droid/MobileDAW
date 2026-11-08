@@ -30,7 +30,7 @@ class VinylDist : public FxBase {
 };
 class DrumBuss : public FxBase {
  public:
-  explicit DrumBuss(double r) : FxBase(r, { 0.45, 2, -12, 1, 0, 20000, -0.45, 0, 49, 1, -4, 1 }) { upd(); }
+  explicit DrumBuss(double r) : FxBase(r, { 0.45, 2, -12, 1, 0, 20000, -0.45, 0, 49, 1, -4, 1, 0 }) { upd(); }
   Biquad dmp[2], cr[2], bm; double env = 0, fast = 0, slow = 0, boomLv = 0, outLv = 0;
   void upd() { dmp[0].lowpass(sr, p[5], 0.707); dmp[1].copy(dmp[0]); cr[0].bandpass(sr, 4500, 1.2); cr[1].copy(cr[0]); bm.bandpass(sr, p[8], 4 + p[9] * 40); }
   void setParam(int i, double v) override { FxBase::setParam(i, v); upd(); }

@@ -94,11 +94,13 @@ class GlueComp : public FxBase {
 };
 class ChannelEq : public FxBase {
  public:
-  explicit ChannelEq(double r) : FxBase(r, { 0, 0, 0, 1500, 0, 0 }) { upd(); }
+  explicit ChannelEq(double r) : FxBase(r, { 0, 0, 0, 1500, 0, 0 }) { upd(); for (auto& v : sav) v = -150; }
   Biquad b[2][4];
   void upd();
   void setParam(int i, double v) override { FxBase::setParam(i, v); upd(); }
   void process(float* L, float* R, int n) override;
+  float sb[4096] = {}; int sw = 0; float sav[128]; double sre[2048], sim[2048];   // fx3.js ChannelEq display tap
+  int readOut(float* o) override;
 };
 
 }  // namespace mdaw

@@ -221,8 +221,24 @@ void ChannelEq::process(float* L, float* R, int n) {
   for (int i = 0; i < n; i++) {
     double l = L[i], r = R[i]; if (hpOn) { l = b[0][0].process(l); r = b[1][0].process(r); }
     for (int k = 1; k < 4; k++) { l = b[0][k].process(l); r = b[1][k].process(r); }
-    L[i] = (float)(l * g); R[i] = (float)(r * g);
+    L[i] = (float)(l * g); R[i] = (float)(r * g); sb[sw++ & 4095] = (float)(((double)L[i] + R[i]) * 0.5);
   }
+}
+static void fftCE(double* re, double* im, int n) {   // radix-2, display only (as fx3b.cpp fftC)
+  for (int i = 1, j = 0; i < n; i++) { int bit = n >> 1; for (; j & bit; bit >>= 1) j ^= bit; j ^= bit; if (i < j) { double t = re[i]; re[i] = re[j]; re[j] = t; t = im[i]; im[i] = im[j]; im[j] = t; } }
+  for (int len = 2; len <= n; len <<= 1) { double a = -2 * PI / len, wr = std::cos(a), wi = std::sin(a);
+    for (int i = 0; i < n; i += len) { double cr = 1, ci = 0; for (int k = 0; k < len / 2; k++) { int u = i + k, v = u + len / 2; double tr = re[v] * cr - im[v] * ci, ti = re[v] * ci + im[v] * cr; re[v] = re[u] - tr; im[v] = im[u] - ti; re[u] += tr; im[u] += ti; double nr = cr * wr - ci * wi; ci = cr * wi + ci * wr; cr = nr; } } }
+}
+int ChannelEq::readOut(float* o) {                     // fx3.js ChannelEq.readOut
+  const int n = 2048; double nyq = sr / 2;
+  for (int k = 0; k < n; k++) { sre[k] = sb[(sw - n + k) & 4095] * (0.5 - 0.5 * std::cos(2 * PI * k / (n - 1))); sim[k] = 0; }
+  fftCE(sre, sim, n);
+  for (int b = 0; b < 128; b++) {
+    double f0 = 20 * std::pow(1000, b / 128.0), f1 = 20 * std::pow(1000, (b + 1) / 128.0); int k0 = (int)std::floor(f0 / nyq * n / 2), k1 = (int)jsMax(k0 + 1, std::ceil(f1 / nyq * n / 2)); double m = 0;
+    for (int k = k0; k < k1 && k < n / 2; k++) { double v = sre[k] * sre[k] + sim[k] * sim[k]; if (v > m) m = v; }
+    double db = 10 * std::log10(m / ((double)n * n / 16) + 1e-16); sav[b] = (float)(sav[b] + (db - sav[b]) * 0.5); o[b] = sav[b];
+  }
+  return 128;
 }
 
 }  // namespace mdaw

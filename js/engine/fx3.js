@@ -280,7 +280,7 @@ export class GlueComp extends Fx {
 // ================================================================================================ Channel EQ
 // 0 HP 80 Hz on 1 low dB 2 mid dB 3 mid freq 4 high dB 5 output dB
 export class ChannelEq extends Fx {
-  constructor(sr) { super(sr); this.p = [0, 0, 0, 1500, 0, 0]; this.b = [0, 1].map(() => [new Biquad(), new Biquad(), new Biquad(), new Biquad()]); this.upd(); }
+  constructor(sr) { super(sr); this.p = [0, 0, 0, 1500, 0, 0]; this.b = [0, 1].map(() => [new Biquad(), new Biquad(), new Biquad(), new Biquad()]); this.upd(); this.sb = new Float32Array(4096); this.sw = 0; this.sav = new Float32Array(128).fill(-150); }
   setParam(i, v) { this.p[i] = v; this.upd(); }
   upd() {
     const p = this.p, [hp, lo, mid, hi] = this.b[0];
@@ -293,8 +293,20 @@ export class ChannelEq extends Fx {
     for (let i = 0; i < n; i++) {
       let l = L[i], r = R[i]; if (hpOn) { l = a[0].process(l); r = b[0].process(r); }
       for (let k = 1; k < 4; k++) { l = a[k].process(l); r = b[k].process(r); }
-      L[i] = l * g; R[i] = r * g;
+      L[i] = l * g; R[i] = r * g; this.sb[this.sw++ & 4095] = (L[i] + R[i]) * 0.5;   // display tap (Live: the spectrum behind the curve)
     }
+  }
+  // spectrum of the output for the display: 2048-point FFT, 128 log bins 20 Hz .. 20 kHz (dB, smoothed). Display only, the audio is untouched.
+  readOut(o) {
+    const n = 2048, re = new Float64Array(n), im = new Float64Array(n), nyq = this.sr / 2;
+    for (let k = 0; k < n; k++) re[k] = this.sb[(this.sw - n + k) & 4095] * (0.5 - 0.5 * Math.cos(2 * Math.PI * k / (n - 1)));
+    fft(re, im, n);
+    for (let b = 0; b < 128; b++) {
+      const f0 = 20 * Math.pow(1000, b / 128), f1 = 20 * Math.pow(1000, (b + 1) / 128); let k0 = Math.floor(f0 / nyq * n / 2), k1 = Math.max(k0 + 1, Math.ceil(f1 / nyq * n / 2)), m = 0;
+      for (let k = k0; k < k1 && k < n / 2; k++) { const v = re[k] * re[k] + im[k] * im[k]; if (v > m) m = v; }
+      const db = 10 * Math.log10(m / (n * n / 16) + 1e-16); this.sav[b] += (db - this.sav[b]) * 0.5; o[b] = this.sav[b];
+    }
+    return 128;
   }
 }
 
@@ -357,16 +369,16 @@ export class VinylDist extends Fx {
 }
 
 // ================================================================================================ Drum Buss
-// 0 drive 1 type (soft / medium / hard) 2 trim dB 3 comp 4 crunch 5 damp Hz 6 transients 7 boom 8 boom freq 9 boom decay 10 output dB 11 dry/wet
+// 0 drive 1 type (soft / medium / hard) 2 trim dB 3 comp 4 crunch 5 damp Hz 6 transients 7 boom 8 boom freq 9 boom decay 10 output dB 11 dry/wet 12 boom audition (Live: headphone = hear only the Boom band)
 export class DrumBuss extends Fx {
   constructor(sr) {
-    super(sr); this.p = [0.45, 2, -12, 1, 0, 20000, -0.45, 0, 49, 1, -4, 1];
+    super(sr); this.p = [0.45, 2, -12, 1, 0, 20000, -0.45, 0, 49, 1, -4, 1, 0];
     this.dmp = [new Biquad(), new Biquad()]; this.cr = [new Biquad(), new Biquad()]; this.bm = new Biquad(); this.env = 0; this.fast = 0; this.slow = 0; this.boomLv = 0; this.outLv = 0; this.upd();
   }
   setParam(i, v) { this.p[i] = v; this.upd(); }
   upd() { const p = this.p; this.dmp[0].lowpass(this.sr, p[5], 0.707); this.dmp[1].copy(this.dmp[0]); this.cr[0].bandpass(this.sr, 4500, 1.2); this.cr[1].copy(this.cr[0]); this.bm.bandpass(this.sr, p[8], 4 + p[9] * 40); }
   process(L, R, n) {
-    const p = this.p, trim = dbToLin(p[2]), comp = p[3] > 0.5, dv = 1 + p[0] * 9, ty = Math.round(p[1]), cr = p[4] * 2, tr = p[6], boom = p[7] * 3, out = dbToLin(p[10]), mix = p[11];
+    const p = this.p, trim = dbToLin(p[2]), comp = p[3] > 0.5, dv = 1 + p[0] * 9, ty = Math.round(p[1]), cr = p[4] * 2, tr = p[6], boom = p[7] * 3, out = dbToLin(p[10]), mix = p[11], aud = p[12] > 0.5;
     const ec = 1 - coef(30, this.sr), fa = 1 - coef(1, this.sr), sl = 1 - coef(60, this.sr);
     let bpk = 0, opk = 0;
     for (let i = 0; i < n; i++) {
@@ -378,7 +390,7 @@ export class DrumBuss extends Fx {
       l = this.dmp[0].process(l); r = this.dmp[1].process(r);
       const a = Math.max(Math.abs(l), Math.abs(r)); this.fast += (a - this.fast) * fa; this.slow += (a - this.slow) * sl;
       const tg = clamp(1 + tr * ((this.fast - this.slow) / Math.max(1e-4, this.slow)) * 0.8, 0.2, 3); l *= tg; r *= tg;
-      if (boom > 0) { const b = this.bm.process((l + r) * 0.5) * boom; l += b; r += b; if (Math.abs(b) > bpk) bpk = Math.abs(b); }
+      if (boom > 0 || aud) { const b0 = this.bm.process((l + r) * 0.5); if (boom > 0) { const b = b0 * boom; l += b; r += b; if (Math.abs(b) > bpk) bpk = Math.abs(b); } if (aud) { const a2 = b0 * (boom > 0 ? boom : 1); l = a2; r = a2; } }
       l *= out; r *= out; const o = Math.max(Math.abs(l), Math.abs(r)); if (o > opk) opk = o;
       L[i] = L[i] * (1 - mix) + l * mix; R[i] = R[i] * (1 - mix) + r * mix;
     }

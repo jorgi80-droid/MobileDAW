@@ -590,6 +590,22 @@
 .lk .knob.lk-k svg { width: 34px; height: 34px; }
 .lk .knob.lk-k.big { width: 64px; } .lk .knob.lk-k.big svg { width: 46px; height: 46px; }
 .lk .lk-t { min-width: 40px; padding: 0 7px; }
+/* Live: centre marker above bipolar knobs, Drum Buss note pill + headphone */
+.lk .lk-bipm { display: block; width: 0; height: 0; margin: 0 auto 1px; border-left: 4px solid transparent; border-right: 4px solid transparent; border-top: 5px solid var(--lv-arc, #4fc3f0); }
+.lk .lv-btn.lk-pill { min-width: 34px; height: 18px; padding: 0 8px; border-radius: 9px; font-size: 11px; }
+.lk .lv-btn.lk-hph { min-width: 0; width: 22px; height: 22px; padding: 0; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; }
+/* Channel EQ (Live): display + bottom strip in one dark box, HP icon switch */
+.lk .lk-ceq { padding: 0; gap: 0; }
+.lk .lk-ceqs { display: flex; align-items: center; gap: 6px; padding: 3px 6px; border-top: 1px solid #3a3a3e; }
+.lk .lk-hpi { display: inline-flex; align-items: center; justify-content: center; padding: 0; height: 18px; color: var(--lv-dim, #9a9aa2); }
+.lk .lk-hpi.on { color: #1b1b1d; }
+/* Drum Buss (Live): meters in a dark box, Dry / Wet strip under a line */
+.lk .lk-dbm { padding: 0; gap: 0; align-self: stretch; justify-content: space-between; }
+.lk .lk-dbw { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 4px 8px; border-top: 1px solid #3a3a3e; font-size: 12px; color: #c8c8ce; }
+/* EQ Three band lamps and the small 24 / 48 pair (Live) */
+.lk .lk-lamp { width: 8px; height: 8px; border-radius: 50%; background: #5a4a2c; align-self: center; margin-bottom: 2px; }
+.lk .lk-lamp.on { background: var(--lv-or, #ffad32); box-shadow: 0 0 4px rgba(255,173,50,.6); }
+.lk .lk-ch.v.lk-sm { align-self: center; } .lk .lk-ch.v.lk-sm .lv-btn { min-width: 34px; width: 34px; height: 18px; padding: 0; font-size: 10px; }
 /* Autoduck sidechain column (Live Glue Compressor): compact, left aligned, the hint wraps under the source */
 .lk .lk-scsec { align-items: flex-start; gap: 6px; max-width: 132px; }
 .lk .lk-scsec .lk-tl { align-items: flex-start; }

@@ -439,7 +439,7 @@ Object.assign(DEVICES, {
   29: { name: 'Drum Buss', kit: true, params: [
     q('Drive', 0, 1, 0.45, { unit: '%' }), list('Type', ['Soft', 'Medium', 'Hard'], 2), q('Trim', -12, 0, -12, { unit: 'dB' }), onoff('Comp', 1), q('Crunch', 0, 1, 0, { unit: '%' }),
     q('Damp', 4500, 20000, 20000, { curve: 'log', unit: 'Hz' }), q('Transients', -1, 1, -0.45, { unit: '' }), q('Boom', 0, 1, 0, { unit: '%' }), q('Freq', 30, 90, 49, { unit: 'Hz' }),
-    q('Decay', 0, 1, 1, { unit: '%' }), q('Output', -24, 12, -4, { unit: 'dB' }), q('Dry/Wet', 0, 1, 1, { unit: '%' })] },
+    q('Decay', 0, 1, 1, { unit: '%' }), q('Output', -24, 12, -4, { unit: 'dB' }), q('Dry/Wet', 0, 1, 1, { unit: '%' }), onoff('Audition', 0)] },
   30: { name: 'Tuner', kit: true, params: [q('Reference', 410, 480, 440, { unit: 'Hz' })] },
 });
 
