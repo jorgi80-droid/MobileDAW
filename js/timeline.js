@@ -23,7 +23,7 @@ const { state, PPQ, SWATCHES } = P;
 let HEAD = 140;                                                 // header width: prefs.headW (drag the header's left edge), else chosen from the canvas width
 const RULER = 34, MROW = 12, BOT = 19, HANDLE = 18, TH = 20, METW = 9;   // top ruler (locators + beats) / bottom time ruler / header title bar / meter strip
 const FOLD_H = 24, MIN_ROW = 52, ADD_H = 44, XROW_H = 48;                // folded row (title bar only) / smallest open row (title + buttons) / "+" row / Master + FX rows
-export const view = { x0: 0, ppt: 0.06, y0: 0, rowH: 72 };
+export const view = { x0: 0, ppt: 0.06, y0: 0, rowH: 78 };   // 78: the four header rows (buttons, volume + pan, sends, output) fit with their borders
 let CW = 0;                                                    // width of the clip area = canvas width - HEAD
 const sn = (n, f) => ({ 0: n, get 1() { return f(); } });   // snap values are read live: BAR / BEAT change with the time signature
 const SNAPS = [sn('Auto', () => -1), sn('Bar', () => BAR), sn('1 Beat', () => BEAT), sn('1/2 Beat', () => BEAT / 2), sn('1/4 Beat', () => BEAT / 4), sn('Triplet', () => BEAT / 3), sn('Off', () => 0)];
@@ -112,21 +112,20 @@ function hdr(i) {
     }
     return r;
   }
-  // Mixer column like Live's: small fixed controls (buttons 16 px, fields 15 px, text 10 px) that never grow with the row; row 1 = activator / S / arm /
-  // automation, row 2 = volume + pan, row 3 = Send A | Send B | output (Master). A taller row only shows more of the lane; a shorter one drops row 3, then row 2.
-  const sends = state.returns.length >= 2, gap = 3, fs = 10, BH = 16, FH = 15; r.fs = fs;
+  // Mixer column like Live's: small fixed controls, ALL the same height (15 px, text 10 px), never growing with the row. Row 1 = activator / S / arm /
+  // automation, row 2 = volume + pan, row 3 = Send A | Send B, row 4 = output (Master) across the whole width, right under the sends.
+  // A shorter row drops row 4, then 3, then 2.
+  const sends = state.returns.length >= 2, gap = 3, fs = 10, CH = 15; r.fs = fs;
   const bw = Math.max(20, Math.min(24, Math.floor((R - L - gp * 3) / 4)));
-  const y1 = y + 2, y2 = y1 + BH + gap, y3 = y2 + FH + gap;
-  r.mute = { x: L, y: y1, w: auto ? bw + 14 : bw, h: BH, fs };
+  const ys = [0, 1, 2, 3].map((k) => y + 2 + k * (CH + gap)), fits = (k) => h >= ys[k] - y + CH + 3;   // + the 2 px row separator: a control never touches it
+  r.mute = { x: L, y: ys[0], w: auto ? bw + 14 : bw, h: CH, fs };
   if (!auto) {
-    r.solo = { x: L + bw + gp, y: y1, w: bw, h: BH, fs }; r.arm = { x: L + (bw + gp) * 2, y: y1, w: bw, h: BH, fs };
-    if (R - bw >= L + (bw + gp) * 3 - 2) r.aut = { x: R - bw, y: y1, w: bw, h: BH, fs };
-    if (h >= y2 - y + FH + 2) { const vw = Math.round((R - L - gp) * 0.6); r.vol = { x: L, y: y2, w: vw, h: FH, fs }; r.pan = { x: L + vw + gp, y: y2, w: R - L - vw - gp, h: FH, fs }; }
-    if (h >= y3 - y + FH + 2) {                                        // Send A | Send B | output, equal cells (output alone = the whole row)
-      const cw = sends ? Math.floor((R - L - gp * 2) * 0.28) : 0;    // Send cells narrow, the output name gets the rest
-      if (sends) { r.sa = { x: L, y: y3, w: cw, h: FH, fs }; r.sb = { x: L + cw + gp, y: y3, w: cw, h: FH, fs }; }
-      r.out = { x: sends ? L + (cw + gp) * 2 : L, y: y3, w: sends ? R - L - (cw + gp) * 2 : R - L, h: FH, fs };
-    }
+    r.solo = { x: L + bw + gp, y: ys[0], w: bw, h: CH, fs }; r.arm = { x: L + (bw + gp) * 2, y: ys[0], w: bw, h: CH, fs };
+    if (R - bw >= L + (bw + gp) * 3 - 2) r.aut = { x: R - bw, y: ys[0], w: bw, h: CH, fs };
+    let k = 1;
+    if (fits(k)) { const vw = Math.round((R - L - gp) * 0.6); r.vol = { x: L, y: ys[k], w: vw, h: CH, fs }; r.pan = { x: L + vw + gp, y: ys[k], w: R - L - vw - gp, h: CH, fs }; k++; }
+    if (sends && r.vol && fits(k)) { const hw = Math.round((R - L - gp) / 2); r.sa = { x: L, y: ys[k], w: hw, h: CH, fs }; r.sb = { x: L + hw + gp, y: ys[k], w: R - L - hw - gp, h: CH, fs }; k++; }
+    if (r.vol && fits(k)) r.out = { x: L, y: ys[k], w: R - L, h: CH, fs };
   }
   return r;
 }
@@ -177,9 +176,10 @@ const inkCache = new Map();
 function ink(hex) {                     // text on a colour: dark on light colours, white on dark ones
   let r = inkCache.get(hex); if (r) return r;
   const n = parseInt(String(hex).slice(1, 7), 16) || 0, l = 0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255);
-  r = l > 150 ? 'rgba(14,14,18,.9)' : 'rgba(255,255,255,.94)'; inkCache.set(hex, r); return r;
+  r = l > 100 ? 'rgba(14,14,18,.9)' : 'rgba(255,255,255,.94)'; inkCache.set(hex, r); return r;   // Live: black text / content on all but the darkest colours (pink, orange, teal included)
 }
 
+const contentInk = (hex) => (ink(hex).startsWith('rgba(14') ? 'rgba(10,10,12,.86)' : 'rgba(250,250,252,.88)');   // Live: black content on light clip colours, white on dark ones
 function drawClip(t, c, y, hh) {
   const g = gl.get(c.id), cs = g ? g.s : c.start, cl = g ? g.l : c.len;
   const x = tx(cs), w = cl * view.ppt;
@@ -187,20 +187,22 @@ function drawClip(t, c, y, hh) {
   const xs = Math.max(x, 0), xe = Math.min(x + w, CW);
   const isSel = state.sel.clip === c.id || msel.has(c.id);
   const tall = hh >= 40, hd = tall ? 14 : 0, y0 = y + 1, h0 = hh - 2;   // folded / short rows: no title strip, only colour + content
-  const col = c.muted ? C('#7c7c82') : t.color;
+  const col = c.muted ? '#8a8a8f' : t.color;                               // deactivated clip: the same neutral grey in every theme (clip colours are not themed)
   ctx.save();
   const cy0 = Math.max(RULER, y0), cy1 = Math.min(LANE_B(), y0 + h0);              // clipped to the clip itself and the lane area: notes never spill while it glides
   ctx.beginPath(); ctx.rect(xs, cy0, Math.max(0, xe - xs), Math.max(0, cy1 - cy0)); ctx.clip();
-  // Live 12: the whole clip in the track colour (title strip + body), content in a deep tone of it; a selected clip turns lighter
-  const body = c.muted ? C('#8e8e94') : isSel ? tint(t.color, 0.42) : t.color;
+  // Live (replica of the arrangement clip, same in every theme: clip colours are not themed): title strip and body in the clip colour, the name and the
+  // content (waveform / notes / envelope) in near-black on a light colour or near-white on a dark one, a thin dark edge; a selected clip turns lighter,
+  // a deactivated clip is grey. Folded / short rows show only the colour + content (no strip).
+  const body = c.muted ? '#9a9a9f' : isSel ? tint(t.color, 0.32) : t.color;
   ctx.fillStyle = body; ctx.fillRect(x, y0, w, h0);
-  if (tall) { ctx.fillStyle = isSel ? tint(col, 0.25) : col; ctx.fillRect(x, y0, w, hd); ctx.fillStyle = shade(c.muted ? '#7c7c82' : t.color, 0.35); ctx.fillRect(x, y0 + hd, w, 1); }
-  ctx.strokeStyle = shade(c.muted ? '#7c7c82' : t.color, 0.5); ctx.lineWidth = 1; ctx.strokeRect(Math.round(x) + 0.5, y0 + 0.5, Math.max(0, Math.round(w) - 1), h0 - 1);
+  if (tall) { ctx.fillStyle = isSel ? tint(col, 0.18) : col; ctx.fillRect(x, y0, w, hd); ctx.fillStyle = 'rgba(0,0,0,.22)'; ctx.fillRect(x, y0 + hd, w, 1); }
+  ctx.strokeStyle = 'rgba(0,0,0,.6)'; ctx.lineWidth = 1; ctx.strokeRect(Math.round(x) + 0.5, y0 + 0.5, Math.max(0, Math.round(w) - 1), h0 - 1);
   if (tall && w > 18) {
     ctx.fillStyle = ink(col); ctx.font = FONT(600, 10); ctx.textBaseline = 'middle';
     ctx.fillText(c.name || (c.sample ? c.sample.name : t.name), xs + 5, y0 + hd / 2 + 0.5, Math.max(0, xe - xs - 10));
   }
-  const by = y0 + hd + 2, bh = h0 - hd - 4, INK = c.muted ? 'rgba(20,20,24,.55)' : shade(t.color, 0.82);
+  const by = y0 + hd + 2, bh = h0 - hd - 4, INK = c.muted ? 'rgba(20,20,24,.6)' : contentInk(t.color);
   if (t.kind === 'auto' && c.pts && bh > 8) {
     const pts = [...c.pts].sort((a, b) => a.t - b.t), yy = (v) => by + bh - v * bh;
     ctx.fillStyle = washRgba(t.color, 0.35); ctx.strokeStyle = INK; ctx.lineWidth = 1.5; ctx.beginPath();
@@ -242,7 +244,7 @@ function drawClip(t, c, y, hh) {
   }
   if (t.kind === 'audio' && bh > 8) {                             // fades (Live): the faded part is shaded above the fade line; handles on the selected clip
     const spt = 60 / state.bpm / PPQ, fiw = Math.min(w / 2, (c.fadeIn || 0) / spt * view.ppt), fow = Math.min(w / 2, (c.fadeOut || 0) / spt * view.ppt), top = y0 + hd + 1, bot = y0 + h0 - 1;
-    ctx.fillStyle = 'rgba(0,0,0,.24)'; ctx.strokeStyle = shade(t.color, 0.6); ctx.lineWidth = 1.2;
+    ctx.fillStyle = 'rgba(0,0,0,.24)'; ctx.strokeStyle = INK; ctx.lineWidth = 1.2;
     if (fiw > 1) { ctx.beginPath(); ctx.moveTo(x, top); ctx.lineTo(x + fiw, top); ctx.lineTo(x, bot); ctx.closePath(); ctx.fill(); ctx.beginPath(); ctx.moveTo(x, bot); ctx.lineTo(x + fiw, top); ctx.stroke(); }
     if (fow > 1) { ctx.beginPath(); ctx.moveTo(x + w, top); ctx.lineTo(x + w - fow, top); ctx.lineTo(x + w, bot); ctx.closePath(); ctx.fill(); ctx.beginPath(); ctx.moveTo(x + w - fow, top); ctx.lineTo(x + w, bot); ctx.stroke(); }
     if (isSel && w > 30) {
