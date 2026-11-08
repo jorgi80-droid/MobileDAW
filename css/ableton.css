@@ -597,6 +597,12 @@
 /* Channel EQ (Live): display + bottom strip in one dark box, HP icon switch */
 .lk .lk-ceq { padding: 0; gap: 0; align-items: stretch; } .lk .lk-ceq > canvas { align-self: center; }
 .lk .lk-ceqs { display: flex; align-items: center; gap: 6px; padding: 3px 6px; border-top: 1px solid #3a3a3e; }
+/* Compressor: three columns of the same height, contents spread top to bottom; the display box hugs its canvas (equal margins) */
+.lk-cmp { align-items: stretch; }
+.lk-cmp > .lk-col { justify-content: space-between; align-items: center; align-self: stretch; }
+.lk-cmp > .lk-col > :last-child { margin-top: auto; }   /* Auto (left) and Dry/Wet (right) sit on the same bottom line */
+.lk .lk-cmpd { width: min-content; align-self: center; }
+.lk .lk-cmpd .lk-ceqs { gap: 4px; padding: 4px 6px; }
 .lk .lv-btn.lk-vbtn { min-width: 0; width: 22px; height: 18px; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
 .lk .lk-hpi { display: inline-flex; align-items: center; justify-content: center; padding: 0; height: 18px; color: var(--lv-dim, #9a9aa2); }
 .lk .lk-hpi.on { color: #1b1b1d; }
