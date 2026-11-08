@@ -27,7 +27,7 @@ export function saveMixerPreset(i, name) {
   if (!name) return { error: 'Nama kosong.' };
   const path = `${DIR_MIX}/${name}.json`;
   eng.writeText(path, JSON.stringify({ app: 'mobiledaw', kind: 'mixer', name, vol: num(t.vol, 1), pan: num(t.pan, 0), send: (t.send || [0, 0]).map((v) => num(v, 0)),
-    devices: t.devices.map((d) => ({ type: d.type, params: d.params.slice(), bypass: !!d.bypass })) }));
+    devices: t.devices.map((d) => ({ type: d.type, params: d.params.slice(), bypass: !!d.bypass, ...(Number.isFinite(d.mix) ? { mix: d.mix } : {}), ...(Number.isFinite(d.gain) ? { gain: d.gain } : {}) })) }));
   log('info', 'preset mixer disimpan', path);
   return { path };
 }
@@ -82,6 +82,8 @@ function applyPresetFileInner(path, i) {
         P.addDevice(i, d.type);
         const di = t.devices.length - 1;
         def.params.forEach((q, k) => P.setDeviceParam(i, di, k, Math.min(q.max, Math.max(q.min, num(d.params && d.params[k], q.def)))));
+        if (Number.isFinite(d.mix)) P.setDeviceWet(i, di, 'mix', d.mix);
+        if (Number.isFinite(d.gain)) P.setDeviceWet(i, di, 'gain', d.gain);
         if (d.bypass) P.toggleBypass(i, di);
       }
       P.emit('devices'); P.emit('mix');

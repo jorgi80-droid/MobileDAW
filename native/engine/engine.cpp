@@ -219,7 +219,7 @@ void Engine::loadSoundFont(int id, SoundFont* sf) { if (id >= 0 && id < 8) { ret
 void Engine::loadSample(int id, Sample* smp) { if (id >= 0 && id < 256) { retire.put(bank.s[id]); bank.s[id] = smp; } else retire.put(smp); }
 
 void Engine::runDev(int strip, int di, Device* d, float* L, float* R, int n) {
-  d->process(L, R, n);
+  fxRun(d, L, R, n);
   double x = (double)L[0] + L[n - 1] + R[n - 1];
   if (!(x > -1e6 && x < 1e6)) { d->bypass = true; for (int i = 0; i < n; i++) { L[i] = 0; R[i] = 0; } err(2, strip, di, "nilai tidak valid (NaN/tak hingga)"); }
 }
@@ -232,7 +232,7 @@ void Engine::applyMod(Device* m) {
   Strip& st = s[ts];
   if (td < 0) { if (st.inst && v != m->modLast) { st.inst->setParam(tk, v); m->modLast = v; } return; }
   Device* d = td < st.ndev ? st.dev[td] : nullptr;
-  if (d && d != m && v != m->modLast) { d->setParam(tk, v); m->modLast = v; }
+  if (d && d != m && v != m->modLast) { devSet(d, tk, v); m->modLast = v; }
 }
 // core.js runMods: a strip that skips its chain still runs its modulators (on silence)
 void Engine::runMods(Strip& st, int n) {
@@ -305,7 +305,7 @@ void Engine::applyAuto(double tick) {
       case 1: st.pan = clamp(v, -1, 1); break;
       case 2: if (l.track < MASTER) st.send[0] = clamp(v, 0, 1.5); break;
       case 3: if (l.track < MASTER) st.send[1] = clamp(v, 0, 1.5); break;
-      case 4: if (l.dev >= 0 && l.dev < st.ndev) st.dev[l.dev]->setParam(l.param, v); break;
+      case 4: if (l.dev >= 0 && l.dev < st.ndev) devSet(st.dev[l.dev], l.param, v); break;
       case 5: if (l.param == 90) setPitch(l.track, v); else if (st.inst) st.inst->setParam(l.param, v); break;
       case 7: st.width = clamp(v, 0, 2); break;
     }

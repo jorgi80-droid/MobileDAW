@@ -306,6 +306,22 @@ export const SCENARIOS = [
   { name: 'core-clip-pan', info: 'audio clips with a pan of their own (stride 8: balance, centre untouched): hard left, half right, centre next to an old stride-7 track',
     run(e) { samples(e); e.tempo(126); e.trackClips(0, [0, BAR, 0, 0.8, 0, 0, 0, -1, BAR, BAR, 2, 0.9, 0.1, 0.02, 0.02, 0.5, BAR * 2, BAR, 1, 1, 0, 0.02, 0.02, 0], 3, 8); e.trackClips(1, [0, BAR * 3, 2, 0.7, 0, 0, 0], 1); e.play(); play(e, 6, [128, 77]); } },
   ...fxScenarios(),
+  { name: 'core-fx-mix', info: 'per-module Mix / Gain (devParam 1000 / 1001) on every effect: Reverb, Compressor with 10 ms look-ahead (dry delayed to match), Limiter, a Saturator inside a rack chain and in a drum pad chain; ramps, automation of Mix, back to Mix 1 (plain path) and on again',
+    run(e) {
+      e.tempo(122); e.trackInst(0, 2); e.trackInst(1, 3);
+      const f = []; for (let k = 0; k < 24; k++) f.push(k * PPQ / 2, PPQ * 0.45, 48 + ((k * 5) % 19), 0.85, 0); e.trackNotes(0, f, f.length / 5);
+      const dr = []; for (let k = 0; k < 16; k++) dr.push(k * PPQ / 2, PPQ * 0.2, k % 4 ? 42 : 36, 1, 0); e.trackNotes(1, dr, dr.length / 5);
+      e.insertDevice(0, 0, 7); e.devParam(0, 0, 2, 0.6); e.devParam(0, 0, 1000, 0.4); e.devParam(0, 0, 1001, 1.5);
+      e.insertDevice(0, 1, 4); [-24, 8, 1, 80].forEach((v, k) => e.devParam(0, 1, k, v)); e.devParam(0, 1, 9, 2); e.devParam(0, 1, 1000, 0.5);
+      e.insertDevice(0, 2, 5); e.devParam(0, 2, 1000, 0.7); e.devParam(0, 2, 1001, 0.5);
+      e.insertDevice(0, 3, 51); e.devParam(0, 3, 32, 1); e.rackCmd(0, 3, 0, 0, 0, 0, 0); e.rackCmd(0, 3, 1, 0, 0, 3, 0); e.rackCmd(0, 3, 2, 0, 0, 0, 18); e.rackCmd(0, 3, 2, 0, 0, 1000, 0.3);
+      e.insertDevice(1, 0, 7); e.devParam(1, 0, 1000, 0.25);
+      e.play(); play(e, 1.5, [128, 77, 256]);
+      e.devParam(0, 0, 1000, 0.9); e.devParam(0, 1, 1001, 2); e.devParam(0, 2, 1000, 0); play(e, 1);
+      e.automation([4, 0, 0, 1000, 3, 0, 0, BAR, 1, BAR * 2, 0.2]); play(e, 1.5, [128, 333]);
+      e.automation([]); e.devParam(0, 1, 1000, 1); e.devParam(0, 1, 1001, 1); e.devParam(0, 3, 1000, -1); play(e, 1);
+      e.devParam(0, 1, 1000, 0.2); e.devParam(0, 1, 9, 1); play(e, 1);
+    } },
   { name: 'fx-autoduck-sc', info: 'Autoduck: track 2 (short bass notes) ducks the pad on track 1; source / threshold / amount / attack / release changes while playing',
     run(e) {
       e.tempo(124); e.trackInst(0, 2); e.trackInst(1, 1);

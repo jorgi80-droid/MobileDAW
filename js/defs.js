@@ -716,6 +716,11 @@ export const FX_GROUPS = [['loop', 'Delay & Loop', [19, 17, 6, 18, 43, 45, 46, 5
   ['eq', 'EQ & Filters', [1, 25, 31, 2]], ['mod', 'Pitch & Modulation', [22, 20, 21, 42]], ['rev', 'Reverb & Resonance', [40, 44, 39, 7, 47, 41]], ['modu', 'Modulators', [50, 48, 49]], ['util', 'Utilities', [51, 0, 32, 30, 16, 14, 15]]];
 // Old devices that only repeat a newer one stay loadable in saved projects but are no longer offered in the pickers: 8 Parametric EQ (= EQ Eight), 12 Level (= Utility), 13 Analyzer (= Spectrum).
 export const HIDDEN_FX = [8, 12, 13];
+// Per-module Mix / Gain on every effect (engine dsp.js MIX_P / GAIN_P, devParam indices outside the effect's own list). Stored on the device
+// as d.mix (0..1, absent = 1) and d.gain (dB, absent = 0); the engine gets the gain as a linear factor (computed here, once, for both engines).
+export const MIX_P = 1000, GAIN_P = 1001, WET_GAIN_MIN = -36, WET_GAIN_MAX = 12;
+export const NO_WET_FX = new Set([48, 49, 50]);   // modulators (LFO / Shaper / Envelope Follower): they pass the audio through untouched
+export const WET_PARAMS = { mix: { n: 'Mix', min: 0, max: 1, def: 1, unit: '%' }, gain: { n: 'Gain', min: WET_GAIN_MIN, max: WET_GAIN_MAX, def: 0, unit: 'dB' } };
 
 // Parameter <-> 0..1 mapping shared by knobs, automation editing and the engine sync.
 export const normOf = (p, v) => { const x = p.curve === 'log' ? Math.log(v / p.min) / Math.log(p.max / p.min) : (v - p.min) / (p.max - p.min); return x < 0 ? 0 : x > 1 ? 1 : x; };

@@ -6,7 +6,7 @@ import * as PRS from './presets.js';
 import { LAYOUT, buildSynth, DISP } from './devviz.js';
 import { FXVIEW } from './fxviz.js';
 import { samplerPanel, wavetablePanel } from './liveinst.js';
-import { INSTRUMENTS, INST_LIST, DEVICES, INST, fmtParam, noteName, FX_GROUPS } from './defs.js';
+import { INSTRUMENTS, INST_LIST, DEVICES, INST, fmtParam, noteName, FX_GROUPS, NO_WET_FX, WET_PARAMS } from './defs.js';
 import { eng, MASTER, RET0 } from './engine.js';
 import { offerAutomation } from './automate.js';
 import * as BR from './browser.js';
@@ -312,6 +312,24 @@ function presetPick(r, i, mode, at) {
   menu([{ label: mode === 'replace' ? 'MUAT (GANTI RANTAI)' : 'SISIPKAN', dim: true }, ...L.map((p) => ({ label: `${p.name} (${p.n} modul${p.inst ? ' + instrumen' : ''})`, fn: () => { const x = PRS.applyRackPreset(p.path, i, mode, at); toast(x.error || x.msg, 3500); } }))], Math.max(8, r.left - 40), Math.max(8, r.top - 60));
 }
 
+// Mix / Gain of every effect (uniform, FL Studio Mobile style): a chip in the card title; tap = Mix + Gain dials, Reset puts both back.
+// The chip reads "Mix" while both are at their defaults and shows the changed value(s) otherwise.
+function wetLabel(d) { const w = P.wetOf(d), a = []; if (w.mix !== 1) a.push(Math.round(w.mix * 100) + '%'); if (w.gain !== 0) a.push((w.gain > 0 ? '+' : '') + w.gain.toFixed(1) + 'dB'); return a.length ? a.join(' ') : 'Mix'; }
+function wetChip(i, di, d) {
+  if (NO_WET_FX.has(d.type) || d.missing) return null;
+  const b = h('button', { class: 'dv-wet' + (wetLabel(d) === 'Mix' ? '' : ' on'), 'aria-label': 'Mix dan Gain modul' }, wetLabel(d));
+  const upd = () => { b.textContent = wetLabel(d); b.classList.toggle('on', wetLabel(d) !== 'Mix'); };
+  b.addEventListener('pointerdown', (e) => e.stopPropagation());
+  b.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const ks = ['mix', 'gain'].map((k) => knob(WET_PARAMS[k], () => P.wetOf(d)[k], (v) => { P.setDeviceWet(i, di, k, v); upd(); }, fmtParam, C('#7ac5ff')));
+    const body = h('div', { class: 'wet-b' }, h('div', { class: 'knobs' }, ...ks), h('p', { class: 'hint' }, 'Mix = campuran suara asli (dry) dan hasil efek (wet). Gain = level keluar modul.'));
+    modal('Mix & Gain • ' + (DEVICES[d.type] ? DEVICES[d.type].name : 'Modul'), body, [
+      { label: 'Reset', fn: () => { P.HK.group(() => { P.setDeviceWet(i, di, 'mix', 1); P.setDeviceWet(i, di, 'gain', 0); }); upd(); for (const k of ks) if (k.update) k.update(); return false; } },
+      { label: 'Tutup', go: true, fn: () => { P.emit('devices'); } }]);
+  });
+  return b;
+}
 function fxCard(i, d, di, n, o = {}) {
   const def = DEVICES[d.type];
   const pw = h('button', { class: 'pw' + (d.bypass ? '' : ' on'), 'aria-label': 'Bypass', onclick: () => P.toggleBypass(i, di) });
@@ -339,7 +357,7 @@ function fxCard(i, d, di, n, o = {}) {
   } }, '\u22EF');
   const dname = d.missing ? '[Tidak tersedia] ' + d.missing.name : def.name;
   if (!o.floating && !d.missing && (FW.isOpen('d:' + d.id) || (prefs.floatPlugins && bigMod(def)))) {
-    const head = h('h4', {}, pw, h('span', {}, dname), more);
+    const head = h('h4', {}, pw, h('span', {}, dname), wetChip(i, di, d), more);
     return floatedCard('d:' + d.id, dname, () => openDeviceWindow(d.id), { head, off: d.bypass });
   }
   if (!o.floating && isFolded(d.id)) { const c = foldedCard(d.id, dname, pw); if (d.bypass) c.classList.add('off'); return c; }
@@ -357,7 +375,7 @@ function fxCard(i, d, di, n, o = {}) {
   const ctx = { i, di, d, def, every: o.every || every, set: (k, v) => P.setDeviceParam(i, di, k, v), refreshKnobs: () => { for (const c of knobsDiv.children) if (c.update) c.update(); } };
   if (def.kit) {                                                                   // Live 12 panel (js/fxkit.js): the panel lays out every control itself
     let kv = null; try { kv = kitView(ctx); } catch (e) { console.error('fxkit', e); }
-    if (kv) return h('div', { class: 'card lkcard' + (d.bypass ? ' off' : '') }, grip(titleFold(h('h4', {}, pw, h('span', {}, def.name), o.floating ? null : popBtn(() => openDeviceWindow(d.id)), more, o.floating ? null : foldBtn(d.id, false)), d.id)), kv.el);
+    if (kv) return h('div', { class: 'card lkcard' + (d.bypass ? ' off' : '') }, grip(titleFold(h('h4', {}, pw, h('span', {}, def.name), wetChip(i, di, d), o.floating ? null : popBtn(() => openDeviceWindow(d.id)), more, o.floating ? null : foldBtn(d.id, false)), d.id)), kv.el);
   }
   if (VIEWS[d.type]) { try { view = VIEWS[d.type](ctx); } catch (e) { console.error('fxviz', e); view = null; } }
   // knobs sit beside the display and flow in columns (the number of rows follows the panel height), so a half-height panel needs no scrolling
@@ -376,7 +394,7 @@ function fxCard(i, d, di, n, o = {}) {
   });
   if (view && view.el) sideLayout(view.el);
   const body = view ? h('div', { class: 'fxv' }, view.el, knobsDiv.children.length ? knobsDiv : null) : knobsDiv;
-  return h('div', { class: 'card' + (d.bypass ? ' off' : '') }, grip(titleFold(h('h4', {}, pw, h('span', {}, def.name), o.floating ? null : popBtn(() => openDeviceWindow(d.id)), more, o.floating ? null : foldBtn(d.id, false)), d.id)), body);
+  return h('div', { class: 'card' + (d.bypass ? ' off' : '') }, grip(titleFold(h('h4', {}, pw, h('span', {}, def.name), wetChip(i, di, d), o.floating ? null : popBtn(() => openDeviceWindow(d.id)), more, o.floating ? null : foldBtn(d.id, false)), d.id)), body);
 }
 
 // Device chain of the selected strip. A re-render of the same strip keeps the scroll position, and cards that moved (reorder, fold,

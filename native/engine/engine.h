@@ -125,7 +125,7 @@ class Engine {
   void resetTrack(int t);
   void insertDevice(int t, double index, Device* prepared);
   void removeDevice(int t, int i);
-  void devParam(int t, int d, int p, double v) { if (ok(t) && d >= 0 && d < s[t].ndev) s[t].dev[d]->setParam(p, v); }
+  void devParam(int t, int d, int p, double v) { if (ok(t) && d >= 0 && d < s[t].ndev) devSet(s[t].dev[d], p, v); }
   void rackCmd(int t, double d, int op, double c, double j, double a, double b, Device* prepared);
   void rackCmd(int t, double d, int op, double c, double j, double a, double b, Device* prepared, Instrument* preparedInst);
   void devBypass(int t, int d, bool b) { if (ok(t) && d >= 0 && d < s[t].ndev) s[t].dev[d]->bypass = b; }

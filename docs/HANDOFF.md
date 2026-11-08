@@ -595,3 +595,17 @@ Permintaan pemilik: SEMUA efek dan instrumen diganti dengan set stok Ableton Liv
   `presets.js classicUp`, file tidak ditulis ulang).
 - Kode engine klasik (JS `instruments.js` MiniSynth / SuperSaw / Gms, C++ `inst_classic.*`) TIDAK dihapus: kelas Sampler dipakai Keystone (9), DrumSynth (3) di file
   yang sama, dan banyak tes engine + skenario golden memakai tipe 1/2 sebagai sumber sinyal sederhana. Engine-nya hanya tidak terjangkau dari UI.
+
+## Mix per modul (sesi ini)
+- Setiap efek punya Mix (dry/wet 0..1) dan Gain (dB) seragam, di luar daftar parameter efek itu sendiri: devParam indeks `MIX_P = 1000` / `GAIN_P = 1001`
+  (`js/engine/dsp.js devSet / fxRun`, C++ `units.h devSet / fxRun`). Engine menerima Gain sebagai faktor linear (dihitung sekali di `project.js`, jadi
+  JS dan C++ mendapat angka yang sama). Mix 1 + Gain 1 = jalur lama persis (bit sama); selain itu dry disalin, ditunda sebesar `lat()` efek (PdcLine,
+  dibersihkan saat aktif lagi) lalu dicampur, Mix/Gain di-ramp linear per blok. Dipakai di rantai track / Master / return, di dalam Audio/Instrument Rack
+  dan di chain pad Drum Rack; otomasi (lane kind 4 param 1000) dan modulator juga lewat `devSet`.
+- Data: `d.mix` (0..1) dan `d.gain` (dB), hanya ditulis bila beda dari bawaan (file lama tidak berubah). `P.setDeviceWet(i, di, 'mix'|'gain', v)` dengan undo
+  (`val` k `wet`), Reset parameter juga mereset Mix/Gain, preset mixer menyimpan keduanya, Copy/Paste dan Rack preset ikut (salinan JSON).
+- UI: chip di judul kartu efek (`devices.js wetChip`, abu-abu "Mix" saat bawaan, oranye dengan nilainya bila diubah), ketuk = dialog dua knob + Reset.
+  Modulator (48/49/50) dan placeholder plugin hilang tidak punya chip. Belum: chip di kartu efek di dalam rack / pad chain, dan lane otomasi Mix di picker
+  otomasi (engine sudah bisa). C++: blok dry 128 frame ada di objek Device; ring latency dialokasikan saat pertama dipakai (sama seperti JS).
+- Tes: `tools/fx-mix-test.mjs` (bit sama di Mix 100 %, dry persis di Mix 0 % termasuk Compressor look-ahead 10 ms, Gain, 50 %, simpan/muat), golden
+  `core-fx-mix`, screenshot `node tools/ui-shots.mjs <dir> wet`.

@@ -71,6 +71,13 @@ if (go('dev')) {
   await ev(async () => { const P = await import('./js/project.js'); P.selectTrack(P.state.tracks.findIndex((t) => t.kind === 'audio')); }); await shot('dev-audio');
   await btn('btn-max');
 }
+if (want.includes('wet')) {                              // per-module Mix / Gain: chip in the card title + its dialog
+  await sel(1); await tab('dev'); await btn('btn-max');
+  await ev(async () => { const P = await import('./js/project.js'); const i = P.state.sel.track; if (!P.state.tracks[i].devices.length) P.addDevice(i, 7); P.setDeviceWet(i, 0, 'mix', 0.6); P.setDeviceWet(i, 0, 'gain', -3); P.emit('devices'); });
+  await page.waitForTimeout(300); await shot('wet-chip');
+  await page.click('.dev-scroll .card h4 .dv-wet'); await page.waitForTimeout(400); await shot('wet-dialog');
+  await btn('btn-max');
+}
 if (go('mix')) {
   await ev(async () => { (await import('./js/project.js')).setSend(1, 0, 0.4); document.querySelector('.seg .b[data-view="mix"]').click(); }); await shot('mix');
   await ev(async () => (await import('./js/project.js')).play()); await page.waitForTimeout(1800); await shot('mix-play');

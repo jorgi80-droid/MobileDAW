@@ -6,7 +6,7 @@ import { valueAt as curveAt, densify } from './autocurve.js';
 import { encodeWav } from './engine/wav.js';
 import * as WOPS from './engine/waveops.js';
 import { log } from './log.js';
-import { INSTRUMENTS, DEVICES, DRUM_PADS, INST, PRESETS, normOf, valOf, MOD_MAP, IRACK_DEF, migrateClassicInst, migrateFlmInst, FLM_FMT, CLASSIC_TO_FLM } from './defs.js';
+import { INSTRUMENTS, DEVICES, DRUM_PADS, INST, PRESETS, normOf, valOf, MOD_MAP, IRACK_DEF, migrateClassicInst, migrateFlmInst, FLM_FMT, CLASSIC_TO_FLM, MIX_P, GAIN_P, WET_GAIN_MIN, WET_GAIN_MAX } from './defs.js';
 
 export const PPQ = 960, MAX_TRACKS = 64;
 export let BEAT = PPQ, BAR = PPQ * 4;   // live bindings: they change with the time signature (setSig), so always read them at use time
@@ -401,6 +401,7 @@ function syncDevices(i) {
     if (dp) { if (!Array.isArray(d.params)) d.params = []; const n0 = d.params.length; for (let k = 0; k < dp.length; k++) if (!Number.isFinite(d.params[k])) d.params[k] = dp[k].def; if (n0 < dp.length && DEVICES[d.type].migrate) DEVICES[d.type].migrate(d.params, n0); }
     eng.insertDevice(i, di, d.type);
     d.params.forEach((v, pi) => eng.devParam(i, di, pi, v));
+    wetSend(d, (p, v) => eng.devParam(i, di, p, v));
     if (d.bypass) eng.devBypass(i, di, true);
     if (d.chains) rackSync(i, di);
   });
@@ -880,7 +881,7 @@ function sendPadChain(i, k) {
     def.params.forEach((p, j) => { if (!p.hidden) eng.rackCmd(i, -1, 6, k, 0, j, x.inst.params[j] ?? p.def); });
     if (def.sampler) { eng.rackCmd(i, -1, 6, k, 0, 200, x.inst.sample ? x.inst.sample.id : -1); eng.rackCmd(i, -1, 6, k, 0, 201, 60); }   // Simpler: the sample is its zone 0
   }
-  x.devices.forEach((d, j) => { if (!DEVICES[d.type]) return; fillParams(d, DEVICES); eng.rackCmd(i, -1, 1, k, j, d.type, 0); d.params.forEach((v, p) => eng.rackCmd(i, -1, 2, k, j, p, v)); if (d.bypass) eng.rackCmd(i, -1, 3, k, j, 1, 0); });
+  x.devices.forEach((d, j) => { if (!DEVICES[d.type]) return; fillParams(d, DEVICES); eng.rackCmd(i, -1, 1, k, j, d.type, 0); d.params.forEach((v, p) => eng.rackCmd(i, -1, 2, k, j, p, v)); wetSend(d, (p, v) => eng.rackCmd(i, -1, 2, k, j, p, v)); if (d.bypass) eng.rackCmd(i, -1, 3, k, j, 1, 0); });
 }
 const padChainEdit = (i, k, key, fn) => {
   const q = padsOf(i)[k]; if (!q) return null;
@@ -1039,11 +1040,28 @@ export function insertDeviceCopies(i, at, list) {
 }
 export function insertDeviceAt(i, at, type) { if (!DEVICES[type]) return { added: 0, skipped: [] }; const d = { type, params: DEVICES[type].params.map((q) => q.def), bypass: false }; if (type === RACK) { d.chains = [{ id: uid(), name: 'Chain', devices: [] }]; d.macroMap = []; d.params[32] = 1; } return insertDeviceCopies(i, at, [d]); }
 export function replaceDevice(i, di, type) { const t = tr(i); if (!t.devices[di] || !DEVICES[type]) return; HK.group(() => { removeDevice(i, di); insertDeviceAt(i, di, type); }); }
-export function resetDevice(i, di) { const d = tr(i).devices[di]; if (!d) return; HK.group(() => DEVICES[d.type].params.forEach((q, k) => { if (k !== 32 || d.type !== RACK) setDeviceParam(i, di, k, q.def); })); emit('devices'); }
+export function resetDevice(i, di) { const d = tr(i).devices[di]; if (!d) return; HK.group(() => { DEVICES[d.type].params.forEach((q, k) => { if (k !== 32 || d.type !== RACK) setDeviceParam(i, di, k, q.def); }); setDeviceWet(i, di, 'mix', 1); setDeviceWet(i, di, 'gain', 0); }); emit('devices'); }
 // replace the whole chain (Load Rack Preset / Paste All)
 export function replaceChain(i, list) { const t = tr(i); let r = null; HK.group(() => { while (t.devices.length) removeDevice(i, t.devices.length - 1); r = insertDeviceCopies(i, 0, list); }); return r; }
 export function removeDevice(i, di) { const d0 = tr(i).devices[di]; if (HK.on && d0) HK.add({ t: 'dpres', s: stripOf(i), d: d0, di, present: false }); tr(i).devices.splice(di, 1); eng.removeDevice(i, di); emit('devices'); }
 export function setDeviceParam(i, di, pi, v) { if (i < MAX_TRACKS && state.tracks[i] && state.tracks[i].frozen) unfreezeTrack(i, true); const d = tr(i).devices[di]; if (HK.on && d.params[pi] !== v && !HK.hit('dp' + stripOf(i) + '.' + d.id + '.' + pi)) HK.add({ t: 'val', k: 'dev', s: stripOf(i), d: d.id, p: pi, v: d.params[pi] }); tr(i).devices[di].params[pi] = v; eng.devParam(i, di, pi, v);  if (modsMapped) fixMods(); }
+// Per-module Mix (0..1) / Gain (dB) of a device in a track / Master / return chain. Values equal to the default are removed from the device
+// (old files and untouched devices stay exactly as they were).
+export const wetOf = (d) => ({ mix: d && Number.isFinite(d.mix) ? d.mix : 1, gain: d && Number.isFinite(d.gain) ? d.gain : 0 });
+function wetSend(d, f) {
+  const w = wetOf(d);
+  if (w.mix !== 1) f(MIX_P, w.mix);
+  if (w.gain !== 0) f(GAIN_P, Math.pow(10, w.gain / 20));
+}
+export function setDeviceWet(i, di, key, v) {
+  const d = tr(i) && tr(i).devices[di]; if (!d || (key !== 'mix' && key !== 'gain')) return;
+  if (i < MAX_TRACKS && state.tracks[i] && state.tracks[i].frozen) unfreezeTrack(i, true);
+  v = key === 'mix' ? Math.min(1, Math.max(0, +v || 0)) : Math.min(WET_GAIN_MAX, Math.max(WET_GAIN_MIN, +v || 0));
+  const cur = wetOf(d)[key];
+  if (HK.on && cur !== v && !HK.hit('dw' + stripOf(i) + '.' + d.id + '.' + key)) HK.add({ t: 'val', k: 'wet', s: stripOf(i), d: d.id, p: key, v: cur });
+  if (v === (key === 'mix' ? 1 : 0)) delete d[key]; else d[key] = v;
+  eng.devParam(i, di, key === 'mix' ? MIX_P : GAIN_P, key === 'mix' ? v : Math.pow(10, v / 20));
+}
 export function toggleBypass(i, di) {
   const d = tr(i).devices[di];
   if (HK.on) HK.add({ t: 'tog', k: 'byp', s: stripOf(i), d: d.id });
@@ -1060,6 +1078,7 @@ export function moveDevice(i, from, to) {
   eng.removeDevice(i, from);   // reordering recreates the device (its internal tail restarts)
   eng.insertDevice(i, to, d.type);
   d.params.forEach((v, pi) => eng.devParam(i, to, pi, v));
+  wetSend(d, (p, v) => eng.devParam(i, to, p, v));
   if (d.bypass) eng.devBypass(i, to, true);
   if (d.chains) rackSync(i, to);
   emit('devices');
@@ -1111,7 +1130,7 @@ export function rackSync(i, di) {
   eng.rackCmd(i, di, 0, 0, 0, 0, 0);
   o.chains.forEach((c, ci) => {
     if (di < 0) sendChainInst(i, di, ci, c.inst);
-    c.devices.forEach((x, j) => { if (!DEVICES[x.type]) return; fillParams(x, DEVICES); eng.rackCmd(i, di, 1, ci, j, x.type, 0); x.params.forEach((v, k) => eng.rackCmd(i, di, 2, ci, j, k, v)); if (x.bypass) eng.rackCmd(i, di, 3, ci, j, 1, 0); });
+    c.devices.forEach((x, j) => { if (!DEVICES[x.type]) return; fillParams(x, DEVICES); eng.rackCmd(i, di, 1, ci, j, x.type, 0); x.params.forEach((v, k) => eng.rackCmd(i, di, 2, ci, j, k, v)); wetSend(x, (p, v) => eng.rackCmd(i, di, 2, ci, j, p, v)); if (x.bypass) eng.rackCmd(i, di, 3, ci, j, 1, 0); });
   });
   r.put(32, o.chains.length); fixMacros(i, di);
 }
@@ -2046,6 +2065,7 @@ function placeDevice(i, di, d) {
   tr(i).devices.splice(di, 0, d);
   eng.insertDevice(i, di, d.type);
   d.params.forEach((v, pi) => eng.devParam(i, di, pi, v));
+  wetSend(d, (p, v) => eng.devParam(i, di, p, v));
   if (d.bypass) eng.devBypass(i, di, true);
   if (d.chains) rackSync(i, di);
   emit('devices');
@@ -2062,6 +2082,7 @@ export function swapRec(e) {
       else if (e.k === 'inv') { cur = t.inv | 0; setInvert(i, e.v); }
       else if (e.k === 'mon') { cur = monMode(t); setMonitor(i, e.v); }
       else if (e.k === 'send') { cur = t.send ? t.send[e.p] : 0; setSend(i, e.p, e.v); }
+      else if (e.k === 'wet') { const di = t.devices.findIndex((x) => x.id === e.d); if (di < 0) return; cur = wetOf(t.devices[di])[e.p]; setDeviceWet(i, di, e.p, e.v); }
       else if (e.k === 'dev') { const di = t.devices.findIndex((x) => x.id === e.d); if (di < 0) return; cur = t.devices[di].params[e.p]; setDeviceParam(i, di, e.p, e.v); }
       else if (e.k === 'inst') { if (!t.inst) return; const had = e.p in t.inst.params; cur = instVal(t, e.p); setInstParam(i, e.p, e.v); if (e.u) delete t.inst.params[e.p]; e.u = !had; }   // a parameter that was never touched goes back to "not stored", so saved files stay the same
       else if (e.k === 'pitch') { if (!t.inst) return; cur = t.inst.pitch || 0; setPitch(i, e.v); }

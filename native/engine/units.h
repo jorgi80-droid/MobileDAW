@@ -3,6 +3,8 @@
 #pragma once
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
+#include "pdc.h"
 
 namespace mdaw {
 
@@ -42,10 +44,14 @@ class Instrument {
   virtual class Device* sub(int c, int j) { return nullptr; }
 };
 
+constexpr int MIX_P = 1000, GAIN_P = 1001;   // dsp.js: per-module Mix (0..1) / output Gain (linear), outside the effect's own parameters
+
 class Device {
  public:
-  virtual ~Device() {}
+  virtual ~Device() { std::free(wline.L); std::free(wline.R); }
   bool bypass = false;
+  double wm = 1, wg = 1, wm0 = 1, wg0 = 1; bool won = false;   // dsp.js d.wm / d.wg / d.wm0 / d.wg0 / d.wx.on
+  float wxL[128], wxR[128]; PdcLine wline;                    // dry copy of the block + its latency ring (storage on first use)
   bool hasTr = false;                                           // JS: d.tr exists (bar-synced effects read the song position)
   virtual void tr(bool playing, double beat) {}
   virtual void setParam(int p, double v) = 0;
@@ -66,6 +72,31 @@ class Device {
   virtual void noteOn(int p, double v) {}
   virtual void noteOff(int p) {}
 };
+
+// dsp.js devSet / fxRun: Mix 1 + Gain 1 = the effect alone (bit for bit); otherwise dry (delayed by the effect's latency) + wet, ramped per block
+inline void devSet(Device* d, int p, double v) {
+  if (p == MIX_P) { d->wm = v >= 0 ? (v > 1 ? 1 : v) : 0; return; }
+  if (p == GAIN_P) { d->wg = v >= 0 ? (v > 8 ? 8 : v) : 0; return; }
+  d->setParam(p, v);
+}
+inline void fxRun(Device* d, float* L, float* R, int n) {
+  double m1 = d->wm, g1 = d->wg, m0 = d->wm0, g0 = d->wg0;
+  if (m1 == 1 && g1 == 1 && m0 == 1 && g0 == 1) { d->process(L, R, n); return; }
+  float* xl = d->wxL; float* xr = d->wxR; int D = d->lat();
+  for (int i = 0; i < n; i++) { xl[i] = L[i]; xr[i] = R[i]; }
+  if (D > 0) {
+    if (!d->wline.L) { d->wline.L = (float*)std::calloc(PDC_MAX, sizeof(float)); d->wline.R = (float*)std::calloc(PDC_MAX, sizeof(float)); }   // JS allocates here too (rare: an effect with latency)
+    if (!d->won) d->wline.clear();
+    d->wline.run(xl, xr, n, D); d->won = true;
+  } else d->won = false;
+  d->process(L, R, n);
+  for (int i = 0; i < n; i++) {
+    double t = (double)(i + 1) / n, m = m0 + (m1 - m0) * t, g = g0 + (g1 - g0) * t;
+    L[i] = (float)((xl[i] + ((double)L[i] - xl[i]) * m) * g); R[i] = (float)((xr[i] + ((double)R[i] - xr[i]) * m) * g);
+  }
+  d->wm0 = m1; d->wg0 = g1;
+  if (m1 == 1 && g1 == 1) d->won = false;
+}
 
 struct Bank { Sample* s[256] = {}; SoundFont* sf[8] = {}; };
 

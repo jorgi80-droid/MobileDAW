@@ -430,7 +430,7 @@ void DrumSynth::endBlock(float* L, float* R, int n) {
     DrumChain& x = ch[k]; if (!x.inst) continue;
     const DrumPad& q = pads[k];
     if (!q.mute) {
-      for (int j = 0; j < x.n; j++) if (!x.dev[j]->bypass) x.dev[j]->process(x.L, x.R, n);
+      for (int j = 0; j < x.n; j++) if (!x.dev[j]->bypass) fxRun(x.dev[j], x.L, x.R, n);
       double pl = q.pan <= 0 ? 1 : 1 - q.pan, pr = q.pan >= 0 ? 1 : 1 + q.pan, gl = q.lvl * pl, gr = q.lvl * pr;
       for (int i = 0; i < n; i++) { L[i] = (float)(L[i] + x.L[i] * gl); R[i] = (float)(R[i] + x.R[i] * gr); }
     }
@@ -505,7 +505,7 @@ void DrumSynth::rackCmd(int op, double c, double j, double a, double b, Device* 
   if (op == 4) { if (j >= 0 && j < x.n) { int jj = (int)std::trunc(j); rmD[nD++] = x.dev[jj]; for (int q = jj; q < x.n - 1; q++) x.dev[q] = x.dev[q + 1]; x.dev[--x.n] = nullptr; } return; }
   if (!(j >= 0 && j < x.n && j == std::floor(j))) return;
   Device* d = x.dev[(int)j];
-  if (op == 2) d->setParam((int)a, b); else if (op == 3) d->bypass = a != 0;
+  if (op == 2) devSet(d, (int)a, b); else if (op == 3) d->bypass = a != 0;
 }
 
 // ================================================================ SoundFont player

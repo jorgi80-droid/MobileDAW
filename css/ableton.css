@@ -292,6 +292,12 @@
 .card > h4 button.dv-name:active { background: var(--lv-ctl); }
 .card > h4 button.dv-more.dv-more:not(.pw) { width: 22px; min-width: 22px; height: var(--ctl-xs); font: 700 14px/20px var(--font); color: var(--lv-dim); letter-spacing: -.05em; }
 .card > h4 button.pre { height: 17px; }
+/* per-module Mix / Gain chip (devices.js wetChip): dim "Mix" at the defaults, accent with the value once changed */
+.card > h4 button.dv-wet.dv-wet:not(.pw) { flex: none; width: auto; min-width: 30px; max-width: 92px; padding: 0 5px; margin: 0 2px; border: 1px solid var(--lv-edge); border-radius: 2px; background: var(--lv-trk); color: var(--lv-dim); font: 700 9.5px/1 var(--font); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: inline-flex; align-items: center; justify-content: center; align-self: center; height: 16px; }
+.card > h4 button.dv-wet.dv-wet.on:not(.pw) { color: var(--lv-or); background: var(--lv-ctl); border-color: var(--lv-or); }
+.wet-b .knobs { display: flex; gap: 18px; justify-content: center; padding: 6px 0 2px; }
+.wet-b .knobs > * { width: 64px; }
+.wet-b .hint { margin: 6px 0 0; color: var(--lv-dim); font-size: 11px; max-width: 260px; }
 .card > h4 button:not(.pw):not(.pre) { height: var(--ctl-xs); }
 /* folded device: a slim column with the activator on top and the name running up */
 .dev-scroll > .card.fold { width: 26px; min-width: 26px; padding: 4px 0; gap: var(--sp-3); background: var(--lv-title); }

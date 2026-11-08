@@ -4,7 +4,7 @@
 // Parameters: chain c (0..7) at 4c: volume dB (-60 = off), pan, activator, solo | 32 chain count | 33..40 macros (0..1) |
 // 41 + 8m: macro m map (chain (-1 = none), device index, parameter, target min, target max, log, Min, Max) | 105 chain selector (0..127) |
 // 106 + 2c: chain c select zone low / high (the chain plays while the selector is inside its zone)
-import { clamp, chainLat, PdcLine, PDC_MAX } from './dsp.js';
+import { clamp, chainLat, PdcLine, PDC_MAX, fxRun, devSet } from './dsp.js';
 
 export const RACK_CHAINS = 8, RACK_MACROS = 8, RACK_MAP0 = 41;
 export class AudioEffectRack {
@@ -29,7 +29,7 @@ export class AudioEffectRack {
     if (op === 1) { const d = eng.mk(a); if (d) ch.dev.splice(clamp(j, 0, ch.dev.length), 0, d); this.last.fill(NaN); return; }
     if (op === 4) { if (j >= 0 && j < ch.dev.length) ch.dev.splice(j, 1); this.last.fill(NaN); return; }
     const d = ch.dev[j]; if (!d) return;
-    if (op === 2) d.setParam(a, b); else if (op === 3) d.bypass = !!a;
+    if (op === 2) devSet(d, a, b); else if (op === 3) d.bypass = !!a;
   }
   macros() {
     const p = this.p;
@@ -38,7 +38,7 @@ export class AudioEffectRack {
       const j = Math.round(p[o + 1]), d = this.ch[c] && (j < 0 ? this.ch[c].inst : this.ch[c].dev[j]); if (!d) continue;   // -1 = the chain's instrument (Instrument Rack)
       const lo = p[o + 3], hi = p[o + 4], log = p[o + 5] > 0.5 && lo > 0 && hi > 0, n = clamp(p[o + 6] + (p[o + 7] - p[o + 6]) * p[33 + m], 0, 1);
       const v = log ? lo * Math.pow(hi / lo, n) : lo + n * (hi - lo);
-      if (v !== this.last[m]) { this.last[m] = v; d.setParam(Math.round(p[o + 2]), v); }
+      if (v !== this.last[m]) { this.last[m] = v; devSet(d, Math.round(p[o + 2]), v); }
     }
   }
   process(L, R, n) {
@@ -49,7 +49,7 @@ export class AudioEffectRack {
     for (let c = 0; c < cnt; c++) {
       const o = c * 4, sel = p[105]; if (p[o + 2] < 0.5 || (solo && p[o + 3] < 0.5) || sel < p[106 + c * 2] || sel > p[107 + c * 2]) { this.pk[c] *= 0.9; this.ch[c].pdl.clear(); continue; }
       bl.set(L.subarray(0, n)); br.set(R.subarray(0, n));
-      for (const d of this.ch[c].dev) if (!d.bypass) d.process(bl, br, n);
+      for (const d of this.ch[c].dev) if (!d.bypass) fxRun(d, bl, br, n);
       this.align(c, bl, br, n, M);
       const g = p[o] <= -60 ? 0 : Math.pow(10, p[o] / 20), pan = p[o + 1], gl = g * Math.min(1, 1 - pan), gr = g * Math.min(1, 1 + pan); let pk = 0;
       for (let i = 0; i < n; i++) { const l = bl[i] * gl, r = br[i] * gr; sL[i] += l; sR[i] += r; const a = Math.max(Math.abs(l), Math.abs(r)); if (a > pk) pk = a; }
@@ -102,7 +102,7 @@ export class InstrumentRack extends AudioEffectRack {
     for (let c = 0; c < cnt; c++) {
       const x = this.ch[c], o = c * 4, bl = x.L, br = x.R;
       if (p[o + 2] > 0.5 && !(solo && p[o + 3] < 0.5)) {
-        for (const d of x.dev) if (!d.bypass) d.process(bl, br, n);
+        for (const d of x.dev) if (!d.bypass) fxRun(d, bl, br, n);
         this.align(c, bl, br, n, M);
         const g = p[o] <= -60 ? 0 : Math.pow(10, p[o] / 20), pan = p[o + 1], gl = g * Math.min(1, 1 - pan), gr = g * Math.min(1, 1 + pan); let pk = 0;
         for (let i = 0; i < n; i++) { const l = bl[i] * gl, r = br[i] * gr; L[i] += l; R[i] += r; const a = Math.max(Math.abs(l), Math.abs(r)); if (a > pk) pk = a; }

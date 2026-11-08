@@ -184,6 +184,30 @@ export class PdcLine {
   }
   clear() { if (this.used) { this.L.fill(0); this.R.fill(0); this.used = false; } }   // stale audio must never come out when the path starts again
 }
+// Per-module Mix (dry/wet 0..1) and output Gain (linear) on every effect, kept outside the effect's own parameter list: devParam index
+// MIX_P / GAIN_P. With Mix 1 and Gain 1 the effect runs exactly as before (bit for bit); otherwise the dry signal (delayed by the effect's
+// own latency so it lines up with the wet) is blended in, both values ramped across the block (no zipper noise). C++: units.h fxRun.
+export const MIX_P = 1000, GAIN_P = 1001;
+export function devSet(d, p, v) {
+  if (p === MIX_P) { v = +v; d.wm = v >= 0 ? (v > 1 ? 1 : v) : 0; return; }
+  if (p === GAIN_P) { v = +v; d.wg = v >= 0 ? (v > 8 ? 8 : v) : 0; return; }
+  d.setParam(p, v);
+}
+export function fxRun(d, L, R, n) {
+  const m1 = d.wm === undefined ? 1 : d.wm, g1 = d.wg === undefined ? 1 : d.wg, m0 = d.wm0 === undefined ? 1 : d.wm0, g0 = d.wg0 === undefined ? 1 : d.wg0;
+  if (m1 === 1 && g1 === 1 && m0 === 1 && g0 === 1) { d.process(L, R, n); return; }
+  let x = d.wx; if (!x) x = d.wx = { L: new Float32Array(BLOCK), R: new Float32Array(BLOCK), line: new PdcLine(), on: false };
+  const xl = x.L, xr = x.R, D = d.lat ? d.lat() : 0;
+  for (let i = 0; i < n; i++) { xl[i] = L[i]; xr[i] = R[i]; }
+  if (D > 0) { if (!x.on) x.line.clear(); x.line.run(xl, xr, n, D); x.on = true; } else x.on = false;
+  d.process(L, R, n);
+  for (let i = 0; i < n; i++) {
+    const t = (i + 1) / n, m = m0 + (m1 - m0) * t, g = g0 + (g1 - g0) * t;
+    L[i] = (xl[i] + (L[i] - xl[i]) * m) * g; R[i] = (xr[i] + (R[i] - xr[i]) * m) * g;
+  }
+  d.wm0 = m1; d.wg0 = g1;
+  if (m1 === 1 && g1 === 1) x.on = false;                                      // back to the plain path: the dry ring is stale from now on
+}
 // mono delay ring for the metronome (double precision: a click that is not delayed adds exactly as before)
 export class ClickLine {
   constructor() { this.b = null; this.n = 0; this.w = 0; this.used = false; }

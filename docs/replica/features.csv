@@ -22,7 +22,7 @@ Tombol Rewind di toolbar (CTRL dihapus),Channel Rack / Rack efek,must,yes,yes,
 "Menu modul: geser, Sisip kiri/kanan, Ganti, Copy, Paste, Reset, Simpan preset, Sisip preset, Bypass, Hapus",Channel Rack / Rack efek,must,yes,yes,touch-ui-test
 "Rack Preset: simpan / muat (ganti) / sisip, Copy All / Paste All",Channel Rack / Rack efek,must,yes,yes,touch-ui-test (simpan → kosongkan → muat = identik)
 Plugin hilang di preset,Channel Rack / Rack efek,must,yes,partial,modul tak dikenal dilewati DAN dilaporkan namanya (tidak diam-diam); placeholder yang menyimpan state belum (butuh tipe device kosong di engine)
-"Mix per modul (Dry/Wet, gain)",Channel Rack / Rack efek,must,yes,partial,"ada di modul yang punya parameter itu (Live 12), bukan kontrol seragam di semua modul"
+"Mix per modul (Dry/Wet, gain)",Channel Rack / Rack efek,must,yes,yes,"chip Mix di judul tiap kartu efek (Mix 0-100 %, Gain -36..+12 dB); engine JS + C++ (golden core-fx-mix), fx-mix-test; UI hanya di rantai utama, di rack / pad chain tersimpan + dimainkan"
 Fader / pan / mute / solo / meter / send / Master FX / return,Mixer,should,yes,yes,"mixer-test, click-test (sesi sebelumnya)"
 Semua kontrol mixer bisa diotomasi (tekan lama atau CTRL),Mixer,should,yes,yes,touch-ui-test (CTRL)
 "Ketuk = not, seret / ujung = pindah / durasi, seret latar = seleksi, copy/paste relatif",Piano Roll,must,yes,yes,"touch-ui-test, clipview-test"

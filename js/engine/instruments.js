@@ -12,7 +12,7 @@ import { DsKick, DsSnare, DsTom, DsHH, DsClap, DsFm } from './ds.js';
 import { Meld } from './meld.js';
 import { Simpler } from './simpler.js';
 import { FlmDirectWave, FlmGms, FlmMiniSynth, FlmSuperSaw } from './flmsyn.js';
-import { TWO_PI, clamp, midiToHz, lcg, Biquad, Adsr, adsrParams, polyBlep, sawBl, squareBl, triNaive, wave4, JOBS, runJobNow, adsrInto } from './dsp.js';
+import { TWO_PI, clamp, midiToHz, lcg, Biquad, Adsr, adsrParams, polyBlep, sawBl, squareBl, triNaive, wave4, JOBS, runJobNow, adsrInto, fxRun, devSet } from './dsp.js';
 
 // 4-point Hermite interpolation of sample data at position pos (frames), indices clamped to [0, last]: keeps the highs of pitched samples
 // (linear interpolation dulls them and smears transients)
@@ -174,7 +174,7 @@ export class DrumSynth extends Base {
     if (op === 1) { const d = eng.mk(a); if (d) { if (d.setTempo) d.setTempo(this.bpm || 120); x.dev.splice(clamp(j, 0, x.dev.length), 0, d); } return; }
     if (op === 4) { if (j >= 0 && j < x.dev.length) x.dev.splice(j, 1); return; }
     const d = x.dev[j]; if (!d) return;
-    if (op === 2) d.setParam(a, b); else if (op === 3) d.bypass = !!a;
+    if (op === 2) devSet(d, a, b); else if (op === 3) d.bypass = !!a;
   }
   setTempo(b) { this.bpm = b; for (const x of this.ch) { if (x.inst && x.inst.setTempo) x.inst.setTempo(b); for (const d of x.dev) if (d.setTempo) d.setTempo(b); } }
   // per-step pitch (step graph Pitch lane): the hit plays its pad st semitones higher / lower; 0 = exactly the plain noteOn
@@ -261,7 +261,7 @@ export class DrumSynth extends Base {
       const x = this.ch[k]; if (!x.inst) continue;
       const q = this.pads[k], bl = x.L, br = x.R;
       if (!q.mute) {
-        for (const d of x.dev) if (!d.bypass) d.process(bl, br, n);
+        for (const d of x.dev) if (!d.bypass) fxRun(d, bl, br, n);
         const pl = q.pan <= 0 ? 1 : 1 - q.pan, pr = q.pan >= 0 ? 1 : 1 + q.pan, gl = q.lvl * pl, gr = q.lvl * pr;
         for (let i = 0; i < n; i++) { L[i] += bl[i] * gl; R[i] += br[i] * gr; }
       }

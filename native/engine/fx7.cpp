@@ -44,7 +44,7 @@ int AudioEffectRack::rackCmd(int op, double c, double j, double a, double b, Dev
   if (op == 4) { int jj = (int)std::trunc(j); if (j >= 0 && j < x.n) { removed[nr++] = x.dev[jj]; for (int q = jj; q < x.n - 1; q++) x.dev[q] = x.dev[q + 1]; x.dev[--x.n] = nullptr; } for (auto& v : last) v = NAN; return nr; }
   int jj; if (!idx(j, x.n, jj)) return nr;
   Device* d = x.dev[jj];
-  if (op == 2) d->setParam((int)a, b); else if (op == 3) d->bypass = a != 0;
+  if (op == 2) devSet(d, (int)a, b); else if (op == 3) d->bypass = a != 0;
   return nr;
 }
 
@@ -59,7 +59,7 @@ void AudioEffectRack::macros() {
     double lo = p[o + 3], hi = p[o + 4]; bool lg = p[o + 5] > 0.5 && lo > 0 && hi > 0;
     double q = clamp(p[o + 6] + (p[o + 7] - p[o + 6]) * p[33 + m], 0, 1);
     double v = lg ? lo * std::pow(hi / lo, q) : lo + q * (hi - lo);
-    if (v != last[m]) { last[m] = v; if (d) d->setParam((int)jsRound(p[o + 2]), v); else in->setParam((int)jsRound(p[o + 2]), v); }
+    if (v != last[m]) { last[m] = v; if (d) devSet(d, (int)jsRound(p[o + 2]), v); else in->setParam((int)jsRound(p[o + 2]), v); }
   }
 }
 int AudioEffectRack::chainLat(int c) const { int l = 0; const RackChain& x = ch[c]; for (int q = 0; q < x.n; q++) if (!x.dev[q]->bypass) l += x.dev[q]->lat(); return l; }
@@ -80,7 +80,7 @@ void AudioEffectRack::process(float* Lx, float* Rx, int n) {
     int o = c * 4; double sel = p[105];
     if (p[o + 2] < 0.5 || (solo && p[o + 3] < 0.5) || sel < p[106 + c * 2] || sel > p[107 + c * 2]) { pk[c] = (float)(pk[c] * 0.9); ch[c].pdl.clear(); continue; }
     for (int i = 0; i < n; i++) { L[i] = Lx[i]; R[i] = Rx[i]; }
-    for (int q = 0; q < ch[c].n; q++) if (!ch[c].dev[q]->bypass) ch[c].dev[q]->process(L, R, n);
+    for (int q = 0; q < ch[c].n; q++) if (!ch[c].dev[q]->bypass) fxRun(ch[c].dev[q], L, R, n);
     align(c, L, R, n, M);
     double g = p[o] <= -60 ? 0 : std::pow(10, p[o] / 20), pan = p[o + 1], gl = g * jsMin(1, 1 - pan), gr = g * jsMin(1, 1 + pan), pkv = 0;
     for (int i = 0; i < n; i++) { double l = L[i] * gl, r = R[i] * gr; sL[i] = (float)(sL[i] + l); sR[i] = (float)(sR[i] + r); double a = jsMax(std::fabs(l), std::fabs(r)); if (a > pkv) pkv = a; }
@@ -119,7 +119,7 @@ void InstrumentRack::endBlock(float* L, float* R, int n) {
   for (int c = 0; c < cnt; c++) {
     int o = c * 4; float* bl = cL[c]; float* br = cR[c]; RackChain& x = core.ch[c];
     if (p[o + 2] > 0.5 && !(solo && p[o + 3] < 0.5)) {
-      for (int q = 0; q < x.n; q++) if (!x.dev[q]->bypass) x.dev[q]->process(bl, br, n);
+      for (int q = 0; q < x.n; q++) if (!x.dev[q]->bypass) fxRun(x.dev[q], bl, br, n);
       core.align(c, bl, br, n, M);
       double g = p[o] <= -60 ? 0 : std::pow(10, p[o] / 20), pan = p[o + 1], gl = g * jsMin(1, 1 - pan), gr = g * jsMin(1, 1 + pan), pk = 0;
       for (int i = 0; i < n; i++) { double l = bl[i] * gl, r = br[i] * gr; L[i] = (float)(L[i] + l); R[i] = (float)(R[i] + r); double a = jsMax(std::fabs(l), std::fabs(r)); if (a > pk) pk = a; }

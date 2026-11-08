@@ -1,6 +1,6 @@
 // The audio engine of the web version. Plain JS with preallocated typed arrays: the same class runs inside the
 // AudioWorklet (realtime), in the main thread (WAV export) and in node (tests). No allocation while rendering.
-import { TWO_PI, clamp, BLOCK, JOBS, pumpJobs, blepInit, PDC_MAX, chainLat, PdcLine, ClickLine } from './dsp.js';
+import { TWO_PI, clamp, BLOCK, JOBS, pumpJobs, blepInit, PDC_MAX, chainLat, PdcLine, ClickLine, fxRun, devSet } from './dsp.js';
 export { PDC_MAX, chainLat, PdcLine, ClickLine };
 import { InstrumentRack } from './fx7.js';
 import { makeInstrument } from './instruments.js';
@@ -167,7 +167,7 @@ export class Engine {
       if ((f === 0 && t === src) || f - 1 === src) { if (v > 0) d.noteOn(p, v); else d.noteOff(p); }
     }
   }
-  devParam(t, d, p, v) { if (this.ok(t) && this.s[t].dev[d]) this.s[t].dev[d].setParam(p, v); }
+  devParam(t, d, p, v) { if (this.ok(t) && this.s[t].dev[d]) devSet(this.s[t].dev[d], p, v); }
   devBypass(t, d, b) { if (this.ok(t) && this.s[t].dev[d]) this.s[t].dev[d].bypass = !!b; }
   // Audio Effect Rack (fx7.js): op 0 reset, 1 insert type a at chain c / index j, 2 parameter a = b, 3 bypass a, 4 remove
   rackCmd(t, d, op, c, j, a, b) { const r = this.ok(t) && (d < 0 ? this.s[t].inst : this.s[t].dev[d]); if (r && r.rack) r.cmd(op, c, j, a, b, this); }   // d = -1: the Instrument Rack
@@ -243,7 +243,7 @@ export class Engine {
   err(e) { if (this.onError) this.onError(e); }
   // Run one device; an exception or non-finite output switches that device off instead of killing the whole audio thread.
   runDev(strip, di, d, L, R, n) {
-    try { d.process(L, R, n); } catch (e) { d.bypass = true; this.err({ kind: 'dev', strip, dev: di, msg: e && e.message }); return; }
+    try { fxRun(d, L, R, n); } catch (e) { d.bypass = true; this.err({ kind: 'dev', strip, dev: di, msg: e && e.message }); return; }
     const x = L[0] + L[n - 1] + R[n - 1];
     if (!(x > -1e6 && x < 1e6)) { d.bypass = true; L.fill(0, 0, n); R.fill(0, 0, n); this.err({ kind: 'dev', strip, dev: di, msg: 'nilai tidak valid (NaN/tak hingga)' }); }
   }
@@ -252,7 +252,7 @@ export class Engine {
   applyMod(m) {
     const t = m.target(); if (!t || t.s < 0 || t.s >= NSTRIPS) return;
     const st = this.s[t.s]; if (t.d < 0) { if (st.inst && t.v !== m.last) { st.inst.setParam(t.k, t.v); m.last = t.v; } return; }
-    const d = st.dev[t.d]; if (d && d !== m && t.v !== m.last) { d.setParam(t.k, t.v); m.last = t.v; }
+    const d = st.dev[t.d]; if (d && d !== m && t.v !== m.last) { devSet(d, t.k, t.v); m.last = t.v; }
   }
   // a silent strip skips its chain, but its modulators keep running (with silence as input)
   runMods(s, n) { for (const d of s.dev) if (d.mod && !d.bypass) { this.zL.fill(0, 0, n); this.zR.fill(0, 0, n); d.process(this.zL, this.zR, n); this.applyMod(d); } }
@@ -314,7 +314,7 @@ export class Engine {
       switch (l.kind) {
         case 0: s.vol = Math.max(0, v); break; case 1: s.pan = clamp(v, -1, 1); break;
         case 2: if (l.track < MASTER) s.send[0] = clamp(v, 0, 1.5); break; case 3: if (l.track < MASTER) s.send[1] = clamp(v, 0, 1.5); break;
-        case 4: if (s.dev[l.dev]) s.dev[l.dev].setParam(l.param, v); break; case 5: if (l.param === 90) this.setPitch(l.track, v); else if (s.inst) s.inst.setParam(l.param, v); break;
+        case 4: if (s.dev[l.dev]) devSet(s.dev[l.dev], l.param, v); break; case 5: if (l.param === 90) this.setPitch(l.track, v); else if (s.inst) s.inst.setParam(l.param, v); break;
         case 7: s.width = clamp(v, 0, 2); break;   // stereo width (6 = tempo, handled by the project)
       }
     }
