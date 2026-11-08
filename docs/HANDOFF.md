@@ -582,3 +582,6 @@ Permintaan pemilik: SEMUA efek dan instrumen diganti dengan set stok Ableton Liv
   Urutan rack tidak alfabetis, jadi nama TIDAK ditebak dari urutan.
 - Importer: pencocokan preset synth tidak lagi menebak dari satu kata ("Lead Super" dulu jadi "EDM Lead"); preset FLM yang tidak ada di MobileDAW
   dilaporkan apa adanya ("preset FLM ... belum ada di MobileDAW: setelan awal").
+
+- Screenshot pemilik (New Song 1): tipe 18 = Tape Delay, 16 = Trance Delay (tebakan 11 dicabut); arti angka Reverb, MiniSynth (osc / filter) dan konfirmasi
+  DirectWave: `docs/replica/FLM-PARAM-EVIDENCE.md`. Importer memakai p6..p12 + p17 MiniSynth untuk preset FLM yang tidak ada di MobileDAW. Tes di `flm-stem-test`.
