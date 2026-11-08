@@ -170,7 +170,6 @@ function clipColorAt(tick) {
   for (const t of T0) if (hit(t)) return t.color;
   return null;
 }
-let rulerCols = null;                        // colours of the clips under the ruler, 4 px columns (filled by drawRuler)
 const calmTL = () => prefs.reduceMotion || (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
 function washRgba(hex, a) { const m = /^#?([0-9a-f]{6})$/i.exec(String(hex)); if (!m) return `rgba(128,128,128,${a})`; const v = parseInt(m[1], 16); return `rgba(${v >> 16},${(v >> 8) & 255},${v & 255},${a})`; }
 const shadeCache = new Map();
@@ -404,10 +403,6 @@ const PUon = () => state.punch.on && state.punch.end > state.punch.start;
 function drawRuler(g) {
   ctx.fillStyle = C('#202022'); ctx.fillRect(0, 0, CW, MROW);                              // locator strip
   ctx.fillStyle = C('#2c2c2f'); ctx.fillRect(0, MROW, CW, RULER - MROW);                   // beat time ruler
-  // colours of the clips under the ruler (4 px columns): the overlay lights the ruler with them only where the playhead has passed (drawHead)
-  { const step = 4, cols = Math.ceil(CW / step), cs = new Array(cols);
-    for (let j = 0; j < cols; j++) cs[j] = clipColorAt(xt(j * step + step / 2));
-    rulerCols = { step, cs }; }
   ctx.fillStyle = C('#08080a'); ctx.fillRect(0, MROW - 1, CW, 1); ctx.fillRect(0, RULER - 2, CW, 2);
   ctx.save(); ctx.beginPath(); ctx.rect(0, 0, CW, RULER); ctx.clip();
   if (sel) { ctx.fillStyle = 'rgba(255,255,255,.22)'; ctx.fillRect(tx(sel.a), MROW, tx(sel.b) - tx(sel.a), RULER - MROW - 1); }
@@ -530,12 +525,8 @@ function drawHead(tick) {
   // the light travels with the playhead: a glow in the colour of the clip it is crossing, breathing with the master level while playing
   const hc = clipColorAt(tick) || '#ffa722', lv = state.playing && !calmTL() ? meterFrac(Math.max(mDisp[MASTER * 2] || 0, mDisp[MASTER * 2 + 1] || 0)) : 0.35;
   { const R = 20 + lv * 14, gr = octx.createRadialGradient(x, RULER, 1, x, RULER, R); gr.addColorStop(0, washRgba(hc, 0.32 + lv * 0.4)); gr.addColorStop(0.5, washRgba(hc, 0.10 + lv * 0.15)); gr.addColorStop(1, washRgba(hc, 0));   // tight: about 20..34 px around the playhead
-    octx.save(); octx.beginPath(); octx.rect(0, 0, Math.max(0, Math.min(CW, x + R)), RULER); octx.clip(); octx.fillStyle = gr; octx.fillRect(x - R, 0, R * 2, RULER);
-    // the clip colours light up the ruler only where the playhead has already passed (nothing ahead of it, nothing in the lanes)
-    if (rulerCols && x > 0) { const { step, cs } = rulerCols, last = Math.min(cs.length, Math.ceil(x / step));
-      for (let j = 0; j < last; j++) { const c = cs[j]; if (!c) continue; const w0 = Math.min(step + 0.5, x - j * step); if (w0 <= 0) break;
-        const g2 = octx.createLinearGradient(0, RULER - 2, 0, RULER - 11); g2.addColorStop(0, washRgba(c, 0.38)); g2.addColorStop(1, washRgba(c, 0)); octx.fillStyle = g2; octx.fillRect(j * step, RULER - 11, w0, 9); } }
-    octx.restore(); }
+    // only left and right of the playhead, inside the ruler (owner: no light on the bars it has passed or has yet to reach, none in the grid)
+    octx.save(); octx.beginPath(); octx.rect(0, 0, CW, RULER); octx.clip(); octx.fillStyle = gr; octx.fillRect(x - R, 0, R * 2, RULER); octx.restore(); }
   if (px >= 0) { octx.fillStyle = 'rgba(0,0,0,.35)'; octx.fillRect(x + 1.5, RULER, 1, LANE_B() - RULER); octx.fillStyle = C('#ffa722'); octx.fillRect(x, RULER, 1.5, LANE_B() - RULER); }
   octx.save(); octx.shadowColor = washRgba(hc, 0.9); octx.shadowBlur = 4 + lv * 4; octx.fillStyle = C('#ffa722'); octx.beginPath(); octx.moveTo(x - 5.5, MROW); octx.lineTo(x + 6.5, MROW); octx.lineTo(x + 0.75, MROW + 8); octx.closePath(); octx.fill(); octx.restore();   // the playhead flag glows
   octx.restore();
