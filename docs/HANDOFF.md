@@ -644,3 +644,11 @@ Permintaan pemilik: SEMUA efek dan instrumen diganti dengan set stok Ableton Liv
 - Editor (`editor.js stepsMode`): klip sub-track drum dibuka di editor sub-track itu (Step / Notes); pilihan Step / Notes klip biasa dikembalikan sesudahnya.
 - Belum: impor sub-track dari file .flm (formatnya belum diketahui), mixer per sub-track (sengaja: FLM memakai channel yang sama).
 - Tes: `tools/subtrack-test.mjs` (run-tests), `tools/subtrack-ui-test.mjs` (Playwright, `SHOT=` untuk screenshot).
+
+## Panel FX gaya Live untuk Roar / Autoduck / Stereolizer / Spacer / Tape Stop (sesi ini)
+- `js/fxkit.js` V[9], V[10], V[14], V[15], V[52] + `kit: true`. Rincian, acuan dan skor imgdiff: `docs/replica/FX-PANELS.md`.
+- Autoduck: sumber sidechain lewat tombol "Audio From" sendiri (bukan knob), tombol Sidechain menyala bila ada sumber (mati = No Input).
+- Tape Stop: Play / Sync jadi tombol; panjang Stop / Start = daftar ketukan saat Sync, knob detik saat Sync mati (`k.swap`).
+- Mix & Gain: tekan lama knob Mix di dialog = lane otomasi (target kind 4, param `MIX_P`; `autoCurrent` membaca `wetOf(d).mix`). Tes di `fx-mix-test`.
+- Tersisa dari tampilan FX: MiniMeters tetap tampilannya sendiri (suite meter); Parametric EQ / Level / Analyzer disembunyikan dari picker dan
+  tetap memakai tampilan lama; chip Mix belum ada di kartu efek di dalam rack / chain pad.

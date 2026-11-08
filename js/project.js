@@ -1628,7 +1628,7 @@ export function autoCurrent(t) {
     case 0: v = o.vol; break;
     case 1: v = o.pan || 0; break;
     case 2: case 3: v = (o.send || [0, 0])[tg.kind - 2]; break;
-    case 4: v = o.devices[r.dev].params[tg.param]; break;
+    case 4: v = tg.param === MIX_P ? wetOf(o.devices[r.dev]).mix : o.devices[r.dev].params[tg.param]; break;   // MIX_P: the module's Mix (not in its parameter list)
     case 7: v = o.width ?? 1; break;
     default: { const x = tg.param === 90 ? (o.inst.pitch || 0) : o.inst.params[tg.param]; v = x === undefined ? tg.def.def ?? tg.def.min : x; }
   }

@@ -590,6 +590,10 @@
 .lk .knob.lk-k svg { width: 34px; height: 34px; }
 .lk .knob.lk-k.big { width: 64px; } .lk .knob.lk-k.big svg { width: 46px; height: 46px; }
 .lk .lk-t { min-width: 40px; padding: 0 7px; }
+/* Autoduck sidechain column (Live Glue Compressor): compact, left aligned, the hint wraps under the source */
+.lk .lk-scsec { align-items: flex-start; gap: 6px; max-width: 132px; }
+.lk .lk-scsec .lk-tl { align-items: flex-start; }
+.lk .lk-hint { white-space: normal; font-size: 10px; line-height: 1.25; color: var(--lv-dim); max-width: 122px; }
 .lk .lk-t.link, .lk .lk-t.frz { min-width: 0; padding: 0; }
 .lk .lk-ch { display: flex; gap: 1px; background: var(--lv-edge); border: 1px solid var(--lv-edge); }
 .lk .lk-ch .lv-btn { border: 0; min-width: 34px; padding: 0 6px; }

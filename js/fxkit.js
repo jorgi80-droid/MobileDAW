@@ -1342,6 +1342,101 @@ V[21] = (k) => {
   return k.row(k.col(box, k.row(k.CH(6, ['Hz', '♪'], { v: true, cls: 'sm' }), k.swap(6, () => k.K(14, { n: 'Freq' }), () => k.K(5)), k.K(7), k.K(8), k.T(9, 'Ø', { w: 24 }))), k.sep(), k.col(k.K(11), k.K(10), k.K(12)));
 };
 
+// ---- Live 12 look for the remaining effects (sections side by side, dark display with cyan curve + orange ring, orange toggles) -----------
+// Roar: Input (Drive, Tone) | shaper display (drag: x = Bias, y = Amount) with the Shape modes | Feedback | Output (Compress, Output, Dry/Wet)
+const roarShape = (t, x) => { switch (t) { case 0: return Math.tanh(x); case 1: return Math.max(-1, Math.min(1, x)); case 2: { let u = (x + 1) * 0.25; u -= Math.floor(u); return 1 - Math.abs(u * 4 - 2); } case 3: return Math.sin(Math.max(-3, Math.min(3, x)) * 0.94); case 4: return Math.round(Math.max(-1, Math.min(1, x)) * 6) / 6; default: return Math.tanh(x) + Math.sin(x * 37) * 0.06; } };
+V[9] = (k) => {
+  const disp = k.D(176, 104, (g, w, hh) => {
+    const t = Math.round(k.get(0)), dr = Math.pow(10, k.get(1) / 20), a = k.get(6), bias = k.get(5) * 0.5, nrm = t === 0 ? 1 / Math.tanh(Math.max(dr, 1)) : 1;
+    const X = (x) => w / 2 + x * (w / 2 - 8), Y = (y) => hh / 2 - Math.max(-1.15, Math.min(1.15, y)) * (hh / 2 - 8);
+    g.fillStyle = DISPC.grid; g.fillRect(0, Math.round(hh / 2), w, 1); g.fillRect(Math.round(w / 2), 0, 1, hh);
+    lvPath(g, [[X(-1), Y(-1)], [X(1), Y(1)]], DISPC.grid2, null, 1);
+    const pts = []; for (let x = -1; x <= 1.0001; x += 0.02) pts.push([X(x), Y((roarShape(t, x * dr + bias) - roarShape(t, bias)) * nrm * a + x * (1 - a))]);
+    lvPath(g, pts, DISPC.bl, null, 1.8); lvRing(g, X(bias / 1.5), Y((1 - a) * 0.9 + 0.1), 4.5);
+    label(g, ['Soft Sine', 'Hard Clip', 'Fold', 'Sine', 'Bit', 'Noise'][t] || '', 6, 13, DISPC.or);
+  }, { onDown: () => ({ b: k.get(5), a: k.get(6) }), onMove: (x, y, dx, dy, s) => { k.set(5, Math.max(-1, Math.min(1, s.b + dx / 80))); k.set(6, Math.max(0, Math.min(1, s.a - dy / 90))); } });
+  return k.row(k.sec('Input', k.K(1, { big: true }), k.K(2)), k.sep(),
+    k.col(k.dk(disp), k.row(k.S(0, { w: 86 }), k.K(5), k.K(6))), k.sep(),
+    k.sec('Feedback', k.K(7, { n: 'Amount' }), k.row(k.K(8, { n: 'Time' }), k.K(9, { n: 'Freq' }))), k.sep(),
+    k.sec('Output', k.K(10), k.row(k.K(4), k.K(3))));
+};
+// Autoduck (FL Studio Mobile; laid out like Live's Glue Compressor sidechain): Audio From | ducking display (threshold line, GR meter, the
+// envelope Attack -> Release drawn to scale) with Attack / Release fields | Threshold (big), Amount
+V[10] = (k) => {
+  const { ctx, d } = k; let gr = 0;
+  const srcName = () => { const v = Math.round(k.get(0)); if (v < 1) return 'No Input'; const t = P.state.tracks[v - 1]; return t ? t.name : 'Track hilang'; };
+  const src = h('button', { class: 'lv-fld sel lk-src', style: 'width:118px' }, h('span', { class: 'v' }, srcName()), h('i', { class: 'tri' }));
+  src.addEventListener('click', () => { const r = src.getBoundingClientRect(), items = [{ label: 'No Input', check: k.get(0) < 1, fn: () => { k.set(0, 0); src.firstChild.textContent = srcName(); if (src._sc) src._sc.update(); } }];
+    P.state.tracks.forEach((t, j) => { if (t.kind !== 'auto' && j !== ctx.i) items.push({ label: t.name, check: Math.round(k.get(0)) === j + 1, fn: () => { k.set(0, j + 1); src.firstChild.textContent = srcName(); if (src._sc) src._sc.update(); } }); });
+    menu(items, r.left, r.bottom + 1); });
+  const disp = k.D(214, 82, (g, w, hh) => {                                   // gain-reduction needle meter (Live Glue Compressor), 0..24 dB
+    const cx = w / 2, cy = hh + 18, R = hh + 2, ang = (db) => Math.PI * (1.25 + 0.5 * Math.max(0, Math.min(24, db)) / 24);
+    g.lineWidth = 1.2; for (const v of [0, 6, 12, 18, 24]) { const a = ang(v), c = Math.cos(a), sn = Math.sin(a); g.strokeStyle = v === 12 ? DISPC.or : DISPC.ink; g.beginPath(); g.moveTo(cx + c * (R - 12), cy + sn * (R - 12)); g.lineTo(cx + c * (R - 4), cy + sn * (R - 4)); g.stroke();
+      g.fillStyle = DISPC.ink; g.font = '600 9px system-ui,sans-serif'; g.textAlign = 'center'; g.fillText(String(v), cx + c * (R - 22), cy + sn * (R - 22) + 3); }
+    g.textAlign = 'left'; g.strokeStyle = DISPC.grid2; g.lineWidth = 3; g.beginPath(); g.arc(cx, cy, R - 2, ang(0), ang(24)); g.stroke();
+    g.strokeStyle = DISPC.or; g.beginPath(); g.arc(cx, cy, R - 2, ang(0), ang(Math.min(24, k.get(2)))); g.stroke();   // Amount: how deep it can duck
+    const a = ang(gr); g.strokeStyle = DISPC.bl; g.lineWidth = 2; g.beginPath(); g.moveTo(cx + Math.cos(a) * 18, cy + Math.sin(a) * 18); g.lineTo(cx + Math.cos(a) * (R - 6), cy + Math.sin(a) * (R - 6)); g.stroke();
+    label(g, 'GR ' + gr.toFixed(1) + ' dB', 6, 12, DISPC.bl, 9);
+  });
+  k.every(50, () => { const r = k.out(); if (r.length) { gr += ((r[0] || 0) - gr) * 0.5; disp.paint(); } });
+  // Sidechain lit while a track is chosen (Live: the Sidechain switch); off = No Input, on = pick the track
+  const scBtn = lvTog('Sidechain', () => k.get(0) >= 1, (on) => { if (!on) { k.set(0, 0); src.firstChild.textContent = srcName(); scBtn.update(); } else src.click(); }, { cls: 'lk-t', w: 86 }); src._sc = scBtn;
+  const sc = k.sec('', scBtn, k.TL('Audio From', src), h('span', { class: 'lk-lb lk-hint' }, 'Track yang membuat suara ini mengecil')); sc.classList.add('lk-scsec');
+  return k.row(sc, k.sep(),
+    k.col(k.K(3), k.K(4)), k.sep(),
+    k.col(k.dk(disp, k.row(k.K(1, { n: 'Threshold', big: true }), k.K(2, { big: true })))));
+};
+// Stereolizer (FL Studio Mobile; Live Utility look): goniometer + correlation | Width (big) | Mid / Side | Bass Mono | Balance / Output
+V[14] = (k) => {
+  let o = null;
+  const disp = k.D(132, 104, (g, w, hh) => {
+    const cx = w / 2, cy = hh - 22, R = Math.min(w / 2 - 6, hh - 30);
+    g.strokeStyle = DISPC.grid; g.lineWidth = 1; g.beginPath(); g.arc(cx, cy, R, Math.PI, 0); g.stroke();
+    g.beginPath(); g.moveTo(cx, cy); g.lineTo(cx - R * 0.7071, cy - R * 0.7071); g.moveTo(cx, cy); g.lineTo(cx + R * 0.7071, cy - R * 0.7071); g.moveTo(cx, cy); g.lineTo(cx, cy - R); g.stroke();
+    label(g, 'L', cx - R * 0.72 - 9, cy - R * 0.72, DISPC.ink, 8.5); label(g, 'R', cx + R * 0.72 + 3, cy - R * 0.72, DISPC.ink, 8.5);
+    if (o && o.length >= 133) { g.fillStyle = DISPC.bl; for (let j = 0; j < 64; j++) { const sx = o[5 + j * 2], sy = Math.abs(o[6 + j * 2]); g.fillRect(cx + Math.max(-1, Math.min(1, sx * 1.6)) * R - 1, cy - Math.min(1, sy * 1.6) * R - 1, 2, 2); } }
+    const wd = k.get(0); lvPath(g, [[cx - R * Math.min(1, wd / 2) * 1, cy - R * 0.25], [cx, cy - R], [cx + R * Math.min(1, wd / 2), cy - R * 0.25]], DISPC.or, null, 1.3);
+    const c = o ? Math.max(-1, Math.min(1, o[0])) : 0; g.fillStyle = '#1b1b1d'; g.fillRect(8, hh - 12, w - 16, 6); g.fillStyle = c < 0 ? '#ff6b5a' : DISPC.bl;
+    g.fillRect(w / 2, hh - 12, (c * (w - 16)) / 2, 6); label(g, '-1', 8, hh - 14, DISPC.ink, 7.5); label(g, '+1', w - 18, hh - 14, DISPC.ink, 7.5);
+  });
+  k.every(60, () => { const r = k.out(); if (r.length) { o = r; disp.paint(); } });
+  return k.row(k.col(k.dk(disp)), k.sep(), k.col(k.K(0, { big: true }), k.K(4)), k.col(k.K(1), k.K(2)), k.sep(),
+    k.sec('Bass Mono', k.K(3, { n: 'Freq' })), k.sep(), k.col(k.K(5, { n: 'Gain' })));
+};
+// Spacer (FL Studio Mobile; Live Reverb look): Input (Lo Cut, Pre-delay) | early reflections display (L up / R down, drag = Size) with
+// Size / Spread / Damping | Dry/Wet
+V[15] = (k) => {
+  const TL0 = [0.0113, 0.0173, 0.0233, 0.0311, 0.0397, 0.0491], TR0 = [0.0131, 0.0197, 0.0269, 0.0347, 0.0433, 0.0527], G0 = [0.8, 0.66, 0.54, 0.44, 0.34, 0.26];
+  const disp = k.D(176, 84, (g, w, hh) => {
+    const sz = 0.3 + k.get(0) * 1.7, pre = k.get(4) / 1000, sp = k.get(1), dm = k.get(2), mid = hh / 2, tmax = 0.11, x = (t) => 8 + (t / tmax) * (w - 16);
+    g.fillStyle = DISPC.grid; g.fillRect(0, Math.round(mid), w, 1);
+    g.fillStyle = DISPC.ink; g.fillRect(x(0), 8, 2, mid - 8);
+    for (let j = 0; j < 6; j++) { const a = G0[j] * (1 - dm * 0.5 * j / 5); g.fillStyle = DISPC.bl;
+      g.fillRect(Math.round(x(pre + TL0[j] * sz)), mid - a * (mid - 10), 2, a * (mid - 10)); g.globalAlpha = 0.45 + sp * 0.55; g.fillRect(Math.round(x(pre + TR0[j] * sz * (1 + sp * 0.1))), mid, 2, a * (mid - 10)); g.globalAlpha = 1; }
+    label(g, 'L', 3, 14, DISPC.ink, 8.5); label(g, 'R', 3, hh - 5, DISPC.ink, 8.5); label(g, Math.round((pre + TR0[5] * sz) * 1000) + ' ms', w - 44, 13, DISPC.or);
+  }, { onDown: () => ({ s: k.get(0) }), onMove: (x, y, dx, dy, s) => k.set(0, Math.max(0, Math.min(1, s.s + dx / 150))) });
+  return k.row(k.sec('Input Processing', k.K(5, { n: 'Lo Cut' }), k.K(4, { n: 'Predelay' })), k.sep(),
+    k.col(k.dk(disp), k.row(k.K(0), k.K(1), k.K(2, { n: 'Damping' }))), k.sep(), k.col(k.K(3, { n: 'Dry/Wet', big: true })));
+};
+// Tape Stop (FL Studio Mobile): Play / Sync toggles | speed curve (stop ramp down, start ramp up, Warp bends it; the live speed as a ring) with
+// Stop / Start lengths (beats when Sync is on, seconds when off) | Warp
+V[52] = (k) => {
+  let sp = 1, st = 0;
+  const disp = k.D(220, 86, (g, w, hh) => {
+    const wp = k.get(6), crv = (u) => Math.pow(u, 0.35 + wp * 2.6), x0 = 8, x1 = w / 2 - 6, x2 = w / 2 + 6, x3 = w - 8, Y = (v) => 10 + (1 - v) * (hh - 26);
+    const a = [], b = []; for (let j = 0; j <= 40; j++) { const u = j / 40; a.push([x0 + u * (x1 - x0), Y(1 - crv(u))]); b.push([x2 + u * (x3 - x2), Y(crv(u))]); }
+    g.fillStyle = DISPC.grid; g.fillRect(0, Math.round(Y(0)), w, 1); g.fillRect(Math.round(w / 2), 6, 1, hh - 18);
+    lvPath(g, a, DISPC.bl, Y(0), 1.8); lvPath(g, b, DISPC.bl, Y(0), 1.8);
+    label(g, 'Stop', x0, hh - 3, DISPC.ink, 8.5); label(g, 'Start', x2, hh - 3, DISPC.ink, 8.5);
+    const run = st === 1 ? a : st === 3 ? b : null; if (run) { let best = run[0]; for (const q of run) if (Math.abs(1 - (q[1] - 10) / (hh - 26) - sp) < Math.abs(1 - (best[1] - 10) / (hh - 26) - sp)) best = q; lvRing(g, best[0], best[1], 4.5); }
+    label(g, k.get(0) > 0.5 ? 'PLAY' : 'STOP', w - 34, 13, k.get(0) > 0.5 ? DISPC.bl : DISPC.or);
+  }, { onDown: () => ({ wv: k.get(6) }), onMove: (x, y, dx, dy, s) => k.set(6, Math.max(0, Math.min(1, s.wv - dy / 90))) });
+  k.every(40, () => { const r = k.out(); if (r.length) { st = r[0]; sp = r[1]; disp.paint(); } });
+  const len = (kt, kb, n) => k.swap(1, () => k.TL(n, k.S(kb, { w: 72 })), () => k.K(kt, { n }));
+  return k.row(k.col(k.T(0, 'Play', { w: 64, cls: 'big' }), k.T(1, 'Sync', { w: 64 })), k.sep(),
+    k.col(k.dk(disp), k.row(len(4, 5, 'Stop'), len(2, 3, 'Start'))), k.sep(), k.col(k.K(6, { big: true })));
+};
+
 export const KIT = V;
 export function kitView(ctx) { if (!V[ctx.d.type]) return null;   // no Live 12 panel yet: the card falls back to the automatic knob layout
   const k = kit(ctx); const el = V[ctx.d.type](k); el.classList.add('lk'); return { el, draw: k.redraw }; }

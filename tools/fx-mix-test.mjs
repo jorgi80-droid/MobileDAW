@@ -55,4 +55,14 @@ ok(d.mix === 1 || !('mix' in d), 'Mix is limited to 0..100 %'); ok(d.gain === D.
 await P.deserialize(txt);
 const d2 = P.state.tracks.find((t) => t.devices && t.devices[0] && t.devices[0].type === 7).devices[0];
 ok(d2.mix === 0.35 && d2.gain === -4.5, 'loaded back from the file');
+// Mix automation lane (long press the Mix dial): the engine gets devParam 1000 lanes, the lane starts from the current Mix
+{
+  const { eng } = await import(path.join(root, 'js/engine.js')); let got = null; const au = eng.automation; eng.automation = (f, n) => { got = Array.from(f).slice(0, n); return au && au(f, n); };
+  P.addTrack('midi'); const j = P.state.tracks.length - 1; P.addDevice(j, 7); P.setDeviceWet(j, 0, 'mix', 0.25);
+  const dv = P.state.tracks[j].devices[0], at = P.addAutoTrack({ kind: 4, strip: P.stripOf(j), devId: dv.id, param: D.MIX_P, def: D.WET_PARAMS.mix }, 'Mix');
+  const lane = P.state.tracks.find((t) => t.kind === 'auto' && t.target && t.target.param === D.MIX_P);
+  ok(!!lane && Math.abs(P.autoCurrent(lane) - 0.25) < 1e-9, 'a Mix lane starts from the module\'s current Mix (25 %)');
+  P.syncAutomation && P.syncAutomation();
+  ok(got && got.some((v, k) => v === 4 && got[k + 3] === D.MIX_P), 'the engine receives the lane as device parameter 1000');
+}
 console.log(bad ? bad + ' FAILED' : 'ALL OK'); process.exit(bad ? 1 : 0);

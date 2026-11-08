@@ -6,7 +6,7 @@ import * as PRS from './presets.js';
 import { LAYOUT, buildSynth, DISP } from './devviz.js';
 import { FXVIEW } from './fxviz.js';
 import { samplerPanel, wavetablePanel } from './liveinst.js';
-import { INSTRUMENTS, INST_LIST, DEVICES, INST, fmtParam, noteName, FX_GROUPS, NO_WET_FX, WET_PARAMS } from './defs.js';
+import { INSTRUMENTS, INST_LIST, DEVICES, INST, fmtParam, noteName, FX_GROUPS, NO_WET_FX, WET_PARAMS, MIX_P } from './defs.js';
 import { eng, MASTER, RET0 } from './engine.js';
 import { offerAutomation } from './automate.js';
 import * as BR from './browser.js';
@@ -322,8 +322,9 @@ function wetChip(i, di, d) {
   b.addEventListener('pointerdown', (e) => e.stopPropagation());
   b.addEventListener('click', (e) => {
     e.stopPropagation();
-    const ks = ['mix', 'gain'].map((k) => knob(WET_PARAMS[k], () => P.wetOf(d)[k], (v) => { P.setDeviceWet(i, di, k, v); upd(); }, fmtParam, C('#7ac5ff')));
-    const body = h('div', { class: 'wet-b' }, h('div', { class: 'knobs' }, ...ks), h('p', { class: 'hint' }, 'Mix = campuran suara asli (dry) dan hasil efek (wet). Gain = level keluar modul.'));
+    const ks = ['mix', 'gain'].map((k) => knob(WET_PARAMS[k], () => P.wetOf(d)[k], (v) => { P.setDeviceWet(i, di, k, v); upd(); }, fmtParam, C('#7ac5ff'),
+      k === 'mix' ? (rect) => offerAutomation(rect, { kind: 4, strip: P.stripOf(i), devId: d.id, param: MIX_P, def: WET_PARAMS.mix }, `${stripName(i)} \u2022 ${DEVICES[d.type].name} Mix`) : null));   // tekan lama Mix = lane otomasi (engine: devParam 1000)
+    const body = h('div', { class: 'wet-b' }, h('div', { class: 'knobs' }, ...ks), h('p', { class: 'hint' }, 'Mix = campuran suara asli (dry) dan hasil efek (wet). Gain = level keluar modul. Tekan lama Mix untuk lane otomasi.'));
     modal('Mix & Gain • ' + (DEVICES[d.type] ? DEVICES[d.type].name : 'Modul'), body, [
       { label: 'Reset', fn: () => { P.HK.group(() => { P.setDeviceWet(i, di, 'mix', 1); P.setDeviceWet(i, di, 'gain', 0); }); upd(); for (const k of ks) if (k.update) k.update(); return false; } },
       { label: 'Tutup', go: true, fn: () => { P.emit('devices'); } }]);

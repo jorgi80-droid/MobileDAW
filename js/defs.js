@@ -341,7 +341,7 @@ export const DEVICES = {
     { n: 'Mid2 Q', min: 0.3, max: 10, def: 1, curve: 'log', unit: '' },
     { n: 'High Hz', min: 2000, max: 16000, def: 8000, curve: 'log', unit: 'Hz' },
     { n: 'High Gain', min: -18, max: 18, def: 0, unit: 'dB' } ] },
-  9: { name: 'Roar', view: 'roar', params: [
+  9: { name: 'Roar', kit: true, view: 'roar', params: [
     { n: 'Shape', min: 0, max: 5, def: 0, step: 1, fmt: 'roar6', hidden: true },
     { n: 'Drive', min: 0, max: 40, def: 12, unit: 'dB' },
     { n: 'Tone', min: 500, max: 20000, def: 12000, curve: 'log', unit: 'Hz' },
@@ -353,7 +353,7 @@ export const DEVICES = {
     { n: 'FB Time', min: 1, max: 100, def: 10, curve: 'log', unit: 'ms' },
     { n: 'FB Freq', min: 100, max: 20000, def: 20000, curve: 'log', unit: 'Hz' },
     { n: 'Compress', min: 0, max: 1, def: 0, unit: '%' } ] },
-  10: { name: 'Autoduck', view: 'autoduck', params: [
+  10: { name: 'Autoduck', kit: true, view: 'autoduck', params: [
     { n: 'Source', min: 0, max: 64, def: 0, step: 1, fmt: 'src' },
     { n: 'Thresh', min: -60, max: 0, def: -30, unit: 'dB' },
     { n: 'Amount', min: 0, max: 48, def: 12, unit: 'dB' },
@@ -364,14 +364,14 @@ export const DEVICES = {
     { n: 'Gain', min: -24, max: 24, def: 0, unit: 'dB' } ] },
   13: { name: 'Analyzer', view: 'analyzer', params: [
     { n: 'Reset', min: 0, max: 1000000, def: 0, step: 1, hidden: true } ] },
-  14: { name: 'Stereolizer', view: 'stereolizer', params: [
+  14: { name: 'Stereolizer', kit: true, view: 'stereolizer', params: [
     { n: 'Width', min: 0, max: 2, def: 1, fmt: 'width' },
     { n: 'Mid', min: -12, max: 12, def: 0, unit: 'dB' },
     { n: 'Side', min: -12, max: 12, def: 0, unit: 'dB' },
     { n: 'Bass Mono', min: 0, max: 500, def: 0, fmt: 'bassmono' },
     { n: 'Balance', min: -1, max: 1, def: 0, fmt: 'pan' },
     { n: 'Output', min: -24, max: 12, def: 0, unit: 'dB' } ] },
-  15: { name: 'Spacer', view: 'spacer', params: [
+  15: { name: 'Spacer', kit: true, view: 'spacer', params: [
     { n: 'Size', min: 0, max: 1, def: 0.5, unit: '%' },
     { n: 'Spread', min: 0, max: 1, def: 0.5, unit: '%' },
     { n: 'Damp', min: 0, max: 1, def: 0.4, unit: '%' },
@@ -700,7 +700,7 @@ INSTRUMENTS[29] = { name: 'Granulator III', view: 'kit', full: true, sampler: tr
   P.push(q('Chain Selector', 0, 127, 0, { step: 1, fmt: 'num' })); for (let c = 0; c < 8; c++) P.push(q(`Chain ${c + 1} Zone Low`, 0, 127, 0, { step: 1, fmt: 'num' }), q(`Chain ${c + 1} Zone High`, 0, 127, 127, { step: 1, fmt: 'num' }));
   DEVICES[51] = { name: 'Audio Effect Rack', kit: true, rack: true, params: P };
   // Tape Stop (FL Studio Mobile style, engine js/engine/fx8.js): Play is the switch to automate ("Toggle Play")
-  DEVICES[52] = { name: 'Tape Stop', params: [onoff('Play', 1), onoff('Sync', 1), q('Start Time', 0.005, 8, 0.5, { curve: 'log', unit: 's' }), list('Start Beats', TS_BEATS, 3),
+  DEVICES[52] = { name: 'Tape Stop', kit: true, params: [onoff('Play', 1), onoff('Sync', 1), q('Start Time', 0.005, 8, 0.5, { curve: 'log', unit: 's' }), list('Start Beats', TS_BEATS, 3),
     q('Stop Time', 0.005, 8, 0.5, { curve: 'log', unit: 's' }), list('Stop Beats', TS_BEATS, 2), q('Warp', 0, 1, 0.5, { unit: '%' })] };
   // Instrument Rack (instrument type 12): the same rack parameters plus key and velocity zones per chain; stored at 100 + k in the instrument
   // parameters (90 is the engine's Pitch), so INSTRUMENTS[12].params starts with 100 hidden placeholders
