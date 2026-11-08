@@ -106,6 +106,13 @@ ok(await ev(async () => { const T = await import('./js/timeline.js'); T.setHeadW
   await ev(async () => { const P = await import('./js/project.js'); delete P.state.tracks[0].hx; P.emit('all'); }); await wait(300);
 }
 
+// ---- folded row: the level meter lies flat next to M / S / arm (open rows keep the vertical meter at the right edge)
+{
+  const r = await ev(async () => { const P = await import('./js/project.js'), T = await import('./js/timeline.js'); P.state.tracks[1].fold = true; P.emit('all'); return T.headerLayout ? T.headerLayout(1) : null; });
+  if (r) ok(r.hm && r.hm.w > 24 && r.hm.x > r.arm.x, 'folded row: horizontal meter next to the switches (' + (r.hm && Math.round(r.hm.w)) + ' px)');
+  await ev(async () => { const P = await import('./js/project.js'); P.state.tracks[1].fold = false; P.emit('all'); }); await wait(300);
+}
+
 // ---- long-press menu
 a = await hd(0);
 await ptr('pointerdown', a.x + a.w - 40, a.top + 9); await wait(560); await ptr('pointerup', a.x + a.w - 40, a.top + 9); await wait(420);

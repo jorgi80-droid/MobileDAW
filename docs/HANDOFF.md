@@ -548,5 +548,6 @@ Permintaan pemilik: SEMUA efek dan instrumen diganti dengan set stok Ableton Liv
   Pitch per step dan Slide Notes belum: butuh event engine baru (JS + C++ + golden).
 - Header track seperti Live: kontrol kecil berukuran TETAP (tombol 16 px, field 15 px, teks 10 px; tidak membesar mengikuti tinggi baris): baris 1 = aktivator / S /
   arm / otomasi, baris 2 = volume + pan, baris 3 = Send A | Send B (sel sempit) | Output (Master, sisa lebar). Kolom header otomatis ~1/5 layar (262 / 240 / 208 px),
-  kolom nama 36 %. Baris pendek melepas baris 3 lalu baris 2. Area sentuh slider +2 px; geser relatif + mode halus (jari menjauh dari slider).
+  kolom nama 36 %. Baris pendek melepas baris 3 lalu baris 2. Baris terlipat: meter level HORIZONTAL (L di atas R) di samping tombol M/S/arm (`r.hm`,
+  `drawMeters`); baris terbuka: meter vertikal di tepi kanan header. Area sentuh slider +2 px; geser relatif + mode halus (jari menjauh dari slider).
 - Otomasi Level Master diimpor sebagai lane master; metode Replica + audit arsip FLM: `docs/replica/`.

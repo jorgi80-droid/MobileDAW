@@ -86,6 +86,7 @@ const headPref = () => (full() ? prefs.headW : prefs.headWc) || 0;
 function applyHead() { const [lo, hi] = headLim(); HEAD = headPref() > 0 ? Math.round(clamp(headPref(), lo, Math.min(hi, Math.max(lo, W - 120)))) : headAuto(); CW = Math.max(60, W - HEAD); }
 const nameW = () => (full() ? Math.max(76, Math.round((HEAD - METW) * 0.36)) : HEAD - METW);   // coloured column width: only the name; the rest, left of the meter, is the wide mixer column
 export const headWidth = () => HEAD;
+export const headerLayout = (i) => (state.tracks[i] ? hdr(i) : null);   // tests: where the header controls of track i are
 export function setHeadW(w) { const [lo, hi] = headLim(); prefs[full() ? 'headW' : 'headWc'] = w > 0 ? Math.round(clamp(w, lo, hi)) : 0; savePrefs(); applyHead(); clampView(); invalidate(); }
 export function setHeadFull(on) { prefs.headFull = !!on; savePrefs(); applyHead(); clampView(); invalidate(); }
 export const headIsFull = () => full();
@@ -104,7 +105,11 @@ function hdr(i) {
   if (h < 46) {                                                      // folded row: the three switches as small squares in the mixer column
     const q = Math.max(10, Math.min(18, h - 8)), by = y + (h - 1 - q) / 2;
     r.mute = { x: L, y: by, w: auto ? 30 : q + 4, h: q };
-    if (!auto) { r.solo = { x: L + q + 4 + gp, y: by, w: q + 4, h: q }; r.arm = { x: L + (q + 4 + gp) * 2, y: by, w: q + 4, h: q }; }
+    if (!auto) {
+      r.solo = { x: L + q + 4 + gp, y: by, w: q + 4, h: q }; r.arm = { x: L + (q + 4 + gp) * 2, y: by, w: q + 4, h: q };
+      const ex = r.arm.x + r.arm.w + 6, end = x + HEAD - 5;             // folded row: the level meter lies flat next to the switches (it is vertical at the
+      if (end - ex >= 24) r.hm = { x: ex, y: by + 1, w: end - ex, h: q - 2 };   // right edge of an open row), so the thin row is filled and still shows the level
+    }
     return r;
   }
   // Mixer column like Live's: small fixed controls (buttons 16 px, fields 15 px, text 10 px) that never grow with the row; row 1 = activator / S / arm /
@@ -449,6 +454,18 @@ function drawMeters() {                      // Live: a slim stereo meter along 
   octx.save(); octx.beginPath(); octx.rect(CW, RULER, HEAD, LANE_B() - RULER); octx.clip();
   for (let i = Math.max(0, rowAt(RULER)); i <= Math.min(nn - 1, rowAt(LANE_B())); i++) {
     const s = stripOfRow(i); if (s < 0) continue;
+    const hm = i < state.tracks.length && full() ? hdr(i).hm : null;
+    if (hm) {                                                                     // folded row: the same meter lying flat (left = silence), L over R
+      const lh = Math.max(1.5, (hm.h - 3) / 2), x0 = hm.x + 2, w0 = hm.w - 4;
+      for (let ch = 0; ch < 2; ch++) {
+        const f = meterFrac(mDisp[s * 2 + ch] || 0), by = hm.y + 1 + ch * (lh + 1); if (f <= 0.01) continue;
+        const e = w0 * f, g = Math.min(e, w0 * 0.8), yl = Math.min(e, w0 * 0.93);
+        octx.fillStyle = '#4fae3a'; octx.fillRect(x0, by, g, lh);
+        if (e > w0 * 0.8) { octx.fillStyle = '#e8cf3a'; octx.fillRect(x0 + w0 * 0.8, by, yl - w0 * 0.8, lh); }
+        if (e > w0 * 0.93) { octx.fillStyle = '#e5484d'; octx.fillRect(x0 + w0 * 0.93, by, e - w0 * 0.93, lh); }
+      }
+      continue;
+    }
     const y = rowY(i) + 3, hh = rh(i) - 7; if (hh < 6) continue;
     for (let ch = 0; ch < 2; ch++) {
       const f = meterFrac(mDisp[s * 2 + ch] || 0), bx = mx + 1 + ch * 3.5;
@@ -572,7 +589,10 @@ function drawHeads() {
     if (r.vol) drawSlider(r.vol, Math.sqrt(clamp(t.vol / VMAX, 0, 1)), dbTxt(t.vol) + ' dB', false);
     if (r.pan) drawSlider(r.pan, (clamp(t.pan, -1, 1) + 1) / 2, panTxt(t.pan), true);
     for (const [k, rc] of [[0, r.sa], [1, r.sb]]) if (rc) { const v = (t.send && t.send[k]) || 0; drawSlider(rc, v, 'AB'[k] + ' ' + Math.round(v * 100) + '%', false); }
-    if (!auto) meterWell(); else { ctx.fillStyle = C('#161617'); ctx.fillRect(hx + HEAD - METW, y, METW, h - 1); }
+    if (r.hm) {                                                                            // folded row: horizontal meter well (two thin lanes, L over R)
+      ctx.fillStyle = C('#161617'); ctx.fillRect(r.hm.x, r.hm.y, r.hm.w, r.hm.h);
+      const lh = Math.max(1.5, (r.hm.h - 3) / 2); ctx.fillStyle = C('#101011'); ctx.fillRect(r.hm.x + 2, r.hm.y + 1, r.hm.w - 4, lh); ctx.fillRect(r.hm.x + 2, r.hm.y + 2 + lh, r.hm.w - 4, lh);
+    } else if (!auto) meterWell(); else { ctx.fillStyle = C('#161617'); ctx.fillRect(hx + HEAD - METW, y, METW, h - 1); }
     ctx.fillStyle = C('#08080a'); ctx.fillRect(hx, y + h - 2, HEAD, 2);                  // the same heavy line as the lane
     if (!t.fold && h >= MIN_ROW && (on || (drag && drag.k === 'rowh' && drag.i === i))) { ctx.fillStyle = drag && drag.k === 'rowh' && drag.i === i ? T('--accent') : C('#46464c'); ctx.fillRect(hx + (HEAD - METW) / 2 - 8, y + h - 3, 16, 1); }   // grip of the selected track: drag the bottom edge = row height
   }
