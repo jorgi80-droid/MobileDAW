@@ -44,7 +44,7 @@ for (const [kind, t] of jobs) {
     const cards = [...document.querySelectorAll('.dev-scroll > .card')].filter((c) => c.querySelector(':scope > h4'));   // not the empty 'add effect' card
     const card = kind === 'inst' ? cards[0] : cards[cards.length - 1];
     if (!card) return { err: 'no card' };
-    card.scrollIntoView({ inline: 'nearest', block: 'nearest' });
+    card.scrollIntoView({ inline: 'start', block: 'nearest' });
     const cr = card.getBoundingClientRect(), head = card.querySelector(':scope > h4'), hb = head ? head.getBoundingClientRect().bottom : cr.top;
     const vis = (e) => { const s = getComputedStyle(e); if (s.display === 'none' || s.visibility === 'hidden' || +s.opacity === 0) return false; const q = e.getBoundingClientRect(); return q.width > 1 && q.height > 1; };
     const inHidden = (e) => { for (let p = e; p && p !== card; p = p.parentElement) { const s = getComputedStyle(p); if (s.display === 'none' || s.visibility === 'hidden' || +s.opacity === 0) return true; } return false; };   // on-demand overlays (MiniMeters toolbar) count as hidden

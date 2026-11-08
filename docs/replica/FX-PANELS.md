@@ -64,3 +64,16 @@ Yang belum sama dan alasannya:
   (panah = Output, seret di sisi kanan display), strip dengan tiga tombol tampilan (ringkas / kurva / aktivitas: riwayat level + GR), Knee, Look, Env;
   Makeup + Peak/RMS/Expand + Dry/Wet di kanan. Skor layout 40,7 -> 52,7.
 - GIF panel yang berjalan: `FRAMES=28 PLAY=1 CARD=1 FX=0,4,25,29 node tools/ui-shots.mjs <dir> devs` lalu gabungkan frame-nya.
+
+## Putaran 4: referensi FL Studio Mobile (Pictures.zip, 28 gambar)
+- Isi: screenshot modul efek FL Studio Mobile (Tape Stop, Spacer, Spreader, Autoduck, Reverb, Limiter, Trance Delay, Wow & Flutter, Tremolo, Gate,
+  Graphic EQ, Tuned EQ, Waveshaper, Pitcher 2, Equalizer, Multiband Compressor, Analyzer, Filter). Screenshots 1-4 dan Ui_Refrences pada kiriman
+  ini identik byte-per-byte dengan kiriman sebelumnya (sudah dipakai).
+- Tape Stop (modul asal FLM) kini mengikuti tata letak FLM: reel besar Start Time (kiri) dan Stop Time (kanan) berisi nilainya (ketukan saat Sync,
+  detik saat tidak; seret reel naik / turun), reel berputar mengikuti kecepatan pita; di tengah Sync, tombol Play bulat, Warp. Warna tetap Live.
+- Perbedaan yang ketahuan dari gambar (belum diubah, butuh DSP baru, bukan sekadar tampilan):
+  - Autoduck FLM = ducking berirama (S-Curve, Attack, Hold, Ducking, Curve, Time, Shift), bukan kompresor sidechain seperti Autoduck MobileDAW.
+  - Spacer FLM = alat stereo (L/R Inversion, L/R Delay, Separation, Pan, M/S Inversion, M/S Delay, Mode), bukan ruang / pantulan seperti Spacer MobileDAW.
+  - Reverb FLM punya tab Main / Tune / Mixer (Decay, High Damp, Mix, Early Refl., Room Size; Wet / Dry Level, Rev Pan).
+- Nomor tipe FLM yang belum dikenal (3, 9, 13, 27, 28, 30, 41, 44) TIDAK dipetakan dari gambar ini: jumlah parameter kadang cocok (tipe 3 = 21
+  parameter seperti Equalizer 4 band) tetapi nilai bawaannya tidak cocok, jadi masih tebakan.

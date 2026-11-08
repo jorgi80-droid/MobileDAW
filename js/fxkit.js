@@ -1502,20 +1502,29 @@ V[15] = (k) => {
 // Tape Stop (FL Studio Mobile): Play / Sync toggles | speed curve (stop ramp down, start ramp up, Warp bends it; the live speed as a ring) with
 // Stop / Start lengths (beats when Sync is on, seconds when off) | Warp
 V[52] = (k) => {
-  let sp = 1, st = 0;
-  const disp = k.D(220, 86, (g, w, hh) => {
-    const wp = k.get(6), crv = (u) => Math.pow(u, 0.35 + wp * 2.6), x0 = 8, x1 = w / 2 - 6, x2 = w / 2 + 6, x3 = w - 8, Y = (v) => 10 + (1 - v) * (hh - 26);
-    const a = [], b = []; for (let j = 0; j <= 40; j++) { const u = j / 40; a.push([x0 + u * (x1 - x0), Y(1 - crv(u))]); b.push([x2 + u * (x3 - x2), Y(crv(u))]); }
-    g.fillStyle = DISPC.grid; g.fillRect(0, Math.round(Y(0)), w, 1); g.fillRect(Math.round(w / 2), 6, 1, hh - 18);
-    lvPath(g, a, DISPC.bl, Y(0), 1.8); lvPath(g, b, DISPC.bl, Y(0), 1.8);
-    label(g, 'Stop', x0, hh - 3, DISPC.ink, 8.5); label(g, 'Start', x2, hh - 3, DISPC.ink, 8.5);
-    const run = st === 1 ? a : st === 3 ? b : null; if (run) { let best = run[0]; for (const q of run) if (Math.abs(1 - (q[1] - 10) / (hh - 26) - sp) < Math.abs(1 - (best[1] - 10) / (hh - 26) - sp)) best = q; lvRing(g, best[0], best[1], 4.5); }
-    label(g, k.get(0) > 0.5 ? 'PLAY' : 'STOP', w - 34, 13, k.get(0) > 0.5 ? DISPC.bl : DISPC.or);
-  }, { onDown: () => ({ wv: k.get(6) }), onMove: (x, y, dx, dy, s) => k.set(6, Math.max(0, Math.min(1, s.wv - dy / 90))) });
-  k.every(40, () => { const r = k.out(); if (r.length) { st = r[0]; sp = r[1]; disp.paint(); } });
-  const len = (kt, kb, n) => k.swap(1, () => k.TL(n, k.S(kb, { w: 72 })), () => k.K(kt, { n }));
-  return k.row(k.col(k.T(0, 'Play', { w: 64, cls: 'big' }), k.T(1, 'Sync', { w: 64 })), k.sep(),
-    k.col(k.dk(disp), k.row(len(4, 5, 'Stop'), len(2, 3, 'Start'))), k.sep(), k.col(k.K(6, { big: true })));
+  // laid out as FL Studio Mobile's Tape Stop (owner's screenshot): a big tape reel for Start Time on the left and for Stop Time on the right
+  // (value in the hub: beats when Sync is on, seconds when off; drag the reel up / down), in the middle Sync, the big Play button and Warp.
+  // The reels turn with the tape speed while the effect works (fluid), in the Live colours.
+  let sp = 1, st = 0, ang = 0;
+  const reel = (kt, kb, name) => {
+    const c = k.D(118, 118, (g, w, hh) => {
+      const cx = w / 2, cy = hh / 2, R = w / 2 - 6, sync = k.get(1) > 0.5, p = k.def.params[sync ? kb : kt], v = k.get(sync ? kb : kt), f = (v - p.min) / Math.max(1e-9, p.max - p.min);
+      g.lineWidth = 6; g.strokeStyle = '#1b1b1d'; g.beginPath(); g.arc(cx, cy, R, Math.PI * 0.75, Math.PI * 2.25); g.stroke();
+      g.save(); g.shadowColor = 'rgba(79,195,240,.6)'; g.shadowBlur = 6; g.strokeStyle = DISPC.bl; g.beginPath(); g.arc(cx, cy, R, Math.PI * 0.75, Math.PI * (0.75 + 1.5 * f)); g.stroke(); g.restore();
+      g.fillStyle = '#2c2c30'; g.beginPath(); g.arc(cx, cy, R - 10, 0, 6.2832); g.fill();
+      g.fillStyle = '#1b1b1d'; for (let q = 0; q < 3; q++) { const a = ang + q * 2.0944; g.beginPath(); g.moveTo(cx, cy); g.arc(cx, cy, R - 16, a - 0.42, a + 0.42); g.closePath(); g.fill(); }   // reel spokes, turning with the tape
+      g.fillStyle = '#3a3a3e'; g.beginPath(); g.arc(cx, cy, 17, 0, 6.2832); g.fill();
+      label(g, sync ? (p.items ? p.items[Math.round(v - p.min)] : String(v)) : (v < 1 ? Math.round(v * 1000) + ' ms' : v.toFixed(2) + ' s'), cx, cy + 4, '#e8e8ec', 11, 'center');
+    }, { onDown: () => { const sync = k.get(1) > 0.5; return { k0: sync ? kb : kt, v: k.get(sync ? kb : kt) }; },
+      onMove: (x, y, dx, dy, s) => { const p = k.def.params[s.k0]; let v = p.curve === 'log' ? Math.max(p.min, Math.min(p.max, s.v * Math.pow(2, -dy / 40))) : Math.max(p.min, Math.min(p.max, s.v - dy * (p.max - p.min) / 160)); if (p.step || p.items) v = Math.round(v); k.set(s.k0, v); } });
+    k.reg(c, kt); const alt = k.reg(h('span', { hidden: true }), kb); alt.update = () => c.paint();   // the reel sets seconds (Sync off) or beats (Sync on)
+    const col = k.col(c, alt, h('span', { class: 'lk-lb lk-reel' }, name)); col.classList.add('lk-reelc'); return col;
+  };
+  const play = k.T(0, '▶', { w: 52, cls: 'lk-tplay' });
+  const sync = k.T(1, 'Sync', { w: 52 });
+  const rS = reel(2, 3, 'Start Time'), rE = reel(4, 5, 'Stop Time');
+  k.every(16, () => { const r = k.out(); if (r.length) { st = r[0]; sp = r[1]; } ang += (k.get(0) > 0.5 ? 1 : sp) * 0.06; k.redraw(); });
+  return k.row(rS, k.col(sync, play, k.K(6)), rE);
 };
 
 export const KIT = V;

@@ -1097,3 +1097,7 @@ html.reduce-motion .menu, html.reduce-motion .modal, html.reduce-motion .fw, htm
 .card.syn > .sps, .card.syn .inst-row > .sps { align-items: stretch; }
 .card.syn .sp { justify-content: space-evenly; }
 .card.syn .sp { justify-content: flex-start; gap: var(--sp-3); }   /* display under the title, readout + knobs right below: no gaps between them */
+/* Tape Stop (FL Studio Mobile layout): round Play button between the two reels */
+.lk .lv-btn.lk-tplay { width: 52px !important; min-width: 52px !important; height: 52px; border-radius: 50% !important; font-size: 20px; padding: 0; }
+.lk.lk-fill.lk-row > .lk-col.lk-reelc, .lk .lk-reelc { justify-content: center !important; gap: 4px; }
+.lk .lk-reel { text-align: center; font-size: var(--fs-2); color: var(--lv-ink); }
