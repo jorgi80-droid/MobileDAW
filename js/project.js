@@ -393,9 +393,24 @@ export function touchClips(i) {
   raf(() => { pending = false; for (const k of dirty) syncClips(k); dirty.clear(); });
 }
 
+// A device whose type this version does not have (removed like MultiFX, or saved by a newer MobileDAW) is not dropped: it becomes a neutral
+// placeholder (Utility at its defaults: the audio passes through untouched) that keeps the original device verbatim in d.missing.orig.
+// Saving writes the placeholder with that data, so nothing is lost, and a version that knows the type gets the original device back.
+const GONE_FX = { 11: 'MultiFX' };
+export function placeholderOf(src) {
+  const orig = JSON.parse(JSON.stringify(src));
+  const name = (src && src.name) || GONE_FX[src && src.type] || 'Modul tipe ' + (src && src.type);
+  return { id: (src && src.id) || uid(), type: 0, params: DEVICES[0].params.map((q) => q.def), bypass: !!(src && src.bypass), missing: { name, app: 'MobileDAW', orig } };
+}
+export function devOrPlaceholder(d) {
+  if (d && d.missing && d.missing.orig && DEVICES[d.missing.orig.type]) { const o = d.missing.orig; o.id = d.id; return o; }   // the type exists again
+  return d && DEVICES[d.type] ? d : placeholderOf(d || {});
+}
+const fixChain = (list) => (Array.isArray(list) ? list : []).filter((d) => d && typeof d === 'object').map(devOrPlaceholder);
 function syncDevices(i) {
   const t = tr(i);
-  if (t.devices.some((d) => !DEVICES[d.type])) t.devices = t.devices.filter((d) => DEVICES[d.type]);   // devices that no longer exist (MultiFX was removed) are dropped
+  t.devices = fixChain(t.devices);
+  for (const d of t.devices) if (d.chains) for (const ch of d.chains) ch.devices = fixChain(ch.devices);
   t.devices.forEach((d, di) => {
     const dp = DEVICES[d.type] && DEVICES[d.type].params;     // projects saved before a parameter existed: fill the new ones with their defaults
     if (dp) { if (!Array.isArray(d.params)) d.params = []; const n0 = d.params.length; for (let k = 0; k < dp.length; k++) if (!Number.isFinite(d.params[k])) d.params[k] = dp[k].def; if (n0 < dp.length && DEVICES[d.type].migrate) DEVICES[d.type].migrate(d.params, n0); }
@@ -1022,21 +1037,21 @@ const cloneDev = (d) => reidDev(JSON.parse(JSON.stringify(d)));
 export const devicesSnapshot = (i, a = 0, b = Infinity) => tr(i).devices.slice(a, b).map((d) => JSON.parse(JSON.stringify(d)));
 // insert copies of devices (from a copy / a preset) at position `at`; unknown types are skipped and reported (never dropped silently)
 export function insertDeviceCopies(i, at, list) {
-  const t = tr(i); let added = 0; const skipped = [];
+  const t = tr(i); let added = 0; const skipped = [], held = [];
   HK.group(() => {
     for (const src of list || []) {
-      if (!DEVICES[src.type]) { skipped.push(src.name || 'tipe ' + src.type); continue; }
-      if (t.devices.length >= 16) { skipped.push(DEVICES[src.type].name + ' (rantai penuh)'); continue; }
-      const d = cloneDev(src); if (!Array.isArray(d.params)) d.params = []; fillParams(d, DEVICES); d.bypass = !!d.bypass;
+      if (t.devices.length >= 16) { skipped.push((DEVICES[src.type] ? DEVICES[src.type].name : src.name || 'tipe ' + src.type) + ' (rantai penuh)'); continue; }
+      const d = devOrPlaceholder(cloneDev(src));                                 // an unknown module comes in as a placeholder that keeps its data
+      if (d.missing && d.missing.orig) held.push(d.missing.name); if (!Array.isArray(d.params)) d.params = []; fillParams(d, DEVICES); d.bypass = !!d.bypass;
       if (d.type === RACK && !d.chains) { d.chains = [{ id: uid(), name: 'Chain', devices: [] }]; d.macroMap = []; }
-      if (d.chains) for (const ch of d.chains) ch.devices = (ch.devices || []).filter((x) => { if (DEVICES[x.type]) { if (!Array.isArray(x.params)) x.params = []; fillParams(x, DEVICES); return true; } skipped.push(x.name || 'tipe ' + x.type); return false; });
+      if (d.chains) for (const ch of d.chains) ch.devices = fixChain(ch.devices).map((x) => { if (x.missing && x.missing.orig) held.push(x.missing.name); if (!Array.isArray(x.params)) x.params = []; fillParams(x, DEVICES); return x; });
       const di = Math.min(Math.max(0, at + added), t.devices.length);
       placeDevice(i, di, d);
       if (HK.on) HK.add({ t: 'dpres', s: stripOf(i), d, di, present: true });
       added++;
     }
   });
-  return { added, skipped };
+  return { added, skipped, held };
 }
 export function insertDeviceAt(i, at, type) { if (!DEVICES[type]) return { added: 0, skipped: [] }; const d = { type, params: DEVICES[type].params.map((q) => q.def), bypass: false }; if (type === RACK) { d.chains = [{ id: uid(), name: 'Chain', devices: [] }]; d.macroMap = []; d.params[32] = 1; } return insertDeviceCopies(i, at, [d]); }
 export function replaceDevice(i, di, type) { const t = tr(i); if (!t.devices[di] || !DEVICES[type]) return; HK.group(() => { removeDevice(i, di); insertDeviceAt(i, di, type); }); }
@@ -1128,6 +1143,7 @@ function sendChainInst(i, di, ci, x) { if (!x) { eng.rackCmd(i, di, 5, ci, 0, 0,
 export function rackSync(i, di) {
   const r = R(i, di), o = r.o; if (!o || !o.chains) return;
   eng.rackCmd(i, di, 0, 0, 0, 0, 0);
+  for (const c of o.chains) c.devices = fixChain(c.devices);                    // unknown modules inside: placeholders (the chain keeps its order)
   o.chains.forEach((c, ci) => {
     if (di < 0) sendChainInst(i, di, ci, c.inst);
     c.devices.forEach((x, j) => { if (!DEVICES[x.type]) return; fillParams(x, DEVICES); eng.rackCmd(i, di, 1, ci, j, x.type, 0); x.params.forEach((v, k) => eng.rackCmd(i, di, 2, ci, j, k, v)); wetSend(x, (p, v) => eng.rackCmd(i, di, 2, ci, j, p, v)); if (x.bypass) eng.rackCmd(i, di, 3, ci, j, 1, 0); });
@@ -1494,7 +1510,7 @@ async function deserializeInner(text, onProgress) {
     t.inst.pads = t.inst.pads.filter((q) => q && Number.isFinite(q.pitch)).slice(0, MAX_PADS).map((q) => newPad(q));
     for (const q of t.inst.pads) {
       if (q.chain) {                                                          // Drum Rack chain: instrument (+ its sample) and effects
-        const c = q.chain; c.devices = (Array.isArray(c.devices) ? c.devices : []).filter((d) => d && DEVICES[d.type] && !DEVICES[d.type].hidden);
+        const c = q.chain; c.devices = fixChain(c.devices).filter((d) => !DEVICES[d.type].hidden);
         for (const d of c.devices) { if (!Array.isArray(d.params)) d.params = []; fillParams(d, DEVICES); d.bypass = !!d.bypass; }
         if (c.inst && !INSTRUMENTS[c.inst.type]) c.inst = null;
         if (c.inst) { c.inst.params = c.inst.params || {}; if (c.inst.sample) { const sm = c.inst.sample.path ? await loadSampleObj(c.inst.sample.path) : null; if (!sm && c.inst.sample.path) missing.push(c.inst.sample.path); c.inst.sample = sm; } }
@@ -1538,8 +1554,8 @@ function resolveTarget(tg) {
   const idx = stripIndex(tg.strip);
   if (idx < 0) return null;
   if (tg.kind === 4) {
-    const di = tr(idx).devices.findIndex((d) => d.id === tg.devId);
-    return di < 0 ? null : { track: idx, dev: di };
+    const di = tr(idx).devices.findIndex((d) => d.id === tg.devId), d = tr(idx).devices[di];
+    return di < 0 || (d.missing && d.missing.orig) ? null : { track: idx, dev: di };   // a lane of a module this version lacks stays in the file, unplayed
   }
   if (tg.kind === 5 && !(state.tracks[idx] && state.tracks[idx].inst)) return null;
   return { track: idx, dev: 0 };

@@ -609,3 +609,14 @@ Permintaan pemilik: SEMUA efek dan instrumen diganti dengan set stok Ableton Liv
   otomasi (engine sudah bisa). C++: blok dry 128 frame ada di objek Device; ring latency dialokasikan saat pertama dipakai (sama seperti JS).
 - Tes: `tools/fx-mix-test.mjs` (bit sama di Mix 100 %, dry persis di Mix 0 % termasuk Compressor look-ahead 10 ms, Gain, 50 %, simpan/muat), golden
   `core-fx-mix`, screenshot `node tools/ui-shots.mjs <dir> wet`.
+
+## Placeholder modul hilang (sesi ini)
+- `project.js placeholderOf / devOrPlaceholder / fixChain`: device dengan tipe yang tidak ada (MultiFX yang dihapus = "MultiFX", atau tipe dari versi
+  MobileDAW yang lebih baru) tidak dibuang lagi. Ia jadi placeholder tipe 0 (Utility di nilai bawaan = audio lewat utuh) dengan `missing: { name, app:
+  'MobileDAW', orig }`, `orig` = device asli persis (id sama). Disimpan begitu ke file; begitu tipenya dikenal lagi, `devOrPlaceholder` mengembalikan
+  device aslinya. Berlaku di rantai track / Master / return (`syncDevices`), di dalam Audio/Instrument Rack (`rackSync`), chain pad Drum Rack (saat
+  buka proyek), paste modul dan Rack preset (`insertDeviceCopies` -> `held` dilaporkan), preset mixer (simpan = modul aslinya, muat = placeholder).
+- Lane otomasi ke modul placeholder tetap di file tapi tidak dimainkan (`resolveTarget` -> null), supaya tidak menggerakkan Utility.
+- Kartu: "[Plugin tidak tersedia] <nama>", "tipe modul N", teks bahwa datanya disimpan utuh. Placeholder FLM lama (`missing` tanpa `orig`) tidak berubah.
+- Belum: instrumen dengan tipe tidak dikenal (track synth / chain Instrument Rack) masih seperti sebelumnya (chain rack: instrumen dikosongkan).
+- Tes: `tools/placeholder-test.mjs`.

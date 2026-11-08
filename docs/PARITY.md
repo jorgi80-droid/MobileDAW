@@ -40,7 +40,7 @@ Stack dipertahankan: JS modul (tanpa build) + AudioWorklet + engine C++ (Android
 | Tombol Rewind di toolbar (CTRL dihapus) | Selesai | |
 | Menu modul: geser, Sisip kiri/kanan, Ganti, Copy, Paste, Reset, Simpan preset, Sisip preset, Bypass, Hapus | Selesai | `touch-ui-test` |
 | Rack Preset: simpan / muat (ganti) / sisip, Copy All / Paste All | Selesai | `touch-ui-test` (simpan → kosongkan → muat = identik) |
-| Plugin hilang di preset | Sebagian | modul tak dikenal dilewati DAN dilaporkan namanya (tidak diam-diam); placeholder yang menyimpan state belum (butuh tipe device kosong di engine) |
+| Plugin hilang di preset | Selesai | modul yang tidak ada di versi ini jadi placeholder netral (Utility bawaan, audio lewat) yang menyimpan data aslinya utuh; disimpan apa adanya dan kembali sendiri di versi yang mengenal tipenya; paste / Rack preset / preset mixer melapor "sebagai placeholder". `placeholder-test` |
 | Mix per modul (Dry/Wet, gain) | Selesai | chip Mix di judul tiap kartu efek: Mix 0-100 %, Gain -36..+12 dB, dry disejajarkan dengan latency efek; JS = C++ (golden `core-fx-mix`), `fx-mix-test`. Kontrol UI hanya untuk rantai utama track / Master / return |
 
 ## 6. Mixer

@@ -304,7 +304,7 @@ function sideLayout(el) {
 // module menu helpers: effect picker, device clipboard (Copy / Paste module, Copy All / Paste All), rack preset picker
 let devClip = null;
 function fxPick(r, fn) { menu(FX_GROUPS.flatMap(([, label, ks]) => [{ label: label.toUpperCase(), dim: true }, ...ks.filter((k) => DEVICES[k]).map((k) => ({ label: DEVICES[k].name, fn: () => fn(k) }))]), Math.max(8, r.left - 40), Math.max(8, r.top - 120)); }
-const report = (x) => { if (x && x.skipped && x.skipped.length) toast(`${x.added} modul ditempel; ${x.skipped.length} dilewati: ${x.skipped.join(', ')}.`, 4000); else if (x) toast(x.added + ' modul ditempel.', 1200); };
+const report = (x) => { if (x && x.held && x.held.length) toast(`${x.added} modul ditempel; ${x.held.length} sebagai placeholder (tidak ada di versi ini, data disimpan): ${x.held.join(', ')}.`, 4500); else if (x && x.skipped && x.skipped.length) toast(`${x.added} modul ditempel; ${x.skipped.length} dilewati: ${x.skipped.join(', ')}.`, 4000); else if (x) toast(x.added + ' modul ditempel.', 1200); };
 function pasteDevs(i, at) { if (!devClip) return; report(P.insertDeviceCopies(i, at, devClip)); }
 function presetPick(r, i, mode, at) {
   const L = PRS.rackPresets();
@@ -368,8 +368,9 @@ function fxCard(i, d, di, n, o = {}) {
   if (d.missing) {                                     // imported plugin MDAW does not have: a named placeholder (neutral, audio passes through)
     const x = d.missing, hd = grip(titleFold(h('h4', {}, pw, h('span', {}, '[Plugin tidak tersedia] ' + x.name), more), d.id));
     return h('div', { class: 'card dv-missing' + (d.bypass ? ' off' : '') }, hd, h('div', { class: 'dvm-b' },
-      h('b', {}, x.name), h('span', {}, 'dari ' + (x.app || 'proyek impor') + (x.preset ? ' \u2022 preset ' + x.preset : '')),
-      h('span', {}, (x.params && x.params.length ? x.params.length + ' nilai parameter asli disimpan. ' : '') + 'Plugin ini tidak ada di MDAW: audio diteruskan tanpa diproses. Ganti dengan efek MDAW lewat menu \u22EF \u2192 Ganti dengan.')));
+      h('b', {}, x.name), h('span', {}, x.orig ? 'tipe modul ' + x.orig.type : 'dari ' + (x.app || 'proyek impor') + (x.preset ? ' \u2022 preset ' + x.preset : '')),
+      h('span', {}, x.orig ? 'Modul ini tidak ada di versi MobileDAW ini: audio diteruskan tanpa diproses. Semua datanya disimpan utuh di proyek dan kembali sendiri di versi yang mengenalnya.'
+        : (x.params && x.params.length ? x.params.length + ' nilai parameter asli disimpan. ' : '') + 'Plugin ini tidak ada di MDAW: audio diteruskan tanpa diproses. Ganti dengan efek MDAW lewat menu \u22EF \u2192 Ganti dengan.')));
   }
   const knobsDiv = h('div', { class: 'knobs side' });
   const ctx = { i, di, d, def, every: o.every || every, set: (k, v) => P.setDeviceParam(i, di, k, v), refreshKnobs: () => { for (const c of knobsDiv.children) if (c.update) c.update(); } };

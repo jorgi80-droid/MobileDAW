@@ -27,7 +27,7 @@ export function saveMixerPreset(i, name) {
   if (!name) return { error: 'Nama kosong.' };
   const path = `${DIR_MIX}/${name}.json`;
   eng.writeText(path, JSON.stringify({ app: 'mobiledaw', kind: 'mixer', name, vol: num(t.vol, 1), pan: num(t.pan, 0), send: (t.send || [0, 0]).map((v) => num(v, 0)),
-    devices: t.devices.map((d) => ({ type: d.type, params: d.params.slice(), bypass: !!d.bypass, ...(Number.isFinite(d.mix) ? { mix: d.mix } : {}), ...(Number.isFinite(d.gain) ? { gain: d.gain } : {}) })) }));
+    devices: t.devices.map((d) => (d.missing && d.missing.orig ? JSON.parse(JSON.stringify(d.missing.orig)) : { type: d.type, params: d.params.slice(), bypass: !!d.bypass, ...(Number.isFinite(d.mix) ? { mix: d.mix } : {}), ...(Number.isFinite(d.gain) ? { gain: d.gain } : {}) })) }));   // a placeholder saves the module it stands for
   log('info', 'preset mixer disimpan', path);
   return { path };
 }
@@ -78,7 +78,7 @@ function applyPresetFileInner(path, i) {
       (o.send || []).slice(0, 2).forEach((v, k) => P.setSend(i, k, Math.min(1, Math.max(0, num(v, 0)))));
       while (t.devices.length) P.removeDevice(i, t.devices.length - 1);
       for (const d of (o.devices || []).slice(0, 16)) {
-        const def = DEVICES[d.type]; if (!def) continue;
+        const def = DEVICES[d.type]; if (!def) { P.insertDeviceCopies(i, t.devices.length, [d]); continue; }   // a module this version lacks: placeholder with its data
         P.addDevice(i, d.type);
         const di = t.devices.length - 1;
         def.params.forEach((q, k) => P.setDeviceParam(i, di, k, Math.min(q.max, Math.max(q.min, num(d.params && d.params[k], q.def)))));
@@ -135,7 +135,7 @@ export function applyRackPreset(path, i, mode = 'replace', at = 0) {
     r = mode === 'replace' ? P.replaceChain(i, o.devices || []) : P.insertDeviceCopies(i, at, o.devices || []);
   });
   P.emit('devices');
-  const miss = r.skipped.length ? ` ${r.skipped.length} modul dilewati (tidak dikenal / rantai penuh): ${r.skipped.join(', ')}.` : '';
+  const miss = (r.skipped.length ? ` ${r.skipped.length} modul dilewati (rantai penuh): ${r.skipped.join(', ')}.` : '') + (r.held && r.held.length ? ` ${r.held.length} modul tidak ada di versi ini, disimpan sebagai placeholder (datanya utuh): ${r.held.join(', ')}.` : '');
   return { msg: `Rack preset "${o.name}": ${r.added} modul${mode === 'replace' ? ' (rantai diganti)' : ' disisipkan'}.${miss}` };
 }
 
