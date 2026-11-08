@@ -29,7 +29,7 @@ const hd = async (i) => { const q = await info(i); return { ...q, nw: Math.max(7
 await ev(async () => { const P = await import('./js/project.js'); P.state.tracks[0].mon = undefined; });
 let a = await hd(0);
 const full = () => ev(async () => (await import('./js/timeline.js')).headIsFull());
-ok(await full() && a.head >= 200 && a.h === 78, `start: FULL column (${a.head} px), normal row`);
+ok(await full() && a.head >= 200 && a.h === 60, `start: FULL column (${a.head} px), normal row`);
 
 // ---- the colour column holds only the name; every control is in the wide mixer column of the 78 px row (right-aligned)
 const pr = await ev(async () => { const T = await import('./js/timeline.js'), P = await import('./js/project.js'); return { n: P.state.returns.length }; });
@@ -40,7 +40,7 @@ ok(await ev(async () => { const P = await import('./js/project.js'), t = P.state
 await ev(async () => (await import('./js/history.js')).undoOp()); await wait(200);
 ok(await ev(async () => { const P = await import('./js/project.js'); return P.monMode(P.state.tracks[0]); }) === 'off', 'one undo returns Monitor to the previous mode');
 await ev(async () => (await import('./js/project.js')).setMonitor(0, 'in'));
-await tapH(0, a.nw + 4 + 30, 56 + 7); await wait(350);   // the Output field: 4th row, under Send A / B, whole width
+{ const o = await ev(async () => { const T = await import('./js/timeline.js'), L = T.headerLayout(0), x0 = window.__el().getBoundingClientRect().width - T.headWidth(); return { x: L.out.x - x0 + L.out.w / 2, y: L.out.y - L.y + L.out.h / 2 }; }); await tapH(0, o.x, o.y); } await wait(350);   // the Output field: third row, after Send A / B
 let m = await menuTexts();
 ok(m.includes('Master'), 'Output field (mixer column) opens the routing menu (' + m.slice(0, 3).join(' | ') + ')');
 await closeAll(); await wait(200);
@@ -67,7 +67,7 @@ await tapH(0, a.nw + 4 + 24 + 3 + 10, 2 + 8); await wait(150);
 // ---- tap on the header body: FULL <-> COMPACT
 await tapH(0, 60, 9); await wait(450);
 a = await hd(0);
-ok(!(await full()) && a.head < 130 && a.h === 78, `tap on the header body switches to COMPACT: name block only, the timeline is wider (${a.head} px)`);
+ok(!(await full()) && a.head < 130 && a.h === 60, `tap on the header body switches to COMPACT: name block only, the timeline is wider (${a.head} px)`);
 await tapH(0, 40, 9); await wait(450);
 a = await hd(0);
 ok(await full() && a.head >= 150, `tap again: back to FULL (${a.head} px)`);
@@ -98,9 +98,9 @@ ok(await ev(async () => { const T = await import('./js/timeline.js'); T.setHeadW
 
 // ---- default control size: a taller row keeps finger-sized controls (no giant sliders); the Output field stays at the end of the third row
 {
-  await ev(async () => { const P = await import('./js/project.js'); P.state.tracks[0].hx = 2.4; P.state.tracks[0].fold = false; P.emit('all'); }); await wait(500);
+  await ev(async () => { const P = await import('./js/project.js'); P.state.tracks[0].hx = 3; P.state.tracks[0].fold = false; P.emit('all'); }); await wait(500);
   const q = await hd(0); ok(q.h > 160, `row 0 is tall (${q.h.toFixed(0)} px)`);
-  await tapH(0, q.nw + 4 + 30, 56 + 7); await wait(350);
+  { const o = await ev(async () => { const T = await import('./js/timeline.js'), L = T.headerLayout(0), x0 = window.__el().getBoundingClientRect().width - T.headWidth(); return { x: L.out.x - x0 + L.out.w / 2, y: L.out.y - L.y + L.out.h / 2 }; }); await tapH(0, o.x, o.y); } await wait(350);
   const mm = await menuTexts(); ok(mm.includes('Master'), 'tall row: controls keep Live\'s small fixed size (Output cell in the third row)');
   await closeAll(); await wait(200);
   await ev(async () => { const P = await import('./js/project.js'); delete P.state.tracks[0].hx; P.emit('all'); }); await wait(300);
@@ -109,7 +109,7 @@ ok(await ev(async () => { const T = await import('./js/timeline.js'); T.setHeadW
 // ---- the default row holds all four header rows with their borders clear of the row separator (2 px at the bottom)
 {
   const L0 = await ev(async () => { const T = await import('./js/timeline.js'); return T.headerLayout(0); });
-  ok(L0.out && L0.out.y + L0.out.h <= L0.y + L0.h - 3 && L0.sa && L0.out.y > L0.sa.y, `default row: Master under Send A / B, its border fully visible (ends ${L0.out.y + L0.out.h - L0.y} of ${L0.h} px)`);
+  ok(L0.out && L0.out.y + L0.out.h <= L0.y + L0.h - 3 && L0.sa && L0.out.y === L0.sa.y && L0.out.x > L0.sb.x, `default row: Master after Send A / B on the third row, its border fully visible (ends ${L0.out.y + L0.out.h - L0.y} of ${L0.h} px)`);
   ok([L0.mute, L0.solo, L0.vol, L0.pan, L0.sa, L0.sb, L0.out].every((q) => q && q.h === 15), 'all header controls (buttons, faders, sends, output) are the same height');
 }
 

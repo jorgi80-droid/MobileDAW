@@ -26,7 +26,7 @@ const { state, PPQ, SWATCHES } = P;
 let HEAD = 140;                                                 // header width: prefs.headW (drag the header's left edge), else chosen from the canvas width
 const RULER = 34, MROW = 12, BOT = 19, HANDLE = 18, TH = 20, METW = 9;   // top ruler (locators + beats) / bottom time ruler / header title bar / meter strip
 const FOLD_H = 24, MIN_ROW = 52, ADD_H = 44, XROW_H = 26;                // folded row (title bar only) / smallest open row (title + buttons) / "+" row / Master + FX rows (thin, as Live's return / main rows)
-export const view = { x0: 0, ppt: 0.06, y0: 0, rowH: 78 };   // 78: the four header rows (buttons, volume + pan, sends, output) fit with their borders
+export const view = { x0: 0, ppt: 0.06, y0: 0, rowH: 60 };   // 60: the three header rows (buttons, volume + pan, sends + output) fit with their borders
 let CW = 0;                                                    // width of the clip area = canvas width - HEAD
 const sn = (n, f) => ({ 0: n, get 1() { return f(); } });   // snap values are read live: BAR / BEAT change with the time signature
 const SNAPS = [sn('Auto', () => -1), sn('Bar', () => BAR), sn('1 Beat', () => BEAT), sn('1/2 Beat', () => BEAT / 2), sn('1/4 Beat', () => BEAT / 4), sn('Triplet', () => BEAT / 3), sn('Off', () => 0)];
@@ -130,7 +130,7 @@ function hdr(i) {
   }
   // Mixer column like Live's: small fixed controls, ALL the same height (15 px, text 10 px), never growing with the row. Row 1 = activator / S / arm /
   // automation, row 2 = volume + pan, row 3 = Send A | Send B, row 4 = output (Master) across the whole width, right under the sends.
-  // A shorter row drops row 4, then 3, then 2.
+  // A shorter row drops row 4, then 3, then 2. When the column is wide enough the sends and the output share row 3 (no row 4).
   const sends = state.returns.length >= 2, gap = 3, fs = 10, CH = 15; r.fs = fs;
   const bw = Math.max(20, Math.min(24, Math.floor((R - L - gp * 3) / 4)));
   const ys = [0, 1, 2, 3].map((k) => y + 2 + k * (CH + gap)), fits = (k) => h >= ys[k] - y + CH + 3;   // + the 2 px row separator: a control never touches it
@@ -140,8 +140,13 @@ function hdr(i) {
     if (R - bw >= L + (bw + gp) * 3 - 2) r.aut = { x: R - bw, y: ys[0], w: bw, h: CH, fs };
     let k = 1;
     if (fits(k)) { const vw = Math.round((R - L - gp) * 0.6); r.vol = { x: L, y: ys[k], w: vw, h: CH, fs }; r.pan = { x: L + vw + gp, y: ys[k], w: R - L - vw - gp, h: CH, fs }; k++; }
-    if (sends && r.vol && fits(k)) { const hw = Math.round((R - L - gp) / 2); r.sa = { x: L, y: ys[k], w: hw, h: CH, fs }; r.sb = { x: L + hw + gp, y: ys[k], w: R - L - hw - gp, h: CH, fs }; k++; }
-    if (r.vol && fits(k)) r.out = { x: L, y: ys[k], w: R - L, h: CH, fs };
+    if (sends && r.vol && fits(k) && R - L >= 140) {                  // wide enough: Send A | Send B | output on ONE row - three rows hold every control
+      const sw = Math.round((R - L - gp * 2) * 0.28); r.sa = { x: L, y: ys[k], w: sw, h: CH, fs }; r.sb = { x: L + sw + gp, y: ys[k], w: sw, h: CH, fs };
+      r.out = { x: L + (sw + gp) * 2, y: ys[k], w: R - L - (sw + gp) * 2, h: CH, fs }; k++;
+    } else {
+      if (sends && r.vol && fits(k)) { const hw = Math.round((R - L - gp) / 2); r.sa = { x: L, y: ys[k], w: hw, h: CH, fs }; r.sb = { x: L + hw + gp, y: ys[k], w: R - L - hw - gp, h: CH, fs }; k++; }
+      if (r.vol && fits(k)) r.out = { x: L, y: ys[k], w: R - L, h: CH, fs };
+    }
   }
   return r;
 }
