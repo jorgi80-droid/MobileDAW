@@ -25,6 +25,8 @@ import { prefs } from './prefs.js';
 const calm = () => prefs.reduceMotion || (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
 const glide = (cur, tgt, up = 0.5, down = 0.14) => (calm() ? tgt : cur + (tgt - cur) * (tgt > cur ? up : down));
 
+// tn: the name a section gets when the rack is too small for the whole panel and it is shown as tabs (devices.js tabify)
+const tn = (el, n) => { el.dataset.tn = n; return el; };
 const SR = 48000, F0 = 20, F1 = 20000;
 const lx = (f, w) => (Math.log(f / F0) / Math.log(F1 / F0)) * w, xl = (x, w) => F0 * Math.pow(F1 / F0, Math.max(0, Math.min(1, x / w)));
 const mag = (b, f) => { const w = 2 * Math.PI * f / SR, c1 = Math.cos(w), c2 = Math.cos(2 * w), s1 = Math.sin(w), s2 = Math.sin(2 * w);
@@ -876,7 +878,7 @@ VI[13] = (k) => {
   const tb = lvTabs([{ label: 'LFO' }, { label: 'Mod' }], 0, (j) => page.replaceChildren(tabs[j]()), { cls: 'lk-tabs' }); page.replaceChildren(tabs[0]());
   const glob = k.row(k.col(k.TL('Mode', k.S(50, { w: 80 })), k.TL('Voices', k.S(51, { w: 80 })), k.TL('Drift', k.N(52, { w: 80 })), k.T(53, 'Legato', { w: 80 }), k.TL('Glide', k.N(54, { w: 80, fill: false }))), k.sep(),
     k.col(k.K(55), k.TL('Vel > Vol', k.N(56, { w: 80 })), k.TL('Transpose', k.N(57, { w: 80, fill: false })), k.TL('PB Range', k.N(58, { w: 80 }))));
-  return k.row(osc, k.sep(), filt, k.sep(), envs, k.sep(), k.col(tb, page), k.sep(), glob);
+  return k.row(tn(osc, 'Osc'), k.sep(), tn(filt, 'Filter'), k.sep(), tn(envs, 'Env'), k.sep(), tn(k.col(tb, page), 'LFO / Mod'), k.sep(), tn(glob, 'Global'));
 };
 // Operator: operator rows D / C / B / A (Coarse + Fine, or Freq + Multi when Fixed; Level; coloured switch = operator on, tap a row = show it
 // on the right), dark display with the selected operator's envelope (drag the Peak / Sustain points) and oscillator, algorithm picture,
@@ -897,7 +899,7 @@ VI[14] = (k) => {
   });
   const rowsEls = rows;
   function fillRight() {
-    const o = st.sel, b = o * 16, W = 210, H = 76, X0 = 8;
+    const o = st.sel, b = o * 16, W = 250, H = 76, X0 = 8;
     const env = k.D(W, H, (g, w, hh) => {
       const db = (x) => hh - 6 - Math.max(0, (k.get(x) + 60) / 60) * (hh - 12), a = Math.sqrt(k.get(b + 10)), d = Math.sqrt(k.get(b + 11)), r = Math.sqrt(k.get(b + 13)), hold = Math.max(8, (a + d + r) * 0.4), K = (w - 2 * X0) / (a + d + hold + r + 1e-9);
       const pts = [[X0, db(b + 14)], [X0 + a * K, db(b + 15)], [X0 + (a + d) * K, db(b + 12)], [X0 + (a + d + hold) * K, db(b + 12)], [X0 + (a + d + hold + r) * K, hh - 6]];
@@ -905,8 +907,8 @@ VI[14] = (k) => {
     }, { onDown: (x) => ({ which: x < W * 0.3 ? b + 15 : b + 12, v: k.get(x < W * 0.3 ? b + 15 : b + 12) }), onMove: (x, y, dx, dy, s) => k.set(s.which, Math.max(-60, Math.min(0, s.v - dy * 0.4))) });
     const T = (n, j, o2 = {}) => k.TL(n, k.NT(j, { w: o2.w || 58, cls: 'or' }));
     right.replaceChildren(k.dk(env, h('div', { class: 'lk-opeh', style: `--opc:${OPC[o]}` }, h('i', {}), 'Envelope ' + 'ABCD'[o]),
-      k.row(T('Attack', b + 10), T('Decay', b + 11), T('Sustain', b + 12)), k.row(T('Initial', b + 14), T('Peak', b + 15), T('Release', b + 13)),
-      k.row(k.TL('Loop', k.S(64 + o, { w: 70, cls: 'dk or' })), k.TL('Wave', k.S(b + 7, { w: 70, cls: 'dk or' }))), k.row(T('Feedback', b + 8), T('Vel > Lvl', b + 9))));
+      k.row(T('Attack', b + 10), T('Decay', b + 11), T('Sustain', b + 12), T('Feedback', b + 8)), k.row(T('Initial', b + 14), T('Peak', b + 15), T('Release', b + 13), T('Vel > Lvl', b + 9)),
+      k.row(k.TL('Loop', k.S(64 + o, { w: 118, cls: 'dk or' })), k.TL('Wave', k.S(b + 7, { w: 118, cls: 'dk or' })))));   // three rows of four: the envelope fits the rack height
   }
   fillRight();
   const algo = k.D(96, 72, (g, w, hh) => {
@@ -921,7 +923,7 @@ VI[14] = (k) => {
   const glob = k.col(k.row(k.col(h('div', { class: 'lk-st' }, 'Algorithm'), algo), k.col(k.T(69, 'Filter'), k.CH(70, ['Low', 'High', 'Band'], { v: true }))),
     k.row(k.K(71, { n: 'Freq' }), k.K(72, { n: 'Res' }), k.K(73, { n: 'Env' }), k.K(74, { n: 'Attack' }), k.K(75, { n: 'Decay' })));
   const g2 = k.col(k.row(k.K(77), k.K(78), k.K(79)), k.row(k.K(76), k.K(81)), k.row(k.TL('Transpose', k.N(80, { w: 60, fill: false })), k.TL('PB Range', k.N(82, { w: 56 })), k.TL('Voices', k.N(83, { w: 50 }))));
-  return k.row(h('div', { class: 'lk-ops' }, ...rows), right, k.sep(), glob, k.sep(), g2);
+  return k.row(tn(h('div', { class: 'lk-ops' }, ...rows), 'Operators'), tn(right, 'Envelope'), k.sep(), tn(glob, 'Filter'), k.sep(), tn(g2, 'Global'));
 };
 // Analog: section rows (Osc1 / Noise / Osc2 left, Fil1 / Fil2 / Amp1 / Amp2 / LFO1 / LFO2 right, Global); tapping a row shows its details in
 // the dark display between them (Live: the display follows the selected section): Slope LIN / EXP, Legato, Free, the section's envelope
@@ -960,7 +962,7 @@ VI[15] = (k) => {
     disp.replaceChildren(k.dk(head, body));
   }
   fill();
-  return k.row(h('div', { class: 'lk-ancol' }, osc(0), noise, osc(1)), disp, h('div', { class: 'lk-ancol' }, fil(0), fil(1), k.row(amp(0), amp(1))), h('div', { class: 'lk-ancol' }, lfo(0), lfo(1), glob));
+  return k.row(tn(h('div', { class: 'lk-ancol' }, osc(0), noise, osc(1)), 'Osc'), tn(disp, 'Display'), tn(h('div', { class: 'lk-ancol' }, fil(0), fil(1), k.row(amp(0), amp(1))), 'Filter / Amp'), tn(h('div', { class: 'lk-ancol' }, lfo(0), lfo(1), glob), 'LFO / Global'));
 };
 // Poli: oscilloscope display (XMod, PW, Sub Wave, Color, RM Source), mixer (Saw, Pulse, Sub, Noise | Ring, Freq), LFO (shape, Sync, R, Rate,
 // Fade-In), filter (Sub boost, Loop, HPF, LPF, Res, envelope), modulation grid (Modulators / MIDI tabs), Chorus, Random Pan, Volume, PBend + All,
@@ -990,7 +992,7 @@ VI[16] = (k) => {
   const glob = k.col(k.row(k.TL('Chorus', k.CH(58, ['-', 'A', 'B', 'C'], { cls: 'g2 sm' })), k.TL('Random Pan', k.N(59, { w: 70 })), k.K(60)),
     k.row(k.col(h('span', { class: 'lk-lb' }, 'PBend'), k.N(61, { w: 62 }), k.T(62, 'All', { w: 62 })), k.col(h('span', { class: 'lk-lb' }, 'Glide'), k.S(63, { w: 70 }), k.N(64, { w: 70, fill: false })), k.col(h('span', { class: 'lk-lb' }, 'Voices/Spread'), k.S(65, { w: 76 }), k.N(66, { w: 76, fill: false }))),
     k.row(k.K(67, { n: 'Attack' }), k.K(68, { n: 'Decay' }), k.K(69, { n: 'Sustain' }), k.K(70, { n: 'Release' })));
-  return k.row(osc, k.sep(), lfo, k.sep(), mods, k.sep(), glob);
+  return k.row(tn(osc, 'Osc'), k.sep(), tn(lfo, 'LFO'), k.sep(), tn(mods, 'Mod'), k.sep(), tn(glob, 'Global'));
 };
 // Meld: Engines (A / B oscillator with picture, prev / next, oct / sd / ct; Shape / Tone), dark centre with A / B / Settings tabs (Envelopes or
 // LFOs of the engine; Settings = modulation grid, Copy to B, PB Range), Filters (type, Freq, Q, third control), Mix (pan, Tone, level fader),
@@ -1041,7 +1043,7 @@ VI[17] = (k) => {
     return k.col(c, k.NT(b, { w: 54 })); };
   const mix = (e) => k.row(k.col(k.N(B(e) + O.pan, { w: 40, fill: false }), k.K(B(e) + O.tilt, { n: 'Tone' })), fader(e));
   const glob = k.col(k.T(MELD_G + 6, 'Limit', { w: 70 }), k.S(MELD_G, { w: 70 }), k.N(MELD_G + 1, { w: 70 }), k.TL('Spread', k.N(MELD_G + 2, { w: 70 })), k.TL('Stack', k.S(MELD_G + 3, { w: 70 })), k.TL('Drive', k.N(MELD_G + 4, { w: 70 })), k.K(MELD_G + 5));
-  return k.row(k.sec('Engines', k.row(engRow(0), macros(0)), k.row(engRow(1), macros(1))), centre, k.sec('Filters', filt(0), filt(1)), k.sec('Mix', mix(0), mix(1)), k.sep(), glob);
+  return k.row(k.sec('Engines', k.row(engRow(0), macros(0)), k.row(engRow(1), macros(1))), tn(centre, 'Mod'), k.sec('Filters', filt(0), filt(1)), k.sec('Mix', mix(0), mix(1)), k.sep(), tn(glob, 'Global'));
 };
 // Simpler: Sample tab (waveform with start / end / loop / slice markers - drag them; Classic / 1-Shot / Slice and their controls, Warp) and
 // Controls tab (filter display, LFO, pitch envelope, amplitude / pitch, then the Filter / LFO strip and Fade / Transp / Vol < Vel / Volume)
@@ -1051,7 +1053,7 @@ VI[18] = (k) => {
   const Z = () => (t.inst.zones && t.inst.zones[0]) || P.newZone(), zset = (f, v, quiet = true) => P.setZoneField(i, 0, f, v, quiet);
   const pick = () => BR.openBrowser('file', { track: i, zone: 0 });
   const zNum = (n, get, set, o = {}) => k.TL(n, lvNum({ n, min: o.min ?? 0, max: o.max ?? 1, def: o.def ?? 0 }, get, (v) => { set(v); wave.paint(); }, (pp, v) => (o.fmt ? o.fmt(v) : (v * 100).toFixed(1) + ' %'), { w: 62, cls: 'lk-nt or' }));
-  const W = 884, H = 150, X = (f) => 6 + f * (W - 12), Fx = (x) => Math.max(0, Math.min(1, (x - 6) / (W - 12)));
+  const W = 884, H = 134, X = (f) => 6 + f * (W - 12), Fx = (x) => Math.max(0, Math.min(1, (x - 6) / (W - 12)));
   const slicesUI = () => {                                                    // the same rules as the engine (transients approximated on the peaks)
     const z = Z(), s = z.sample; if (!s) return []; const a = Math.min(z.s0, z.s1), b = Math.max(z.s0, z.s1), by = Math.round(k.get(9)), out = [a];
     if (by === 0) { const pk = s.peaks || [], n = pk.length, thr = 1.5 + (1 - k.get(10)) * 6; let prev = 1e-6, last = -1; for (let j = Math.floor(a * n); j < Math.floor(b * n); j++) { const e = (pk[j] || 0) ** 2; if (e > prev * thr && e > 1e-5 && (last < 0 || (j - last) / n * (s.duration || 1) > 0.05)) { out.push(j / n); last = j; } prev = prev * 0.6 + e * 0.4; if (out.length >= 64) break; } }
@@ -1249,7 +1251,7 @@ VI[26] = (k) => h('div', { class: 'lk-row lk-phys lk-tens' },
 // Collision: Mallet | Noise | Resonator (type, mode display, Decay / Material) with Bright / Inharm / Ratio / Volume below
 VI[27] = (k) => {
   const g = k.get;
-  const modes = k.D(250, 96, (c, w, hh) => {
+  const modes = k.D(250, 82, (c, w, hh) => {
     const t = Math.round(g(15)), r = g(20), inh = g(19); c.fillStyle = DISPC.grid; c.fillRect(0, hh - 14, w, 1);
     for (let m = 1; m <= 12; m++) {
       let x; switch (t) { case 0: x = ((2 * m + 1) / 3) ** 2; break; case 1: x = [1, 3.9, 9.2, 13.4, 16.6, 21, 25.4, 30, 35.1, 40.3, 46, 52][m - 1]; break; case 3: x = [1, 1.59, 2.14, 2.3, 2.65, 2.92, 3.16, 3.5, 3.6, 4.06, 4.15, 4.6][m - 1] * (1 + (r - 1) * 0.15 * ((m % 3) / 2)); break;
@@ -1364,12 +1366,25 @@ V[6] = (k) => {
     for (const [n, f] of [[1, k.get(5)], [2, k.get(4)]]) { const x = lx(f, w); g.fillStyle = '#ffad32'; g.beginPath(); g.arc(x, hh / 2, 6, 0, 7); g.fill(); label(g, String(n), x, hh / 2 + 3, '#1b1b1d', 9, 'center'); } },
     { onDown: (x) => ({ hp: Math.abs(x - lx(k.get(5), 240)) < Math.abs(x - lx(k.get(4), 240)) }), onMove: (x, y, dx, dy, s) => { if (s.hp) k.set(5, Math.max(20, Math.min(2000, xl(x, 240)))); else k.set(4, Math.max(200, Math.min(20000, xl(x, 240)))); } });
   const tm = (j, dj) => k.swap(8, () => k.K(dj, { n: '' }), () => k.K(j, { n: '' }));
+  // Modulation: what the engine does (fx2 Echo) - the delay time swings by a sine of Mod Rate, +-Mod Amt x 4 ms; drag: across = rate, up / down = amount
+  const qgrid = (g, w, hh) => { g.fillStyle = DISPC.grid; for (let q = 1; q < 4; q++) { g.fillRect(Math.round(w * q / 4), 0, 1, hh); g.fillRect(0, Math.round(hh * q / 4), w, 1); } };
+  const modD = k.D(300, 150, (g, w, hh) => { qgrid(g, w, hh); const sec = 2, amt = k.get(16), rate = k.get(15), pts = [];
+    for (let x = 0; x <= w; x++) pts.push([x, hh / 2 - Math.sin(2 * Math.PI * rate * x / w * sec) * amt * (hh / 2 - 10)]);
+    g.strokeStyle = 'rgba(255,173,50,.55)'; g.setLineDash([3, 3]); g.beginPath(); g.moveTo(0, hh / 2); g.lineTo(w, hh / 2); g.stroke(); g.setLineDash([]);
+    lvPath(g, pts, DISPC.bl, hh / 2, 1.6); label(g, '+' + (amt * 4).toFixed(1) + ' ms', 4, 12, DISPC.ink, 9); label(g, '2 s', w - 4, hh - 4, DISPC.ink, 9, 'right'); },
+    { onDown: () => ({ r: k.get(15), a: k.get(16) }), onMove: (x, y, dx, dy, s) => { k.set(15, Math.max(0.1, Math.min(10, s.r * Math.pow(2, dx / 80)))); k.set(16, Math.max(0, Math.min(1, s.a - dy / 120))); } });
+  // Character: the feedback path's saturation curve, tanh(x * (1 + 3 Drive)) / tanh(1 + 3 Drive) as in the engine; drag up / down = Drive
+  const drvD = k.D(300, 150, (g, w, hh) => { qgrid(g, w, hh); const dr = 1 + k.get(17) * 3, dn = 1 / Math.tanh(dr), pts = [], M = 8;
+    g.strokeStyle = 'rgba(255,255,255,.18)'; g.beginPath(); g.moveTo(M, hh - M); g.lineTo(w - M, M); g.stroke();
+    for (let x = 0; x <= w - 2 * M; x++) { const v = x / (w - 2 * M) * 2 - 1, y = k.get(17) > 0 ? Math.tanh(v * dr) * dn : v; pts.push([M + x, hh / 2 - y * (hh / 2 - M)]); }
+    lvPath(g, pts, '#ffad32', hh / 2, 1.8); label(g, 'in', w - M, hh / 2 - 4, DISPC.ink, 9, 'right'); label(g, 'out', M + 2, 12, DISPC.ink, 9); },
+    { onDown: () => ({ v: k.get(17) }), onMove: (x, y, dx, dy, s) => k.set(17, Math.max(0, Math.min(1, s.v - dy / 120))) });
   const tabs = [
     () => k.row(k.col(k.row(k.TL('Left', tm(0, 9)), h('div', { class: 'lk-mid' }, k.T(7, '⇄', { cls: 'link', w: 24 })), k.TL('Right', tm(6, 10))), k.T(8, 'Sync', { w: 120 }), h('span', { class: 'lk-grow' }), k.row(k.K(13), k.K(1))),
       k.dk(tunnel, filt, k.row(h('span', { class: 'lk-lb' }, 'Filter HP'), k.NT(5, { w: 58 }), h('span', { class: 'lk-lb' }, 'LP'), k.NT(4, { w: 64 }))),
       k.col(k.row(k.K(11), k.K(12)), k.K(14), k.CH(3, ['Stereo', 'Ping Pong'], { v: true }), k.K(2))),
-    () => k.row(k.K(15, { n: 'Rate', big: true }), k.K(16, { n: 'Amount', big: true })),
-    () => k.row(k.K(17, { n: 'Drive', big: true }), k.K(14), k.K(2)),
+    () => k.row(k.dk(modD, k.row(h('span', { class: 'lk-lb' }, 'Delay time ± ms'), h('span', { class: 'lk-grow' }), k.NT(15, { w: 64 }), k.NT(16, { w: 56 }))), k.col(k.K(15, { n: 'Rate', big: true }), k.K(16, { n: 'Amount', big: true }))),
+    () => k.row(k.dk(drvD, k.row(h('span', { class: 'lk-lb' }, 'Feedback saturation'), h('span', { class: 'lk-grow' }), k.NT(17, { w: 56 }))), k.col(k.K(17, { n: 'Drive', big: true }), k.row(k.K(14), k.K(2)))),
   ];
   const t = lvTabs([{ label: 'Time' }, { label: 'Modulation' }, { label: 'Character' }], 0, (j) => page.replaceChildren(tabs[j]()), { cls: 'lk-tabs c' });
   page.replaceChildren(tabs[0]());

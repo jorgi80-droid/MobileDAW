@@ -17,6 +17,7 @@ import { kitView, irackView, instKitView, padChainView } from './fxkit.js';
 import { prefs } from './prefs.js';
 import * as DP from './drumpad.js';
 import { reorderGrip } from './reorder.js';
+import { lvTabs } from './liveui.js';
 const { state } = P;
 const VIEWS = { ...FXVIEW, 16: minimetersView };   // MiniMeters has its own view module
 
@@ -417,6 +418,81 @@ function flip(scroll, before) {
 // Live 12 panels (effects, Live instruments) are laid out at one size; in the device panel they are zoomed so they use its height:
 // never cut at the bottom (zoom down to 0.7), and up to 1.15x when the panel is taller than the device (FL Studio Mobile instrument cards
 // adapt on their own). Pointer positions on displays are normalised by the drawn size (liveui lvDrag), so zoom is safe for dragging.
+// A panel larger than the rack (taller than the Device panel or wider than the screen) shows its sections under Live-style tabs instead of
+// shrinking: every control keeps the common size, related controls stay together (Oscillators / Filter / Envelopes / LFO / Global ...), and
+// the floating window (⧉) still shows the whole panel at once. Sections = the panel's top-level blocks (rows of a column panel, columns of a
+// row panel); consecutive blocks share a tab while they fit the width. The tab is remembered per device.
+const TAB_MEM = new Map();
+// a block's name for its tab: an explicit data-tn (fxkit tags the big sections: Osc / Filter / Env / LFO / Global), else its own heading
+const HEADS = ':scope > .lk-st, :scope > .lk-shead, :scope > .lv-st, :scope > .lk-dkh, :scope > h5';
+function blockName(el) {
+  if (el.dataset && el.dataset.tn) return el.dataset.tn;
+  const t = el.querySelector(HEADS) || el.querySelector('.lk-st, .lk-elh, .lv-st, .lk-shead, .lk-dkh, h5'), s = t ? t.textContent.trim().replace(/\s+/g, ' ') : '';
+  return s && s.length <= 14 ? s : '';
+}
+function hoistTabs(card, lk, bar) {
+  const head = card.querySelector(':scope > h4'); if (!head || !bar) return false;
+  const name = head.querySelector('.dv-name') || [...head.children].find((c) => c.tagName === 'SPAN' && c.textContent.trim()), used = [...head.children].reduce((a, c) => a + (c === name ? 0 : c.offsetWidth + 4), 0);
+  const need = [...bar.children].reduce((a, c) => a + c.offsetWidth + 2, 0) + 12;   // the buttons' own width (the strip itself is a full-width flex box)
+  if (head.clientWidth - used - 70 < need) return false;
+  bar.classList.add('lk-htabs'); if (name) name.after(bar); else head.prepend(bar);
+  lk.dataset.htabs = '1'; return true;
+}
+function tabify(lk, card, maxW, maxH) {
+  if (lk.querySelector(':scope > .lv-tabs') || lk.dataset.htabs || lk.classList.contains('lk-wt')) return;   // panels with their own tabs (Wavetable, Hybrid Reverb ...)
+  // blocks: the panel's top-level children; a block taller than the rack that is itself a stack (column with 2+ parts) is split into its parts
+  // nothing may be lost: hidden parts (a swap's other face, registration spans) ride along hidden on the first page; a tall column is only opened up
+  // when every child is an element (no loose text) so its contents survive as blocks of their own
+  const keep = [], isSep = (c) => c.classList.contains('lk-sep'), gone = (c) => getComputedStyle(c).display === 'none';
+  const blocks = (list, depth) => list.flatMap((c) => { if (isSep(c)) return []; if (gone(c)) { keep.push(c); return []; }
+    const parts = [...c.children].filter((x) => !isSep(x) && !gone(x)), cs = getComputedStyle(c), col = cs.flexDirection === 'column' || cs.display === 'grid';
+    const loose = [...c.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim());
+    const atom = c._k != null || c.matches('.knob, .lv-btn, .lv-fld, .lv-disp, .lk-d, canvas, svg, .lv-tabs') || c.querySelector(':scope > .k-n, :scope > .k-v');   // a control is never taken apart
+    // a too-tall stack first tries to fold into two columns in its own box (operator rows, a settings column ...): it stays one group;
+    // a heading on top spans both columns. Only when that is still too tall is the stack opened up below.
+    if (!atom && !loose && c.offsetHeight > maxH && parts.length >= 3 && cs.flexDirection === 'column' && cs.display === 'flex') {
+      const hd0 = parts[0].matches('.lk-st, .lk-shead, .lv-st, .lk-dkh, h5') ? parts[0] : null;
+      c.style.display = 'grid'; c.style.gridTemplateColumns = 'repeat(2, auto)'; c.style.columnGap = '10px'; c.style.rowGap = cs.rowGap; c.style.alignItems = 'center'; c.style.alignContent = 'space-evenly'; c.style.justifyItems = 'center';
+      if (hd0) hd0.style.gridColumn = '1 / -1';
+      if (c.offsetHeight <= maxH) return [c];
+      c.style.display = c.style.gridTemplateColumns = c.style.columnGap = c.style.rowGap = c.style.alignItems = c.style.alignContent = c.style.justifyItems = ''; if (hd0) hd0.style.gridColumn = '';
+    }
+    if (depth < 3 && !atom && c.offsetHeight > maxH && parts.length >= 2 && col && !loose) {
+      for (const x of c.children) if (!isSep(x) && gone(x)) keep.push(x);
+      const nm = blockName(c), hd = parts[0].matches('.lk-st, .lk-shead, .lv-st, .lk-dkh, h5') && !parts[0].querySelector('*') ? parts.shift() : null;   // the heading becomes the tab's name
+      if (hd) keep.push(Object.assign(hd, { hidden: true }));
+      if (nm) for (const x of parts) if (!x.dataset.tn) x.dataset.tn = nm;
+      return blocks(parts, depth + 1);
+    }
+    return [c]; });
+  const al = lk.style.alignItems; lk.style.alignItems = 'flex-start';   // measure every block at its own height, not stretched to the row's
+  const kids = blocks([...lk.children], 0);
+  if (kids.length < 2) { lk.style.alignItems = al; return; }
+  const vertical = getComputedStyle(lk).flexDirection === 'column' || lk.classList.contains('lk-col');
+  const groups = []; let cur = [], w = 0;
+  for (const c of kids) {
+    const cw = c.offsetWidth;
+    if (cur.length && (vertical || w + cw > maxW)) { groups.push(cur); cur = []; w = 0; }
+    cur.push(c); w += cw + 6;
+  }
+  if (cur.length) groups.push(cur);
+  const gw = (g) => g.reduce((a, c) => a + c.offsetWidth + 6, 0);
+  if (!vertical && groups.length >= 2 && gw(groups[groups.length - 1]) < 150 && groups[groups.length - 1].every((c) => c.offsetHeight <= maxH)) groups[groups.length - 2].push(...groups.pop());   // a lone small block (Dry, a level knob) stays with its neighbours
+  lk.style.alignItems = al;
+  if (groups.length < 2) {                                            // everything fits side by side once a tall stack is opened up: one row, no tabs
+    if (kids.length === [...lk.children].filter((c) => !isSep(c) && !gone(c)).length) return;
+    const pg = h('div', { class: 'lk-row lk-tabpg' }, ...kids, ...keep); lk.replaceChildren(pg); lk.classList.add('lk-tabbed'); lk.dataset.tabbed = '1'; return;
+  }
+  const key = card.dataset.k || card.querySelector('h4')?.textContent || '', pages = groups.map((g) => { const pg = h('div', { class: 'lk-row lk-tabpg' }); for (const c of g) pg.append(c); return pg; });
+  pages[0].append(...keep);
+  const names = groups.map((g, n) => { const u = [...new Set(g.map(blockName).filter(Boolean))]; return u.length ? u.slice(0, 2).join(' / ') + (u.length > 2 ? ' …' : '') : n ? 'More' + (groups.length > 2 ? ' ' + n : '') : 'Main'; });
+  // the panel keeps the width of its widest page, so the card does not jump when another tab is picked
+  let wmax = 0; for (const pg of pages) { lk.append(pg); wmax = Math.max(wmax, pg.offsetWidth); }
+  const sel = (j) => { TAB_MEM.set(key, j); pages.forEach((p, q) => { p.style.display = q === j ? '' : 'none'; }); };
+  const bar = lvTabs(names.map((n) => ({ label: n })), Math.min(TAB_MEM.get(key) || 0, pages.length - 1), (j) => { sel(j); requestAnimationFrame(fitKit); }, { cls: 'lk-autotabs' });
+  lk.replaceChildren(bar, ...pages); lk.classList.add('lk-tabbed'); lk.dataset.tabbed = '1'; for (const pg of pages) pg.style.minWidth = wmax + 'px'; hoistTabs(card, lk, bar);
+  sel(Math.min(TAB_MEM.get(key) || 0, pages.length - 1));
+}
 function fitKit() {
   if (!root) return;
   const sc = root.querySelector(':scope > .dev-scroll'); if (!sc) return;
@@ -428,7 +504,10 @@ function fitKit() {
   for (const card of cards) {
     const lk = card.querySelector(':scope > .lk, :scope > .lv-dev'); if (!lk) continue;
     lk.style.zoom = ''; lk.style.minHeight = ''; lk.classList.remove('lk-fill');
-    const head = card.querySelector(':scope > h4'), avail = avail0 - (head ? head.offsetHeight : 0) - 4, need = lk.offsetHeight;
+    const own = lk.querySelector(':scope > .lv-tabs'); if (own && !lk.dataset.htabs && hoistTabs(card, lk, own)) lk.style.minWidth = lk.offsetWidth + 'px';   // the card keeps its width on the other tabs
+    const head = card.querySelector(':scope > h4'), avail = avail0 - (head ? head.offsetHeight : 0) - 4, Z0 = Math.max(0.6, Math.min(1.2, avail / DESIGN_H));
+    if (!globalThis.__noTabify && avail > 80 && sc.clientWidth > 200 && (lk.offsetHeight * Z0 > avail + 2 || lk.offsetWidth * Z0 > sc.clientWidth - 24) && !lk.dataset.tabbed) tabify(lk, card, Math.max(260, (sc.clientWidth - 40) / Z0), avail / Z0);
+    const need = lk.offsetHeight;
     if (!(need > 0) || !(avail > 40)) continue;
     const Z = Math.max(0.6, Math.min(1.2, avail / DESIGN_H)), z = need * Z > avail ? Math.max(0.6, avail / need) : Z;
     if (Math.abs(z - 1) > 0.01) lk.style.zoom = z.toFixed(3);

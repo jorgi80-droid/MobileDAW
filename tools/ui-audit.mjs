@@ -1,5 +1,5 @@
-// UI audit of every effect and instrument card on the owner's phone (Oppo Find X8: 2760 x 1256 px, 6.59", 460 ppi; Chrome reports
-// devicePixelRatio 3, landscape layout 920 x 419 CSS px). For each module the card is opened in the Device panel (normal height) and checked:
+// UI audit of every effect and instrument card on the owner's phone (Oppo Find X8 at its standard resolution 2374 x 1080 px; Chrome lays a
+// 6.6" FHD+ screen out at devicePixelRatio 2.625 = 904 x 411 CSS px in landscape). For each module the card is opened in the Device panel (normal height) and checked:
 //   overflow  text wider than its own box (cut / ellipsis) or reaching outside the card
 //   overlap   two controls (knobs, buttons, fields, displays, labels) whose boxes intersect
 //   clipped   a control that sticks out of the card
@@ -13,10 +13,11 @@ const out = process.argv[2] || '/dev/stdout', which = process.argv[3] || 'all', 
 const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.png': 'image/png', '.svg': 'image/svg+xml', '.wasm': 'application/wasm' };
 const server = http.createServer((q, r) => { const f = path.join(root, decodeURIComponent(new URL(q.url, 'http://x').pathname)); if (!f.startsWith(root) || !fs.existsSync(f) || fs.statSync(f).isDirectory()) { r.writeHead(404); r.end(); return; } r.writeHead(200, { 'content-type': TYPES[path.extname(f)] || 'application/octet-stream' }); fs.createReadStream(f).pipe(r); }).listen(0, '127.0.0.1');
 await new Promise((ok) => server.once('listening', ok));
-const W = +(process.env.VW || 920), H = +(process.env.VH || 419);
+const W = +(process.env.VW || 904), H = +(process.env.VH || 411), DPR = +(process.env.DPR || 2.625);
 const b = await chromium.launch();
-const page = await (await b.newContext({ viewport: { width: W, height: H }, deviceScaleFactor: 3, isMobile: true, hasTouch: true })).newPage();
+const page = await (await b.newContext({ viewport: { width: W, height: H }, deviceScaleFactor: DPR, isMobile: true, hasTouch: true })).newPage();
 const errs = []; page.on('pageerror', (e) => errs.push(e.message));
+if (process.env.NOTAB) await page.addInitScript(() => { globalThis.__noTabify = true; });
 await page.addInitScript(() => localStorage.setItem('mobiledaw.prefs.v1', JSON.stringify({ folderAsked: true, haptics: false, floatPlugins: false })));
 await page.goto(`http://127.0.0.1:${server.address().port}/index.html`); await page.waitForFunction(() => window.__dawBooted, null, { timeout: 15000 }); await page.waitForTimeout(1200);
 const ev = (f, a) => page.evaluate(f, a);
@@ -40,7 +41,7 @@ for (const [kind, t] of jobs) {
     P.syncAll(); P.selectTrack(i); P.emit('all');
   }, [kind, t]);
   await page.waitForTimeout(450);
-  const r = await ev(([kind, t]) => {
+  const measure = ([kind, t]) => {
     const cards = [...document.querySelectorAll('.dev-scroll > .card')].filter((c) => c.querySelector(':scope > h4'));   // not the empty 'add effect' card
     const card = kind === 'inst' ? cards[0] : cards[cards.length - 1];
     if (!card) return { err: 'no card' };
@@ -74,12 +75,26 @@ for (const [kind, t] of jobs) {
     const title = head ? head.textContent.trim().replace(/Mix.*$/, '').slice(0, 24) : '?';
     const lk = card.querySelector('.lk, .lv-dev'), zoom = lk ? (parseFloat(lk.style.zoom) || 1) : 1, hBody = Math.round(bodyH), hNeed = lk ? Math.round(lk.offsetHeight) : 0;
     const lab = card.querySelector('.knob .kl, .knob .klabel, .lk-k > span, .knob > span'), labPx = lab ? Math.round(lab.getBoundingClientRect().height * 10) / 10 : 0;
-    return { zoom, hBody, hNeed, labPx, title, w: Math.round(cr.width), h: Math.round(cr.height), fonts: [...fonts.entries()].sort((a, b) => a[0] - b[0]), usedH: Math.round(used * 100), usedW: R.length ? Math.round((x1 - x0) / cr.width * 100) : 0, n: leaf.length, ...issues };
-  }, [kind, t]);
+    const ks = [...new Set([...card.querySelectorAll('*')].filter((e) => e._k != null).map((e) => e._k))].sort((a, b) => a - b), tabs = card.querySelectorAll('.lk-autotabs .lv-tab').length;
+    return { ks, tabs, zoom, hBody, hNeed, labPx, title, w: Math.round(cr.width), h: Math.round(cr.height), fonts: [...fonts.entries()].sort((a, b) => a[0] - b[0]), usedH: Math.round(used * 100), usedW: R.length ? Math.round((x1 - x0) / cr.width * 100) : 0, n: leaf.length, ...issues };
+  };
+  const r = await ev(measure, [kind, t]);
+  // every tab page of the panel (tabs in the title bar or in the panel) is measured too: the worst zoom and all issues count
+  const nTabs = await ev(([kind]) => { const cs = [...document.querySelectorAll('.dev-scroll > .card')].filter((c) => c.querySelector(':scope > h4')), card = kind === 'inst' ? cs[0] : cs[cs.length - 1]; return card ? card.querySelectorAll(':scope > h4 > .lk-htabs .lv-tab').length : 0; }, [kind]);
+  r.pages = [];
+  for (let j = 1; j < nTabs; j++) {
+    await ev(([kind, j]) => { const cs = [...document.querySelectorAll('.dev-scroll > .card')].filter((c) => c.querySelector(':scope > h4')), card = kind === 'inst' ? cs[0] : cs[cs.length - 1]; const b = card.querySelectorAll(':scope > h4 > .lk-htabs .lv-tab')[j]; b.click(); }, [kind, j]);
+    await page.waitForTimeout(300);
+    const q = await ev(measure, [kind, t]);
+    r.pages.push({ zoom: q.zoom, need: q.hNeed, n: q.n, usedH: q.usedH, fonts: q.fonts.map((f) => f[0]) });
+    for (const key of ['overflow', 'overlap', 'clipped']) r[key].push(...q[key].map((x) => 'tab' + (j + 1) + ': ' + x));
+    if (process.env.SHOTDIR) await page.screenshot({ path: path.join(process.env.SHOTDIR, `${kind}-${t}-p${j + 1}.png`) });
+  }
+  if (nTabs > 1) await ev(([kind]) => { const cs = [...document.querySelectorAll('.dev-scroll > .card')].filter((c) => c.querySelector(':scope > h4')), card = kind === 'inst' ? cs[0] : cs[cs.length - 1]; card.querySelectorAll(':scope > h4 > .lk-htabs .lv-tab')[0]?.click(); }, [kind]);
   if (process.env.SHOTDIR) await page.screenshot({ path: path.join(process.env.SHOTDIR, `${kind}-${t}.png`) });   // whole screen (the panel as the phone shows it)
   report.push({ kind, t, ...r });
   const bad = (r.overflow || []).length + (r.overlap || []).length + (r.clipped || []).length;
-  console.error(`${kind} ${t} ${r.title || ''}: ${bad ? bad + ' issues' : 'ok'}  fill ${r.usedW}%x${r.usedH}%  zoom ${r.zoom} body ${r.hBody} need ${r.hNeed}  fonts ${(r.fonts || []).map((f) => f[0]).join('/')}`);
+  console.error(`${kind} ${t} ${r.title || ''}: ${bad ? bad + ' issues' : 'ok'}  fill ${r.usedW}%x${r.usedH}%  zoom ${r.zoom} body ${r.hBody} need ${r.hNeed}  fonts ${(r.fonts || []).map((f) => f[0]).join('/')}` + (r.pages.length ? '  tabs ' + r.pages.map((q, j) => `${j + 2}:z${q.zoom}/${q.usedH}%/${q.fonts.join('/')}`).join(' ') : ''));
 }
 fs.writeFileSync(out === '/dev/stdout' ? '/dev/stdout' : out, JSON.stringify({ viewport: [W, H], report, errs }, null, 1));
 await b.close(); server.close();
