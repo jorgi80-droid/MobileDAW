@@ -439,7 +439,7 @@ function hoistTabs(card, lk, bar) {
   lk.dataset.htabs = '1'; return true;
 }
 function tabify(lk, card, maxW, maxH) {
-  if (lk.querySelector(':scope > .lv-tabs') || lk.classList.contains('lk-fdg') || lk.dataset.htabs || lk.classList.contains('lk-wt')) return;   // .lk-fdg: Filter Delay's one grid is never taken apart (it shrinks a little instead)   // panels with their own tabs (Wavetable, Hybrid Reverb ...)
+  if (lk.querySelector(':scope > .lv-tabs') || lk.classList.contains('lk-fdg') || lk.classList.contains('lk-notab') || lk.dataset.htabs || lk.classList.contains('lk-wt')) return;   // .lk-fdg: Filter Delay's one grid is never taken apart (it shrinks a little instead)   // panels with their own tabs (Wavetable, Hybrid Reverb ...)
   // blocks: the panel's top-level children; a block taller than the rack that is itself a stack (column with 2+ parts) is split into its parts
   // nothing may be lost: hidden parts (a swap's other face, registration spans) ride along hidden on the first page; a tall column is only opened up
   // when every child is an element (no loose text) so its contents survive as blocks of their own

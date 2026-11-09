@@ -1330,3 +1330,28 @@ html.reduce-motion .menu, html.reduce-motion .modal, html.reduce-motion .fw, htm
 .lk-cmp > .lk-col:last-child > .lk-ch { margin-top: 8px; }
 /* Compressor: the meters as framed columns (Live) and the panel a little shorter than the rack, like Live's card */
 .lk-cmp .lk-cmpd { margin: 2px 0 4px; }
+/* no glow on dials (owner: distracting) - plain flat arc like Live */
+.knob svg path, .lk .knob.lk-k svg path, .knob svg path:nth-of-type(2), .lk .knob.lk-k svg path:nth-of-type(2) { filter: none !important; }
+.knob svg, .lk .knob.lk-k svg, .knob:active svg, .lk .knob.lk-k:active svg { filter: none !important; }
+/* Beat Repeat (Live) */
+.lk-br { align-items: stretch !important; gap: 2px !important; }
+.lk-brtop { display: grid; grid-template-columns: 1fr auto; grid-template-rows: auto auto; column-gap: 12px; row-gap: 2px; }
+.lk-brtop > .lk-dfill { min-height: 64px; }
+.lk-brtop > .lk-col { grid-row: 1; align-items: stretch !important; gap: 3px !important; }
+.lk-brk { display: grid; grid-template-columns: repeat(4, 1fr); justify-items: center; align-items: center; row-gap: 2px; }
+.lk-brm { display: flex; align-items: flex-end; justify-content: flex-end; padding-bottom: 1px; }
+.lk-brb { justify-content: space-between !important; }
+.lk-brtop > .lk-dfill { grid-column: 1; grid-row: 1; }
+.lk-brtop > .lk-col { grid-column: 2; grid-row: 1; }
+.lk-brtop > .lk-brk { grid-column: 1; grid-row: 2; }
+.lk-brtop > .lk-brm { grid-column: 2; grid-row: 2; }
+.lk-brtop > .lk-dfill { min-height: 0; height: auto; align-self: stretch; }
+.lk-brtop > .lk-col > .lk-dfill { min-height: 52px !important; height: 52px; flex: none; }
+.lk-brtop > .lk-col > .lv-btn { align-self: flex-start; }
+.lk-br .knob.lk-k svg { margin: -4px 0 !important; }
+.lk-brtop { grid-template-rows: 72px auto; }
+.lk-brtop > .lk-brfd { grid-column: 2; grid-row: 1; display: flex; min-width: 150px; }
+.lk-brtop > .lk-brfd > .lk-dfill { min-height: 0 !important; }
+.lk-brtop > .lk-brm { flex-direction: column; align-items: flex-start !important; justify-content: flex-start; gap: 3px; padding: 2px 0 1px; }
+.lk-brtop > .lk-brm > .lk-ch { align-self: stretch; }
+.lk-brm > .lk-ch { display: flex !important; } .lk-brm > .lk-ch .lv-btn { flex: 1 1 0; }

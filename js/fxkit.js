@@ -1425,11 +1425,13 @@ V[19] = (k) => {
     for (let b = 0; b < bars * 4; b++) label(g, String(b / 4).replace(/^0\./, '.'), b * beat + 3, hh - 4, '#ffad32', 11);
   });
   const o = k.out; k.every(100, () => { const r = o(); pos.style.outline = r[0] ? '1px solid #ffad32' : ''; });
-  return k.col(
-    k.row(pos, k.col(bandDisp(k, 150, 50, 9, 10, { on: 8, fill: true }), k.row(k.N(9, { w: 70 }), k.N(10, { w: 70 })))),
-    k.row(k.row(k.K(0), k.K(1), k.K(2), k.K(3)), h('span', { class: 'lk-grow' }), k.col(k.T(8, 'Filter', { w: 124 }))),
-    k.row(k.T(15, 'Repeat', { w: 64 }), k.T(14, 'No Trpl', { w: 64 }), h('span', { class: 'lk-grow' }), k.CH(11, ['Mix', 'Ins', 'Gate'])),
-    k.row(k.K(4), k.K(5), k.K(6), k.K(7), k.K(12), k.K(13)));
+  // Live: left = position display, Interval / Offset / Grid / Variation, Repeat under Interval and No Trpl under Grid; right = the filter
+  // display, Freq / Width, Filter right under them, Mix / Ins / Gate on the Repeat line; the six dials in one row across the device
+  const top = h('div', { class: 'lk-brtop' },
+    pos, h('div', { class: 'lk-brfd' }, bandDisp(k, 150, 50, 9, 10, { on: 8, fill: true })),
+    h('div', { class: 'lk-brk' }, k.K(0), k.K(1), k.K(2), k.K(3), k.T(15, 'Repeat', { w: 70 }), h('span'), k.T(14, 'No Trpl', { w: 70 }), h('span')),
+    h('div', { class: 'lk-brm' }, k.row(k.N(9, { w: 70 }), k.N(10, { w: 70 })), k.T(8, 'Filter', { w: 92 }), h('span', { class: 'lk-grow' }), k.CH(11, ['Mix', 'Ins', 'Gate'])));
+  return h('div', { class: 'lk-col lk-br lk-notab' }, top, h('div', { class: 'lk-row lk-brb' }, k.K(4), k.K(5), k.K(6), k.K(7), k.K(12), k.K(13)));
 };
 // Delay: Left / Right (Sync = 16th grid, Time = knob; offset box), link, Feedback + freeze | dark display: filter curve, Filter on / freq / width,
 // Modulation Rate / Filter / Time | Mode, Ping Pong, Dry/Wet
