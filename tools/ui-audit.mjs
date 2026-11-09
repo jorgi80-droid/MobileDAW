@@ -61,7 +61,7 @@ for (const [kind, t] of jobs) {
       const q = e.getBoundingClientRect(); if (q.right > cr.right + 1 || q.left < cr.left - 1 || q.bottom > cr.bottom + 1) issues.overflow.push(name(e) + ' outside card');
     }
     // controls
-    const sel = '.knob, .lv-btn, .lv-fld, canvas, .lk-n, .lk-lb, .lk-st, .lv-tab, button, select, .lk-lamp';
+    const sel = '.knob, .lv-btn, .lv-fld, canvas, .lk-n, .lk-lb, .lk-st, .lk-fdh, .lv-tab, button, select, .lk-lamp';
     const ctl = [...card.querySelectorAll(sel)].filter((e) => !head?.contains(e) && !inHidden(e) && vis(e));
     const leaf = ctl.filter((e) => !ctl.some((o) => o !== e && e.contains(o)));
     const R = leaf.map((e) => e.getBoundingClientRect());
@@ -76,14 +76,18 @@ for (const [kind, t] of jobs) {
     const lk = card.querySelector('.lk, .lv-dev'), zoom = lk ? (parseFloat(lk.style.zoom) || 1) : 1, hBody = Math.round(bodyH), hNeed = lk ? Math.round(lk.offsetHeight) : 0;
     const lab = card.querySelector('.knob .kl, .knob .klabel, .lk-k > span, .knob > span'), labPx = lab ? Math.round(lab.getBoundingClientRect().height * 10) / 10 : 0;
     const ks = [...new Set([...card.querySelectorAll('*')].filter((e) => e._k != null).map((e) => e._k))].sort((a, b) => a - b), tabs = card.querySelectorAll('.lk-autotabs .lv-tab').length;
+    // symmetry: free space left / right of the controls and above / below them inside the card (a tidy panel has them (nearly) equal)
+    const lkR = (card.querySelector(':scope > .lk, :scope > .lv-dev') || card).getBoundingClientRect(), mg = R.length ? { l: Math.round(x0 - cr.left), r: Math.round(cr.right - x1), t: Math.round(y0 - hb), b: Math.round(cr.bottom - y1) } : null;
     const rect = [cr.left, cr.top, cr.width, cr.height].map((v) => Math.round(v * 10) / 10), iw = innerWidth;
-    return { rect, iw, ks, tabs, zoom, hBody, hNeed, labPx, title, w: Math.round(cr.width), h: Math.round(cr.height), fonts: [...fonts.entries()].sort((a, b) => a[0] - b[0]), usedH: Math.round(used * 100), usedW: R.length ? Math.round((x1 - x0) / cr.width * 100) : 0, n: leaf.length, ...issues };
+    return { mg, rect, iw, ks, tabs, zoom, hBody, hNeed, labPx, title, w: Math.round(cr.width), h: Math.round(cr.height), fonts: [...fonts.entries()].sort((a, b) => a[0] - b[0]), usedH: Math.round(used * 100), usedW: R.length ? Math.round((x1 - x0) / cr.width * 100) : 0, n: leaf.length, ...issues };
   };
   const r = await ev(measure, [kind, t]);
   // every tab page of the panel (tabs in the title bar or in the panel) is measured too: the worst zoom and all issues count
   const nTabs = await ev(([kind]) => { const cs = [...document.querySelectorAll('.dev-scroll > .card')].filter((c) => c.querySelector(':scope > h4')), card = kind === 'inst' ? cs[0] : cs[cs.length - 1]; return card ? card.querySelectorAll(':scope > h4 > .lk-htabs .lv-tab').length : 0; }, [kind]);
   r.pages = [];
-  for (let j = 1; j < nTabs; j++) {
+  const on0 = await ev(([kind]) => { const cs = [...document.querySelectorAll('.dev-scroll > .card')].filter((c) => c.querySelector(':scope > h4')), card = kind === 'inst' ? cs[0] : cs[cs.length - 1]; return card ? [...card.querySelectorAll(':scope > h4 > .lk-htabs .lv-tab')].findIndex((b) => b.classList.contains('on')) : 0; }, [kind]);
+  for (let j = 0; j < nTabs; j++) {
+    if (j === on0) continue;
     await ev(([kind, j]) => { const cs = [...document.querySelectorAll('.dev-scroll > .card')].filter((c) => c.querySelector(':scope > h4')), card = kind === 'inst' ? cs[0] : cs[cs.length - 1]; const b = card.querySelectorAll(':scope > h4 > .lk-htabs .lv-tab')[j]; b.click(); }, [kind, j]);
     await page.waitForTimeout(300);
     const q = await ev(measure, [kind, t]);
@@ -91,11 +95,12 @@ for (const [kind, t] of jobs) {
     for (const key of ['overflow', 'overlap', 'clipped']) r[key].push(...q[key].map((x) => 'tab' + (j + 1) + ': ' + x));
     if (process.env.SHOTDIR) await page.screenshot({ path: path.join(process.env.SHOTDIR, `${kind}-${t}-p${j + 1}.png`) });
   }
-  if (nTabs > 1) await ev(([kind]) => { const cs = [...document.querySelectorAll('.dev-scroll > .card')].filter((c) => c.querySelector(':scope > h4')), card = kind === 'inst' ? cs[0] : cs[cs.length - 1]; card.querySelectorAll(':scope > h4 > .lk-htabs .lv-tab')[0]?.click(); }, [kind]);
+  if (nTabs > 1) await ev(([kind, j0]) => { const cs = [...document.querySelectorAll('.dev-scroll > .card')].filter((c) => c.querySelector(':scope > h4')), card = kind === 'inst' ? cs[0] : cs[cs.length - 1]; card.querySelectorAll(':scope > h4 > .lk-htabs .lv-tab')[j0]?.click(); }, [kind, Math.max(0, on0)]);
   if (process.env.SHOTDIR) await page.screenshot({ path: path.join(process.env.SHOTDIR, `${kind}-${t}.png`) });   // whole screen (the panel as the phone shows it)
   report.push({ kind, t, ...r });
   const bad = (r.overflow || []).length + (r.overlap || []).length + (r.clipped || []).length;
-  console.error(`${kind} ${t} ${r.title || ''}: ${bad ? bad + ' issues' : 'ok'}  fill ${r.usedW}%x${r.usedH}%  zoom ${r.zoom} body ${r.hBody} need ${r.hNeed}  fonts ${(r.fonts || []).map((f) => f[0]).join('/')}` + (r.pages.length ? '  tabs ' + r.pages.map((q, j) => `${j + 2}:z${q.zoom}/${q.usedH}%/${q.fonts.join('/')}`).join(' ') : ''));
+  if (r.mg && (Math.abs(r.mg.l - r.mg.r) > 10 || Math.abs(r.mg.t - r.mg.b) > 14)) r.asym = true;
+  console.error(`${kind} ${t} ${r.title || ''}${r.asym ? ' ASYM L' + r.mg.l + ' R' + r.mg.r + ' T' + r.mg.t + ' B' + r.mg.b : ''}: ${bad ? bad + ' issues' : 'ok'}  fill ${r.usedW}%x${r.usedH}%  zoom ${r.zoom} body ${r.hBody} need ${r.hNeed}  fonts ${(r.fonts || []).map((f) => f[0]).join('/')}` + (r.pages.length ? '  tabs ' + r.pages.map((q, j) => `${j + 2}:z${q.zoom}/${q.usedH}%/${q.fonts.join('/')}`).join(' ') : ''));
 }
 fs.writeFileSync(out === '/dev/stdout' ? '/dev/stdout' : out, JSON.stringify({ viewport: [W, H], report, errs }, null, 1));
 await b.close(); server.close();

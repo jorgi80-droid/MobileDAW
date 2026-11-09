@@ -245,7 +245,7 @@ V[0] = (k) => k.row(
 V[2] = (k) => {
   const lamp = (on) => { const el = h('span', { class: 'lk-lamp' }); const f = () => el.classList.toggle('on', k.get(on) > 0.5); f(); k.reg(Object.assign(el, { update: f }), on); return el; };
   const band = (g, on, t) => k.col(lamp(on), k.K(g), k.T(on, t, { w: 30 }));
-  return k.col(k.row(band(0, 6, 'L'), band(1, 7, 'M'), band(2, 8, 'H')), k.row(k.K(4), k.CH(9, ['24', '48'], { v: true, cls: 'lk-sm' }), k.K(5)));
+  return h('div', { class: 'lk-eq3' }, band(0, 6, 'L'), band(1, 7, 'M'), band(2, 8, 'H'), k.K(4), k.CH(9, ['24', '48'], { v: true, cls: 'lk-sm' }), k.K(5));   // 3 x 2 grid: FreqLow under GainLow, 24 / 48 under GainMid, FreqHi under GainHi
 };
 // Saturator: curve display, Drive, type, soft clip | Tone, Output, Dry/Wet
 V[3] = (k) => {
@@ -307,12 +307,16 @@ V[4] = (k) => {
 };
 // Limiter: gain reduction display | Gain, Ceiling, Release
 V[5] = (k) => {
-  let o = [0, -80, -80];
-  const disp = k.D(150, 90, (g, w, hh) => { const y = (db) => 6 + (Math.min(0, Math.max(-48, db)) / -48) * (hh - 18);
-    for (const [x, db, col, t] of [[10, o[1], '#5fd08a', 'In'], [60, -o[0], '#ffad32', 'GR'], [110, o[2], '#5fd08a', 'Out']]) { g.fillStyle = '#1b1b1d'; g.fillRect(x, 6, 26, hh - 18); g.fillStyle = col; if (t === 'GR') g.fillRect(x, 6, 26, Math.min(hh - 18, o[0] * (hh - 18) / 24)); else g.fillRect(x, y(db), 26, hh - 12 - y(db)); label(g, t, x + 4, hh - 2, DISPC.ink, 8); }
-    g.fillStyle = DISPC.or; g.fillRect(104, y(k.get(0)), 38, 2); });
+  // Live: In / GR / Out meters in one dark display, the three dials in ONE row under it (Gain, Ceiling, Release), the whole device centred
+  let o = [0, -80, -80]; const W = 216, BW = 36, GAP = (W - 3 * BW) / 4;
+  const disp = k.D(W, 128, (g, w, hh) => { const top = 8, bot = hh - 20, y = (db) => top + (Math.min(0, Math.max(-48, db)) / -48) * (bot - top);
+    [[o[1], '#5fd08a', 'In'], [-o[0], '#ffad32', 'GR'], [o[2], '#5fd08a', 'Out']].forEach(([db, col, t], n) => { const x = Math.round(GAP + n * (BW + GAP));
+      g.fillStyle = '#1b1b1d'; g.fillRect(x, top, BW, bot - top); g.fillStyle = col;
+      if (t === 'GR') g.fillRect(x, top, BW, Math.min(bot - top, o[0] * (bot - top) / 24)); else g.fillRect(x, y(db), BW, bot - y(db));
+      label(g, t, x + BW / 2, hh - 6, DISPC.ink, 10, 'center'); });
+    const x3 = Math.round(GAP + 2 * (BW + GAP)); g.fillStyle = DISPC.or; g.fillRect(x3 - 4, y(k.get(0)), BW + 8, 2); });
   let tg = [0, -80, -80], fr = 0; k.every(16, () => { if (fr++ % 3 === 0) { const r = k.out(); if (r.length) tg = r; } o = [glide(o[0], tg[0]), glide(o[1], tg[1]), glide(o[2], tg[2])]; disp.paint(); });
-  return k.row(disp, k.sep(), k.col(k.K(2), k.K(0)), k.col(k.K(1)));
+  return h('div', { class: 'lk-col lk-lim' }, k.dk(disp), k.row(k.K(2, { big: true }), k.K(0, { big: true }), k.K(1, { big: true })));
 };
 // Reverb: Input Processing (Lo Cut / Hi Cut), Predelay, decay display, Global (Size / Damping), Freeze, Width, Dry/Wet
 V[7] = (k) => {
@@ -350,7 +354,7 @@ V[31] = (k) => {
 };
 // Spectrum: Block / Channel / Avg / Graph / Max / Scale X / Auto | spectrum display (L+R or one channel, bins or line, peak hold)
 V[32] = (k) => {
-  let sp = null, mx = null; const W = 380, H = 212;
+  let sp = null, mx = null; const W = 380, H = 232;
   const disp = k.D(W, H, (g) => {
     const lin = Math.round(k.get(5)) === 0, auto = k.get(6) > 0.5; let lo = -120, hi = 0;
     if (sp && auto) { let a = -200, b = 0; for (const v of sp) { if (v > a) a = v; } hi = Math.min(0, Math.ceil(a / 6) * 6 + 6); lo = hi - 72; }
@@ -669,7 +673,7 @@ const TWO = Math.PI * 2;
 // LFO: Map / Mod / ± / amount, waveform display (Waveform, Shape, Steps, Jitter, Smooth) | Rate (Hz or synced) with Hz / ♪ and ×10, Depth, Offset, Phase, Hold, R
 V[48] = (k) => {
   let live = 0;
-  const disp = k.D(370, 92, (g, w, hh) => {
+  const disp = k.D(370, 80, (g, w, hh) => {
     const wf = Math.round(k.get(0)), sh = k.get(1), st = Math.round(k.get(2)), dep = k.get(9), off = k.get(10), ph = k.get(11);
     g.fillStyle = DISPC.grid; g.fillRect(0, hh / 2, w, 1);
     const rv = (c) => { const r = Math.sin(c * 12.9898) * 43758.5453; return r - Math.floor(r); }, pts = [];
@@ -1280,11 +1284,25 @@ VI[25] = (k) => {
 // Tension: Exciter | String (dark strip) | Termination | Pickup | Volume
 // phone layout: two columns of the same height (three stacked rows only fitted at 0.77x): left Exciter over Termination / Pickup / Global,
 // right the string display over its four values
+// SoundFont (instrument 6): the file and its presets as a list inside a dark box (tap = choose), Gain and Pitch on the right
+VI[6] = (k) => {
+  const i = k.ctx.i, t = P.state.tracks[i], sf = t.inst.sf;
+  const file = lvBtn(sf ? sf.path.split('/').pop() : 'Pilih file SoundFont (.sf2)\u2026', () => BR.openBrowser('file', { track: i, sf: true }), { cls: 'lk-sfile' });
+  const list = h('div', { class: 'lk-sflist' }, ...(sf ? sf.presets.map((n, q) => h('button', { class: 'lk-sfp' + (q === sf.preset ? ' on' : ''), onclick: () => P.setSfPreset(i, q) }, h('span', {}, String(q + 1).padStart(3, '0')), n))
+    : [h('div', { class: 'lk-hint' }, 'Belum ada file SoundFont. Ketuk tombol di atas, atau seret berkas .sf2 dari Browser ke sini.')]));
+  if (sf) requestAnimationFrame(() => { const on = list.querySelector('.on'); if (on) list.scrollTop = Math.max(0, on.offsetTop - list.clientHeight / 2 + 10); });
+  const pitch = knob({ ...P.PITCH_PARAM, fmt: 'st' }, () => t.inst.pitch || 0, (v) => P.setPitch(i, v), fmtParam, C('#ffa722'));
+  pitch.classList.add('lk-k');
+  return k.row(h('div', { class: 'lk-col lk-sfc' }, file, h('div', { class: 'lk-dk lk-sfdk' }, h('div', { class: 'lk-sfh' }, h('span', {}, 'Preset'), h('span', {}, sf ? sf.presets.length + ' preset' : '')), list)), k.sep(), k.col(k.K(0, { big: true }), pitch));
+};
 VI[26] = (k) => h('div', { class: 'lk-row lk-phys lk-tens' },
-  h('div', { class: 'lk-col' }, h('div', { class: 'lk-pr' }, box(k.row(ttl('Exciter'), k.S(0, { w: 86 })), k.row(k.K(1), k.K(2), k.K(3), k.K(4), k.K(5, { n: 'Damping' })))),
-    h('div', { class: 'lk-pr' }, box(k.row(k.T(10, 'Termination', { w: 92 })), k.row(k.K(11), k.K(12), k.K(13))), box(k.row(k.T(14, 'Pickup', { w: 64 })), k.row(k.K(15, { n: 'Position' }))), box(ttl('Global'), k.row(k.K(16, { big: true }))))),
-  h('div', { class: 'lk-col lk-pr2' }, k.dk(hitDisp(k, Tension, 220, 104, 52, 1.2)), k.dk(h('div', { class: 'lk-row lk-sev' }, h('span', { class: 'lk-elh' }, 'String'),
-    k.TL('Decay', k.NT(6, { w: 54 })), k.TL('Ratio', k.NT(7, { w: 54 })), k.TL('Inharm', k.NT(8, { w: 54 })), k.TL('Damping', k.NT(9, { w: 54 }))))));
+  // Live: three bands stacked on the left, each ONE dial row high - Exciter (title + type on the left, five dials), the dark String strip,
+  // Termination | Pickup | Global - and the decay display on the right
+  h('div', { class: 'lk-col lk-tcol' },
+    h('div', { class: 'lk-pr' }, box(k.row(k.col(ttl('Exciter'), k.S(0, { w: 96 })), k.K(1), k.K(2), k.K(3), k.K(4), k.K(5, { n: 'Damping' })))),
+    k.dk(h('div', { class: 'lk-row lk-sev lk-tstr' }, h('span', { class: 'lk-elh' }, 'String'), k.TL('Decay', k.NT(6, { w: 58 })), k.TL('Ratio', k.NT(7, { w: 58 })), k.TL('Inharm', k.NT(8, { w: 58 })), k.TL('Damping', k.NT(9, { w: 58 })))),
+    h('div', { class: 'lk-pr' }, box(k.row(k.col(k.T(10, 'Termination', { w: 92 })), k.K(11), k.K(12), k.K(13))), box(k.row(k.col(k.T(14, 'Pickup', { w: 64 })), k.K(15, { n: 'Position' }))), box(k.row(k.col(ttl('Global'), h('span', { class: 'lk-grow' })), k.K(16))))),
+  h('div', { class: 'lk-col lk-pr2' }, k.dk(hitDisp(k, Tension, 250, 222, 52, 1.2))));
 // Collision: Mallet | Noise | Resonator (type, mode display, Decay / Material) with Bright / Inharm / Ratio / Volume below
 VI[27] = (k) => {
   const g = k.get;

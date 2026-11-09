@@ -94,7 +94,7 @@
 
 .sp-h .st { height: 16px; padding: 0 6px; border: 1px solid var(--lv-edge); border-bottom: 0; border-radius: var(--r-2) var(--r-2) 0 0; background: var(--lv-ctl); color: var(--lv-ink); font-size: 9.5px; margin-bottom: -1px; }
 .sp-h .st.on { background: var(--lv-body); color: var(--lv-ink); }
-.sp .viz { width: 140px !important; height: 104px !important; }   /* taller: fills the Device panel on the phone (audit) */
+.sp .viz { width: 140px !important; height: 132px !important; }   /* taller: fills the Device panel on the phone (audit) */
 .sp-ro { height: 11px;  line-height: 11px; color: var(--lv-dim); }
 .sp-k { gap: 0; }
 .sp-k .knob { width: 35px; }

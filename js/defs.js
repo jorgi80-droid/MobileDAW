@@ -61,7 +61,7 @@ export const INSTRUMENTS = {
     { n: 'Rate', min: 0, max: 3, def: 2, step: 1, fmt: 'arprate' },
     { n: 'Arp Oct', min: 1, max: 3, def: 1, step: 1, fmt: 'int' },
     { n: 'Gate', min: 0.1, max: 1, def: 0.7, unit: '%' } ] },
-  6: { name: 'SoundFont', view: 'soundfont', params: [
+  6: { name: 'SoundFont', view: 'kit', params: [
     { n: 'Gain', min: 0, max: 1, def: 0.8, unit: '%' } ] },
   7: { name: 'Moisture', params: [
     { n: 'Pos A', min: 0, max: 1, def: 0.25, unit: '%' },
