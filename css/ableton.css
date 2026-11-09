@@ -1267,8 +1267,6 @@ html.reduce-motion .menu, html.reduce-motion .modal, html.reduce-motion .fw, htm
 /* dark display boxes inside the light theme keep the dark palette for everything in them (text, dial tracks, buttons) */
 [data-theme-id="light"] .lk-dk, [data-theme-id="light"] .lk-tdk, [data-theme-id="light"] .lv-pane .lv-disp-box {
   --lv-ink: #e4e4e6; --lv-dim: #a0a0a6; --lv-trk: #5f5f66; --lv-ctl: #55555a; --lv-ctl2: #66666c; --lv-edge: #0c0c0e; --text: #e4e4e6; --dim: #a0a0a6; color: #e4e4e6; }
-[data-theme-id="light"] .lk-impads, [data-theme-id="light"] .lk-impad { --lv-ink: #e4e4e6; --lv-dim: #a0a0a6; color: #c8c8cc; }
-[data-theme-id="light"] .lk-impad small { color: #a0a0a6; }
 [data-theme-id="light"] .lk-rdrop { color: #a0a0a6; }
 [data-theme-id="light"] .lk-rack .lk-rlist, [data-theme-id="light"] .lk-rack .lk-rchains { --lv-ink: #e4e4e6; --lv-dim: #a0a0a6; }
 
@@ -1408,3 +1406,23 @@ html.reduce-motion .menu, html.reduce-motion .modal, html.reduce-motion .fw, htm
 [data-theme-id="light"] .lk-cbox .lv-btn.lk-cchain { background: #f2f2f2 !important; color: #0f0f0f !important; border: 1px solid #2a2a2a !important; box-shadow: 0 1px 0 #2a2a2a; }
 [data-theme-id="light"] .lk-cbox .lk-rdrop { color: #0f0f0f !important; }
 [data-theme-id="light"] .lk-rack .lk-rdrop { color: #0f0f0f !important; }
+/* Impulse pads (Live): light grey slots with black names on the card body, the selected one dark */
+[data-theme-id="light"] .lk-impads { background: transparent !important; border: 0 !important; padding: 0 !important; gap: 3px !important; }
+[data-theme-id="light"] .lk-impad { background: #a8a8a8 !important; border: 1px solid #515151 !important; color: #0f0f0f !important; --lv-ink: #0f0f0f; --lv-dim: #2e2e2e; border-radius: 2px; }
+[data-theme-id="light"] .lk-impad small { color: #2e2e2e !important; }
+[data-theme-id="light"] .lk-impad.sel { background: #3c3c3c !important; color: #f0f0f0 !important; }
+[data-theme-id="light"] .lk-impad.sel small { color: #b8b8b8 !important; }
+/* Sampler (Live, light theme): the section is the light card body; only the waveform is dark; labels black 14 px over light fields */
+[data-theme-id="light"] .lv-dev.smp .lv-pane > .lv-sec { background: transparent !important; border: 0 !important; padding: 2px 0 !important; }
+.lv-dev.smp .lv-fl > span, .lv-dev.smp .lv-fl > label, .lv-dev.smp .lv-lab { font-size: 14px !important; color: var(--lv-ink) !important; }
+.lv-dev.smp .lv-fld, .lv-dev.smp .lv-btn { height: 24px !important; min-height: 24px; font-size: 14px !important; }
+.lv-dev.smp .smp-grid { gap: 2px 8px !important; }
+.lv-dev.smp .lv-info, .lv-dev.smp .lv-sel { font-size: 13px !important; }
+[data-theme-id="light"] .lv-dev.smp .lv-disp { background: #1c1c1c !important; }
+.lv-dev.smp .lv-fl > .lv-lb { font-size: 14px !important; color: var(--lv-ink) !important; line-height: 17px; }
+.lv-dev.smp .smp-grid { grid-template-columns: repeat(9, minmax(0, 1fr)) !important; }
+.lv-dev.smp .smp-grid .lv-fl { min-width: 0; overflow: hidden; }
+.lv-dev.smp .smp-grid .lv-fl > .lv-lb { white-space: nowrap; overflow: hidden; text-overflow: clip; }
+.lv-dev.smp .smp-head { padding-right: 8px; }
+.lv-dev.smp .smp-head .lv-info { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lv-dev.smp .lv-pane > .lv-sec { flex: 1 1 0 !important; min-width: 0 !important; box-sizing: border-box; }
