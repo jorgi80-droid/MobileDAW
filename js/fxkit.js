@@ -199,11 +199,11 @@ V[25] = (k) => {
     k.row(k.K(1, { big: true }), k.K(2, { big: true }), k.K(4, { big: true }), k.sep(), k.K(5, { big: true })));
 };
 // Erosion (Live: Erosion Legacy): display across the top, the three modes under it, Freq / Width / Amount as value boxes in a row
-V[26] = (k) => k.col(bandDisp(k, 226, 92, 1, 2, { peak: true, wmin: 0.08, wmax: 10 }), k.CH(0, ['Noise', 'Wide Noise', 'Sine'], { cls: 'spc' }),
+V[26] = (k) => k.col(bandDisp(k, 226, 92, 1, 2, { peak: true, wmin: 0.08, wmax: 10, fill: true }), k.CH(0, ['Noise', 'Wide Noise', 'Sine'], { cls: 'spc' }),
   k.row(k.TL('Freq', k.N(1, { w: 62 })), k.TL('Width', k.N(2, { w: 62 })), k.TL('Amount', k.N(3, { w: 62 }))));
 // Redux: sample-rate section (rate, jitter, pre filter) and bit section (bits, quantize, shape, DC shift), dry/wet
-V[27] = (k) => k.row(k.sec('Sample Rate', k.row(k.col(k.K(0, { big: true }), k.T(2, 'Pre Filter')), k.col(k.K(1), h('span', { class: 'lk-btnsp' })))), k.sep(),
-  k.sec('Bit Reduction', k.row(k.col(k.K(3, { big: true }), k.T(4, 'Quantize')), k.col(k.K(5), k.T(6, 'DC Shift')))), k.sep(), k.sec(null, k.K(7)));
+V[27] = (k) => k.row(k.sec('Sample Rate', k.row(k.K(0, { big: true }), k.K(1)), k.row(k.T(2, 'Pre Filter'))), k.sep(),
+  k.sec('Bit Reduction', k.row(k.K(3, { big: true }), k.K(5)), k.row(k.T(4, 'Quantize'), k.T(6, 'DC Shift'))), k.sep(), k.sec(null, k.K(7, { big: true })));
 // Vinyl Distortion: Tracing Model and Pinch, each with display + On / drive / freq / width, pinch type and stereo mode; crackle and drive
 V[28] = (k) => {
   // Live: the title line (Pinch carries Soft / Hard and Stereo / Mono on it), the display as wide as the column, then On / amount / Freq / B
@@ -271,8 +271,8 @@ V[30] = (k) => {
 // ================================================================================================ redesigned originals
 // Utility: Input (phase L / R, channel, width, mono, bass mono + freq) | Output (gain, balance, mute, DC)
 V[0] = (k) => k.row(
-  k.sec('Input', k.row(k.T(2, 'ØL', { w: 34 }), k.T(4, 'ØR', { w: 34 })), k.S(5, { w: 76 }), k.K(6), k.T(3, 'Mono', { w: 72 }), k.row(k.T(7, 'Bass Mono'), k.N(8, { w: 56 }))), k.sep(),
-  k.sec('Output', k.K(0, { n: 'Gain' }), k.K(1), k.row(k.T(9, 'Mute', { w: 40 }), k.T(10, 'DC', { w: 30 }))));
+  k.sec('Input', k.row(k.T(2, 'ØL', { w: 34 }), k.T(4, 'ØR', { w: 34 })), k.S(5, { w: 76 }), k.K(6, { big: true }), k.T(3, 'Mono', { w: 72 }), k.row(k.T(7, 'Bass Mono'), k.N(8, { w: 56 }))), k.sep(),
+  k.sec('Output', k.K(0, { n: 'Gain', big: true }), k.K(1), k.row(k.T(9, 'Mute', { w: 40 }), k.T(10, 'DC', { w: 30 }))));
 // EQ Three: GainLow / GainMid / GainHi with L / M / H kill switches, FreqLow, 24 / 48, FreqHi
 // EQ Three (Live): an orange lamp above each band (lit while the band is on), GainLow / Mid / Hi with L M H under them; FreqLow, the small
 // 24 / 48 slope pair, FreqHi
@@ -1304,7 +1304,7 @@ const dsPanel = (k) => {
   const type = k.d.type, def = k.def, n = def.params.length, sr = 12000, len = Math.round(sr * 0.6);
   let shape = null;
   const calc = () => { const d = new DS_CLS[type](sr); for (let j = 0; j < n; j++) d.setParam(j, k.get(j)); d.setParam(n - 1, 0); d.noteOn(60, 1); const L = new Float32Array(len), R = new Float32Array(len); d.render(L, R, 0, len); shape = L; };
-  const disp = k.D(420, 92, (g, w, hh) => {
+  const disp = k.DF(420, 92, (g, w, hh) => {
     calc(); const mid = hh / 2, per = len / w; g.fillStyle = DISPC.grid; g.fillRect(0, Math.round(mid), w, 1);
     g.beginPath(); for (let x = 0; x < w; x++) { let mx = 0; const a = Math.floor(x * per), b = Math.floor((x + 1) * per); for (let j = a; j < b; j++) mx = Math.max(mx, Math.abs(shape[j])); g.rect(x, mid - mx * (mid - 6), 1, mx * (mid - 6) * 2); }
     g.fillStyle = DISPC.bl; g.fill(); label(g, def.name, w - 6, 12, DISPC.ink, 9, 'right');
@@ -1621,7 +1621,7 @@ V[10] = (k) => {
 V[14] = (k) => {
   let o = null;
   const disp = k.DF(132, 104, (g, w, hh) => {
-    const cx = w / 2, cy = hh - 22, R = Math.min(w / 2 - 6, hh - 30);
+    const R = Math.min(w / 2 - 8, hh - 40), cx = w / 2, cy = Math.round((hh - 16 + R) / 2) + 2;
     g.strokeStyle = DISPC.grid; g.lineWidth = 1; g.beginPath(); g.arc(cx, cy, R, Math.PI, 0); g.stroke();
     g.beginPath(); g.moveTo(cx, cy); g.lineTo(cx - R * 0.7071, cy - R * 0.7071); g.moveTo(cx, cy); g.lineTo(cx + R * 0.7071, cy - R * 0.7071); g.moveTo(cx, cy); g.lineTo(cx, cy - R); g.stroke();
     label(g, 'L', cx - R * 0.72 - 9, cy - R * 0.72, DISPC.ink, 8.5); label(g, 'R', cx + R * 0.72 + 3, cy - R * 0.72, DISPC.ink, 8.5);
@@ -1632,7 +1632,7 @@ V[14] = (k) => {
   });
   k.every(60, () => { const r = k.out(); if (r.length) { o = r; disp.paint(); } });
   return k.row(k.col(k.dk(disp)), k.sep(), k.col(k.K(0, { big: true }), k.K(4)), k.col(k.K(1), k.K(2)), k.sep(),
-    k.sec('Bass Mono', k.K(3, { n: 'Freq' })), k.sep(), k.col(k.K(5, { n: 'Gain' })));
+    k.col(k.sec('Bass Mono', k.K(3, { n: 'Freq' })), k.K(5, { n: 'Gain' })));
 };
 // Spacer (FL Studio Mobile; Live Reverb look): Input (Lo Cut, Pre-delay) | early reflections display (L up / R down, drag = Size) with
 // Size / Spread / Damping | Dry/Wet

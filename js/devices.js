@@ -87,7 +87,34 @@ function zonePanel(i, t) {
     h('span', { class: 'zn' }, z.sample ? z.sample.name : '(kosong \u2014 ketuk)'),
     h('span', { class: 'zr' }, multi ? `${noteName(z.lo)}\u2013${noteName(z.hi)} \u2022 root ${noteName(z.root)}${z.vlo > 1 || z.vhi < 127 ? ` \u2022 vel ${z.vlo}\u2013${z.vhi}` : ''}${z.loop ? ' \u2022 loop' : ''}` : `root ${noteName(z.root)}${z.loop ? ' \u2022 loop' : ''}`))));
   if (multi && zs.length < P.MAX_ZONES) list.append(h('button', { class: 'b', style: 'height:30px', onclick: () => { const k = P.addZone(i); if (k !== null) zoneEditor(i, k); } }, '+ Zona'));
+  if (multi) list.append(zoneMap(i, zs));
   return list;
+}
+
+// key map under the zone list (Keystone / DirectWave): the keyboard from C-1 (bottom) to G9 (top), every zone as a bar over its key range
+// (velocity range = bar width share), its root key marked; fills the rest of the sidebar. Tap a bar = edit that zone.
+function zoneMap(i, zs) {
+  const wrap = h('div', { class: 'zmap' }), cv = h('canvas', { class: 'zmap-c' }); wrap.append(cv);
+  let W = 0, H = 0;
+  const draw = () => {
+    const r = wrap.getBoundingClientRect(), dpr = window.devicePixelRatio || 1; W = Math.max(20, Math.round(r.width)); H = Math.max(20, Math.round(r.height));
+    cv.width = W * dpr; cv.height = H * dpr; cv.style.width = W + 'px'; cv.style.height = H + 'px';
+    const g = cv.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.fillStyle = '#262628'; g.fillRect(0, 0, W, H);
+    const kw = 18, ky = (n) => H - 2 - (n + 1) * (H - 4) / 128, kh = (H - 4) / 128;
+    for (let n = 0; n < 128; n++) { const blk = [1, 3, 6, 8, 10].includes(n % 12); g.fillStyle = blk ? '#3a3a3e' : '#d8d8d8'; g.fillRect(2, ky(n), blk ? kw * 0.6 : kw, Math.max(0.5, kh - 0.3)); }
+    g.font = '600 9px ' + getComputedStyle(document.body).fontFamily; g.fillStyle = '#9a9aa0';
+    for (let o = 0; o <= 10; o += 2) { const n = o * 12; if (n < 128) g.fillText('C' + (o - 1), kw + 5, ky(n) + kh + 3); }
+    const x0 = kw + 30, bw = W - x0 - 4, cols = ['#62cffa', '#fdb443', '#9be36b', '#ff8fb1', '#c49bff', '#5fe3d0'];
+    zs.forEach((z, k) => {
+      const y1 = ky(z.hi), y0 = ky(z.lo) + kh, vx = x0 + bw * ((z.vlo || 1) - 1) / 127, vw = Math.max(4, bw * ((z.vhi || 127) - (z.vlo || 1) + 1) / 127);
+      g.fillStyle = cols[k % cols.length] + '55'; g.fillRect(vx, y1, vw, Math.max(2, y0 - y1)); g.strokeStyle = cols[k % cols.length]; g.lineWidth = 1; g.strokeRect(vx + 0.5, y1 + 0.5, vw - 1, Math.max(1, y0 - y1 - 1));
+      const yr = ky(z.root) + kh / 2; g.fillStyle = cols[k % cols.length]; g.fillRect(vx, yr - 1, vw, 2);
+      g.fillStyle = '#e8e8e8'; g.fillText(String(k + 1), vx + 3, Math.min(y0 - 3, Math.max(y1 + 10, yr - 3)));
+    });
+  };
+  const ro = new ResizeObserver(() => requestAnimationFrame(draw)); ro.observe(wrap);
+  cv.addEventListener('click', (e) => { const r = cv.getBoundingClientRect(), n = Math.floor((H - 2 - (e.clientY - r.top)) / ((H - 4) / 128)); const k = zs.findIndex((z) => n >= z.lo && n <= z.hi); if (k >= 0) zoneEditor(i, k); });
+  return wrap;
 }
 
 // Pitch knob (-24..+24 semitones): part of the main controls of every instrument (Volume panel / knob grid / drum row)

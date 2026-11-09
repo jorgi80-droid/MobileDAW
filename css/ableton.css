@@ -1495,9 +1495,10 @@ html.reduce-motion .menu, html.reduce-motion .modal, html.reduce-motion .fw, htm
 .lk .lk-ch.g2:not(.sm) > .lv-btn { border: 1px solid var(--lv-edge) !important; border-radius: 1px !important; margin: 0 !important; }
 /* compact panels: every column's controls stand together, centred on the panel's middle line with one even gap - nothing floats to the
    top or bottom edge (owner: 'kontrol tidak tertata rapi'); dense synths keep the edge-to-edge columns */
-.lk.lk-fill.lk-row:not(.lk-dense):not(.lk-drift) > .lk-col, .lk.lk-fill.lk-row:not(.lk-dense):not(.lk-drift) > .lk-sec { justify-content: space-evenly !important; gap: 4px !important; }
-.lk.lk-fill.lk-row:not(.lk-dense):not(.lk-drift) > .lk-col > .lk-grow, .lk.lk-fill.lk-row:not(.lk-dense):not(.lk-drift) > .lk-sec > .lk-grow { display: none; }
-.lk.lk-fill.lk-row:not(.lk-dense):not(.lk-drift) > .lk-sec > .lk-st:first-child { position: relative; }
+.lk.lk-row:not(.lk-dense):not(.lk-drift) > .lk-col, .lk.lk-row:not(.lk-dense):not(.lk-drift) > .lk-sec { justify-content: space-evenly !important; }
+.lk.lk-fill.lk-row:not(.lk-dense):not(.lk-drift) > .lk-col, .lk.lk-fill.lk-row:not(.lk-dense):not(.lk-drift) > .lk-sec { gap: 4px !important; }
+.lk.lk-row:not(.lk-dense):not(.lk-drift) > .lk-col > .lk-grow, .lk.lk-row:not(.lk-dense):not(.lk-drift) > .lk-sec > .lk-grow { display: none; }
+.lk.lk-row:not(.lk-dense):not(.lk-drift) > .lk-sec > .lk-st:first-child { position: relative; }
 /* Grain Delay (Live) */
 .lk .lk-gdm { display: grid; grid-template-columns: auto auto; column-gap: 4px; row-gap: 4px; align-self: center; }
 .lk .lk-gdy { display: flex; flex-direction: column; justify-content: space-between; gap: 2px; }
@@ -1561,5 +1562,27 @@ html.reduce-motion .menu, html.reduce-motion .modal, html.reduce-motion .fw, htm
 .lk.lk-fill .lk-dk:has(> .lk-dfill) { align-self: stretch; flex: 1 1 auto; display: flex; flex-direction: column; }
 .lk.lk-fill.lk-row > .lk-col:has(> .lk-dk > .lk-dfill) { flex: 1 1 auto; }
 /* a section title stays on the top line; the section's controls share the rest of the height (equal room above and below each) */
-.lk.lk-fill.lk-row:not(.lk-dense):not(.lk-drift) > .lk-sec:has(> .lk-st:first-child) > :not(.lk-st:first-child) { margin-top: auto; margin-bottom: auto; }
-.lk.lk-fill.lk-row:not(.lk-dense):not(.lk-drift) > .lk-sec > .lk-st:first-child { align-self: flex-start; white-space: nowrap; }
+.lk.lk-row:not(.lk-dense):not(.lk-drift) > .lk-sec:has(> .lk-st:first-child) > :not(.lk-st:first-child) { margin-top: auto; margin-bottom: auto; }
+.lk.lk-row:not(.lk-dense):not(.lk-drift) > .lk-sec > .lk-st:first-child { align-self: flex-start; white-space: nowrap; }
+/* zone sidebar (Keystone / DirectWave): the key map takes the free height under the zone list */
+.inst-side .zones { display: flex; flex-direction: column; gap: 3px; height: 100%; min-height: 0; }
+.inst-side .zones > .zmap { flex: 1 1 auto; min-height: 60px; border-radius: 4px; overflow: hidden; position: relative; }
+.inst-side .zones > .zmap > canvas { position: absolute; left: 0; top: 0; display: block; }
+/* drum synths: the waveform display takes the free height; Impulse: the pad page fills the card */
+.lk.lk-fill .lk-ds > .lk-dk { flex: 1 1 auto; }
+.lk.lk-fill .lk-ds > .lk-dk > .lk-dfill { min-height: 60px; }
+.lk .lk-imm > .lk-impage { flex: 1 1 auto; }
+.lk.lk-fill .lk-imm > .lk-impads { flex: 1 1 auto; }
+.inst-row > .inst-side:has(> .zones) { display: flex; flex-direction: column; }
+.inst-row > .inst-side > .zones { flex: 1 1 auto; height: auto; }
+.lk.lk-imp > .lk-imm { align-self: stretch !important; display: flex; flex-direction: column; }
+.lk.lk-imp > .lk-imm > .lk-impads { flex: 0 1 auto; min-height: 44px; }
+.lk.lk-imp > .lk-imm > .lk-impage { flex: 1 1 auto !important; }
+.lk.lk-imp > .lk-imm > .lk-impads > .lk-impad { height: auto; min-height: 44px; }
+.lk.lk-imp .lk-imsec { justify-content: space-evenly; }
+.lk.lk-imp > .lk-imm > .lk-impads > .lk-impad { min-height: 58px; }
+.lk.lk-imp > .lk-imm > .lk-impads { min-height: 58px; }
+.inst-row > .inst-side:has(> .zones) { align-self: stretch; min-height: 0; }
+.inst-row:has(> .inst-side > .zones) { align-items: stretch; }
+.inst-row > .inst-side > .zones:has(> .zmap) { max-height: none; overflow: hidden; }
+.inst-row > .inst-side > .zones:has(> .zmap) > .zone, .inst-row > .inst-side > .zones:has(> .zmap) > .b { flex: none; }
