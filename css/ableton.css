@@ -1539,3 +1539,9 @@ html.reduce-motion .menu, html.reduce-motion .modal, html.reduce-motion .fw, htm
 .card > h4 > .sp-h.lk-htabs + .sp-h.lk-htabs { margin-left: 8px; }
 .card > h4:has(> .sp-h.lk-htabs) > .pre, .card > h4:has(> .sp-h.lk-htabs) > .fw-pop { margin-left: auto; }
 .lk .lk-lpg { display: grid; grid-template-columns: repeat(3, auto); grid-template-rows: 1fr 1fr; column-gap: 16px; row-gap: 6px; align-items: center; justify-items: center; align-self: stretch; padding: 4px 0; }
+.lk .lk-ch.lk-g2x2 { display: grid !important; grid-template-columns: repeat(2, auto); gap: 3px !important; background: transparent !important; border: 0 !important; }
+.lk .lk-ch.lk-g2x2 > .lv-btn { border: 1px solid var(--lv-edge) !important; margin: 0 !important; border-radius: 1px; }
+.lk .lk-srr { display: grid; grid-template-columns: repeat(2, auto); column-gap: 10px; row-gap: 4px; align-content: center; justify-items: center; align-items: center; }
+/* Sampler: grid labels never cut ("Release Mode") */
+.lv-dev.smp .smp-grid .lv-fl > .lv-lb { font-size: 13px !important; text-overflow: ellipsis; }
+.lk.lk-fill, .lv-dev.lk-fill { box-sizing: border-box; }

@@ -684,8 +684,8 @@ V[47] = (k) => {
     k.col(k.TL('Mode', k.CH(0, ['Internal', 'MIDI'])), k.TL('MIDI From', src), h('span', { class: 'lk-grow' }), k.CH(13, ['Mono', 'Poly']), k.TL('Voices', k.N(14, { w: 96 }))), k.sep(),
     k.col(k.swap(0, () => k.K(3, { big: true }), () => k.K(2, { big: true })), k.TL('Stretch', k.N(7, { w: 64 })), k.TL('Shift', k.N(8, { w: 64 }))),
     k.col(k.K(4), k.K(5), k.K(6)), k.sep(),
-    k.col(k.CH(9, ['None', 'Chorus', 'Wander', 'Granular'], { v: true }), k.K(10), k.TL('Pch.Mod', k.N(11, { w: 64, fill: false }))),
-    disp, k.col(k.TL('Unison', k.S(15, { w: 50 })), k.K(16), k.K(17), k.K(18)));
+    k.col(k.CH(9, ['None', 'Chorus', 'Wander', 'Granular'], { cls: 'lk-g2x2' }), k.K(10), k.TL('Pch.Mod', k.N(11, { w: 64, fill: false }))),
+    disp, h('div', { class: 'lk-srr' }, k.TL('Unison', k.S(15, { w: 56 })), k.K(16), k.K(17), k.K(18)));
 };
 
 // ================================================================================================ Live 12 modulators (engine: js/engine/fx6.js)

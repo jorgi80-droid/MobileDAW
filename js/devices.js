@@ -524,11 +524,11 @@ function fitKit() {
     const lk = card.querySelector(':scope > .lk, :scope > .lv-dev'); if (!lk) continue;
     lk.style.zoom = ''; lk.style.minHeight = ''; lk.classList.remove('lk-fill');
     hoistAll(card, lk);
-    const head = card.querySelector(':scope > h4'), avail = avail0 - (head ? head.offsetHeight : 0) - 4, Z0 = Math.max(0.6, Math.min(1.2, avail / DESIGN_H));
+    const head = card.querySelector(':scope > h4'), avail = avail0 - (head ? head.offsetHeight : 0) - 4, Z0 = Math.max(0.6, Math.min(1, avail / DESIGN_H));
     if (!globalThis.__noTabify && avail > 80 && sc.clientWidth > 200 && (lk.offsetHeight * Z0 > avail * 1.12 || lk.offsetWidth * Z0 > sc.clientWidth - 24) && !lk.dataset.tabbed) tabify(lk, card, Math.max(260, (sc.clientWidth - 40) / Z0), avail / Z0);
     const need = lk.offsetHeight;
     if (!(need > 0) || !(avail > 40)) continue;
-    const Z = Math.max(0.6, Math.min(1.2, avail / DESIGN_H)), z = need * Z > avail ? Math.max(0.6, avail / need) : Z;
+    const Z = Math.max(0.6, Math.min(1, avail / DESIGN_H)), z = need * Z > avail ? Math.max(0.6, avail / need) : Z;
     if (Math.abs(z - 1) > 0.01) lk.style.zoom = z.toFixed(3);
     if (need * z < avail - 6) { lk.style.minHeight = Math.floor(avail / z) + 'px'; lk.classList.add('lk-fill'); }
     const over = lk.offsetHeight * (parseFloat(lk.style.zoom) || 1) - avail; if (over > 1) lk.style.zoom = Math.max(0.6, (parseFloat(lk.style.zoom) || 1) * avail / (avail + over)).toFixed(3);   // never taller than the rack
