@@ -1472,3 +1472,11 @@ html.reduce-motion .menu, html.reduce-motion .modal, html.reduce-motion .fw, htm
 .lk.lk-drift .lk-denv .lk-dlfod > .lv-disp { width: auto !important; flex: 1 1 auto; }
 .lk.lk-drift .lk-dlfo .lk-dlfo3 > .lk-dlb { justify-content: center !important; gap: 8px !important; }
 .lk.lk-drift .lk-denv > .lk-dlb { gap: 0 !important; }
+/* several strips in one title bar: side by side in the middle */
+.card > h4 > .lv-tabs.lk-htabs:has(+ .lk-htabs) { margin-right: 4px !important; }
+.card > h4 > .lv-tabs.lk-htabs + .lv-tabs.lk-htabs { margin-left: 4px !important; }
+.card > h4 > .lv-tabs.lk-htabs .lv-tab.lit .led, .card > h4 > .lv-tabs.lk-htabs .lv-tab .chk { flex: none; }
+/* Drift: the 1 / 2 envelope switches stand in their own column left of the display (Live), not over it */
+.lk.lk-drift .lk-envw { flex-direction: row-reverse !important; gap: 6px !important; }
+.lk.lk-drift .lk-envw > .lk-envt { position: static !important; flex-direction: column; justify-content: space-between; padding: 4px 0; }
+.lk.lk-drift .lk-envw > .lk-envt .lv-btn { height: 20px !important; }

@@ -438,6 +438,24 @@ function hoistTabs(card, lk, bar) {
   bar.classList.add('lk-htabs'); if (name) name.after(bar); else head.prepend(bar);
   lk.dataset.htabs = '1'; return true;
 }
+// EVERY tab strip of a panel - its own top strip or one inside a section (Drift LFO / Mod, Poli Modulators / MIDI, Meld A / B / Settings,
+// FLM panels ...) - sits in the card's title bar beside the name, fold arrow and Preset (owner's rule). A placeholder stays where the strip
+// was: a panel that rebuilds a section drops the placeholder, and the stale strip leaves the title bar for the new one.
+function hoistAll(card, lk) {
+  const head = card.querySelector(':scope > h4'); if (!head || !lk) return false;
+  let moved = false;
+  for (const s of [...head.querySelectorAll(':scope > .lk-htabs')]) if (s._ph && !s._ph.isConnected) { s.remove(); moved = true; }
+  const strips = [...lk.querySelectorAll('.lv-tabs')].filter((t) => !t.classList.contains('lk-htabs') && t.closest('.card') === card && !t.closest('h4'));
+  if (!strips.length) return moved;
+  const first = !lk.dataset.htabs; if (first) lk.style.minWidth = lk.offsetWidth + 'px';
+  const name = head.querySelector('.dv-name') || [...head.children].find((c) => c.tagName === 'SPAN' && c.textContent.trim());
+  let after = [...head.querySelectorAll(':scope > .lk-htabs')].pop() || name;
+  for (const t of strips) {
+    const ph = h('span', { class: 'lk-tabph', hidden: true }); t.replaceWith(ph); t._ph = ph; t.classList.add('lk-htabs');
+    if (after) after.after(t); else head.prepend(t); after = t; moved = true;
+  }
+  lk.dataset.htabs = '1'; return true;
+}
 function tabify(lk, card, maxW, maxH) {
   if (lk.querySelector(':scope > .lv-tabs') || lk.classList.contains('lk-fdg') || lk.classList.contains('lk-notab') || lk.dataset.htabs || lk.classList.contains('lk-wt')) return;   // .lk-fdg: Filter Delay's one grid is never taken apart (it shrinks a little instead)   // panels with their own tabs (Wavetable, Hybrid Reverb ...)
   // blocks: the panel's top-level children; a block taller than the rack that is itself a stack (column with 2+ parts) is split into its parts
@@ -501,10 +519,11 @@ function fitKit() {
   // panel (DESIGN_H). A panel taller than that shrinks a little more on its own (never below 0.7); a shorter one keeps the common zoom and
   // spreads its controls over the height (lk-fill) instead of being blown up, so text and knobs stay the same size in every device.
   const DESIGN_H = 250, cards = [...sc.querySelectorAll(':scope > .card.lkcard:not(.flm-card), :scope > .card.lvcard:not(.flm-card)')];
+  for (const c of sc.querySelectorAll(':scope > .card.flm-card')) hoistAll(c, c.querySelector('.lk, .lv-dev') || c);
   for (const card of cards) {
     const lk = card.querySelector(':scope > .lk, :scope > .lv-dev'); if (!lk) continue;
     lk.style.zoom = ''; lk.style.minHeight = ''; lk.classList.remove('lk-fill');
-    const own = lk.querySelector(':scope > .lv-tabs'); if (own && !lk.dataset.htabs && hoistTabs(card, lk, own)) lk.style.minWidth = lk.offsetWidth + 'px';   // the card keeps its width on the other tabs
+    hoistAll(card, lk);
     const head = card.querySelector(':scope > h4'), avail = avail0 - (head ? head.offsetHeight : 0) - 4, Z0 = Math.max(0.6, Math.min(1.2, avail / DESIGN_H));
     if (!globalThis.__noTabify && avail > 80 && sc.clientWidth > 200 && (lk.offsetHeight * Z0 > avail * 1.12 || lk.offsetWidth * Z0 > sc.clientWidth - 24) && !lk.dataset.tabbed) tabify(lk, card, Math.max(260, (sc.clientWidth - 40) / Z0), avail / Z0);
     const need = lk.offsetHeight;
@@ -515,10 +534,14 @@ function fitKit() {
     const over = lk.offsetHeight * (parseFloat(lk.style.zoom) || 1) - avail; if (over > 1) lk.style.zoom = Math.max(0.6, (parseFloat(lk.style.zoom) || 1) * avail / (avail + over)).toFixed(3);   // never taller than the rack
   }
 }
-let fitRO = null, fitLate = 0;
+let fitRO = null, fitLate = 0, tabMO = null;
 export function render() {
   if (!root) return;
   if (!fitRO && typeof ResizeObserver !== 'undefined') { fitRO = new ResizeObserver(() => requestAnimationFrame(fitKit)); fitRO.observe(root); }
+  if (!tabMO && typeof MutationObserver !== 'undefined') {
+    let q = 0; tabMO = new MutationObserver(() => { if (q) return; q = requestAnimationFrame(() => { q = 0; if (root && root.querySelector('.card .lv-tabs:not(.lk-htabs)')) fitKit(); }); });
+    tabMO.observe(root, { childList: true, subtree: true });
+  }
   for (const t of timers) clearInterval(t);
   timers = [];
   const i = state.sel.track, t = P.tr(i);
