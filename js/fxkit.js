@@ -1454,16 +1454,18 @@ V[6] = (k) => {
       const s = Math.pow(q, r) * (r % 2 ? Math.min(1, ratio) : 1), rx = (w / 2 - 6) * s, ry = (hh - 6) * s, a = 0.4 + 0.6 * Math.pow(Math.max(fb, 0.3), r * 0.4);
       g.strokeStyle = '#ffad32'; g.globalAlpha = Math.min(1, a); g.lineWidth = Math.max(1.3, 3.6 - r * 0.32); g.beginPath(); g.ellipse(w / 2, hh, Math.max(2, rx), Math.max(2, ry), 0, Math.PI, 0); g.stroke();
     }
-    g.globalAlpha = 1; g.fillStyle = '#fff'; for (let y = 5, st = 4; y < hh - 4; y += st, st = Math.max(2.2, st * 0.93)) g.fillRect(w / 2 - 1.2, y, 2.4, 2.4);
+    g.globalAlpha = 1; g.fillStyle = '#fff';   // Live: a white dot on top of every repeat, the first one large
+    for (let r = 0; r < N; r++) { const s2 = Math.pow(q, r) * (r % 2 ? Math.min(1, ratio) : 1), y = hh - (hh - 6) * s2; if (y > hh - 6) break; g.beginPath(); g.arc(w / 2, y, r ? 2 : 3.6, 0, 6.2832); g.fill(); }
   });
   let fw = 336;
   const filt = k.DF(336, 78, (g, w, hh) => { fw = w; grid(g, w, hh); g.fillStyle = DISPC.grid; for (let q = 1; q < 4; q++) g.fillRect(0, Math.round(hh * q / 4), w, 1);
     const hp = new Biquad(), lp = new Biquad(); hp.highpass(SR, k.get(5), 0.707); lp.lowpass(SR, k.get(4), 0.707);
     const pts = []; for (let x = 0; x <= w; x += 2) { const f = xl(x, w); pts.push([x, hh - 4 - Math.min(1.2, mag(hp, f) * mag(lp, f)) / 1.2 * (hh - 14)]); } lvPath(g, pts, DISPC.bl, null, 1.8);
+    for (const [f, t] of [[100, '100'], [1000, '1k'], [10000, '10k']]) label(g, t, lx(f, w) - 4, hh - 5, DISPC.ink, 12);
     for (const [n, f] of [[1, k.get(5)], [2, k.get(4)]]) { const x = Math.max(9, Math.min(w - 9, lx(f, w))), yy = hh - 4 - Math.min(1.2, mag(hp, f) * mag(lp, f)) / 1.2 * (hh - 14); g.fillStyle = '#ffad32'; g.beginPath(); g.arc(x, yy, 7, 0, 7); g.fill(); label(g, String(n), x, yy + 3.5, '#1b1b1d', 10, 'center'); } },
     { onDown: (x) => ({ hp: Math.abs(x - lx(k.get(5), fw)) < Math.abs(x - lx(k.get(4), fw)) }), onMove: (x, y, dx, dy, s) => { if (s.hp) k.set(5, Math.max(20, Math.min(2000, xl(x, fw)))); else k.set(4, Math.max(200, Math.min(20000, xl(x, fw)))); } });
-  tunnel.style.flexGrow = '2';
-  const tm = (j, dj) => k.swap(8, () => k.K(dj, { n: '', big: true }), () => k.K(j, { n: '', big: true }));
+  tunnel.style.flexGrow = '1.25';
+  const tm = (j, dj) => k.swap(8, () => k.K(dj, { n: '' }), () => k.K(j, { n: '' }));
   // Modulation: what the engine does (fx2 Echo) - the delay time swings by a sine of Mod Rate, +-Mod Amt x 4 ms; drag: across = rate, up / down = amount
   const qgrid = (g, w, hh) => { g.fillStyle = DISPC.grid; for (let q = 1; q < 4; q++) { g.fillRect(Math.round(w * q / 4), 0, 1, hh); g.fillRect(0, Math.round(hh * q / 4), w, 1); } };
   const modD = k.D(300, 150, (g, w, hh) => { qgrid(g, w, hh); const sec = 2, amt = k.get(16), rate = k.get(15), pts = [];
@@ -1478,13 +1480,13 @@ V[6] = (k) => {
     lvPath(g, pts, '#ffad32', hh / 2, 1.8); label(g, 'in', w - M, hh / 2 - 4, DISPC.ink, 9, 'right'); label(g, 'out', M + 2, 12, DISPC.ink, 9); },
     { onDown: () => ({ v: k.get(17) }), onMove: (x, y, dx, dy, s) => k.set(17, Math.max(0, Math.min(1, s.v - dy / 120))) });
   const tabs = [
-    () => k.row(k.col(k.row(k.TL('Left', tm(0, 9)), h('div', { class: 'lk-mid' }, k.T(7, '⊶', { cls: 'link', w: 24 })), k.TL('Right', tm(6, 10))), k.T(8, 'Sync', { w: 120 }), h('span', { class: 'lk-grow' }), k.row(k.K(13), k.K(1))),
-      k.dk(tunnel, filt, k.row(h('span', { class: 'lk-lb' }, 'Filter HP'), k.NT(5, { w: 58 }), h('span', { class: 'lk-lb' }, 'LP'), k.NT(4, { w: 64 }))),
-      k.col(k.row(k.K(11), k.K(12)), k.K(14), k.CH(3, ['Stereo', 'Ping Pong'], { v: true }), k.K(2))),
+    () => k.row(h('div', { class: 'lk-col lk-ebox' }, k.row(k.TL('Left', tm(0, 9)), h('div', { class: 'lk-mid' }, k.T(7, '⊶', { cls: 'link', w: 24 })), k.TL('Right', tm(6, 10))), k.T(8, 'Sync', { w: 120 }), h('span', { class: 'lk-grow' }), k.row(k.K(13), k.K(1))),
+      h('div', { class: 'lk-dk lk-edisp' }, tunnel, filt, k.row(h('span', { class: 'lk-lb' }, 'Filter HP'), k.NT(5, { w: 58 }), h('span', { class: 'lk-lb' }, 'LP'), k.NT(4, { w: 64 }))),
+      h('div', { class: 'lk-ebox lk-eright' }, k.K(11), k.K(12), h('span'), k.K(14), k.CH(3, ['Stereo', 'Ping Pong'], { v: true }), k.K(2))),
     () => k.row(k.dk(modD, k.row(h('span', { class: 'lk-lb' }, 'Delay time ± ms'), h('span', { class: 'lk-grow' }), k.NT(15, { w: 64 }), k.NT(16, { w: 56 }))), k.col(k.K(15, { n: 'Rate', big: true }), k.K(16, { n: 'Amount', big: true }))),
     () => k.row(k.dk(drvD, k.row(h('span', { class: 'lk-lb' }, 'Feedback saturation'), h('span', { class: 'lk-grow' }), k.NT(17, { w: 56 }))), k.col(k.K(17, { n: 'Drive', big: true }), k.row(k.K(14), k.K(2)))),
   ];
-  const t = lvTabs([{ label: 'Time' }, { label: 'Modulation' }, { label: 'Character' }], 0, (j) => page.replaceChildren(tabs[j]()), { cls: 'lk-tabs c' });
+  const t = lvTabs([{ label: 'Echo' }, { label: 'Modulation' }, { label: 'Character' }], 0, (j) => page.replaceChildren(tabs[j]()), { cls: 'lk-tabs c' });
   page.replaceChildren(tabs[0]());
   return k.col(t, page);
 };

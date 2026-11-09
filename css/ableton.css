@@ -1373,3 +1373,11 @@ html.reduce-motion .menu, html.reduce-motion .modal, html.reduce-motion .fw, htm
 .lk-fdg { row-gap: 3px !important; column-gap: 8px !important; }
 .lk-fdg > .lk-col { gap: 2px !important; }
 .lk-fdg .knob.lk-k svg { margin: -5px 0 !important; }
+/* Echo (Live): left and right sections in lighter rounded boxes, the display one flush dark box (tunnel over filter, strip at the bottom) */
+.lk .lk-ebox { background: var(--lv-title); border-radius: 6px; padding: 4px 6px; align-self: stretch !important; justify-content: space-between !important; }
+.lk .lk-edisp { padding: 0 !important; gap: 0 !important; overflow: hidden; align-self: stretch !important; flex: 1 1 auto; }
+.lk .lk-edisp > .lk-dfill { border-radius: 0; }
+.lk .lk-edisp > .lk-dfill + .lk-dfill { border-top: 1px solid #3a3a3e; }
+.lk .lk-edisp > .lk-row { padding: 3px 8px; background: #232325; border-top: 1px solid #3a3a3e; justify-content: flex-start; gap: 6px; }
+.lk .lk-eright { display: grid; grid-template-columns: auto auto; column-gap: 8px; row-gap: 4px; align-content: space-between; justify-items: center; align-items: end; }
+.lk .lk-eright > .lk-ch { align-self: end; }
