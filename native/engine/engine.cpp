@@ -25,7 +25,7 @@ void Retire::drain() {
 void Strip::init(double v) {
   inst = nullptr; ev = nullptr; clips = nullptr; ndev = 0; for (auto& d : dev) d = nullptr;
   vol = v; pan = 0; gl = 0; gr = 0; send[0] = send[1] = 0; out = -1; mute = false; solo = false; mg = 1; sg0 = 0; sg1 = 0;
-  silent = 0; wasAudible = true; pitch = 0; bend = 0; mod = 0; ccl = nullptr; ccG = 1; ccP = 0;
+  silent = 0; wasAudible = true; pitch = 0; bend = 0; mod = 0; plaw = 0; ccl = nullptr; ccG = 1; ccP = 0;
   for (int i = 0; i < 128; i++) tpMap[i] = (uint8_t)i;
   lat = 0; pd = 0; pdl.n = 0; pdl.w = 0; pdl.used = false; width = 1; sw = 1; pL = 1; pR = 1; inv = 0;   // core.js newStrip(): a fresh PdcLine (same storage)
   active = false; npre = 0; std::memset(bufL, 0, sizeof bufL); std::memset(bufR, 0, sizeof bufR); peakL = 0; peakR = 0; nPan = 0;
@@ -424,7 +424,7 @@ void Engine::track(Strip& st, int idx, double p0, int n, double sp, bool anySolo
   if (st.pd > 0) st.pdl.run(L, R, n, st.pd); else st.pdl.clear();
   stereo(st, L, R, n);
   double pn = st.ccP ? clamp(st.pan + st.ccP, -1, 1) : st.pan, vg = st.vol * st.ccG, a = (pn + 1) * PI * 0.25;
-  double tl = vg * std::cos(a) * 1.41421356, tr = vg * std::sin(a) * 1.41421356, s0 = st.send[0], s1 = st.send[1];
+  double tl = st.plaw ? vg * jsMin(1 - pn, 1) : vg * std::cos(a) * 1.41421356, tr = st.plaw ? vg * jsMin(1 + pn, 1) : vg * std::sin(a) * 1.41421356, s0 = st.send[0], s1 = st.send[1];
   double mt = audible ? 1 : 0, mk = mgK;
   if (s0 > 0 || st.sg0 > 0) retActive[0] = true; if (s1 > 0 || st.sg1 > 0) retActive[1] = true;
   int ot = st.out >= 0 && st.out < NFX ? st.out : -1;
@@ -455,7 +455,7 @@ void Engine::ret(int k, int n) {
   runChain(st, RET0 + k, L, R, n);
   if (st.pd > 0) st.pdl.run(L, R, n, st.pd); else st.pdl.clear();
   stereo(st, L, R, n);
-  double target = st.mute ? 0 : st.vol, a = (st.pan + 1) * PI * 0.25, tl = target * std::cos(a) * 1.41421356, tr = target * std::sin(a) * 1.41421356;
+  double target = st.mute ? 0 : st.vol, a = (st.pan + 1) * PI * 0.25, tl = st.plaw ? target * jsMin(1 - st.pan, 1) : target * std::cos(a) * 1.41421356, tr = st.plaw ? target * jsMin(1 + st.pan, 1) : target * std::sin(a) * 1.41421356;
   double pl = 0, pr = 0;
   for (int i = 0; i < n; i++) {
     st.gl += (tl - st.gl) * 0.0021; st.gr += (tr - st.gr) * 0.0021;

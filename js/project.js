@@ -477,7 +477,7 @@ export function unfreezeTrack(i, auto = false) {
 function syncFrozen(i) {
   const t = state.tracks[i], s = frozenSmp.get(t.id);
   eng.resetTrack(i);
-  eng.trackVol(i, t.vol); eng.trackPan(i, t.pan); eng.trackMute(i, t.mute); eng.trackSolo(i, t.solo); eng.trackWidth(i, t.width ?? 1); eng.trackInvert(i, t.inv | 0);
+  eng.trackVol(i, t.vol); eng.trackPan(i, t.pan); eng.trackPanLaw(i, t.panLaw === 'flm' ? 1 : 0); eng.trackMute(i, t.mute); eng.trackSolo(i, t.solo); eng.trackWidth(i, t.width ?? 1); eng.trackInvert(i, t.inv | 0);
   eng.send(i, 0, t.send ? t.send[0] : 0); eng.send(i, 1, t.send ? t.send[1] : 0);
   eng.trackOut(i, t.out >= 0 && t.out < state.returns.length ? t.out : -1);
   eng.trackClips(i, [0, t.frozen.len, s.id, 1, 0, -1, -1], 1);   // fades -1 = none (0 would mean the default 64-frame clip fade)
@@ -500,7 +500,7 @@ export function syncTrackFull(i) {
   syncPads(i);
   syncSoundFont(i);
   syncDevices(i);
-  eng.trackVol(i, t.vol); eng.trackPan(i, t.pan); eng.trackMute(i, t.mute); eng.trackSolo(i, t.solo); eng.trackWidth(i, t.width ?? 1); eng.trackInvert(i, t.inv | 0);
+  eng.trackVol(i, t.vol); eng.trackPan(i, t.pan); eng.trackPanLaw(i, t.panLaw === 'flm' ? 1 : 0); eng.trackMute(i, t.mute); eng.trackSolo(i, t.solo); eng.trackWidth(i, t.width ?? 1); eng.trackInvert(i, t.inv | 0);
   eng.send(i, 0, t.send ? t.send[0] : 0); eng.send(i, 1, t.send ? t.send[1] : 0);
   eng.trackOut(i, t.out >= 0 && t.out < state.returns.length ? t.out : -1);
   syncClips(i);
@@ -516,7 +516,7 @@ export function syncAll() {
   state.returns.forEach((r, k) => {
     eng.resetTrack(RET0 + k);
     syncDevices(RET0 + k);
-    eng.trackVol(RET0 + k, r.vol); eng.trackPan(RET0 + k, r.pan); eng.trackMute(RET0 + k, r.mute); eng.trackWidth(RET0 + k, r.width ?? 1); eng.trackInvert(RET0 + k, r.inv | 0);
+    eng.trackVol(RET0 + k, r.vol); eng.trackPan(RET0 + k, r.pan); eng.trackPanLaw(RET0 + k, r.panLaw === 'flm' ? 1 : 0); eng.trackMute(RET0 + k, r.mute); eng.trackWidth(RET0 + k, r.width ?? 1); eng.trackInvert(RET0 + k, r.inv | 0);
   });
   for (let k = state.returns.length; k < MAX_FX; k++) eng.resetTrack(RET0 + k);   // effect tracks that no longer exist
   syncAutomation();
@@ -695,7 +695,7 @@ export function addFxTrack() {
   const r = { name: 'Effect ' + n, vol: 1, pan: 0, mute: false, devices: [] };
   state.returns.push(r);
   const k = state.returns.length - 1;
-  eng.resetTrack(RET0 + k); eng.trackVol(RET0 + k, r.vol); eng.trackPan(RET0 + k, r.pan); eng.trackMute(RET0 + k, false);
+  eng.resetTrack(RET0 + k); eng.trackVol(RET0 + k, r.vol); eng.trackPan(RET0 + k, r.pan); eng.trackPanLaw(RET0 + k, r.panLaw === 'flm' ? 1 : 0); eng.trackMute(RET0 + k, false);
   emit('tracks');
   return k;
 }

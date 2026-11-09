@@ -14,14 +14,14 @@ namespace mdaw {
 enum Op {
   PLAY, STOP, PLAYCOUNTIN, SEEK, TEMPO, TEMPOMAP, SETSIG, SETMETER, LOOP, SETMETRO, SETMETROVOL, MASTERLIMIT, SETPDC, TRACKLOAD,
   TRACKVOL, TRACKPAN, TRACKWIDTH, TRACKINVERT, TRACKMUTE, TRACKSOLO, TRACKSEND, TRACKOUT, TRACKINST, INSTPARAM, RESETTRACK,
-  INSERTDEVICE, REMOVEDEVICE, DEVPARAM, DEVBYPASS, RACKCMD, SOUNDFONT, PREVIEW, BEND, MODWHEEL, TRACKNOTES, TRACKCLIPS, TRACKCC, AUTOMATION, SAMPLE, PANIC
+  INSERTDEVICE, REMOVEDEVICE, DEVPARAM, DEVBYPASS, RACKCMD, SOUNDFONT, PREVIEW, BEND, MODWHEEL, TRACKPANLAW, TRACKNOTES, TRACKCLIPS, TRACKCC, AUTOMATION, SAMPLE, PANIC
 };
 static const std::unordered_map<std::string, int> OPS = {
   { "play", PLAY }, { "stop", STOP }, { "playCountIn", PLAYCOUNTIN }, { "seek", SEEK }, { "tempo", TEMPO }, { "tempoMap", TEMPOMAP },
   { "setSig", SETSIG }, { "setMeter", SETMETER }, { "loop", LOOP }, { "setMetro", SETMETRO }, { "setMetroVol", SETMETROVOL }, { "masterLimit", MASTERLIMIT }, { "setPdc", SETPDC }, { "trackLoad", TRACKLOAD },
   { "trackVol", TRACKVOL }, { "trackPan", TRACKPAN }, { "trackWidth", TRACKWIDTH }, { "trackInvert", TRACKINVERT }, { "trackMute", TRACKMUTE }, { "trackSolo", TRACKSOLO }, { "trackSend", TRACKSEND },
   { "trackOut", TRACKOUT }, { "trackInst", TRACKINST }, { "instParam", INSTPARAM }, { "resetTrack", RESETTRACK }, { "insertDevice", INSERTDEVICE },
-  { "removeDevice", REMOVEDEVICE }, { "devParam", DEVPARAM }, { "devBypass", DEVBYPASS }, { "rackCmd", RACKCMD }, { "sf", SOUNDFONT }, { "preview", PREVIEW }, { "bend", BEND }, { "modWheel", MODWHEEL },
+  { "removeDevice", REMOVEDEVICE }, { "devParam", DEVPARAM }, { "devBypass", DEVBYPASS }, { "rackCmd", RACKCMD }, { "sf", SOUNDFONT }, { "preview", PREVIEW }, { "bend", BEND }, { "modWheel", MODWHEEL }, { "trackPanLaw", TRACKPANLAW },
   { "trackNotes", TRACKNOTES }, { "trackClips", TRACKCLIPS }, { "trackCC", TRACKCC }, { "automation", AUTOMATION }, { "sample", SAMPLE }, { "panic", PANIC },
 };
 
@@ -153,7 +153,7 @@ bool prepare(const std::string& name, const std::vector<Arg>& a, const Engine& e
     case RESETTRACK: { c.a[0] = N(0); int t = toInt32(N(0)); if (t >= 0 && t < NSTRIPS) trackType[t] = 0; break; }
     case SETMETRO: case MASTERLIMIT: case SETPDC: case TRACKLOAD: c.a[0] = B(0); break;
     case LOOP: c.a[0] = B(0); c.a[1] = N(1); c.a[2] = N(2); break;
-    case TRACKVOL: case TRACKPAN: case TRACKWIDTH: case TRACKINVERT: case TRACKOUT: case BEND: case MODWHEEL: c.a[0] = N(0); c.a[1] = N(1); break;
+    case TRACKVOL: case TRACKPAN: case TRACKWIDTH: case TRACKINVERT: case TRACKOUT: case BEND: case MODWHEEL: case TRACKPANLAW: c.a[0] = N(0); c.a[1] = N(1); break;
     case TRACKMUTE: case TRACKSOLO: c.a[0] = N(0); c.a[1] = B(1); break;
     case TRACKSEND: c.a[0] = N(0); c.a[1] = N(1); c.a[2] = N(2); break;
     case INSTPARAM: {
@@ -278,6 +278,7 @@ void apply(Engine& e, Cmd& c) {
     case PREVIEW: e.preview(t, (int)a[1], a[2], a[3] != 0); break;
     case BEND: e.bend(t, a[1]); break;
     case MODWHEEL: e.modWheel(t, a[1]); break;
+    case TRACKPANLAW: e.trackPanLaw(t, a[1]); break;
     case TRACKNOTES: e.trackNotes(t, give<NoteData>(c)); break;
     case TRACKCLIPS: e.trackClips(t, give<ClipData>(c)); break;
     case TRACKCC: e.trackCC(t, c.p ? give<CCData>(c) : nullptr); break;

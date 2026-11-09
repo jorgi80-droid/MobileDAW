@@ -61,7 +61,7 @@ ok(ch('GmsT').instrument.kind === 'gms' && ch('GmsT').instrument.preset === 'Gro
 ok(ch('Piano').instrument.kind === 'directwave' && /Grand Piano/.test(ch('Piano').instrument.library) && !ch('EqOnly').instrument, 'DirectWave library program kept; an effect preset named "SuperSaw" is not a synth');
 ok(!ch('GmsT').modules.length && ch('Lead').modules.map((m) => m.name).join() === 'Leveller', 'instrument modules are not in the effect chain');
 ok(ch('Vokal').modules.map((m) => m.name).join() === 'Graphic EQ,Autoduck' && ch('Vokal').modules[1].enabled === false, 'FLM modules in rack order, names from the module table, bypass from param 0');
-{ const { LVL0 } = await import('../js/import/flm.js'); ok(Math.abs(ch('Vokal').gain - Math.fround(0.6) / LVL0) < 1e-12 && Math.abs(ch('Vokal').pan - (-0.5)) < 1e-6 && LVL0 === 0.85312408208847046, 'FLM channel level / pan: gain relative to the exact FLM default 0.85312408 (= 0 dB)'); }
+{ const { LVL0, flmGain } = await import('../js/import/flm.js'); const db = 20 * Math.log10(ch('Vokal').gain); ok(Math.abs(db - (66 * Math.pow(Math.fround(0.6), 0.6) - 60)) < 1e-6 && Math.abs(db + 11.42) < 0.01 && flmGain(LVL0) === 1 && Math.abs(20 * Math.log10(flmGain(1)) - 6) < 1e-6 && Math.abs(ch('Vokal').pan - (-0.5)) < 1e-6, 'FLM channel level by FLM\'s Level law (dB = 66 v^0.6 - 60: 0.6 -> -11.42 dB, 0.8531 -> 0 dB, 1 -> +6 dB) and pan'); }
 ok(ch('Lead').modules.some((m) => m.name === 'Leveller'), 'Leveller (type 20) named from the module table');
 const have = new Set(['My Tracks/vokal.wav', 'My Samples/lead.wav', 'My Samples/lead2.wav', 'My Samples/kick.wav']);
 const B = buildMdaw(M, { root: '/Samples/Imports/T', has: (p) => have.has(p) });
@@ -83,7 +83,7 @@ ok(tr('EqOnly').mute === true && !lead.mute && !voc.mute && (B.report.precision 
 { const { LVL0 } = await import('../js/import/flm.js'), n = lead.clips[0].notes;
   ok(Math.abs(n[0].v - 0.8) < 1e-12 && n[1].v === 1 && Math.abs(n[2].v - 0.4) < 1e-12 && !n[0].pan && n[1].pan < -0.99 && n[2].t === (3 + 1 / 128) * 960 && n[2].t === 2887.5,
     'FLM note velocity byte (default 204 = 80 %, 255 = 100 %, 102 = 40 %) and pan byte (127 centre, 0 hard left); a note 1/128 beat off the grid keeps its exact position (2887.5 ticks)');
-  ok(Math.abs(B.json.master.vol - Math.fround(0.853) / LVL0) < 1e-12 && Math.abs(lead.vol - Math.fround(0.853) / LVL0) < 1e-12, 'track / master level: the FLM default is 0 dB in MDAW (gain relative to it, exact)'); }
+  { const { flmGain } = await import('../js/import/flm.js'); ok(Math.abs(B.json.master.vol - flmGain(Math.fround(0.853))) < 1e-12 && Math.abs(lead.vol - flmGain(Math.fround(0.853))) < 1e-12 && Math.abs(20 * Math.log10(lead.vol)) < 0.01, 'track / master level: FLM\'s default slider is 0 dB in MDAW (Level law)'); } }
 ok(lead.kind === 'midi' && lead.inst.type === 30 && lead.inst.zones[0].sample.path === '/Samples/Imports/T/My Samples/lead.wav' && lead.inst.zones.length === 2 && lead.inst.zones[1].root === 48 && Math.abs(lead.inst.zones[1].vol + 6.02) < 0.01 && lead.inst.zones[0].vol === 0 && lead.inst.zones[1].lo === 0 && lead.inst.zones[1].hi === 127, 'FLM DirectWave -> MDAW DirectWave: one zone per layer, root key kept, full key range');
 {
   const g = tr('GmsT').inst, m = tr('MiniT').inst, s = tr('SawT').inst, pi = tr('Piano').inst;

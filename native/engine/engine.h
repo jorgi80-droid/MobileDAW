@@ -56,7 +56,7 @@ struct Strip {
   Device* dev[MAX_DEV] = {}; int ndev = 0;
   double vol = 0.85, pan = 0, gl = 0, gr = 0, send[2] = { 0, 0 }; int out = -1; bool mute = false, solo = false;
   double mg = 1, sg0 = 0, sg1 = 0;   // core.js: mute / solo fade, smoothed send levels
-  double silent = 0; bool wasAudible = true; double pitch = 0, bend = 0, mod = 0;
+  double silent = 0; bool wasAudible = true; double pitch = 0, bend = 0, mod = 0; int plaw = 0;
   CCData* ccl = nullptr; double ccG = 1, ccP = 0;
   uint8_t tpMap[128]; bool active = false;
   PreEv pre[64]; int npre = 0;
@@ -131,6 +131,7 @@ class Engine {
   void devBypass(int t, int d, bool b) { if (ok(t) && d >= 0 && d < s[t].ndev) s[t].dev[d]->bypass = b; }
   void bend(int t, double st, double sl = 0);
   void modWheel(int t, double v);
+  void trackPanLaw(int t, double k) { if (ok(t)) s[t].plaw = k == 1 ? 1 : 0; }
   void preview(int t, int pitch, double vel, bool on);
   void trackNotes(int t, NoteData* prepared);
   void trackCC(int t, CCData* prepared);

@@ -61,6 +61,7 @@ const nativeEng = {
   preview: (t, pitch, vel, on) => call('preview', t, pitch, vel, on),
   bend: (t, st) => call('bend', t, st),
   modWheel: (t, v) => call('modWheel', t, v),
+  trackPanLaw: (t, k) => call('trackPanLaw', t, k),
   send: (t, idx, v) => call('trackSend', t, idx, v), automation: (flat, n) => call('automation', flat, n),
   devOut: (t, d) => call('devOut', t, d),
   poll: () => call('poll'),

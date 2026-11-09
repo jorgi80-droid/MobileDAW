@@ -8,7 +8,7 @@
 // Model units: beats, linear gain (1 = default level), pan -1..1.
 import { DEVICES, PRESETS, INSTRUMENTS, FLM_FMT } from '../defs.js';
 import { gmFor, GM_SF } from './gm.js';
-import { LVL0 } from './flm.js';
+import { flmGain } from './flm.js';
 import { ssEnvTime, ssLfoHz, SS_LFO_BEATS } from '../engine/hdsaw.js';
 
 // the channel's instrument -> MDAW: DirectWave layers -> zones of MDAW's DirectWave; a library program that is not in the archive -> the
@@ -148,13 +148,16 @@ export function buildMdaw(M, opts) {
   const padEnv = (e) => { if (!e || (e.a < 0.005 && e.s > 0.995 && e.r > 0.995)) return { a: 0, d: 0, s: 1, r: 0 }; return { a: e.a < 0.005 ? 0 : fT(e.a), d: fT(e.d), s: clamp(e.s, 0, 1), r: e.r > 0.995 ? 0 : fT(e.r) }; };
   const vol = (g) => clamp(Number.isFinite(g) ? g : 1, 0, VMAX);   // model gain 1 = the source app's default level = 0 dB in MDAW
   const util = DEVICES[0].params.map((q) => q.def);
+  // a level above MDAW's fader top (+2.9 dB; FLM goes to +6 dB): the rest as a Utility Gain at the end of the strip's chain (FLM's fader is
+  // after its effects too), so nothing of the mix is lost
+  const over = (strip, g) => { if (!(g > VMAX) || strip.devices.length >= 16) return; const p = util.slice(); p[0] = Math.round(20 * Math.log10(g / VMAX) * 1000) / 1000; strip.devices.push({ id: uid(), type: 0, params: p, bypass: false }); report.levelOver = (report.levelOver || 0) + 1; };
   const placeholder = (m) => {
     report.plugins.set(m.name, (report.plugins.get(m.name) || 0) + 1);
     return { id: uid(), type: 0, params: util.slice(), bypass: m.enabled === false, missing: { name: m.name, app: m.app || M.app, preset: m.preset || '', enabled: m.enabled !== false, ...(m.flmType != null ? { flmType: m.flmType } : {}), ...(m.sure === false ? { sure: false } : {}), ...(m.mix != null ? { mix: m.mix } : {}), ...(m.id != null ? { flmId: m.id } : {}), params: (m.params || []).slice() } };
   };
   const devices = (ch) => (ch.modules || []).slice(0, 16).map(placeholder);
   const prec = { offGrid: 0, boost: 0 };                                     // precision report: values kept that a rounding would have changed
-  const notesOf = (cl, map) => (cl.notes || []).map((n) => { const t = Math.max(0, T(n.t)), d = Math.max(1 / 64, T(n.len)); if (t % 1 || d % 1) prec.offGrid++; if (n.vel > 1) prec.boost++; return { t, d, p: map ? map(n.pitch) : clamp(Math.round(n.pitch), 0, 127), v: clamp(n.vel ?? 0.8, 0.001, 2), ...(n.pan ? { pan: clamp(n.pan, -1, 1) } : {}) }; }).filter((n) => n.p >= 0 && n.p <= 127);
+  const notesOf = (cl, map) => (cl.notes || []).map((n) => { const t = Math.max(0, T(n.t)), d = Math.max(1 / 64, T(n.len)); if (t % 1 || d % 1) prec.offGrid++; if (n.vel > 1) prec.boost++; return { t, d, p: map ? map(n.pitch) : clamp(Math.round(n.pitch), 0, 127), v: clamp(n.vel ?? 0.8, 0.001, 2), ...(n.pan ? { pan: clamp(n.pan, -1, 1) } : {}), ...(n.slide ? { sl: true } : {}), ...(n.repeat > 0 ? { rpt: Math.min(8, n.repeat + 1) } : {}), ...(n.pitchOfs ? { pt: clamp(Math.round(n.pitchOfs * 1000) / 1000, -24, 24) } : {}) }; }).filter((n) => n.p >= 0 && n.p <= 127);
   const patternClip = (cl, notes, name) => {
     const c = { id: uid(), start: Math.max(0, T(cl.pos)), len: Math.max(1, T(cl.len)), name: name || '', notes, cm: true };
     const cyc = T(cl.cycle || 0);
@@ -168,10 +171,10 @@ export function buildMdaw(M, opts) {
     punch: { on: false, start: 0, end: 0 }, recLoop: false, loop: { on: false, start: 0, end: 7680 }, tracks: [], master: { vol: 1, devices: [] }, returns: [], cc: {}, imported: { app: M.app } };
   const spb = 60 / out.bpm;
   const master = M.channels.find((c) => c.kind === 'master');
-  if (master) { out.master.vol = vol(master.gain); out.master.devices = devices(master); }
+  if (master) { out.master.vol = vol(master.gain); out.master.devices = devices(master); over(out.master, master.gain); }
   for (const b of M.channels.filter((c) => c.kind === 'bus')) {
     if (out.returns.length >= MAX_FX) { report.skipped.push('Bus efek "' + b.name + '": jumlah return maksimum ' + MAX_FX); continue; }
-    out.returns.push({ name: b.name, vol: vol(b.gain), pan: clamp(b.pan || 0, -1, 1), mute: !!b.mute, devices: devices(b) });
+    out.returns.push({ name: b.name, vol: vol(b.gain), pan: clamp(b.pan || 0, -1, 1), ...(M.app === 'FL Studio Mobile' ? { panLaw: 'flm' } : {}), mute: !!b.mute, devices: devices(b) }); over(out.returns[out.returns.length - 1], b.gain);
   }
   while (out.returns.length < 2) out.returns.push({ name: 'Return ' + 'AB'[out.returns.length], vol: DEF_VOL, pan: 0, mute: false, devices: [] });
 
@@ -183,6 +186,7 @@ export function buildMdaw(M, opts) {
     (subs.length ? subs : [{ kind: ch.instrument ? 'notes' : ch.pads.length ? 'drums' : 'audio', clips: [] }]).forEach((st, k) => {
       if (out.tracks.length >= MAX_TRACKS) { report.skipped.push('Track "' + ch.name + '": jumlah track maksimum'); return; }
       const t = { id: uid(), name: subs.length > 1 && k > 0 ? `${ch.name} (${k + 1})` : ch.name, color, kind: 'audio', inst: null, clips: [], devices: devices(ch), vol: vol(ch.gain), pan: clamp(ch.pan || 0, -1, 1), mute: !!ch.mute, solo: false, send: [0, 0], out: -1 };
+      over(t, ch.gain); if (M.app === 'FL Studio Mobile') t.panLaw = 'flm';   // FLM's balance pan law (Honeydew mixer.rs), kept for this track
       if (st.kind === 'notes') {
         t.kind = 'midi';
         t.inst = instrumentOf(ch.instrument, t.name);
@@ -191,11 +195,12 @@ export function buildMdaw(M, opts) {
         t.kind = 'drum';
         const pads = (ch.pads || []).slice(0, MAX_PADS).map((q, k2) => {
           const f = q.path ? sample(q.path, q.name) : null;
-          return { pitch: 36 + k2, name: (q.name || 'Pad ' + (k2 + 1)).slice(0, 14), kind: -1, sample: f && !f.missing ? { path: f.path, name: f.path.split('/').pop() } : null, gain: clamp(20 * Math.log10(Math.max(1e-4, q.gain ?? 1)), -60, 12), pan: clamp(q.pan || 0, -1, 1), pit: clamp(q.pitch || 0, -24, 24), dec: 1, start: 0, end: 1, rev: false, ...padEnv(q.env), mute: !!(f && f.missing), solo: false };
+          return { pitch: 36 + k2, name: (q.name || 'Pad ' + (k2 + 1)).slice(0, 14), kind: -1, sample: f && !f.missing ? { path: f.path, name: f.path.split('/').pop() } : null, gain: clamp(20 * Math.log10(Math.max(1e-4, q.gain ?? 1)), -60, 12), pan: clamp(q.pan || 0, -1, 1), pit: clamp(q.pitch || 0, -24, 24), dec: 1, start: 0, end: 1, rev: false, ...padEnv(q.env), mute: !!(f && f.missing) || !!q.mute, solo: !!q.solo, rev: !!q.reverse, cut: clamp(q.cut | 0, 0, 3), poly: q.poly !== false };
         });
         t.inst = { type: 3, params: {}, pads: pads.length ? pads : undefined };
         const map = pads.length ? (p) => (p >= 0 && p < pads.length ? pads[p].pitch : -1) : (p) => 36 + p;
-        for (const cl of st.clips) t.clips.push(patternClip(cl, notesOf(cl, map)));
+        const ofs = (ch.pads || []).slice(0, MAX_PADS).map((q) => (Number.isFinite(q.offset) ? q.offset : 0));
+        for (const cl of st.clips) { const ns = notesOf(cl, map); if (ofs.some(Boolean)) { const byPitch = new Map(pads.map((q, k2) => [q.pitch, ofs[k2]])); for (const n of ns) { const o = byPitch.get(n.p) || 0; if (o) n.t = Math.max(0, Math.round(n.t + o * PPQ)); } } t.clips.push(patternClip(cl, ns)); }   // FLM pad Shift: hit at tick + offset beats
       } else {
         for (const cl of st.clips) {
           if (!cl.sample) continue;
@@ -238,7 +243,7 @@ export function buildMdaw(M, opts) {
     const t = { id: uid(), name: 'Auto: ' + ch.name + ' • Volume', color: '#9fb4d8', kind: 'auto', inst: null, clips: [], devices: [], vol: DEF_VOL, pan: 0, mute: false, solo: false, send: [0, 0],
       target: { kind: 0, strip, param: 0, def: { n: 'Volume', min: 0, max: VMAX, fmt: 'gain' } } };
     for (const cl of at.clips) {
-      const len = Math.max(1, T(cl.len)), pts = (cl.points || []).map((q) => ({ t: clamp(T(q.t), 0, len), v: clamp(vol((q.v || 0) / LVL0) / VMAX, 0, 1) })).sort((a, b) => a.t - b.t);
+      const len = Math.max(1, T(cl.len)), pts = (cl.points || []).map((q) => ({ t: clamp(T(q.t), 0, len), v: clamp(vol(flmGain(q.v || 0)) / VMAX, 0, 1) })).sort((a, b) => a.t - b.t);
       if (!pts.length) continue;
       if (pts.length === 1) pts.push({ t: len, v: pts[0].v });
       t.clips.push({ id: uid(), start: Math.max(0, T(cl.pos)), len, name: '', pts }); report.clips++;
@@ -250,7 +255,7 @@ export function buildMdaw(M, opts) {
     const t = { id: uid(), name: 'Auto: Master \u2022 Volume', color: '#9fb4d8', kind: 'auto', inst: null, clips: [], devices: [], vol: DEF_VOL, pan: 0, mute: false, solo: false, send: [0, 0],
       target: { kind: 0, strip: 'master', param: 0, def: { n: 'Volume', min: 0, max: VMAX, fmt: 'gain' } } };
     for (const cl of at.clips) {
-      const len = Math.max(1, T(cl.len)), pts = (cl.points || []).map((q) => ({ t: clamp(T(q.t), 0, len), v: clamp(vol((q.v || 0) / LVL0) / VMAX, 0, 1) })).sort((x, y) => x.t - y.t);
+      const len = Math.max(1, T(cl.len)), pts = (cl.points || []).map((q) => ({ t: clamp(T(q.t), 0, len), v: clamp(vol(flmGain(q.v || 0)) / VMAX, 0, 1) })).sort((x, y) => x.t - y.t);
       if (!pts.length) continue;
       if (pts.length === 1) pts.push({ t: len, v: pts[0].v });
       t.clips.push({ id: uid(), start: Math.max(0, T(cl.pos)), len, name: '', pts }); report.clips++;
@@ -263,6 +268,7 @@ export function buildMdaw(M, opts) {
   if (prec.boost) P2.push(prec.boost + ' not dengan velocity di atas 100 % (boost) dipertahankan, tidak dipotong');
   const dwN = report.instruments.filter((x) => /^DirectWave \(/.test(x.to)).length, synN = report.instruments.filter((x) => x.how === 'preset' || x.how === 'default').length;
   if (prec.clipPan) P2.push(prec.clipPan + ' klip audio punya pan sendiri di file asli: dipakai sebagai pan klip (balance)');
+  if (report.levelOver) P2.push(report.levelOver + ' strip punya level FLM di atas +2,9 dB (batas fader MobileDAW): sisa gain dipasang sebagai Utility di akhir rantainya');
   if (prec.clipEnv) P2.push(prec.clipEnv + ' klip audio punya envelope (A / D / S / R) sendiri di file asli: belum diterapkan');
   const muted = M.channels.filter((c) => c.kind !== 'master' && c.mute).map((c) => c.name);
   if (muted.length) P2.push(muted.length + ' track di-mute seperti di FLM: ' + muted.join(', '));

@@ -79,8 +79,13 @@ export function parseFlm(buf, onProgress) {
     if (rs) for (const s of kids(rs).filter((x) => x.tag === 'SMPl')) {
       const sk = kids(s), pm = one(sk, 'PRMS'), prm = [];
       if (pm) for (let k = 0; k + 4 <= pm.n; k += 4) prm.push(f32(pm.a + k));
-      out.pads.push({ path: path1(one(sk, 'PTH1')), vol: prm[0] ?? LVL0, pan: prm[1] ?? 0.5, pitch: prm[2] ?? 0.5, params: prm });
+      // MAIN (Honeydew read.rs slot()): i32, f64 pad index, name[512], folder[512], u8 reverse, f64 beat offset, f32 offset control, u8 cut group
+      // (0 none, 1..3 = A..C), u8 overlapping voices (Poly). PRMS: level, pan, speed (pitch), mute, solo, length, A, D, S, R, sample start.
+      const mn = one(sk, 'MAIN'), M0 = mn && mn.n >= 1051 ? mn.a : -1;
+      out.pads.push({ path: path1(one(sk, 'PTH1')), vol: prm[0] ?? LVL0, pan: prm[1] ?? 0.5, pitch: prm[2] ?? 0.5, params: prm, index: M0 >= 0 ? f64(M0 + 4) : out.pads.length,
+        reverse: M0 >= 0 && u[M0 + 1036] !== 0, offset: M0 >= 0 ? f64(M0 + 1037) : 0, cut: M0 >= 0 ? Math.min(3, u[M0 + 1049]) : 0, poly: M0 >= 0 ? u[M0 + 1050] !== 0 : true, mute: (prm[3] || 0) > 0.5, solo: (prm[4] || 0) > 0.5 });
     }
+    out.pads.sort((a, b) => a.index - b.index);           // a slot plays on the pad its MAIN pad index names (not in file order)
     return out;
   };
   const readClip = (c, kind) => {
@@ -89,7 +94,7 @@ export function parseFlm(buf, onProgress) {
     const clip = { pos: pos / 128, len: f64(h.a), cycle: f64(h.a + 8), offset: f64(h.a + 16), id: i32(h.a + 24), srcLen: f64(h.a + 28), muted: h.n > 36 && u[h.a + 36] === 1, events: [] };
     if (!(clip.len > 0)) { clip.len = clip.cycle > 0 ? clip.cycle : clip.srcLen > 0 ? clip.srcLen : 4; clip.lenFromCycle = true; }   // never resized: one cycle long
     const e = one(ck, 'EVN2');
-    if (e && e.n >= 2) { const rs = u16(e.a); if (rs >= 20) for (let p = e.a + 2; p + rs <= e.a + e.n; p += rs) clip.events.push({ t: u32(p) / 128, len: f64(p + 4), pitch: u16(p + 12), vel8: dv.getUint8(p + 14), pan8: dv.getUint8(p + 15), vel: u16(p + 16), value: u16(p + 16), flags: u16(p + 18) }); }
+    if (e && e.n >= 2) { const rs = u16(e.a); if (rs >= 20) for (let p = e.a + 2; p + rs <= e.a + e.n; p += rs) clip.events.push({ t: u32(p) / 128, len: f64(p + 4), pitch: u16(p + 12), vel8: dv.getUint8(p + 14), pan8: dv.getUint8(p + 15), vel: u16(p + 16), value: u16(p + 16), repeat: dv.getInt8(p + 18), slide: u[p + 19] !== 0, flags: u16(p + 18) }); }
     const sm = one(ck, 'CLSm');
     if (sm) {
       const sk = kids(sm), stc = one(sk, 'STRC'), pm = one(sk, 'PRMS'), main = one(sk, 'MAIN');
@@ -106,6 +111,9 @@ export function parseFlm(buf, onProgress) {
     const c = chans[k], ks = kids(c), hd = one(ks, 'CHHD'), flag = u32(c.a);
     const ch = { kind: flag === 0 ? 'master' : flag === 0x80 ? 'bus' : 'track', name: hd ? str(hd.a, 1024) : 'Channel ' + k, order: hd && hd.n > 0x40c ? f32(hd.a + 0x408) : k, hue: hd && hd.n > 0x410 ? f32(hd.a + 0x40c) : 0, number: hd && hd.n >= 0x43c ? u32(hd.a + 0x438) : k, tracks: [] };
     Object.assign(ch, racks[k] ? readRack(racks[k]) : { vol: LVL0, pan: 0.5, modules: [], pads: [] });
+    // SEND (Honeydew read.rs send()): i32 target channel number (0 = master), f32 enabled (> 0.5), f32 linear gain, f32 / f32 initial
+    // values, f32 level (the Level law, 0.8531 = 0 dB). A channel plays only through its sends (post fader and pan); a repeated target is ignored.
+    ch.sends = []; for (const sd of ks.filter((x) => x.tag === 'SEND')) { if (sd.n < 4) continue; const tg = i32(sd.a); if (ch.sends.some((q) => q.target === tg)) continue; ch.sends.push({ target: tg, enabled: sd.n >= 8 ? f32(sd.a + 4) > 0.5 : true, level: sd.n >= 24 ? f32(sd.a + 20) : LVL0 }); }
     for (const t of ks.filter((x) => x.tag === 'TRKH')) {
       const tk = kids(t), ds = one(tk, 'DESc');
       const tr = { kind: ds ? ['notes', 'automation', 'audio', 'drums'][i32(ds.a)] || 'audio' : 'audio', target: ds ? { module: i32(ds.a + 4), param: i32(ds.a + 8) } : null, label: ds ? str(ds.a + 28, 256) : '', clips: [] };
@@ -140,6 +148,9 @@ function synthOf(m) {
 // u8 slide. Proven on the owner's projects: byte 14 varies note by note (204, 255, 178, 44 ...), byte 15 is 127, the u16 is 32767 on notes.
 // (Before: the u16 was read as velocity, so every imported note played at 100 %.)
 export const LVL0 = 0.85312408208847046;
+// FLM's Level law (Honeydew mixer.rs level_gain): dB = 66 v^0.6 - 60, so 0.8531 is 0 dB, 1 is +6 dB, 0 is silence. Channel, master, effect
+// bus, send, drum pad and audio clip levels all follow it (before: the ratio v / 0.8531, e.g. 0.25 played -10.6 dB instead of FLM's -31.2 dB).
+export function flmGain(v) { if (!(v > 0)) return 0; const db = 66 * Math.pow(v, 0.6) - 60; return Math.abs(db) < 1e-5 ? 1 : Math.pow(10, db / 20); }
 export function flmToModel(P) {
   const M = { app: P.app, name: P.name || 'FLM Project', bpm: P.bpm, sig: P.sig, channels: [], warnings: P.warnings.slice() };
   const hue = (h) => (Number.isFinite(h) && h >= 0 && h <= 1 ? h : null);
@@ -151,7 +162,7 @@ export function flmToModel(P) {
     // an unidentified module with a synth-sized parameter set on a notes channel is its instrument (not an effect): reported by id
     const unk = dw.length || syn || !ch.tracks.some((t) => t.kind === 'notes') ? null : ch.modules.find((m) => !FLM_TYPES[m.type] && m.params.length >= 40);
     const instMods = new Set(dw.length ? dw : syn ? [syn] : unk ? [unk] : []);
-    const c = { kind: ch.kind, name: ch.name, hue: hue(ch.hue), gain: ch.vol / LVL0, pan: ch.pan * 2 - 1, ...(ch.mute ? { mute: true } : {}), ...(ch.solo ? { solo: true } : {}), tracks: [], pads: [],
+    const c = { kind: ch.kind, name: ch.name, hue: hue(ch.hue), gain: flmGain(ch.vol), pan: ch.pan * 2 - 1, ...(ch.mute ? { mute: true } : {}), ...(ch.solo ? { solo: true } : {}), tracks: [], pads: [],
       modules: ch.modules.filter((m) => !instMods.has(m)).map((m) => ({ name: m.name, enabled: m.enabled, ...(m.level != null && m.level < 0.999 ? { mix: m.level } : {}), ...(m.postGain != null && Math.abs(m.postGain - 0.5) > 1e-4 ? { postGain: m.postGain } : {}), ...(m.wetPan != null && Math.abs(m.wetPan - 0.5) > 1e-4 ? { wetPan: m.wetPan } : {}), preset: m.preset && m.preset !== 'Default' ? m.preset : '', params: m.params, id: m.id, flmType: m.type, ...(FLM_TYPES[m.type] && FLM_TYPES[m.type].sure === false ? { sure: false } : {}), app: 'FL Studio Mobile' })) };
     if (dw.length) {
       const lib = dw.find((m) => m.library);
@@ -159,7 +170,7 @@ export function flmToModel(P) {
       if (!c.instrument.layers.length && !c.instrument.library && dw[0].sample) c.instrument.layers.push({ sample: dw[0].sample, root: dw[0].root ?? DW_ROOT0, params: dw[0].params, level: dw[0].level ?? 1, pan: dw[0].pan || 0 });
     } else if (unk) { c.instrument = { kind: 'unknown', name: 'Instrumen FLM #' + unk.type, preset: unk.preset && unk.preset !== 'Default' ? unk.preset : '', params: unk.params, enabled: unk.enabled, flmType: unk.type };
     } else if (syn) { const k = synthOf(syn); c.instrument = { kind: k.kind, name: k.name, preset: syn.preset && syn.preset !== 'Default' ? syn.preset : '', params: syn.params, enabled: syn.enabled, flmType: syn.type, ...(k.kind === 'soundfont' ? { library: syn.presetPath } : {}) }; }
-    c.pads = ch.pads.map((q, k) => ({ path: q.path, name: (q.path.split('/').pop() || 'Pad ' + (k + 1)).replace(/\.[^.]+$/, ''), gain: q.vol / LVL0, pan: q.pan * 2 - 1, pitch: (q.pitch - 0.5) * 48, env: q.params.length >= 10 ? { a: q.params[6], d: q.params[7], s: q.params[8], r: q.params[9] } : null }));   // pitch 0.5 + st / 48 (cents kept)
+    c.pads = ch.pads.map((q, k) => ({ path: q.path, name: (q.path.split('/').pop() || 'Pad ' + (k + 1)).replace(/\.[^.]+$/, ''), gain: flmGain(q.vol), pan: q.pan * 2 - 1, pitch: (q.pitch - 0.5) * 48, env: q.params.length >= 10 ? { a: q.params[6], d: q.params[7], s: q.params[8], r: q.params[9] } : null, reverse: !!q.reverse, cut: q.cut | 0, poly: q.poly !== false, mute: !!q.mute, solo: !!q.solo, offset: Number.isFinite(q.offset) ? q.offset : 0 }));   // pitch 0.5 + st / 48 (cents kept)
     for (const t of ch.tracks) {
       if (!t.clips.length && t.kind === 'automation') continue;               // empty automation slots
       const tr = { kind: t.kind, label: t.label, clips: [] };
@@ -169,10 +180,11 @@ export function flmToModel(P) {
       }
       for (const x of t.clips) {
         const cl = { pos: x.pos, len: x.len, cycle: x.cycle, offset: x.offset, srcLen: x.srcLen, muted: x.muted };
-        if (t.kind === 'audio') Object.assign(cl, { sample: x.sample, name: x.name, pitch: x.pitch || 0, repitch: x.repitch || 0, stretch: x.stretchOn !== false && x.stretch > 0.01 ? x.stretch : 1, gain: (x.gain ?? LVL0) / LVL0, pan: x.pan != null ? x.pan * 2 - 1 : 0,
+        if (t.kind === 'audio') Object.assign(cl, { sample: x.sample, name: x.name, pitch: x.pitch || 0, repitch: x.repitch || 0, stretch: x.stretchOn !== false && x.stretch > 0.01 ? x.stretch : 1, gain: flmGain(x.gain ?? LVL0), pan: x.pan != null ? x.pan * 2 - 1 : 0,
           ...(x.params && x.params.length >= 10 && (x.params[6] > 0 || x.params[7] < 1 || x.params[8] < 1 || x.params[9] < 1) ? { env: x.params.slice(6, 10) } : {}) });   // clip envelope A D S R (not applied yet: reported)
         else if (t.kind === 'automation') cl.points = x.events.map((e) => ({ t: e.t, v: e.vel / 65535 }));
-        else cl.notes = x.events.map((e) => ({ t: e.t, len: e.len > 0 ? e.len : 0.25, pitch: t.kind === 'notes' ? Math.min(127, e.pitch + NOTE_OFS) : e.pitch, vel: e.vel8 / 255, pan: Math.max(-1, Math.min(1, (e.pan8 - 127) / 128)) }));
+        else cl.notes = x.events.map((e) => ({ t: e.t, len: e.len > 0 ? e.len : 0.25, pitch: t.kind === 'notes' ? Math.min(127, e.pitch + NOTE_OFS) : e.pitch, vel: e.vel8 / 255, pan: Math.max(-1, Math.min(1, (e.pan8 - 127) / 128)), ...(e.slide && t.kind === 'notes' ? { slide: true } : {}),
+          ...(t.kind !== 'notes' && e.repeat > 0 ? { repeat: e.repeat } : {}), ...(t.kind !== 'notes' && Math.abs(12 * (2 * e.value / 65535 - 1)) > 0.01 ? { pitchOfs: 12 * (2 * e.value / 65535 - 1) } : {}) }));   // drum hit: Repeat (extra hits in the sixteenth), Pitch (2^(2 v / 65535 - 1), +-12 st)
         tr.clips.push(cl);
       }
       c.tracks.push(tr);

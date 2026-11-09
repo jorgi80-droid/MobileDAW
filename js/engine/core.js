@@ -13,7 +13,7 @@ const TAIL_SECONDS = 2;
 function newStrip() {
   return {
     inst: null, ev: null, clips: [], dev: [], vol: 0.85, pan: 0, gl: 0, gr: 0, send: [0, 0], out: -1, mute: false, solo: false, mg: 1, sg0: 0, sg1: 0,   // mg: mute / solo fade, sg0/sg1: smoothed send levels
-    silent: 0, wasAudible: true, pitch: 0, bend: 0, mod: 0, ccl: null, ccG: 1, ccP: 0, tpMap: Uint8Array.from({ length: 128 }, (_, i) => i), active: false, pre: [], bufL: new Float32Array(BLOCK), bufR: new Float32Array(BLOCK), peakL: 0, peakR: 0,
+    silent: 0, wasAudible: true, pitch: 0, bend: 0, mod: 0, plaw: 0, ccl: null, ccG: 1, ccP: 0, tpMap: Uint8Array.from({ length: 128 }, (_, i) => i), active: false, pre: [], bufL: new Float32Array(BLOCK), bufR: new Float32Array(BLOCK), peakL: 0, peakR: 0,
     sevT: new Int32Array(512), sevP: new Uint8Array(512), sevV: new Float32Array(512), sevOn: new Uint8Array(512), sevPn: new Float32Array(512), sevSt: new Float32Array(512), nPan: 0,
     lat: 0, pd: 0, pdl: new PdcLine(),   // PDC: latency of this strip's chain, compensation delay applied after it, its delay ring
     width: 1, sw: 1, inv: 0, pL: 1, pR: 1,   // stereo width (0 mono .. 1 .. 2 wide, smoothed sw) and phase invert (bit 0 L, bit 1 R; ramped polarity pL / pR)
@@ -112,6 +112,8 @@ export class Engine {
   }
   trackVol(t, v) { if (this.ok(t)) this.s[t].vol = Math.max(0, v); }
   trackPan(t, v) { if (this.ok(t)) this.s[t].pan = clamp(v, -1, 1); }
+  // pan law of a strip: 0 = MobileDAW / Live (constant power, unity in the middle), 1 = FL Studio Mobile (balance: min(1 - pan, 1) / min(1 + pan, 1))
+  trackPanLaw(t, k) { if (this.ok(t)) this.s[t].plaw = k === 1 ? 1 : 0; }
   trackMute(t, m) { if (this.ok(t)) this.s[t].mute = !!m; }
   trackSolo(t, m) { if (this.ok(t)) this.s[t].solo = !!m; }
   trackSend(t, k, v) { if (this.ok(t) && t < MASTER && (k === 0 || k === 1)) this.s[t].send[k] = clamp(v, 0, 1.5); }
@@ -120,7 +122,7 @@ export class Engine {
   settle() {
     for (let t = 0; t < NSTRIPS; t++) {
       const s = this.s[t], ret = t >= RET0, vol = ret && s.mute ? 0 : s.vol, pn = t === MASTER ? 0 : s.pan, a = (pn + 1) * Math.PI * 0.25;
-      if (t === MASTER) { s.gl = s.vol; s.gr = s.vol; } else { s.gl = vol * Math.cos(a) * 1.41421356; s.gr = vol * Math.sin(a) * 1.41421356; }
+      if (t === MASTER) { s.gl = s.vol; s.gr = s.vol; } else if (s.plaw) { s.gl = vol * Math.min(1 - pn, 1); s.gr = vol * Math.min(1 + pn, 1); } else { s.gl = vol * Math.cos(a) * 1.41421356; s.gr = vol * Math.sin(a) * 1.41421356; }
       if (t < MASTER) { s.sg0 = s.send[0]; s.sg1 = s.send[1]; }
       s.sw = s.width; s.pL = s.inv & 1 ? -1 : 1; s.pR = s.inv & 2 ? -1 : 1;
     }
@@ -426,7 +428,7 @@ export class Engine {
     this.runChain(s, idx, L, R, n);
     if (s.pd > 0) s.pdl.run(L, R, n, s.pd); else s.pdl.clear();   // PDC: line up with the slowest track (the sidechain level below is the aligned signal)
     this.stereo(s, L, R, n);
-    const pn = s.ccP ? clamp(s.pan + s.ccP, -1, 1) : s.pan, vg = s.vol * s.ccG, a = (pn + 1) * Math.PI * 0.25, tl = vg * Math.cos(a) * 1.41421356, tr = vg * Math.sin(a) * 1.41421356, s0 = s.send[0], s1 = s.send[1];
+    const pn = s.ccP ? clamp(s.pan + s.ccP, -1, 1) : s.pan, vg = s.vol * s.ccG, a = (pn + 1) * Math.PI * 0.25, tl = s.plaw ? vg * Math.min(1 - pn, 1) : vg * Math.cos(a) * 1.41421356, tr = s.plaw ? vg * Math.min(1 + pn, 1) : vg * Math.sin(a) * 1.41421356, s0 = s.send[0], s1 = s.send[1];
     const mt = audible ? 1 : 0, mk = this.mgK;                     // mute / solo: ramp instead of a cut (click-free in and out)
     if (s0 > 0 || s.sg0 > 0) this.retActive[0] = true; if (s1 > 0 || s.sg1 > 0) this.retActive[1] = true;
     const ot = s.out >= 0 && s.out < NFX ? s.out : -1;          // group routing: the track feeds an effect track instead of the master
@@ -456,7 +458,7 @@ export class Engine {
     this.runChain(s, RET0 + k, L, R, n);
     if (s.pd > 0) s.pdl.run(L, R, n, s.pd); else s.pdl.clear();   // PDC: line up with the slowest return
     this.stereo(s, L, R, n);
-    const target = s.mute ? 0 : s.vol, a = (s.pan + 1) * Math.PI * 0.25, tl = target * Math.cos(a) * 1.41421356, tr = target * Math.sin(a) * 1.41421356;
+    const target = s.mute ? 0 : s.vol, a = (s.pan + 1) * Math.PI * 0.25, tl = s.plaw ? target * Math.min(1 - s.pan, 1) : target * Math.cos(a) * 1.41421356, tr = s.plaw ? target * Math.min(1 + s.pan, 1) : target * Math.sin(a) * 1.41421356;
     let pl = 0, pr = 0;
     for (let i = 0; i < n; i++) {
       s.gl += (tl - s.gl) * 0.0021; s.gr += (tr - s.gr) * 0.0021;

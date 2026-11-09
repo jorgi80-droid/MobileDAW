@@ -263,6 +263,14 @@ export const SCENARIOS = [
       }
       e.play(); play(e, 8, [128, 77, 256]);
     } },
+  { name: 'core-panlaw', info: 'FL Studio Mobile pan law (trackPanLaw 1 = balance) next to the Live / MobileDAW constant-power law: tracks panned hard left / -0.4 / +0.7 / centre with both laws, a pan lane (CC10) on a balance track, a return with the balance law, law switched while playing',
+    run(e) {
+      e.tempo(120); for (let t = 0; t < 4; t++) { e.trackInst(t, 2); const f = []; for (let k = 0; k < 4; k++) f.push(k * PPQ, PPQ * 0.9, 50 + t * 5, 0.8, 0); e.trackNotes(t, f, 4); }
+      e.trackPan(0, -1); e.trackPan(1, -0.4); e.trackPan(2, 0.7); e.trackPanLaw(0, 1); e.trackPanLaw(1, 1); e.trackPanLaw(3, 1);
+      e.trackSend(2, 0, 0.6); e.trackPan(65, 0.5); e.trackPanLaw(65, 1);   // 65 = RET0 (Return A)
+      e.trackCC(3, [0, 2, 0, PPQ * 3, 2, 127], 2);
+      e.play(); play(e, 1.5, [128, 77]); e.trackPanLaw(2, 1); e.trackPanLaw(0, 0); play(e, 1.5, [128]);
+    } },
   { name: 'core-modwheel', info: 'Mod wheel (modWheel command and trackCC kind 7 = CC1): FLM SuperSaw ModWheel Amount / Dest to Cutoff, Pulse Width, Unison Detune, Level, LFO Amount and LFO Rate; a wheel lane on a second SuperSaw; instrument re-created while the wheel is up',
     run(e) {
       e.tempo(120); e.trackInst(0, 33); e.trackInst(1, 33);
