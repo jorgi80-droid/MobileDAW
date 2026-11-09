@@ -537,8 +537,8 @@ V[40] = (k) => {
     k.col(k.TL('Width', k.NT(8, { w: 52 })), k.TL('Pos. L', k.NT(9, { w: 52 })), k.TL('Pos. R', k.NT(10, { w: 52 })))));
   return k.row(k.col(dark, k.row(k.K(4), k.K(5), k.K(6), k.K(7))), k.sep(),
     k.col(k.K(11), note, k.K(12), k.TL('Spread', k.N(13, { w: 74 }))), k.sep(),
-    k.col(k.T(14, 'LFO', { cls: 'lk-chkl' }), k.row(k.K(15, { n: 'Amount' }), k.TL('Shape', k.S(23, { w: 66 }))), k.row(k.swap(24, () => k.K(25, { n: 'Rate' }), () => k.K(16, { n: 'Rate' })), k.CH(24, ['Hz', '♪'], { v: true, cls: 'sm' })),
-      k.row(k.K(26, { n: 'Phase' }), k.K(27, { n: 'Offset' }))), k.sep(),
+    h('div', { class: 'lk-col lk-clfo' }, k.T(14, 'LFO', { cls: 'lk-chkl' }), h('div', { class: 'lk-clg' }, k.K(15, { n: 'Amount' }), k.TL('Shape', k.S(23, { w: 66 })),
+      k.swap(24, () => k.K(25, { n: 'Rate' }), () => k.K(16, { n: 'Rate' })), k.CH(24, ['Hz', '♪'], { v: true, cls: 'sm' }), k.K(26, { n: 'Phase' }), k.K(27, { n: 'Offset' }))), k.sep(),
     k.col(k.T(17, 'Filter', { cls: 'lk-chkl' }), h('span', { class: 'lk-grow' }), k.K(18), k.K(19)), k.sep(), k.col(k.K(20), k.K(21), k.K(22)));
 };
 // Vocoder: Carrier + Enhance, carrier XY pad (Noise: x = rate, y = crackle), Unvoiced / Sens. / Fast | band display (live band levels, dashed Level line;

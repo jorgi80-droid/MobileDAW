@@ -1505,3 +1505,12 @@ html.reduce-motion .menu, html.reduce-motion .modal, html.reduce-motion .fw, htm
 .lk .lk-gdy .lv-btn.lk-ax, .lk .lk-gdx .lv-btn.lk-ax { height: 22px !important; font-size: 11px !important; padding: 0 5px !important; min-width: 0; }
 .lk .lk-gdk { display: grid; grid-template-columns: repeat(2, auto); column-gap: 12px; row-gap: 4px; align-content: center; justify-items: center; }
 .lk .lk-btnsp { display: block; height: 22px; }
+/* Corpus LFO (Live): a 2 x 3 grid - Amount | Shape, Rate | Hz / note, Phase | Offset */
+.lk .lk-clfo { justify-content: flex-start !important; gap: 4px !important; }
+.lk .lk-clg { display: grid; grid-template-columns: auto auto; column-gap: 10px; row-gap: 2px; align-items: center; justify-items: center; }
+/* Spectral Time: the Freeze pad as wide as the mode buttons and tall (Live) */
+.lk .lv-btn.lk-frz { min-width: 110px !important; height: 40px !important; font-size: 22px !important; }
+/* Corpus (Live): every section in its own light box */
+.lk:has(> .lk-clfo) { gap: 4px !important; }
+.lk:has(> .lk-clfo) > .lk-sep { display: none; }
+.lk:has(> .lk-clfo) > .lk-col:not(:first-child) { background: var(--lv-title); border-radius: 6px; padding: 4px 6px !important; align-self: stretch !important; }
