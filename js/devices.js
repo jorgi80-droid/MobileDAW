@@ -452,10 +452,10 @@ function tabify(lk, card, maxW, maxH) {
     // a heading on top spans both columns. Only when that is still too tall is the stack opened up below.
     if (!atom && !loose && c.offsetHeight > maxH && parts.length >= 3 && cs.flexDirection === 'column' && cs.display === 'flex') {
       const hd0 = parts[0].matches('.lk-st, .lk-shead, .lv-st, .lk-dkh, h5') ? parts[0] : null;
-      c.style.display = 'grid'; c.style.gridTemplateColumns = 'repeat(2, auto)'; c.style.columnGap = '10px'; c.style.rowGap = cs.rowGap; c.style.alignItems = 'center'; c.style.alignContent = 'space-evenly'; c.style.justifyItems = 'center';
+      c.style.display = 'grid'; c.style.gridTemplateColumns = 'repeat(2, auto)'; c.style.columnGap = '10px'; c.style.rowGap = cs.rowGap; c.style.alignItems = 'stretch'; c.style.alignContent = 'stretch'; c.style.gridAutoRows = '1fr'; c.style.justifyItems = 'stretch';
       if (hd0) hd0.style.gridColumn = '1 / -1';
       if (c.offsetHeight <= maxH) return [c];
-      c.style.display = c.style.gridTemplateColumns = c.style.columnGap = c.style.rowGap = c.style.alignItems = c.style.alignContent = c.style.justifyItems = ''; if (hd0) hd0.style.gridColumn = '';
+      c.style.display = c.style.gridTemplateColumns = c.style.columnGap = c.style.rowGap = c.style.alignItems = c.style.alignContent = c.style.justifyItems = c.style.gridAutoRows = ''; if (hd0) hd0.style.gridColumn = '';
     }
     if (depth < 3 && !atom && c.offsetHeight > maxH && parts.length >= 2 && col && !loose) {
       for (const x of c.children) if (!isSep(x) && gone(x)) keep.push(x);

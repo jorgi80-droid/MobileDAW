@@ -77,3 +77,19 @@ Yang belum sama dan alasannya:
   - Reverb FLM punya tab Main / Tune / Mixer (Decay, High Damp, Mix, Early Refl., Room Size; Wet / Dry Level, Rev Pan).
 - Nomor tipe FLM yang belum dikenal (3, 9, 13, 27, 28, 30, 41, 44) TIDAK dipetakan dari gambar ini: jumlah parameter kadang cocok (tipe 3 = 21
   parameter seperti Equalizer 4 band) tetapi nilai bawaannya tidak cocok, jadi masih tebakan.
+
+## Putaran simetri + replika (instrumen dan efek), layar 2374x1080
+
+Alat: `tools/ui-audit.mjs` (sekarang mengukur juga margin kiri/kanan/atas/bawah isi kartu: kolom `ASYM`; kartu dengan selisih
+kiri-kanan > 10 px atau atas-bawah > 14 px ditandai), `tools/ui-crop.py` (memotong tiap kartu dari screenshot audit) dan perbandingan
+berdampingan dengan gambar Live pengguna (`Ui_Refrences`, `Pictures.zip`, `uiref`).
+
+- Hasil audit: dari 10 kartu tidak simetris tinggal 2 (MiniMeters: ukuran bebas; Osphere: grid 4 kolom, bagian terakhir 3 knob).
+- Tata letak umum: kolom dalam satu baris panel memakai `space-between` (elemen pertama dan terakhir tiap kolom sejajar di garis
+  atas/bawah yang sama; kolom berisi satu elemen di tengah). Bagian yang terlalu tinggi dilipat jadi 2 kolom dengan baris sama tinggi
+  (Operator), baru kemudian jadi tab.
+- Dibuat ulang mengikuti Live: SoundFont (daftar preset di kotak gelap), Limiter (satu baris tiga knob), EQ Three (grid 3x2),
+  Tension (tiga pita: Exciter / String / Termination-Pickup-Global), Granulator III (info sampel di dalam display, menu mode + ikon
+  di kiri baris knob), Echo (tunnel dan filter lebih besar, busur lebih tebal), Simpler (display tidak lagi keluar kotak).
+- Belum bisa ditiru karena engine tidak punya fungsinya: Mode / Edit A-B / Adaptive Q (EQ Eight), Sidechain (Glue), Resonator 2
+  (Collision), Refresh (Spectrum), meter Out (Filter Delay), baris Velocity/Random di tiap kolom Impulse selain Volume.

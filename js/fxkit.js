@@ -1355,7 +1355,7 @@ VI[28] = (k) => {
 // Vol < Vel, Volume
 VI[29] = (k) => {
   const { i } = k.ctx, t = P.state.tracks[i], Z = () => (t.inst.zones && t.inst.zones[0]) || {}, pick = () => BR.openBrowser('file', { track: i, zone: 0 });
-  const W = 640, H = 110;
+  const W = 700, H = 128;
   const wave = k.D(W, H, (g, w, hh) => {
     const s = Z().sample; if (!s) { label(g, 'Drop Sample Here', w / 2, hh / 2 + 4, '#bbb', 12, 'center'); return; }
     const pk = s.peaks || [], n = pk.length, mid = hh / 2;
@@ -1365,9 +1365,13 @@ VI[29] = (k) => {
     if (Math.round(k.get(0)) === 1) { g.fillStyle = 'rgba(79,195,240,.18)'; g.fillRect(px, 0, (0.02 + k.get(7) * 0.5) * w, hh); }
     g.fillStyle = '#e5484d'; g.fillRect(Math.round(px), 0, 2, hh);
   }, { onDown: (x) => { if (!Z().sample) { pick(); return false; } return { p: k.get(1) }; }, onMove: (x, y, dx, dy, s) => k.set(1, Math.max(0, Math.min(1, s.p + dx / W))) });
-  const head = h('div', { class: 'lk-row lk-shead' }, k.S(0, { w: 86, cls: 'dk or' }), h('span', { class: 'lk-grow' }), h('span', { class: 'lk-st' }, (Z().sample && Z().sample.name) || ''), lvBtn('Sample…', pick, { cls: 'lk-t' }));
-  return h('div', { class: 'lk-col lk-ds' }, k.dk(head, wave),
-    h('div', { class: 'lk-row lk-dsk' }, k.K(1), k.swapN(0, (m) => (m === 2 ? k.K(6) : k.K(2))), k.K(3), k.K(4), k.K(5), k.swapN(0, (m) => (m === 1 ? k.K(7, { n: 'Loop' }) : k.K(8, { n: 'Pitch' }))), k.K(9), k.sep(), k.K(10), k.K(11), k.sep(), k.K(12), k.K(13, { big: true })));
+  // Live: the sample display is a dark box with the file strip INSIDE it at the bottom (load button, length, name); under it the mode menu with its
+  // glyph on the left, then the dials
+  const dur = () => { const sm = Z().sample, d = sm && sm.duration; return !d ? '' : d >= 60 ? Math.floor(d / 60) + ' min ' + Math.round(d % 60) : d.toFixed(1) + ' s'; };
+  const info = h('div', { class: 'lk-row lk-ginfo' }, lvBtn('Sample\u2026', pick, { cls: 'lk-t lk-gio' }), h('span', { class: 'lk-gdur' }, dur()), h('span', { class: 'lk-grow' }), h('span', { class: 'lk-gname' }, (Z().sample && Z().sample.name) || ''));
+  const glyph = h('span', { class: 'lk-gglyph' }); glyph.innerHTML = '<svg viewBox="0 0 40 26" width="40" height="26" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 11c0-6 10-6 12-1 4-4 12-1 10 5"/><path d="M4 18c0-5 9-6 12-2 4-3 11-1 11 4"/><path d="M12 24c2-4 8-5 12-2"/></svg>';
+  return h('div', { class: 'lk-col lk-ds' }, k.dk(wave, info),
+    h('div', { class: 'lk-row lk-dsk' }, k.col(k.S(0, { w: 86, cls: 'dk or' }), glyph), k.sep(), k.K(1, { big: true }), k.swapN(0, (m) => (m === 2 ? k.K(6, { big: true }) : k.K(2, { big: true }))), k.K(3, { big: true }), k.K(4, { big: true }), k.sep(), k.K(5), k.swapN(0, (m) => (m === 1 ? k.K(7, { n: 'Loop' }) : k.K(8, { n: 'Pitch' }))), k.K(9), k.sep(), k.K(10), k.K(11), k.sep(), k.K(12), k.K(13)));
 };
 export function instKitView(i, t, every) {
   const def = INSTRUMENTS[t.inst.type]; if (!VI[t.inst.type]) return null;
@@ -1411,16 +1415,16 @@ V[17] = (k) => {
 // Reverb / Stereo, Output, Stereo / Ping Pong, Dry/Wet; Modulation and Character tabs
 V[6] = (k) => {
   const page = h('div', { class: 'lk-page' });
-  const tunnel = k.D(240, 96, (g, w, hh) => {
+  const tunnel = k.D(336, 124, (g, w, hh) => {
     const fb = k.get(1), tl = k.get(0), tr = k.get(6);
-    for (let r = 0; r < 9; r++) { const a = Math.pow(fb, r), rad = 18 + r * 10 * (0.6 + tl / 1500); if (rad > w / 2) break; g.strokeStyle = '#ffad32'; g.globalAlpha = Math.max(0.2, a); g.lineWidth = 1.6; g.beginPath(); g.arc(w / 2, hh, rad * (r % 2 ? tr / Math.max(1, tl) : 1), Math.PI, 0); g.stroke(); }
+    for (let r = 0; r < 9; r++) { const a = Math.pow(fb, r), rad = 18 + r * 10 * (0.6 + tl / 1500); if (rad > w / 2) break; g.strokeStyle = '#ffad32'; g.globalAlpha = Math.max(0.38, a); g.lineWidth = Math.max(1.6, 3.4 - r * 0.22); g.beginPath(); g.arc(w / 2, hh, rad * (r % 2 ? tr / Math.max(1, tl) : 1), Math.PI, 0); g.stroke(); }
     g.globalAlpha = 1; g.fillStyle = '#fff'; for (let y = 8; y < hh - 4; y += 7) g.fillRect(w / 2 - 1, y, 2, 2);
   });
-  const filt = k.D(240, 40, (g, w, hh) => { grid(g, w, hh); const hp = new Biquad(), lp = new Biquad(); hp.highpass(SR, k.get(5), 0.707); lp.lowpass(SR, k.get(4), 0.707);
+  const filt = k.D(336, 70, (g, w, hh) => { grid(g, w, hh); const hp = new Biquad(), lp = new Biquad(); hp.highpass(SR, k.get(5), 0.707); lp.lowpass(SR, k.get(4), 0.707);
     const pts = []; for (let x = 0; x <= w; x += 2) { const f = xl(x, w); pts.push([x, hh - 3 - Math.min(1.2, mag(hp, f) * mag(lp, f)) / 1.2 * (hh - 8)]); } lvPath(g, pts, DISPC.bl, null, 1.6);
     for (const [n, f] of [[1, k.get(5)], [2, k.get(4)]]) { const x = lx(f, w); g.fillStyle = '#ffad32'; g.beginPath(); g.arc(x, hh / 2, 6, 0, 7); g.fill(); label(g, String(n), x, hh / 2 + 3, '#1b1b1d', 9, 'center'); } },
-    { onDown: (x) => ({ hp: Math.abs(x - lx(k.get(5), 240)) < Math.abs(x - lx(k.get(4), 240)) }), onMove: (x, y, dx, dy, s) => { if (s.hp) k.set(5, Math.max(20, Math.min(2000, xl(x, 240)))); else k.set(4, Math.max(200, Math.min(20000, xl(x, 240)))); } });
-  const tm = (j, dj) => k.swap(8, () => k.K(dj, { n: '' }), () => k.K(j, { n: '' }));
+    { onDown: (x) => ({ hp: Math.abs(x - lx(k.get(5), 336)) < Math.abs(x - lx(k.get(4), 336)) }), onMove: (x, y, dx, dy, s) => { if (s.hp) k.set(5, Math.max(20, Math.min(2000, xl(x, 336)))); else k.set(4, Math.max(200, Math.min(20000, xl(x, 336)))); } });
+  const tm = (j, dj) => k.swap(8, () => k.K(dj, { n: '', big: true }), () => k.K(j, { n: '', big: true }));
   // Modulation: what the engine does (fx2 Echo) - the delay time swings by a sine of Mod Rate, +-Mod Amt x 4 ms; drag: across = rate, up / down = amount
   const qgrid = (g, w, hh) => { g.fillStyle = DISPC.grid; for (let q = 1; q < 4; q++) { g.fillRect(Math.round(w * q / 4), 0, 1, hh); g.fillRect(0, Math.round(hh * q / 4), w, 1); } };
   const modD = k.D(300, 150, (g, w, hh) => { qgrid(g, w, hh); const sec = 2, amt = k.get(16), rate = k.get(15), pts = [];

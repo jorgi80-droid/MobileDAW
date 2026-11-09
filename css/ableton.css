@@ -1078,7 +1078,8 @@ html.reduce-motion .menu, html.reduce-motion .modal, html.reduce-motion .fw, htm
 
 /* fitKit: a panel shorter than the Device panel spreads its controls over the height (same text size everywhere, no empty band) */
 .lk.lk-fill { align-items: stretch; align-content: stretch; }
-.lk.lk-fill.lk-row > .lk-col, .lk.lk-fill.lk-row > .lk-sec, .lk.lk-fill.lk-row > .lk-dk { justify-content: center; gap: 14px; }   /* centred with an equal gap: groups with 1, 2, 3 items mirror about the middle line instead of stepping up and down across the columns */
+.lk.lk-fill.lk-row > .lk-col, .lk.lk-fill.lk-row > .lk-sec, .lk.lk-fill.lk-row > .lk-dk { justify-content: space-between; gap: 12px; }   /* the first and the last item of every column sit on the same top / bottom line: the columns align like a grid */
+.lk.lk-fill.lk-row > .lk-col:not(:has(> :nth-child(2))), .lk.lk-fill.lk-row > .lk-sec:not(:has(> :nth-child(2))), .lk.lk-fill.lk-row > .lk-dk:not(:has(> :nth-child(2))) { justify-content: center; }
 .lk.lk-fill.lk-col { justify-content: space-evenly; }
 .lk.lk-fill > .lk-sep { align-self: stretch; }
 /* audit (Find X8): a knob grows to its label and a switch to its text instead of cutting them ("Pitch Decay", "Finger Mass", "4x10 Bass") */
@@ -1196,3 +1197,13 @@ html.reduce-motion .menu, html.reduce-motion .modal, html.reduce-motion .fw, htm
 .lk .lk-sfdk { min-height: 150px; }
 /* classic synth cards: the last section takes the free width on the right (no empty strip) */
 .card.syn .sp:last-child { flex: 1 1 auto; }
+/* Granulator III: file strip inside the dark display, mode menu + glyph left of the dials */
+.lk-ds > .lk-dk { padding: 0 !important; gap: 0 !important; overflow: hidden; align-items: stretch !important; }
+.lk-ds > .lk-dk > .lv-disp { width: 100% !important; }
+.lk-ginfo { align-items: center !important; padding: 4px 8px; background: #222224; border-top: 1px solid rgba(255,255,255,.06); }
+.lk .lv-btn.lk-gio { height: 18px; background: transparent !important; border: 1px solid #ffad32 !important; color: #ffad32 !important; padding: 0 8px !important; }
+.lk-gdur, .lk-gname { font: 600 11px/1 var(--font); color: var(--lv-ink); }
+.lk-gglyph { display: flex; justify-content: center; color: var(--lv-dim); margin-top: 6px; }
+.lk-ds .lk-dsk { justify-content: space-evenly; align-items: center; }
+.lk .lk-ops > .lk-oprow { align-items: center; justify-content: space-evenly; }
+.card.syn .sp:last-child { align-items: center; }
