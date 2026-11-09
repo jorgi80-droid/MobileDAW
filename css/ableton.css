@@ -1493,3 +1493,8 @@ html.reduce-motion .menu, html.reduce-motion .modal, html.reduce-motion .fw, htm
 /* icon choice grids (Auto Pan waves ...): separate boxes with a gap, as in Live */
 .lk .lk-ch.g2:not(.sm) { gap: 4px !important; background: transparent !important; border: 0 !important; }
 .lk .lk-ch.g2:not(.sm) > .lv-btn { border: 1px solid var(--lv-edge) !important; border-radius: 1px !important; margin: 0 !important; }
+/* compact panels: every column's controls stand together, centred on the panel's middle line with one even gap - nothing floats to the
+   top or bottom edge (owner: 'kontrol tidak tertata rapi'); dense synths keep the edge-to-edge columns */
+.lk.lk-fill.lk-row:not(.lk-dense):not(.lk-drift) > .lk-col, .lk.lk-fill.lk-row:not(.lk-dense):not(.lk-drift) > .lk-sec { justify-content: center !important; gap: 10px !important; }
+.lk.lk-fill.lk-row:not(.lk-dense):not(.lk-drift) > .lk-col > .lk-grow, .lk.lk-fill.lk-row:not(.lk-dense):not(.lk-drift) > .lk-sec > .lk-grow { display: none; }
+.lk.lk-fill.lk-row:not(.lk-dense):not(.lk-drift) > .lk-sec > .lk-st:first-child { position: relative; }
