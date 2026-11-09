@@ -63,7 +63,7 @@ export class Delay extends Fx {
 // three lines (L, L+R, R), 10 params each: on, filter on, freq, width, sync, div, time ms, feedback, pan, volume dB; 30 dry dB
 export class FilterDelay extends Fx {
   constructor(sr) {
-    super(sr); const N = 1 << Math.ceil(Math.log2(sr * 4)); this.m = N - 1; this.w = 0;
+    super(sr); const N = 1 << Math.ceil(Math.log2(sr * 4)); this.m = N - 1; this.w = 0; this.pkL = 0; this.pkR = 0;
     this.b = [0, 1, 2].map(() => new Float32Array(N)); this.f = [0, 1, 2].map(() => new Band(sr)); this.d = [0, 0, 0];
     this.p = []; for (let k = 0; k < 3; k++) this.p.push(1, 1, [1010, 156, 1730][k], [2.09, 3.42, 2.36][k], 0, 3, 250, 0.2, [-0.5, 0, 0.5][k], 0); this.p.push(0);
     for (let k = 0; k < 3; k++) this.upd(k);
@@ -82,8 +82,10 @@ export class FilterDelay extends Fx {
         oL += y * g[k] * pl[k]; oR += y * g[k] * pr[k];
       }
       this.w++; L[i] = oL; R[i] = oR;
+      const al = Math.abs(oL), ar = Math.abs(oR); if (al > this.pkL) this.pkL = al; if (ar > this.pkR) this.pkR = ar;
     }
   }
+  readOut(o) { o[0] = linToDb(this.pkL); o[1] = linToDb(this.pkR); this.pkL *= 0.5; this.pkR *= 0.5; return 2; }   // the Out meter of the panel (display only)
 }
 
 // ================================================================================================ Beat Repeat

@@ -114,3 +114,12 @@ badan (tanpa bar gelap dan garis pemisah); tombol power lingkaran 17 px dengan c
 posisinya di kiri); tombol header kanan (jendela mengambang, menu, Mix) bulat bercincin; kotak display gelap membulat (8 px) dan
 display 6 px; tombol persegi berborder tegas dengan teks reguler (bukan tebal). Urutan elemen header diatur dengan CSS `order`
 (power 0, fold 1, nama 2, Mix 4, jendela 5, menu 6, Preset 7).
+
+## Tema "Ableton Live (referensi)" (putaran 4)
+
+Warna diukur langsung dari gambar Live pengguna: bar judul #a5a5a5, badan perangkat #878787, display gelap #282828, tombol #a8a8a8 dengan
+border #515151, teks hitam #0f0f0f, oranye #fdb443, busur knob/kurva biru muda #62cffa. Dibuat sebagai tema `ableton` (js/theme.js,
+turunan tema terang dengan beberapa token ditimpa) dan dijadikan bawaan (prefs v6; pengguna lama dipindah sekali, tema lain tetap bisa
+dipilih di Pengaturan). Kotak display gelap memakai palet gelap di dalamnya (CSS `[data-theme-id="ableton"] .lk-dk`).
+Display yang mengisi sisa ruang kolom (`DF` di fxkit: Delay, Echo, Beat Repeat) dan meter Out Filter Delay (engine JS + C++ `readOut`,
+hanya tampilan; audio tidak berubah, golden 125/125).

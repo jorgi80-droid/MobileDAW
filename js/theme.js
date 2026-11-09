@@ -15,6 +15,11 @@ const LIB = {
   highc:    { name: 'Dark Neutral High Contrast', base: 'dark', a: -8, b: 1.14 },
   midlight: { name: 'Mid Light',                base: 'light', a: -42, b: 1.0 },
   lighthc:  { name: 'Light Neutral High Contrast', base: 'light', a: -14, b: 1.1 },
+  // the device panels of the owner's Ableton Live screenshots, colours measured in them: title bar #a5a5a5, body #878787, dark display #282828,
+  // button face #a8a8a8 with a #515151 border, black text, orange #fdb443; the other greys follow the light theme shifted down to that body
+  ableton:  { name: 'Ableton Live (referensi)',  base: 'light', a: -66, b: 1.0, over: {
+    '--lv-title': '#a5a5a5', '--lv-body': '#878787', '--lv-well': '#282828', '--lv-ctl': '#a8a8a8', '--lv-ctl2': '#b8b8b8', '--lv-ink': '#0f0f0f', '--lv-dim': '#2e2e2e', '--lv-edge': '#515151',
+    '--lv-trk': '#4e4e4e', '--lv-div': '#6a6a6a', '--lv-arc': '#62cffa', '--lv-or': '#fdb443', '--lv-orink': '#1a1100', '--dim': '#2e2e2e', '--text': '#0f0f0f' } },
 };
 const grey = (hex) => { const h = hex.slice(1, 7), [r, g, b] = [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16)); return Math.max(r, g, b) - Math.min(r, g, b) < 14 ? (r + g + b) / 3 : -1; };
 for (const [id, t] of Object.entries(LIB)) {
@@ -25,10 +30,11 @@ for (const [id, t] of Object.entries(LIB)) {
     const n = Math.max(0, Math.min(255, Math.round(t.a + t.b * L))).toString(16).padStart(2, '0');
     out[k] = '#' + n + n + n + v.slice(7);
   }
+  if (t.over) Object.assign(out, t.over);
   THEMES[id] = out;
 }
-export const THEME_TONE = { light: 'light', midlight: 'light', lighthc: 'light' };
-export const THEME_NAMES = { dark: 'Dark', middark: 'Mid Dark', lowc: 'Dark Neutral Low Contrast', highc: 'Dark Neutral High Contrast', live: 'Live Classic', black: 'Darkest (OLED)', midlight: 'Mid Light', light: 'Light', lighthc: 'Light Neutral High Contrast' };
+export const THEME_TONE = { light: 'light', midlight: 'light', lighthc: 'light', ableton: 'light' };
+export const THEME_NAMES = { dark: 'Dark', middark: 'Mid Dark', lowc: 'Dark Neutral Low Contrast', highc: 'Dark Neutral High Contrast', live: 'Live Classic', black: 'Darkest (OLED)', midlight: 'Mid Light', light: 'Light', ableton: 'Ableton Live (referensi)', lighthc: 'Light Neutral High Contrast' };
 // swatches for the theme picker: background, panel, control, text
 export const themeSwatch = (id) => { const t = THEMES[id] || THEMES.dark; return [t['--bg'], t['--panel2'], t['--raise2'], t['--text']]; };
 let current = 'dark';

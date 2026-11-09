@@ -99,7 +99,7 @@ export function lvTabs(tabs, cur, onSel, o = {}) {
 }
 
 // Dark display with an orange / blue drawing, sharp at any pixel density. draw(g, w, h) gets a ready 2D context in CSS pixels.
-export const DISPC = { bg: '#262628', grid: '#3a3a3e', grid2: '#4a4a4f', ink: '#9a9aa2', or: '#ffad32', orD: '#a8731f', bl: '#4fc3f0', sel: '#3c7e8d', selD: '#2f5b66' };
+export const DISPC = { bg: '#282828', grid: '#3a3a3e', grid2: '#4a4a4f', ink: '#9a9aa2', or: '#fdb443', orD: '#a8731f', bl: '#62cffa', sel: '#3c7e8d', selD: '#2f5b66' };
 export function lvDisp(w, hh, draw, o = {}) {
   const c = document.createElement('canvas'), d = Math.min(3, window.devicePixelRatio || 1);
   c.width = Math.round(w * d); c.height = Math.round(hh * d); c.className = 'lv-disp' + (o.cls ? ' ' + o.cls : '');
@@ -112,6 +112,7 @@ export function lvDisp(w, hh, draw, o = {}) {
     draw(g, w, hh, c);
   };
   c.paint = paint; paint();
+  c.resize = (nw, nh) => { w = nw; hh = nh; c.width = Math.round(w * d); c.height = Math.round(hh * d); c._w = w; c._h = hh; paint(); };   // fill displays (fxkit DF) follow their box
   return c;
 }
 // pointer drag on a display: onDown(x, y, e) may return a state; onMove(x, y, dx, dy, state, e); positions are in CSS px inside the canvas

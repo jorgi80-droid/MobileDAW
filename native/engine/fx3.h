@@ -33,8 +33,9 @@ class FilterDelay : public FxBase {
  public:
   explicit FilterDelay(double r);
   ~FilterDelay() override { for (auto* x : b) delete[] x; }
-  float* b[3]; int m; double w = 0, d[3] = {}; Band f[3];
+  float* b[3]; int m; double w = 0, d[3] = {}; Band f[3]; double pkL = 0, pkR = 0;
   void upd(int k);
+  int readOut(float* o) override { o[0] = (float)linToDb(pkL); o[1] = (float)linToDb(pkR); pkL *= 0.5; pkR *= 0.5; return 2; }
   void setParam(int i, double v) override { FxBase::setParam(i, v); if (i < 30) upd(i / 10); }
   void setTempo(double bb) override { bpm = bb; for (int k = 0; k < 3; k++) upd(k); }
   void process(float* L, float* R, int n) override;

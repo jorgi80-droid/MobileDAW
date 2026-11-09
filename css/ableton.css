@@ -1247,3 +1247,23 @@ html.reduce-motion .menu, html.reduce-motion .modal, html.reduce-motion .fw, htm
 .lk .lv-fld { border-radius: 2px; }
 .card > h4 > span:not(.pdot) { order: 2; flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .card > h4 button.pre { order: 7; }
+/* ===== round 4: owner's marked areas ===== */
+/* a display that fills the free room of its column (fxkit DF) */
+.lk-dfill { position: relative; flex: 1 1 auto; align-self: stretch; overflow: hidden; border-radius: 6px; background: #262628; }
+.lk-dfill > canvas.lk-dfc { position: absolute; left: 0; top: 0; width: 100% !important; height: 100% !important; border-radius: 0; zoom: 1 !important; }
+/* "Modulation" heading: text between two thin rules (Live), values larger */
+.lk-dkh { display: flex; align-items: center; gap: 8px; border-top: 0; padding-top: 0; }
+.lk-dkh::before, .lk-dkh::after { content: ''; flex: 1; height: 1px; background: #4a4a4f; }
+/* tabs in the title bar sit in the middle of the bar (Live's Echo), the name does not stretch then */
+.card > h4 > .lv-tabs.lk-htabs { order: 3; margin: 0 auto; }
+.card > h4:has(> .lk-htabs) > span:not(.pdot), .card > h4:has(> .lk-htabs) > button.dv-name.dv-name { flex: 0 0 auto !important; }
+.lk .lk-ln, .lk .lk-mid { flex: none; }
+/* ===== Ableton Live reference theme (data-theme-id="ableton"): details the generic tokens do not cover ===== */
+[data-theme-id="ableton"] #dbody .dev-scroll { background: #727272; }
+[data-theme-id="ableton"] .card > h4 button.pre { background: var(--lv-ctl); color: var(--lv-ink); border-color: var(--lv-edge); }
+[data-theme-id="ableton"] .addcard { color: #1c1c1c; border-color: #4e4e4e; }
+[data-theme-id="ableton"] .addcard * { color: inherit; }
+[data-theme-id="ableton"] .dev-scroll > .card:not(.fold):not(.addcard) { box-shadow: 0 2px 5px rgba(0, 0, 0, .35); }
+/* dark display boxes inside the light theme keep the dark palette for everything in them (text, dial tracks, buttons) */
+[data-theme-id="ableton"] .lk-dk, [data-theme-id="ableton"] .lk-tdk, [data-theme-id="ableton"] .lv-pane .lv-disp-box {
+  --lv-ink: #e4e4e6; --lv-dim: #a0a0a6; --lv-trk: #5f5f66; --lv-ctl: #55555a; --lv-ctl2: #66666c; --lv-edge: #0c0c0e; --text: #e4e4e6; --dim: #a0a0a6; color: #e4e4e6; }

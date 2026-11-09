@@ -61,6 +61,7 @@ void FilterDelay::process(float* L, float* R, int n) {
       oL += y * g[k] * pl[k]; oR += y * g[k] * pr[k];
     }
     w++; L[i] = (float)oL; R[i] = (float)oR;
+    double al = std::fabs(oL), ar = std::fabs(oR); if (al > pkL) pkL = al; if (ar > pkR) pkR = ar;
   }
 }
 

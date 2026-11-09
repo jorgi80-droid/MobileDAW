@@ -64,6 +64,13 @@ function kit(ctx) {
   const LN = (text, el) => h('div', { class: 'lk-ln' }, h('span', {}, text), el);           // label left, control right (Live rows like "Freq [5.08 kHz]")
   const TL = (text, ...kids) => h('div', { class: 'lk-tl' }, h('span', { class: 'lk-lb' }, text), ...kids);   // title above a control
   const D = (w, hh, draw, drag) => { const c = lvDisp(w, hh, (g) => draw(g, w, hh)); c.classList.add('lk-d', w * hh < 26000 ? 'lk-dsm' : 'lk-dbig'); draws.push(() => c.paint()); if (drag) lvDrag(c, drag); return c; };
+  // DF: a display that fills the free room of its column (min size w x hh): draw(g, w, hh) gets the REAL size, the canvas follows its box
+  const DF = (w, hh, draw, drag) => {
+    const wrap = h('div', { class: 'lk-dfill', style: `min-width:${w}px;min-height:${hh}px` }), c = lvDisp(w, hh, (g, cw, ch) => draw(g, cw, ch));
+    c.classList.add('lk-dfc'); wrap.append(c); wrap.paint = () => c.paint(); draws.push(() => c.paint()); if (drag) lvDrag(c, drag);
+    const ro = new ResizeObserver(() => { const cw = wrap.clientWidth, ch = wrap.clientHeight; if (cw > 20 && ch > 20 && (cw !== c._w || ch !== c._h)) c.resize(cw, ch); }); ro.observe(wrap);
+    return wrap;
+  };
   const sec = (title, ...kids) => h('div', { class: 'lk-sec' }, title ? h('div', { class: 'lk-st' }, title) : null, ...kids.filter(Boolean));
   const row = (...kids) => h('div', { class: 'lk-row' }, ...kids.filter(Boolean));
   const col = (...kids) => h('div', { class: 'lk-col' }, ...kids.filter(Boolean));
@@ -74,21 +81,25 @@ function kit(ctx) {
   const swap = (k, on, off) => { const box = h('div', { class: 'lk-swap' }); const fill = () => box.replaceChildren(get(k) > 0.5 ? on() : off()); fill(); draws.push(() => { const want = get(k) > 0.5; if (box._on !== want) { box._on = want; fill(); } }); box._on = get(k) > 0.5; return box; };
   // like swap, for a list parameter: fn(value) builds the content (Spectral Time: Time / Notes / 16th knob by Mode)
   const swapN = (k, fn) => { const box = h('div', { class: 'lk-swap' }); let cur = null; const fill = () => { const v = Math.round(get(k)); if (v !== cur) { cur = v; box.replaceChildren(fn(v)); } }; fill(); draws.push(fill); return box; };
-  return { ctx, d, def, get, set, K, swapN, T, CY, CH, S, N, NT, dk, LN, TL, D, sec, row, col, sep, every, out, swap, redraw, reg, auto };
+  return { ctx, d, def, get, set, K, swapN, T, CY, CH, S, N, NT, dk, LN, TL, D, DF, sec, row, col, sep, every, out, swap, redraw, reg, auto };
 }
 // filter (band) display with a draggable ring: x = freq, y = width (or Q); used by the delays, Beat Repeat, Erosion, Vinyl
 function bandDisp(k, w, hh, kf, kw, o = {}) {
-  return k.D(w, hh, (g) => {
-    grid(g, w, hh);
+  let cur = w;
+  const draw = (g, w, hh) => {
+    cur = w; grid(g, w, hh);
+    if (o.fill) { g.fillStyle = DISPC.grid; for (let q = 1; q < 4; q++) g.fillRect(0, Math.round(hh * q / 4), w, 1); }   // Live's filter displays carry a fine grid
     const f = k.get(kf), wd = kw != null ? k.get(kw) : 1, on = o.on == null || k.get(o.on) > 0.5;
     const hp = new Biquad(), lp = new Biquad(), bp = new Biquad(); let fn;
     if (o.peak) { bp.bandpass(SR, f, 1 / Math.max(0.05, wd)); fn = (x) => mag(bp, x); }
     else { const kk = Math.pow(2, wd / 2); hp.highpass(SR, Math.max(20, f / kk), 0.707); lp.lowpass(SR, Math.min(20000, f * kk), 0.707); fn = (x) => mag(hp, x) * mag(lp, x); }
     const pts = []; for (let x = 0; x <= w; x += 2) { const m = fn(xl(x, w)); pts.push([x, hh - 4 - Math.min(1.4, m) / 1.4 * (hh - 10)]); }
-    lvPath(g, pts, on ? DISPC.bl : DISPC.grid2, hh, 1.6);
+    lvPath(g, pts, on ? DISPC.bl : DISPC.grid2, null, 2);   // Live's filter curves are a plain line (no fill)
     const peak = fn(f); lvRing(g, lx(f, w), hh - 4 - Math.min(1.4, peak) / 1.4 * (hh - 10), 4.5);
-  }, { onDown: () => ({ f: k.get(kf), w: kw != null ? k.get(kw) : 0 }),
-    onMove: (x, y, dx, dy, s) => { k.set(kf, Math.max(20, Math.min(20000, s.f * Math.pow(2, dx / (w / 10))))); if (kw != null) k.set(kw, Math.max(o.wmin || 0.5, Math.min(o.wmax || 9, s.w + dy / (o.peak ? 30 : 12)))); } });
+  };
+  const drag = { onDown: () => ({ f: k.get(kf), w: kw != null ? k.get(kw) : 0 }),
+    onMove: (x, y, dx, dy, s) => { k.set(kf, Math.max(20, Math.min(20000, s.f * Math.pow(2, dx / (cur / 10))))); if (kw != null) k.set(kw, Math.max(o.wmin || 0.5, Math.min(o.wmax || 9, s.w + dy / (o.peak ? 30 : 12)))); } };
+  return o.fill ? k.DF(w, hh, draw, drag) : k.D(w, hh, draw, drag);
 }
 
 // ================================================================================================ views
@@ -99,12 +110,19 @@ V[18] = (k) => {
   // Live: ONE grid - the column titles once on top (Input, Filter, Delay Time, Feedback, Pan, Volume) and the three lines L / L+R / R under
   // them; per line the channel and filter switches side by side over Freq and Width, the filter display, the 16th-note grid (1..16) over
   // Sync + ms, then Feedback / Pan / Volume dials without titles; Dry in the last column
-  const H = (t) => h('span', { class: 'lk-fdh' }, t), cells = [H('Input'), H('Filter'), H('Delay Time'), H('Feedback'), H('Pan'), H('Volume'), H('')];
+  const H = (t) => h('span', { class: 'lk-fdh' }, t), cells = [H('Input'), H('Filter'), H('Delay Time'), H('Feedback'), H('Pan'), H('Volume'), H('Out')];
+  // the Out meter (Live: right of the lines): two level bars fed by the engine (readOut: output peak L / R)
+  let mo = [-90, -90], mt = [-90, -90], fr = 0;
+  const meter = k.DF(26, 96, (g, w, hh) => { const bw = (w - 9) / 2;
+    [0, 1].forEach((c) => { const x = 3 + c * (bw + 3), v = Math.max(0, Math.min(1, (mo[c] + 60) / 60)), top = 3 + (hh - 6) * (1 - v), gr = g.createLinearGradient(0, 3, 0, hh - 3);
+      g.fillStyle = '#1b1b1d'; g.fillRect(x, 3, bw, hh - 6); gr.addColorStop(0, '#ff5a4d'); gr.addColorStop(0.16, '#f2d33a'); gr.addColorStop(0.32, '#5fe070'); gr.addColorStop(1, '#2ab04a'); g.fillStyle = gr; g.fillRect(x, top, bw, hh - 3 - top); }); });
+  meter.style.gridRow = 'span 2'; meter.style.alignSelf = 'stretch';
+  k.every(16, () => { if (fr++ % 3 === 0) { const r = k.out(); if (r.length >= 2) mt = [r[0], r[1]]; } mo = mo.map((v, c) => glide(v, mt[c])); meter.paint(); });
   ['L', 'L+R', 'R'].forEach((name, n) => { const o = n * 10;
     cells.push(k.col(k.row(k.T(o, name, { w: 34 }), k.T(o + 1, 'On', { w: 40 })), k.N(o + 2, { w: 78 }), k.N(o + 3, { w: 78 })),
       bandDisp(k, 120, 62, o + 2, o + 3, { on: o + 1 }),
       k.col(k.CH(o + 5, ['1', '2', '3', '4', '5', '6', '8', '16'], { cls: 'lk-g4' }), k.row(k.T(o + 4, 'Sync', { w: 44 }), k.N(o + 6, { w: 62 }))),
-      k.K(o + 7, { n: '' }), k.K(o + 8, { n: '' }), k.K(o + 9, { n: '' }), n === 2 ? k.K(30, { n: 'Dry' }) : h('span')); });
+      k.K(o + 7, { n: '' }), k.K(o + 8, { n: '' }), k.K(o + 9, { n: '' }), ...(n === 0 ? [meter] : n === 2 ? [k.K(30, { n: 'Dry' })] : [])); });
   return h('div', { class: 'lk-fdg' }, ...cells);
 };
 // Gate: level display with the threshold and return lines, attack / hold / release / floor, flip
@@ -1395,7 +1413,7 @@ const fixH = (el, hh) => { el.style.height = hh + 'px'; return el; };
 // Beat Repeat: position display + filter display on top, Interval / Offset / Grid / Variation, Repeat / No Trpl and Mix / Ins / Gate, then
 // Chance / Gate / Pitch / Pitch Decay / Volume / Decay in one row
 V[19] = (k) => {
-  const pos = k.D(250, 60, (g, w, hh) => {
+  const pos = k.DF(300, 66, (g, w, hh) => {
     const iv = [0.125, 0.25, 0.5, 1, 2, 4, 8, 16][Math.round(k.get(0))], bars = Math.max(1, iv / 4), beat = w / (bars * 4), off = k.get(1) / 4 * beat, gate = k.get(5) / 4 * beat, gr = [1, 2 / 3, 0.5, 1 / 3, 0.25, 1 / 6, 0.125, 1 / 12, 0.0625][Math.round(k.get(2))] * beat;
     g.fillStyle = DISPC.grid; for (let b = 0; b <= bars * 4; b++) g.fillRect(Math.round(b * beat), 0, 1, hh);
     g.fillStyle = '#ffad32'; g.fillRect(off, 6, Math.min(w - off, gr), hh - 24); g.fillStyle = '#5fd08a'; g.fillRect(off + gr, 6, Math.max(0, Math.min(w - off - gr, gate - gr)), hh - 24);
@@ -1403,7 +1421,7 @@ V[19] = (k) => {
   });
   const o = k.out; k.every(100, () => { const r = o(); pos.style.outline = r[0] ? '1px solid #ffad32' : ''; });
   return k.col(
-    k.row(pos, k.col(bandDisp(k, 124, 44, 9, 10, { on: 8 }), k.row(k.N(9, { w: 60 }), k.N(10, { w: 60 })))),
+    k.row(pos, k.col(bandDisp(k, 150, 50, 9, 10, { on: 8, fill: true }), k.row(k.N(9, { w: 70 }), k.N(10, { w: 70 })))),
     k.row(fixH(k.row(k.K(0), k.K(1), k.K(2), k.K(3)), 64), h('span', { class: 'lk-grow' }), k.col(k.T(8, 'Filter', { w: 124 }))),
     k.row(k.T(15, 'Repeat', { w: 64 }), k.T(14, 'No Trpl', { w: 64 }), h('span', { class: 'lk-grow' }), k.CH(11, ['Mix', 'Ins', 'Gate'])),
     k.row(k.K(4), k.K(5), k.K(6), k.K(7), k.K(12), k.K(13)));
@@ -1412,7 +1430,7 @@ V[19] = (k) => {
 // Modulation Rate / Filter / Time | Mode, Ping Pong, Dry/Wet
 V[17] = (k) => {
   const side = (o, name) => k.col(h('span', { class: 'lk-lb' }, name), syncBtn(k, o), fixH(k.swap(o, () => k.CH(o + 1, ['1', '2', '3', '4', '5', '6', '8', '16'], { cls: 'g2c' }), () => k.K(o + 2, { n: '' })), 104), k.N(o + 3, { w: 58 }));
-  const disp = k.dk(bandDisp(k, 200, 70, 12, 13, { on: 11 }), k.row(k.T(11, '', { cls: 'lk-chkbox' }), h('span', { class: 'lk-lb' }, 'Filter'), k.NT(12, { w: 66, cls: 'or' }), h('span', { class: 'lk-lb' }, 'Width'), k.NT(13, { w: 46, cls: 'or' })),
+  const disp = k.dk(bandDisp(k, 200, 70, 12, 13, { on: 11, fill: true }), k.row(k.T(11, '', { cls: 'lk-chkbox' }), h('span', { class: 'lk-lb' }, 'Filter'), k.NT(12, { w: 66, cls: 'or' }), h('span', { class: 'lk-lb' }, 'Width'), k.NT(13, { w: 46, cls: 'or' })),
     h('div', { class: 'lk-dkh' }, 'Modulation'), k.row(k.TL('Rate', k.NT(14, { w: 58, cls: 'or' })), k.TL('Filter', k.NT(15, { w: 58, cls: 'or' })), k.TL('Time', k.NT(16, { w: 58, cls: 'or' }))));
   return k.row(k.col(k.row(side(0, 'Left'), h('div', { class: 'lk-mid' }, k.T(8, '⇄', { cls: 'link', w: 24 })), side(4, 'Right')), k.row(k.K(9), k.T(10, '∞', { cls: 'frz', w: 28 }))), disp,
     k.col(k.TL('Mode', k.CH(17, ['Repitch', 'Fade', 'Jump'], { v: true })), k.T(18, 'Ping Pong', { w: 80 }), h('span', { class: 'lk-grow' }), k.K(19)));   // Dry/Wet sits at the bottom, level with Feedback
@@ -1421,15 +1439,23 @@ V[17] = (k) => {
 // Reverb / Stereo, Output, Stereo / Ping Pong, Dry/Wet; Modulation and Character tabs
 V[6] = (k) => {
   const page = h('div', { class: 'lk-page' });
-  const tunnel = k.D(336, 124, (g, w, hh) => {
-    const fb = k.get(1), tl = k.get(0), tr = k.get(6);
-    for (let r = 0; r < 9; r++) { const a = Math.pow(fb, r), rad = 18 + r * 10 * (0.6 + tl / 1500); if (rad > w / 2) break; g.strokeStyle = '#ffad32'; g.globalAlpha = Math.max(0.38, a); g.lineWidth = Math.max(1.6, 3.4 - r * 0.22); g.beginPath(); g.arc(w / 2, hh, rad * (r % 2 ? tr / Math.max(1, tl) : 1), Math.PI, 0); g.stroke(); }
-    g.globalAlpha = 1; g.fillStyle = '#fff'; for (let y = 8; y < hh - 4; y += 7) g.fillRect(w / 2 - 1, y, 2, 2);
+  // Live: the repeats are nested half-ellipses over the whole display width (outer = first echo, bold; the inner ones thinner and denser),
+  // a dotted white line down the middle; the filter display below it carries a fine grid
+  const tunnel = k.DF(336, 104, (g, w, hh) => {
+    const fb = k.get(1), tl = k.get(0), tr = k.get(6), N = 9, q = 0.7, ratio = Math.max(0.6, Math.min(1.6, tr / Math.max(1, tl)));
+    for (let r = 0; r < N; r++) {
+      const s = Math.pow(q, r) * (r % 2 ? Math.min(1, ratio) : 1), rx = (w / 2 - 6) * s, ry = (hh - 6) * s, a = 0.4 + 0.6 * Math.pow(Math.max(fb, 0.3), r * 0.4);
+      g.strokeStyle = '#ffad32'; g.globalAlpha = Math.min(1, a); g.lineWidth = Math.max(1.3, 3.6 - r * 0.32); g.beginPath(); g.ellipse(w / 2, hh, Math.max(2, rx), Math.max(2, ry), 0, Math.PI, 0); g.stroke();
+    }
+    g.globalAlpha = 1; g.fillStyle = '#fff'; for (let y = 5, st = 4; y < hh - 4; y += st, st = Math.max(2.2, st * 0.93)) g.fillRect(w / 2 - 1.2, y, 2.4, 2.4);
   });
-  const filt = k.D(336, 70, (g, w, hh) => { grid(g, w, hh); const hp = new Biquad(), lp = new Biquad(); hp.highpass(SR, k.get(5), 0.707); lp.lowpass(SR, k.get(4), 0.707);
-    const pts = []; for (let x = 0; x <= w; x += 2) { const f = xl(x, w); pts.push([x, hh - 3 - Math.min(1.2, mag(hp, f) * mag(lp, f)) / 1.2 * (hh - 8)]); } lvPath(g, pts, DISPC.bl, null, 1.6);
-    for (const [n, f] of [[1, k.get(5)], [2, k.get(4)]]) { const x = lx(f, w); g.fillStyle = '#ffad32'; g.beginPath(); g.arc(x, hh / 2, 6, 0, 7); g.fill(); label(g, String(n), x, hh / 2 + 3, '#1b1b1d', 9, 'center'); } },
-    { onDown: (x) => ({ hp: Math.abs(x - lx(k.get(5), 336)) < Math.abs(x - lx(k.get(4), 336)) }), onMove: (x, y, dx, dy, s) => { if (s.hp) k.set(5, Math.max(20, Math.min(2000, xl(x, 336)))); else k.set(4, Math.max(200, Math.min(20000, xl(x, 336)))); } });
+  let fw = 336;
+  const filt = k.DF(336, 78, (g, w, hh) => { fw = w; grid(g, w, hh); g.fillStyle = DISPC.grid; for (let q = 1; q < 4; q++) g.fillRect(0, Math.round(hh * q / 4), w, 1);
+    const hp = new Biquad(), lp = new Biquad(); hp.highpass(SR, k.get(5), 0.707); lp.lowpass(SR, k.get(4), 0.707);
+    const pts = []; for (let x = 0; x <= w; x += 2) { const f = xl(x, w); pts.push([x, hh - 4 - Math.min(1.2, mag(hp, f) * mag(lp, f)) / 1.2 * (hh - 14)]); } lvPath(g, pts, DISPC.bl, null, 1.8);
+    for (const [n, f] of [[1, k.get(5)], [2, k.get(4)]]) { const x = Math.max(9, Math.min(w - 9, lx(f, w))), yy = hh - 4 - Math.min(1.2, mag(hp, f) * mag(lp, f)) / 1.2 * (hh - 14); g.fillStyle = '#ffad32'; g.beginPath(); g.arc(x, yy, 7, 0, 7); g.fill(); label(g, String(n), x, yy + 3.5, '#1b1b1d', 10, 'center'); } },
+    { onDown: (x) => ({ hp: Math.abs(x - lx(k.get(5), fw)) < Math.abs(x - lx(k.get(4), fw)) }), onMove: (x, y, dx, dy, s) => { if (s.hp) k.set(5, Math.max(20, Math.min(2000, xl(x, fw)))); else k.set(4, Math.max(200, Math.min(20000, xl(x, fw)))); } });
+  tunnel.style.flexGrow = '2';
   const tm = (j, dj) => k.swap(8, () => k.K(dj, { n: '', big: true }), () => k.K(j, { n: '', big: true }));
   // Modulation: what the engine does (fx2 Echo) - the delay time swings by a sine of Mod Rate, +-Mod Amt x 4 ms; drag: across = rate, up / down = amount
   const qgrid = (g, w, hh) => { g.fillStyle = DISPC.grid; for (let q = 1; q < 4; q++) { g.fillRect(Math.round(w * q / 4), 0, 1, hh); g.fillRect(0, Math.round(hh * q / 4), w, 1); } };
