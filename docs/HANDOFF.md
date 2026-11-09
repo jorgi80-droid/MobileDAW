@@ -13,6 +13,9 @@ Baca juga `README-ANDROID.md` (build, install, status fase 2).
 - Plugin mendatang (aturan pemilik, 2 Nov 2026): tampilan plugin tidak diubah dan selalu tampil di jendela mengambang; saat jendela
   di-minimize, kartu device menampilkan pesan "klik tampilkan untuk menampilkan plugin" (dengan tombol Tampilkan). Berlaku untuk semua
   plugin baru.
+- **Arah utama (pemilik, 9 Nov 2026): Design dan visual = Ableton Live. Mesin = FL Studio Mobile.** Semua tampilan (Arrangement, Mixer,
+  Clip View, editor audio, piano roll, device) meniru Ableton Live 12: rapi, simetris, padat. Semua perilaku suara/engine (instrumen,
+  efek, mixer, level/pan law, drum sampler, import FLM) meniru FL Studio Mobile (referensi: Honeydew, GPL-3.0, dengan atribusi).
 - Kode hasil dekompilasi software berhak cipta (mis. libFLM.so, VST komersial seperti reFX Nexus) tidak dipakai dan tidak di-port.
 
 ## Status
