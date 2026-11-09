@@ -1,4 +1,4 @@
-// Touch hit-slop (js/touchhit.js) on an emulated OPPO Find X8 (estimated 419 x 920 CSS px at DPR 3; landscape and portrait):
+// Touch hit-slop (js/touchhit.js) on an emulated OPPO Find X8 (1080 x 2374 at 480 dpi = 360 x 791 CSS px, DPR 3, as the owner measured; landscape and portrait):
 // a real touchscreen tap on empty panel surface a few px beside a small button presses that button; a tap far from every button, and a
 // tap on a knob, do not. Usage: node tools/touchhit-test.mjs   (Playwright + Chromium; part of run-tests when Playwright is installed)
 import http from 'node:http'; import fs from 'node:fs'; import path from 'node:path'; import { fileURLToPath } from 'node:url'; import { createRequire } from 'node:module';
@@ -13,7 +13,7 @@ const server = http.createServer((q, r) => {
 await new Promise((ok) => server.once('listening', ok));
 const b = await chromium.launch();
 let bad = 0; const ok = (c, m) => { console.log((c ? 'ok   ' : 'FAIL ') + m); if (!c) bad++; };
-for (const [W, H, name] of [[920, 412, 'landscape'], [419, 860, 'portrait']]) {
+for (const [W, H, name] of [[791, 360, 'landscape'], [360, 791, 'portrait']]) {
   const page = await (await b.newContext({ viewport: { width: W, height: H }, deviceScaleFactor: 3, isMobile: true, hasTouch: true })).newPage();
   const errs = []; page.on('pageerror', (e) => errs.push(e.message));
   await page.addInitScript(() => localStorage.setItem('mobiledaw.prefs.v1', JSON.stringify({ folderAsked: true, haptics: false, floatPlugins: false })));

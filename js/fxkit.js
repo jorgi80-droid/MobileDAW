@@ -203,7 +203,7 @@ V[26] = (k) => k.col(bandDisp(k, 226, 92, 1, 2, { peak: true, wmin: 0.08, wmax: 
   k.row(k.TL('Freq', k.N(1, { w: 62 })), k.TL('Width', k.N(2, { w: 62 })), k.TL('Amount', k.N(3, { w: 62 }))));
 // Redux: sample-rate section (rate, jitter, pre filter) and bit section (bits, quantize, shape, DC shift), dry/wet
 V[27] = (k) => k.row(k.sec('Sample Rate', k.row(k.K(0, { big: true }), k.K(1)), k.row(k.T(2, 'Pre Filter'))), k.sep(),
-  k.sec('Bit Reduction', k.row(k.K(3, { big: true }), k.K(5)), k.row(k.T(4, 'Quantize'), k.T(6, 'DC Shift'))), k.sep(), k.sec(null, k.K(7, { big: true })));
+  k.sec('Bit Reduction', k.row(k.K(3, { big: true }), k.K(5)), k.row(k.T(4, 'Quantize'), k.T(6, 'DC Shift'))), k.sep(), k.sec(null, k.K(7)));
 // Vinyl Distortion: Tracing Model and Pinch, each with display + On / drive / freq / width, pinch type and stereo mode; crackle and drive
 V[28] = (k) => {
   // Live: the title line (Pinch carries Soft / Hard and Stereo / Mono on it), the display as wide as the column, then On / amount / Freq / B
@@ -271,8 +271,8 @@ V[30] = (k) => {
 // ================================================================================================ redesigned originals
 // Utility: Input (phase L / R, channel, width, mono, bass mono + freq) | Output (gain, balance, mute, DC)
 V[0] = (k) => k.row(
-  k.sec('Input', k.row(k.T(2, 'ØL', { w: 34 }), k.T(4, 'ØR', { w: 34 })), k.S(5, { w: 76 }), k.K(6, { big: true }), k.T(3, 'Mono', { w: 72 }), k.row(k.T(7, 'Bass Mono'), k.N(8, { w: 56 }))), k.sep(),
-  k.sec('Output', k.K(0, { n: 'Gain', big: true }), k.K(1), k.row(k.T(9, 'Mute', { w: 40 }), k.T(10, 'DC', { w: 30 }))));
+  k.sec('Input', k.row(k.T(2, 'ØL', { w: 34 }), k.T(4, 'ØR', { w: 34 })), k.S(5, { w: 76 }), k.K(6), k.T(3, 'Mono', { w: 72 }), k.row(k.T(7, 'Bass Mono'), k.N(8, { w: 56 }))), k.sep(),
+  k.sec('Output', k.K(0, { n: 'Gain' }), k.K(1), k.row(k.T(9, 'Mute', { w: 40 }), k.T(10, 'DC', { w: 30 }))));
 // EQ Three: GainLow / GainMid / GainHi with L / M / H kill switches, FreqLow, 24 / 48, FreqHi
 // EQ Three (Live): an orange lamp above each band (lit while the band is on), GainLow / Mid / Hi with L M H under them; FreqLow, the small
 // 24 / 48 slope pair, FreqHi

@@ -557,15 +557,7 @@ function fitKit() {
     if (!(need > 0) || !(avail > 40)) continue;
     const Z = Math.max(0.6, Math.min(1, avail / DESIGN_H)), z = need * Z > avail ? Math.max(0.6, avail / need) : Z;
     if (Math.abs(z - 1) > 0.01) lk.style.zoom = z.toFixed(3);
-    // a panel with a lot of free height (few controls) takes bigger dials and buttons (Live: sparse devices have big dials) instead of
-    // empty bands: one step, then a second, each kept only while the panel still fits the rack and does not get wider than the screen
-    let need2 = need;
-    if (!lk.classList.contains('lk-dense') && !lk.dataset.tabbed) for (const cls of ['lk-roomy', 'lk-roomy2', 'lk-roomy3']) {
-      if (need2 * z > avail * 0.84) break;
-      lk.classList.add(cls); const n2 = lk.offsetHeight;
-      if (n2 * z > avail - 6 || lk.offsetWidth * z > sc.clientWidth - 16) { lk.classList.remove(cls); break; }
-      need2 = n2;
-    }
+    const need2 = need;
     if (need2 * z < avail - 6) { lk.style.minHeight = Math.floor(avail / z) + 'px'; lk.classList.add('lk-fill'); }
     const over = lk.offsetHeight * (parseFloat(lk.style.zoom) || 1) - avail; if (over > 1) lk.style.zoom = Math.max(0.6, (parseFloat(lk.style.zoom) || 1) * avail / (avail + over)).toFixed(3);   // never taller than the rack
   }

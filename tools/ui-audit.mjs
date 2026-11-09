@@ -13,7 +13,7 @@ const out = process.argv[2] || '/dev/stdout', which = process.argv[3] || 'all', 
 const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.png': 'image/png', '.svg': 'image/svg+xml', '.wasm': 'application/wasm' };
 const server = http.createServer((q, r) => { const f = path.join(root, decodeURIComponent(new URL(q.url, 'http://x').pathname)); if (!f.startsWith(root) || !fs.existsSync(f) || fs.statSync(f).isDirectory()) { r.writeHead(404); r.end(); return; } r.writeHead(200, { 'content-type': TYPES[path.extname(f)] || 'application/octet-stream' }); fs.createReadStream(f).pipe(r); }).listen(0, '127.0.0.1');
 await new Promise((ok) => server.once('listening', ok));
-const W = +(process.env.VW || 904), H = +(process.env.VH || 411), DPR = +(process.env.DPR || 2.625);
+const W = +(process.env.VW || 791), H = +(process.env.VH || 360), DPR = +(process.env.DPR || 3);   // the owner's OPPO Find X8: 1080 x 2374 at 480 dpi = 360 x 791 CSS px
 const b = await chromium.launch(process.env.PLAY ? { args: ['--autoplay-policy=no-user-gesture-required'] } : {});
 const page = await (await b.newContext({ viewport: { width: W, height: H }, deviceScaleFactor: DPR, isMobile: true, hasTouch: true })).newPage();
 const errs = []; page.on('pageerror', (e) => errs.push(e.message));
