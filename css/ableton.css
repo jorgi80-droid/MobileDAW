@@ -1437,3 +1437,20 @@ html.reduce-motion .menu, html.reduce-motion .modal, html.reduce-motion .fw, htm
 .lk.lk-drift > .lk-sep { display: none; }
 .lk.lk-drift { gap: 4px !important; }
 .lk.lk-drift .lk-tl { align-items: flex-start; }
+/* Drift LFO column (Live): tabs sit on the section, the active one in the box colour; light box / dark display / light box */
+.lk.lk-drift > .lk-dlfo { background: transparent !important; padding: 0 !important; gap: 0 !important; }
+.lk.lk-drift > .lk-dlfo > .lv-tabs { background: transparent; border: 0; padding: 0 0 0 8px; gap: 3px; }
+.lk.lk-drift > .lk-dlfo > .lv-tabs .lv-tab { background: #8c8c8c; border: 0; border-radius: 6px 6px 0 0; height: 22px; padding: 0 14px; font-size: 14px; color: var(--lv-ink); }
+.lk.lk-drift > .lk-dlfo > .lv-tabs .lv-tab.on { background: var(--lv-title); }
+.lk.lk-drift .lk-dlfo3 { gap: 4px !important; }
+.lk.lk-drift .lk-dlb { background: var(--lv-title); border-radius: 6px; padding: 4px 8px; justify-content: center; align-items: center; gap: 6px; }
+.lk.lk-drift .lk-dlfod { border-radius: 6px; padding: 4px 6px !important; align-items: stretch !important; }
+.lk .lk-dash { width: 12px; height: 1px; background: #6a6a6a; flex: none; }
+.lk .lk-ch.lk-gap { gap: 4px !important; background: transparent !important; border: 0 !important; }
+.lk .lk-ch.lk-gap > .lv-btn { border: 1px solid var(--lv-edge) !important; border-radius: 1px !important; margin: 0 !important; }
+.lk .lv-btn.lk-rbox { background: transparent !important; color: #fdb443 !important; border: 1.5px solid #fdb443 !important; border-radius: 1px; width: 22px; min-width: 22px; height: 22px; padding: 0 !important; font-weight: 700; }
+.lk .lv-btn.lk-rbox.on { background: #fdb443 !important; color: #1a1100 !important; }
+.lk-dk .lv-fld.sel.dk.or, .lk-dk .lv-fld.lk-s.dk.or { background: transparent !important; border-color: transparent !important; color: #fdb443 !important; font-weight: 600; }
+.lk.lk-drift > .lk-denv { background: transparent !important; padding: 0 !important; }
+.lk.lk-drift .lk-denv .lk-dlfod { flex-direction: row !important; align-items: stretch !important; }
+.lk.lk-drift .lk-denv > .lk-dlb .lk-row { justify-content: space-between; width: 100%; }
