@@ -1393,3 +1393,11 @@ html.reduce-motion .menu, html.reduce-motion .modal, html.reduce-motion .fw, htm
 .dev-scroll > .card:has(> .lk.lk-glue) > h4, .dev-scroll > .card:has(> .lk.lk-glue) > h4 * { color: #e8e8ea !important; }
 .dev-scroll > .card:has(> .lk.lk-glue) > h4 button:not(.pw):not(.pdot) { border-color: #5a5d66 !important; }
 .lk .lk-edisp > .lk-row { align-self: stretch !important; width: auto !important; }
+/* Live mode switches inside dark displays (Chorus / Phaser modes, Taps): unselected = orange outline on the dark, selected = orange fill */
+.lk .lk-ch.lk-orb { gap: 4px !important; background: transparent !important; border: 0 !important; }
+.lk .lk-ch.lk-orb > .lv-btn { background: transparent !important; color: #fdb443 !important; border: 1px solid #fdb443 !important; border-radius: 1px !important; margin: 0 !important; }
+.lk .lk-ch.lk-orb > .lv-btn.on { background: #fdb443 !important; color: #1a1100 !important; }
+/* a switch drawn as Live's checkbox + label (Corpus LFO / Filter, Hybrid Reverb Attack ...) */
+.lk .lv-btn.lk-chkl { position: relative; background: transparent !important; border: 0 !important; box-shadow: none !important; color: var(--lv-ink) !important; padding-left: 20px !important; font-size: 14px !important; justify-content: flex-start; }
+.lk .lv-btn.lk-chkl::before { content: ''; position: absolute; left: 3px; top: 50%; width: 12px; height: 12px; margin-top: -6px; border: 1px solid var(--lv-edge); background: var(--lv-ctl); }
+.lk .lv-btn.lk-chkl.on::before { background: #fdb443; border-color: #8a6020; }

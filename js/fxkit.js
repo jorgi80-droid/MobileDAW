@@ -169,8 +169,8 @@ V[25] = (k) => {
     b[0].highpass(SR, 80, 0.707); b[1].lowShelf(SR, 100, 0.7, k.get(1)); b[2].peaking(SR, k.get(3), 0.9, k.get(2)); if (k.get(4) >= 0) b[3].highShelf(SR, 6000, 0.7, k.get(4)); else b[3].lowpass(SR, 20000 * Math.pow(2, k.get(4) / 3), 0.707);
     const pts = []; for (let x = 0; x <= w; x += 2) { const f = xl(x, w); let m = 1; for (let j = k.get(0) > 0.5 ? 0 : 1; j < 4; j++) m *= mag(b[j], f); pts.push([x, yd(20 * Math.log10(m + 1e-9) + k.get(5))]); }
     g.fillStyle = DISPC.grid; g.fillRect(0, Math.round(yd(0)), w, 1); lvPath(g, pts, DISPC.bl, null, 2);
-    for (const [db, t] of [[12, '12'], [0, '0'], [-12, '-12']]) label(g, t, 4, yd(db) + (db === 12 ? 11 : db === -12 ? -2 : 4), DISPC.ink, 11);
-    for (const [f, t] of [[100, '100'], [1000, '1k'], [10000, '10k']]) label(g, t, lx(f, w) - 8, B - 4, DISPC.ink, 11);
+    for (const [db, t] of [[12, '12'], [0, '0'], [-12, '-12']]) label(g, t, 5, yd(db) + (db === 12 ? 14 : db === -12 ? -3 : 5), DISPC.ink, 15);
+    for (const [f, t] of [[100, '100'], [1000, '1k'], [10000, '10k']]) label(g, t, lx(f, w) - 8, B - 4, DISPC.ink, 15);
   }, { onDown: () => ({ f: k.get(3), g: k.get(2) }), onMove: (x, y, dx, dy, s) => { k.set(3, Math.max(120, Math.min(7500, s.f * Math.pow(2, dx / 22)))); k.set(2, Math.max(-12, Math.min(12, s.g - dy * 0.25))); } });
   // Live's analyser is smooth: each bin takes the loudest of its neighbours, then a 7-bin average across frequency and a slow fall over time
   k.every(60, () => { const r = k.out(); if (r.length < 64) return; const n = r.length, m = new Float32Array(n), a = new Float32Array(n);
@@ -366,7 +366,7 @@ V[31] = (k) => {
     for (let b = 0; b < 8; b++) { const on = k.get(b * 5) > 0.5, t = Math.round(k.get(b * 5 + 1)), gy = t === 2 || t === 3 || t === 5 ? yd(k.get(b * 5 + 3) * sc) : H / 2; g.globalAlpha = !on ? 0.3 : b === sel ? 1 : 0.8; lvRing(g, Math.max(10, Math.min(W - 10, lx(k.get(b * 5 + 2), W))), gy, 9); label(g, String(b + 1), Math.max(10, Math.min(W - 10, lx(k.get(b * 5 + 2), W))), gy + 3.5, DISPC.or, 10, 'center'); g.globalAlpha = 1; }
   }, { onDown: (x, y) => { let best = sel, bd = 1e9; for (let b = 0; b < 8; b++) { const dd = Math.abs(lx(k.get(b * 5 + 2), W) - x) + Math.abs(yd(k.get(b * 5 + 3)) - y) * 0.5; if (dd < bd) { bd = dd; best = b; } } if (best !== sel) { sel = best; fillCtl(); } return { f: k.get(sel * 5 + 2), g: k.get(sel * 5 + 3) }; },
     onMove: (x, y, ddx, ddy, s) => { k.set(sel * 5 + 2, Math.max(10, Math.min(22000, s.f * Math.pow(2, ddx / (W / 10))))); k.set(sel * 5 + 3, Math.max(-15, Math.min(15, s.g - ddy * 15 / (H / 2 - 8)))); } });
-  function fillCtl() { ctlBox.replaceChildren(h('div', { class: 'lk-st c' }, 'Band ' + (sel + 1)), k.K(sel * 5 + 2, { n: 'Freq' }), k.K(sel * 5 + 3, { n: 'Gain' }), k.K(sel * 5 + 4, { n: 'Q' })); disp.paint(); }
+  function fillCtl() { ctlBox.replaceChildren(k.K(sel * 5 + 2, { n: 'Freq' }), k.K(sel * 5 + 3, { n: 'Gain' }), k.K(sel * 5 + 4, { n: 'Q' })); disp.paint(); }
   fillCtl();
   // Live: under the display one cell per band - the filter-shape icon with its menu arrow, then the band's on box and number
   const cells = h('div', { class: 'lk-eq8' }, ...Array.from({ length: 8 }, (_, b) => {
@@ -384,10 +384,10 @@ V[32] = (k) => {
     const lin = Math.round(k.get(5)) === 0, auto = k.get(6) > 0.5; let lo = -120, hi = 0;
     if (sp && auto) { let a = -200, b = 0; for (const v of sp) { if (v > a) a = v; } hi = Math.min(0, Math.ceil(a / 6) * 6 + 6); lo = hi - 72; }
     const yd = (db) => 4 + (hi - Math.max(lo, Math.min(hi, db))) / (hi - lo) * (H - 18), N = sp ? sp.length : 256;
-    g.fillStyle = DISPC.grid; for (let d = Math.ceil(lo / 12) * 12; d <= hi; d += 12) { g.fillRect(0, Math.round(yd(d)), W, 1); label(g, String(d), 3, yd(d) - 2, DISPC.ink, 10); }
+    g.fillStyle = DISPC.grid; for (let d = Math.ceil(lo / 12) * 12; d <= hi; d += 12) { g.fillRect(0, Math.round(yd(d)), W, 1); label(g, String(d), 3, yd(d) - 2, DISPC.ink, 14); }
     const st = Math.round(k.get(5)) === 2;
     if (st) for (let o = 1; o <= 9; o++) { const f = 32.703 * Math.pow(2, o - 1), x = Math.log(f / 20) / Math.log(1000) * W; g.fillRect(Math.round(x), 0, 1, H - 12); label(g, 'C' + o, x + 2, H - 2, DISPC.ink, 8); }
-    else if (!lin) for (const f of [100, 1000, 10000]) { const x = Math.log(f / 20) / Math.log(1000) * W; g.fillRect(Math.round(x), 0, 1, H - 12); label(g, f >= 1000 ? f / 1000 + 'k' : String(f), x + 2, H - 2, DISPC.ink, 8); }
+    else if (!lin) for (const f of [100, 1000, 10000]) { const x = Math.log(f / 20) / Math.log(1000) * W; g.fillRect(Math.round(x), 0, 1, H - 12); label(g, f >= 1000 ? f / 1000 + 'k' : String(f), x - 8, 16, DISPC.ink, 15); }
     else for (const f of [5000, 10000, 15000, 20000]) { const x = f / (SR / 2) * W; g.fillRect(Math.round(x), 0, 1, H - 12); label(g, f / 1000 + 'k', x + 2, H - 2, DISPC.ink, 8); }
     if (!sp) return;
     if (Math.round(k.get(3)) === 1) { g.fillStyle = 'rgba(79,195,240,.85)'; for (let b = 0; b < N; b++) { const x = b / N * W, y = yd(sp[b]); g.fillRect(x, y, Math.max(1, W / N - 0.5), H - 12 - y); } }
@@ -522,9 +522,9 @@ V[40] = (k) => {
     k.col(k.TL('Width', k.NT(8, { w: 52 })), k.TL('Pos. L', k.NT(9, { w: 52 })), k.TL('Pos. R', k.NT(10, { w: 52 })))));
   return k.row(k.col(dark, k.row(k.K(4), k.K(5), k.K(6), k.K(7))), k.sep(),
     k.col(k.K(11), note, k.K(12), k.TL('Spread', k.N(13, { w: 74 }))), k.sep(),
-    k.col(k.T(14, 'LFO'), k.row(k.K(15, { n: 'Amount' }), k.TL('Shape', k.S(23, { w: 66 }))), k.row(k.swap(24, () => k.K(25, { n: 'Rate' }), () => k.K(16, { n: 'Rate' })), k.CH(24, ['Hz', '♪'], { v: true, cls: 'sm' })),
+    k.col(k.T(14, 'LFO', { cls: 'lk-chkl' }), k.row(k.K(15, { n: 'Amount' }), k.TL('Shape', k.S(23, { w: 66 }))), k.row(k.swap(24, () => k.K(25, { n: 'Rate' }), () => k.K(16, { n: 'Rate' })), k.CH(24, ['Hz', '♪'], { v: true, cls: 'sm' })),
       k.row(k.K(26, { n: 'Phase' }), k.K(27, { n: 'Offset' }))), k.sep(),
-    k.col(k.T(17, 'Filter'), h('span', { class: 'lk-grow' }), k.K(18), k.K(19)), k.sep(), k.col(k.K(20), k.K(21), k.K(22)));
+    k.col(k.T(17, 'Filter', { cls: 'lk-chkl' }), h('span', { class: 'lk-grow' }), k.K(18), k.K(19)), k.sep(), k.col(k.K(20), k.K(21), k.K(22)));
 };
 // Vocoder: Carrier + Enhance, carrier XY pad (Noise: x = rate, y = crackle), Unvoiced / Sens. / Fast | band display (live band levels, dashed Level line;
 // drag = Level) with Bands / Range / BW + Precise / Gate / Level | Depth, Attack, Release | Mono / Stereo / L/R, Formant, Dry/Wet
@@ -579,7 +579,7 @@ V[43] = (k) => {
 // Decay / Size / Damping) or EQ tab (Low Cut / High Cut curve with draggable rings; the tab's box = EQ on) | Stereo, Vintage, Bass Mono, Dry/Wet
 V[44] = (k) => {
   const page = h('div', { class: 'lk-page' }), W = 440;
-  const ir = k.D(W, 74, (g, w, hh) => {
+  const ir = k.D(W, 128, (g, w, hh) => {
     const dec = 0.06 + k.get(6) * 0.9, sz = k.get(7), blend = k.get(4), mid = hh / 2; let s = 11;
     const rnd = () => ((s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 4294967296);
     g.fillStyle = DISPC.or; g.globalAlpha = Math.round(k.get(3)) === 2 ? 0.25 : 0.4 + (1 - blend) * 0.6;
@@ -601,7 +601,7 @@ V[44] = (k) => {
   ];
   const t = lvTabs([{ label: 'Reverb' }, { label: 'EQ', check: () => k.get(15) > 0.5, onCheck: () => k.set(15, k.get(15) > 0.5 ? 0 : 1) }], 0, (j) => page.replaceChildren(tabs[j]()), { cls: 'lk-tabs c' });
   page.replaceChildren(tabs[0]());
-  return k.row(k.col(k.K(0), k.K(1), k.TL('Feedback', k.N(2, { w: 56 }))), k.col(t, page), k.col(k.K(18), k.TL('Vintage', k.S(19, { w: 64 })), k.TL('Bass', k.T(20, 'Mono')), k.K(21)));
+  return k.row(t, k.col(k.K(0), k.K(1), k.TL('Feedback', k.N(2, { w: 56 }))), page, k.col(k.K(18), k.TL('Vintage', k.S(19, { w: 64 })), k.TL('Bass', k.T(20, 'Mono')), k.K(21)));   // the tab strip goes up into the title bar (devices.js hoistTabs)
 };
 // Looper: state display (length, position), transport button (Record -> Overdub -> Play -> Overdub ...), Stop, Clear | Record length, Monitor |
 // Speed, Reverse | Feedback, Volume
