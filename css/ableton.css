@@ -1498,3 +1498,10 @@ html.reduce-motion .menu, html.reduce-motion .modal, html.reduce-motion .fw, htm
 .lk.lk-fill.lk-row:not(.lk-dense):not(.lk-drift) > .lk-col, .lk.lk-fill.lk-row:not(.lk-dense):not(.lk-drift) > .lk-sec { justify-content: center !important; gap: 10px !important; }
 .lk.lk-fill.lk-row:not(.lk-dense):not(.lk-drift) > .lk-col > .lk-grow, .lk.lk-fill.lk-row:not(.lk-dense):not(.lk-drift) > .lk-sec > .lk-grow { display: none; }
 .lk.lk-fill.lk-row:not(.lk-dense):not(.lk-drift) > .lk-sec > .lk-st:first-child { position: relative; }
+/* Grain Delay (Live) */
+.lk .lk-gdm { display: grid; grid-template-columns: auto auto; column-gap: 4px; row-gap: 4px; align-self: center; }
+.lk .lk-gdy { display: flex; flex-direction: column; justify-content: space-between; gap: 2px; }
+.lk .lk-gdx { display: flex; gap: 2px; justify-content: space-between; }
+.lk .lk-gdy .lv-btn.lk-ax, .lk .lk-gdx .lv-btn.lk-ax { height: 22px !important; font-size: 11px !important; padding: 0 5px !important; min-width: 0; }
+.lk .lk-gdk { display: grid; grid-template-columns: repeat(2, auto); column-gap: 12px; row-gap: 4px; align-content: center; justify-items: center; }
+.lk .lk-btnsp { display: block; height: 22px; }

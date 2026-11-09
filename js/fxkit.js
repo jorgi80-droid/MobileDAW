@@ -202,8 +202,8 @@ V[25] = (k) => {
 V[26] = (k) => k.col(bandDisp(k, 226, 92, 1, 2, { peak: true, wmin: 0.08, wmax: 10 }), k.CH(0, ['Noise', 'Wide Noise', 'Sine'], { cls: 'spc' }),
   k.row(k.TL('Freq', k.N(1, { w: 62 })), k.TL('Width', k.N(2, { w: 62 })), k.TL('Amount', k.N(3, { w: 62 }))));
 // Redux: sample-rate section (rate, jitter, pre filter) and bit section (bits, quantize, shape, DC shift), dry/wet
-V[27] = (k) => k.row(k.sec('Sample Rate', k.row(k.K(0, { big: true }), k.col(k.K(1), k.T(2, 'Pre Filter')))), k.sep(),
-  k.sec('Bit Reduction', k.row(k.col(k.T(4, 'Quantize'), k.K(3)), k.col(k.K(5), k.T(6, 'DC Shift')))), k.sep(), k.sec(null, k.K(7)));
+V[27] = (k) => k.row(k.sec('Sample Rate', k.row(k.col(k.K(0), k.T(2, 'Pre Filter')), k.col(k.K(1), h('span', { class: 'lk-btnsp' })))), k.sep(),
+  k.sec('Bit Reduction', k.row(k.col(k.K(3), k.T(4, 'Quantize')), k.col(k.K(5), k.T(6, 'DC Shift')))), k.sep(), k.sec(null, k.K(7)));
 // Vinyl Distortion: Tracing Model and Pinch, each with display + On / drive / freq / width, pinch type and stereo mode; crackle and drive
 V[28] = (k) => {
   // Live: the title line (Pinch carries Soft / Hard and Stereo / Mono on it), the display as wide as the column, then On / amount / Freq / B
@@ -579,16 +579,19 @@ V[42] = (k) => {
 const GD = new Map();
 V[43] = (k) => {
   const st = GD.get(k.d.id) || { x: 5, y: 8 }; GD.set(k.d.id, st);
-  const xk = () => (st.x === 2 && k.get(0) > 0.5 ? 1 : st.x), W = 330, H = 140;
+  const xk = () => (st.x === 2 && k.get(0) > 0.5 ? 1 : st.x), W = 300, H = 160;
   const xy = k.D(W, H, (g) => {
     g.fillStyle = DISPC.grid; for (let j = 1; j < 10; j++) { g.fillRect(Math.round(j * W / 10), 0, 1, H); g.fillRect(0, Math.round(j * H / 10), W, 1); }
     const px = k.def.params[xk()], py = k.def.params[st.y]; lvRing(g, 8 + normOf(px, k.get(xk())) * (W - 16), H - 8 - normOf(py, k.get(st.y)) * (H - 16), 6);
   }, { onDown: () => ({}), onMove: (x, y) => { const a = xk(); k.set(a, valOf(k.def.params[a], (x - 8) / (W - 16))); k.set(st.y, valOf(k.def.params[st.y], (H - 8 - y) / (H - 16))); } });
   const axisBtns = (items, key) => { const bs = items.map(([j, t]) => h('button', { class: 'lv-btn lk-ax', onclick: () => { st[key] = j; paint(); xy.paint(); } }, t)); const paint = () => bs.forEach((b, n) => b.classList.toggle('on', items[n][0] === st[key])); paint(); return bs; };
   const ys = axisBtns([[3, 'Spray'], [4, 'Frequency'], [5, 'Pitch'], [6, 'Rand Pitch'], [7, 'Feedback'], [8, 'DryWet']], 'y');
-  const left = k.col(...[3, 4, 5, 6, 7, 8].map((j, n) => k.row(k.N(j, { w: 58, fill: false }), ys[n])),
-    k.CH(1, ['1', '2', '3', '4', '5', '6', '8', '16'], { cls: 'g4' }), k.row(k.T(0, 'Sync', { w: 44 }), k.N(2, { w: 62 })));
-  return k.row(left, k.sep(), k.col(xy, h('div', { class: 'lk-axr' }, ...axisBtns([[2, 'Delay Time'], [3, 'Spray'], [4, 'Frequency'], [5, 'Pitch'], [6, 'Rand Pitch'], [7, 'Feedback']], 'x'))));
+  // Live: delay time (16th grid / Sync / ms) on the left, the X-Y field with its Y-axis buttons beside it and X-axis buttons under it, the six
+  // grain dials in a 2 x 3 grid on the right
+  const left = k.col(k.CH(1, ['1', '2', '3', '4', '5', '6', '8', '16'], { cls: 'lk-g4' }), k.row(k.T(0, 'Sync', { w: 48 }), k.N(2, { w: 66 })));
+  const mid = h('div', { class: 'lk-gdm' }, h('div', { class: 'lk-gdy' }, ...ys), xy, h('span'), h('div', { class: 'lk-gdx' }, ...axisBtns([[2, 'Delay Time'], [3, 'Spray'], [4, 'Frequency'], [5, 'Pitch'], [6, 'Rand Pitch'], [7, 'Feedback']], 'x')));
+  const knobs = h('div', { class: 'lk-gdk' }, k.K(3), k.K(4), k.K(5), k.K(6), k.K(7), k.K(8));
+  return k.row(left, k.sep(), mid, k.sep(), knobs);
 };
 // Hybrid Reverb: Send, Predelay, Feedback | Reverb tab (IR picture with IR Decay / Size, Routing, Algorithm, Freeze, Mod, Diffusion; Convolution IR, Blend,
 // Decay / Size / Damping) or EQ tab (Low Cut / High Cut curve with draggable rings; the tab's box = EQ on) | Stereo, Vintage, Bass Mono, Dry/Wet
