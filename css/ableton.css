@@ -1480,3 +1480,13 @@ html.reduce-motion .menu, html.reduce-motion .modal, html.reduce-motion .fw, htm
 .lk.lk-drift .lk-envw { flex-direction: row-reverse !important; gap: 6px !important; }
 .lk.lk-drift .lk-envw > .lk-envt { position: static !important; flex-direction: column; justify-content: space-between; padding: 4px 0; }
 .lk.lk-drift .lk-envw > .lk-envt .lv-btn { height: 20px !important; }
+/* Meld Filters / Mix grid */
+.lk .lk-mfm { display: flex; flex-direction: column; gap: 4px; align-self: stretch; justify-content: space-between; }
+.lk .lk-mfm > .lk-mfh { display: grid; grid-template-columns: 1fr auto; padding: 0 8px; }
+.lk .lk-mfm > .lk-mfh > :last-child { margin-right: 74px; }
+.lk .lk-mfr { display: grid; grid-template-columns: 132px 72px 52px 60px; column-gap: 8px; align-items: center; justify-items: center; flex: 1 1 0;
+  background: var(--lv-title); border-radius: 6px; padding: 4px 8px; }
+.lk .lk-mfr > .lk-col { gap: 3px !important; align-items: center !important; justify-content: center !important; }
+.lk .lk-mfr > .lk-col:first-child > .lk-row { gap: 4px; }
+.lk .lk-mfr .lv-fld.lk-nt { color: var(--lv-ink) !important; font-weight: 600; }
+.lk .lk-mfr > .lk-col:last-child { overflow: visible; }

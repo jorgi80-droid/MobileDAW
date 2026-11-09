@@ -1125,12 +1125,18 @@ VI[17] = (k) => {
   fill();
   const filt = (e) => { const b = B(e), third = k.swapN(b + O.ftype, (t) => k.TL(['L-B-H-N', 'L-B-H-N', 'Drive', 'Feedback'][t], k.N(b + O.morph, { w: 62, fill: false })));
     return k.row(k.col(k.row(badge(e), k.S(b + O.ftype, { w: 90 })), k.K(b + O.freq, { n: '' })), k.col(k.TL('Q', k.N(b + O.q, { w: 62, fill: false })), third)); };
-  const fader = (e) => { const b = B(e) + O.level, W = 14, H = 70;
+  const fader = (e) => { const b = B(e) + O.level, W = 16, H = 78;
     const c = k.D(W, H, (g, w, hh) => { const y = hh - (k.get(b) + 60) / 66 * hh; g.fillStyle = '#555'; g.fillRect(w / 2 - 1, 0, 2, hh); g.fillStyle = MLC[e]; g.fillRect(2, y - 2, w - 4, 4); }, { onDown: () => ({ v: k.get(b) }), onMove: (x, y, dx, dy, s) => k.set(b, Math.max(-60, Math.min(6, s.v - dy * 0.5))) });
     return k.col(c, k.NT(b, { w: 54 })); };
   const mix = (e) => k.row(k.col(k.N(B(e) + O.pan, { w: 40, fill: false }), k.K(B(e) + O.tilt, { n: 'Tone' })), fader(e));
   const glob = k.col(k.T(MELD_G + 6, 'Limit', { w: 70 }), k.S(MELD_G, { w: 70 }), k.N(MELD_G + 1, { w: 70 }), k.TL('Spread', k.N(MELD_G + 2, { w: 70 })), k.TL('Stack', k.S(MELD_G + 3, { w: 70 })), k.TL('Drive', k.N(MELD_G + 4, { w: 70 })), k.K(MELD_G + 5));
-  return k.row(k.sec('Engines', k.row(engRow(0), macros(0)), k.row(engRow(1), macros(1))), tn(centre, 'Mod'), k.sec('Filters', filt(0), filt(1)), k.sec('Mix', mix(0), mix(1)), k.sep(), tn(glob, 'Global'));
+  // Filters + Mix as ONE grid: a header line, then engine A and engine B as two identical boxed rows - filter (badge + type over the
+  // frequency dial) | Q / L-B-H-N | pan over Tone | level fader with its dB value; every column lines up from A to B
+  const fmRow = (e) => { const b = B(e), third = k.swapN(b + O.ftype, (t) => k.TL(['L-B-H-N', 'L-B-H-N', 'Drive', 'Feedback'][t], k.N(b + O.morph, { w: 66, fill: false })));
+    return h('div', { class: 'lk-mfr' }, k.col(k.row(badge(e), k.S(b + O.ftype, { w: 96 })), k.K(b + O.freq, { n: '' })), k.col(k.TL('Q', k.N(b + O.q, { w: 66, fill: false })), third),
+      k.col(k.N(B(e) + O.pan, { w: 44, fill: false }), k.K(B(e) + O.tilt, { n: 'Tone' })), fader(e)); };
+  const fm = h('div', { class: 'lk-mfm' }, h('div', { class: 'lk-mfh' }, h('span', { class: 'lk-st' }, 'Filters'), h('span', { class: 'lk-st' }, 'Mix')), fmRow(0), fmRow(1));
+  return k.row(k.sec('Engines', k.row(engRow(0), macros(0)), k.row(engRow(1), macros(1))), tn(centre, 'Mod'), tn(fm, 'Filters / Mix'), k.sep(), tn(glob, 'Global'));
 };
 // Simpler: Sample tab (waveform with start / end / loop / slice markers - drag them; Classic / 1-Shot / Slice and their controls, Warp) and
 // Controls tab (filter display, LFO, pitch envelope, amplitude / pitch, then the Filter / LFO strip and Fade / Transp / Vol < Vel / Volume)
