@@ -162,7 +162,7 @@ export function flmToModel(P) {
     // an unidentified module with a synth-sized parameter set on a notes channel is its instrument (not an effect): reported by id
     const unk = dw.length || syn || !ch.tracks.some((t) => t.kind === 'notes') ? null : ch.modules.find((m) => !FLM_TYPES[m.type] && m.params.length >= 40);
     const instMods = new Set(dw.length ? dw : syn ? [syn] : unk ? [unk] : []);
-    const c = { kind: ch.kind, name: ch.name, hue: hue(ch.hue), gain: flmGain(ch.vol), pan: ch.pan * 2 - 1, ...(ch.mute ? { mute: true } : {}), ...(ch.solo ? { solo: true } : {}), tracks: [], pads: [],
+    const c = { kind: ch.kind, name: ch.name, number: ch.number, hue: hue(ch.hue), gain: flmGain(ch.vol), pan: ch.pan * 2 - 1, sends: (ch.sends || []).map((q) => ({ target: q.target, on: q.enabled, gain: flmGain(q.level) })), ...(ch.mute ? { mute: true } : {}), ...(ch.solo ? { solo: true } : {}), tracks: [], pads: [],
       modules: ch.modules.filter((m) => !instMods.has(m)).map((m) => ({ name: m.name, enabled: m.enabled, ...(m.level != null && m.level < 0.999 ? { mix: m.level } : {}), ...(m.postGain != null && Math.abs(m.postGain - 0.5) > 1e-4 ? { postGain: m.postGain } : {}), ...(m.wetPan != null && Math.abs(m.wetPan - 0.5) > 1e-4 ? { wetPan: m.wetPan } : {}), preset: m.preset && m.preset !== 'Default' ? m.preset : '', params: m.params, id: m.id, flmType: m.type, ...(FLM_TYPES[m.type] && FLM_TYPES[m.type].sure === false ? { sure: false } : {}), app: 'FL Studio Mobile' })) };
     if (dw.length) {
       const lib = dw.find((m) => m.library);

@@ -264,4 +264,23 @@ if (process.env.FLM_ZIP && fs.existsSync(process.env.FLM_ZIP)) {
   const r = [30, 31, 32, 33].map((t) => peak(t, 0.4) / peak(t, 1));
   ok(r.every((x) => x > 0.05 && x < 0.9), 'FLM velocity 40 % vs 100 % in DirectWave / GMS / MiniSynth / SuperSaw: quieter, level x' + r.map((x) => x.toFixed(3)).join(' / '));
 }
+// FLM sends (Honeydew read.rs SEND): master send level -> Utility trim, bus-only send -> Output to that effect track, an extra bus send ->
+// Send A / B relative to the main path, all sends off -> silent; the fader keeps FLM's channel level
+{
+  const { flmGain } = await import('../js/import/flm.js');
+  const chn = (kind, name, number, sends) => ({ kind, name, number, hue: 0, gain: 1, pan: 0, sends, tracks: [{ kind: 'audio', clips: [] }], pads: [], modules: [] });
+  const S = (target, gain, on = true) => ({ target, on, gain });
+  const MS = { app: 'FL Studio Mobile', name: 'S', bpm: 120, channels: [{ kind: 'master', name: 'MASTER', number: 0, gain: 1, pan: 0, sends: [], tracks: [], pads: [], modules: [] },
+    chn('bus', 'Rev', 5, [S(0, 1)]), chn('bus', 'Dly', 7, [S(0, flmGain(0.5))]),
+    chn('track', 'Def', 1, [S(0, 1)]), chn('track', 'Quiet', 2, [S(0, flmGain(0.6))]), chn('track', 'ToBus', 3, [S(0, 1, false), S(7, 1)]),
+    chn('track', 'Both', 4, [S(0, flmGain(0.6)), S(5, flmGain(0.6) * 0.5)]), chn('track', 'Off', 6, [S(0, 1, false)])] };
+  const BS = buildMdaw(MS, { root: '/S', has: () => false }).json, tr = (n) => BS.tracks.find((t) => t.name === n), ut = (o) => o.devices.filter((d) => d.type === 0 && !d.missing).map((d) => d.params[0]);
+  const dB = (v) => Math.round(20 * Math.log10(v) * 1000) / 1000;
+  ok(tr('Def').out === -1 && !ut(tr('Def')).length && tr('Def').send.every((x) => x === 0), 'FLM send to master at 0 dB: plain output to Master, no trim');
+  ok(Math.abs(ut(tr('Quiet'))[0] - dB(flmGain(0.6))) < 1e-9 && tr('Quiet').vol === 1, 'FLM master send level -11.42 dB: Utility trim at the end of the chain, fader untouched (' + ut(tr('Quiet'))[0] + ' dB)');
+  ok(tr('ToBus').out === 1 && BS.returns[1].name === 'Dly' && !tr('ToBus').mute, 'FLM channel sending only to a bus: its Output is that effect track');
+  ok(tr('Both').out === -1 && Math.abs(tr('Both').send[0] - 0.5) < 1e-9 && Math.abs(ut(tr('Both'))[0] - dB(flmGain(0.6))) < 1e-9, 'FLM master + bus send: Send A relative to the main path (0.5), master level as trim');
+  ok(tr('Off').mute === true, 'FLM channel with every send off is silent (muted)');
+  ok(Math.abs(ut(BS.returns[1])[0] - dB(flmGain(0.5))) < 1e-9 && !ut(BS.returns[0]).length, 'FLM bus master send level as the effect track\'s trim');
+}
 console.log(bad ? `\n${bad} FAILED` : '\nimport-test: all passed'); process.exit(bad ? 1 : 0);

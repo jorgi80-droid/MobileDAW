@@ -150,7 +150,27 @@ export function buildMdaw(M, opts) {
   const util = DEVICES[0].params.map((q) => q.def);
   // a level above MDAW's fader top (+2.9 dB; FLM goes to +6 dB): the rest as a Utility Gain at the end of the strip's chain (FLM's fader is
   // after its effects too), so nothing of the mix is lost
-  const over = (strip, g) => { if (!(g > VMAX) || strip.devices.length >= 16) return; const p = util.slice(); p[0] = Math.round(20 * Math.log10(g / VMAX) * 1000) / 1000; strip.devices.push({ id: uid(), type: 0, params: p, bypass: false }); report.levelOver = (report.levelOver || 0) + 1; };
+  // g = the fader level, k = the gain of the strip's main output send (FLM routes a channel only through its sends, post fader): what the
+  // fader cannot hold (above +2.9 dB) and a main send level other than 0 dB go into one Utility Gain at the end of the chain (all linear
+  // after the effects, so the sum is the same and the fader / its automation stay exactly FLM's)
+  const over = (strip, g, k = 1) => { const x = (g > VMAX ? g / VMAX : 1) * k; if (Math.abs(x - 1) < 1e-6 || strip.devices.length >= 16) return; const p = util.slice(); p[0] = Math.max(-60, Math.round(20 * Math.log10(Math.max(1e-6, x)) * 1000) / 1000); strip.devices.push({ id: uid(), type: 0, params: p, bypass: false }); if (g > VMAX) report.levelOver = (report.levelOver || 0) + 1; if (k !== 1) report.sendTrim = (report.sendTrim || 0) + 1; };
+  // FLM sends -> MDAW routing: the main path is the master send when on, else the first bus send (the strip's Output then goes to that
+  // effect track); the other bus sends become Send A / B (relative to the main gain, MDAW's sends are post fader too); no send on = silent
+  const busIdx = new Map();
+  const routeOf = (ch, name) => {
+    const ss = ch.sends || [], on = ss.filter((q) => q.on);
+    if (!ss.length) return { out: -1, k: 1, send: [0, 0], mute: false };
+    const mainS = on.find((q) => q.target === 0) || on.find((q) => busIdx.has(q.target));
+    if (!mainS) { report.skipped.push('"' + name + '": semua send FLM mati (channel diam di FLM): track dibisukan'); return { out: -1, k: 1, send: [0, 0], mute: true }; }
+    const r = { out: mainS.target === 0 ? -1 : busIdx.get(mainS.target), k: mainS.gain, send: [0, 0], mute: false };
+    for (const q of on) {
+      if (q === mainS) continue;
+      const b = busIdx.get(q.target);
+      if (b === 0 || b === 1) r.send[b] = clamp(mainS.gain > 0 ? q.gain / mainS.gain : 0, 0, 1.5);
+      else report.skipped.push('"' + name + '": send ke ' + (q.target === 0 ? 'Master' : 'bus #' + q.target) + ' (MobileDAW: satu output + Send A/B)');
+    }
+    return r;
+  };
   const placeholder = (m) => {
     report.plugins.set(m.name, (report.plugins.get(m.name) || 0) + 1);
     return { id: uid(), type: 0, params: util.slice(), bypass: m.enabled === false, missing: { name: m.name, app: m.app || M.app, preset: m.preset || '', enabled: m.enabled !== false, ...(m.flmType != null ? { flmType: m.flmType } : {}), ...(m.sure === false ? { sure: false } : {}), ...(m.mix != null ? { mix: m.mix } : {}), ...(m.id != null ? { flmId: m.id } : {}), params: (m.params || []).slice() } };
@@ -174,7 +194,15 @@ export function buildMdaw(M, opts) {
   if (master) { out.master.vol = vol(master.gain); out.master.devices = devices(master); over(out.master, master.gain); }
   for (const b of M.channels.filter((c) => c.kind === 'bus')) {
     if (out.returns.length >= MAX_FX) { report.skipped.push('Bus efek "' + b.name + '": jumlah return maksimum ' + MAX_FX); continue; }
-    out.returns.push({ name: b.name, vol: vol(b.gain), pan: clamp(b.pan || 0, -1, 1), ...(M.app === 'FL Studio Mobile' ? { panLaw: 'flm' } : {}), mute: !!b.mute, devices: devices(b) }); over(out.returns[out.returns.length - 1], b.gain);
+    if (b.number != null) busIdx.set(b.number, out.returns.length);
+    out.returns.push({ name: b.name, vol: vol(b.gain), pan: clamp(b.pan || 0, -1, 1), ...(M.app === 'FL Studio Mobile' ? { panLaw: 'flm' } : {}), mute: !!b.mute, devices: devices(b) });
+  }
+  // a bus plays to the master (bus to bus is not in MDAW: reported); its master send level joins the Utility trim
+  for (const b of M.channels.filter((c) => c.kind === 'bus')) {
+    const k = busIdx.get(b.number); if (k == null) continue; const R = out.returns[k], ss = b.sends || [], on = ss.filter((q) => q.on), m = on.find((q) => q.target === 0);
+    for (const q of on) if (q.target !== 0) report.skipped.push('Bus efek "' + b.name + '": send ke bus #' + q.target + ' (bus ke bus belum ada di MobileDAW)');
+    if (ss.length && !m) { R.mute = true; report.skipped.push('Bus efek "' + b.name + '": send ke Master mati: dibisukan'); }
+    over(R, b.gain, m ? m.gain : 1);
   }
   while (out.returns.length < 2) out.returns.push({ name: 'Return ' + 'AB'[out.returns.length], vol: DEF_VOL, pan: 0, mute: false, devices: [] });
 
@@ -186,7 +214,8 @@ export function buildMdaw(M, opts) {
     (subs.length ? subs : [{ kind: ch.instrument ? 'notes' : ch.pads.length ? 'drums' : 'audio', clips: [] }]).forEach((st, k) => {
       if (out.tracks.length >= MAX_TRACKS) { report.skipped.push('Track "' + ch.name + '": jumlah track maksimum'); return; }
       const t = { id: uid(), name: subs.length > 1 && k > 0 ? `${ch.name} (${k + 1})` : ch.name, color, kind: 'audio', inst: null, clips: [], devices: devices(ch), vol: vol(ch.gain), pan: clamp(ch.pan || 0, -1, 1), mute: !!ch.mute, solo: false, send: [0, 0], out: -1 };
-      over(t, ch.gain); if (M.app === 'FL Studio Mobile') t.panLaw = 'flm';   // FLM's balance pan law (Honeydew mixer.rs), kept for this track
+      const rt = routeOf(ch, t.name); t.out = rt.out; t.send = rt.send; if (rt.mute) t.mute = true;
+      over(t, ch.gain, rt.k); if (M.app === 'FL Studio Mobile') t.panLaw = 'flm';   // FLM's balance pan law (Honeydew mixer.rs), kept for this track
       if (st.kind === 'notes') {
         t.kind = 'midi';
         t.inst = instrumentOf(ch.instrument, t.name);
@@ -268,6 +297,7 @@ export function buildMdaw(M, opts) {
   if (prec.boost) P2.push(prec.boost + ' not dengan velocity di atas 100 % (boost) dipertahankan, tidak dipotong');
   const dwN = report.instruments.filter((x) => /^DirectWave \(/.test(x.to)).length, synN = report.instruments.filter((x) => x.how === 'preset' || x.how === 'default').length;
   if (prec.clipPan) P2.push(prec.clipPan + ' klip audio punya pan sendiri di file asli: dipakai sebagai pan klip (balance)');
+  if (report.sendTrim) P2.push(report.sendTrim + ' strip punya level send FLM ke output utama selain 0 dB: dipasang sebagai Utility di akhir rantainya');
   if (report.levelOver) P2.push(report.levelOver + ' strip punya level FLM di atas +2,9 dB (batas fader MobileDAW): sisa gain dipasang sebagai Utility di akhir rantainya');
   if (prec.clipEnv) P2.push(prec.clipEnv + ' klip audio punya envelope (A / D / S / R) sendiri di file asli: belum diterapkan');
   const muted = M.channels.filter((c) => c.kind !== 'master' && c.mute).map((c) => c.name);
