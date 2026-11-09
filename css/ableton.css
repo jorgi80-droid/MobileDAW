@@ -1426,3 +1426,4 @@ html.reduce-motion .menu, html.reduce-motion .modal, html.reduce-motion .fw, htm
 .lv-dev.smp .smp-head { padding-right: 8px; }
 .lv-dev.smp .smp-head .lv-info { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lv-dev.smp .lv-pane > .lv-sec { flex: 1 1 0 !important; min-width: 0 !important; box-sizing: border-box; }
+[data-theme-id="light"] .lk-gglyph { color: #2e2e2e; }

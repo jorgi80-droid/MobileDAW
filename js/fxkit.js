@@ -1399,7 +1399,7 @@ VI[29] = (k) => {
   const info = h('div', { class: 'lk-row lk-ginfo' }, lvBtn('Sample\u2026', pick, { cls: 'lk-t lk-gio' }), h('span', { class: 'lk-gdur' }, dur()), h('span', { class: 'lk-grow' }), h('span', { class: 'lk-gname' }, (Z().sample && Z().sample.name) || ''));
   const glyph = h('span', { class: 'lk-gglyph' }); glyph.innerHTML = '<svg viewBox="0 0 40 26" width="40" height="26" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 11c0-6 10-6 12-1 4-4 12-1 10 5"/><path d="M4 18c0-5 9-6 12-2 4-3 11-1 11 4"/><path d="M12 24c2-4 8-5 12-2"/></svg>';
   return h('div', { class: 'lk-col lk-ds' }, k.dk(wave, info),
-    h('div', { class: 'lk-row lk-dsk' }, k.col(k.S(0, { w: 86, cls: 'dk or' }), glyph), k.sep(), k.K(1, { big: true }), k.swapN(0, (m) => (m === 2 ? k.K(6, { big: true }) : k.K(2, { big: true }))), k.K(3, { big: true }), k.K(4, { big: true }), k.sep(), k.K(5), k.swapN(0, (m) => (m === 1 ? k.K(7, { n: 'Loop' }) : k.K(8, { n: 'Pitch' }))), k.K(9), k.sep(), k.K(10), k.K(11), k.sep(), k.K(12), k.K(13)));
+    h('div', { class: 'lk-row lk-dsk' }, k.col(k.S(0, { w: 86 }), glyph), k.sep(), k.K(1, { big: true }), k.swapN(0, (m) => (m === 2 ? k.K(6, { big: true }) : k.K(2, { big: true }))), k.K(3, { big: true }), k.K(4, { big: true }), k.sep(), k.K(5), k.swapN(0, (m) => (m === 1 ? k.K(7, { n: 'Loop' }) : k.K(8, { n: 'Pitch' }))), k.K(9), k.sep(), k.K(10), k.K(11), k.sep(), k.K(12), k.K(13)));
 };
 // synths with many sections (Drift, Operator, Poli, Analog, Meld, Wavetable, Sampler, Simpler, the FLM synths) keep the denser size; effects and compact instruments use Live's larger text and dials
 const DENSE_INST = new Set([10, 11, 13, 14, 15, 16, 17, 18, 30, 31, 32, 33]);
