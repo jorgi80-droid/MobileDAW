@@ -1267,3 +1267,7 @@ html.reduce-motion .menu, html.reduce-motion .modal, html.reduce-motion .fw, htm
 /* dark display boxes inside the light theme keep the dark palette for everything in them (text, dial tracks, buttons) */
 [data-theme-id="ableton"] .lk-dk, [data-theme-id="ableton"] .lk-tdk, [data-theme-id="ableton"] .lv-pane .lv-disp-box {
   --lv-ink: #e4e4e6; --lv-dim: #a0a0a6; --lv-trk: #5f5f66; --lv-ctl: #55555a; --lv-ctl2: #66666c; --lv-edge: #0c0c0e; --text: #e4e4e6; --dim: #a0a0a6; color: #e4e4e6; }
+[data-theme-id="ableton"] .lk-impads, [data-theme-id="ableton"] .lk-impad { --lv-ink: #e4e4e6; --lv-dim: #a0a0a6; color: #c8c8cc; }
+[data-theme-id="ableton"] .lk-impad small { color: #a0a0a6; }
+[data-theme-id="ableton"] .lk-rdrop { color: #a0a0a6; }
+[data-theme-id="ableton"] .lk-rack .lk-rlist, [data-theme-id="ableton"] .lk-rack .lk-rchains { --lv-ink: #e4e4e6; --lv-dim: #a0a0a6; }
