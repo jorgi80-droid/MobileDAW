@@ -1259,15 +1259,15 @@ html.reduce-motion .menu, html.reduce-motion .modal, html.reduce-motion .fw, htm
 .card > h4:has(> .lk-htabs) > span:not(.pdot), .card > h4:has(> .lk-htabs) > button.dv-name.dv-name { flex: 0 0 auto !important; }
 .lk .lk-ln, .lk .lk-mid { flex: none; }
 /* ===== Ableton Live reference theme (data-theme-id="ableton"): details the generic tokens do not cover ===== */
-[data-theme-id="ableton"] #dbody .dev-scroll { background: #727272; }
-[data-theme-id="ableton"] .card > h4 button.pre { background: var(--lv-ctl); color: var(--lv-ink); border-color: var(--lv-edge); }
-[data-theme-id="ableton"] .addcard { color: #1c1c1c; border-color: #4e4e4e; }
-[data-theme-id="ableton"] .addcard * { color: inherit; }
-[data-theme-id="ableton"] .dev-scroll > .card:not(.fold):not(.addcard) { box-shadow: 0 2px 5px rgba(0, 0, 0, .35); }
+[data-theme-id="light"] #dbody .dev-scroll { background: #727272; }
+[data-theme-id="light"] .card > h4 button.pre { background: var(--lv-ctl); color: var(--lv-ink); border-color: var(--lv-edge); }
+[data-theme-id="light"] .addcard { color: #1c1c1c; border-color: #4e4e4e; }
+[data-theme-id="light"] .addcard * { color: inherit; }
+[data-theme-id="light"] .dev-scroll > .card:not(.fold):not(.addcard) { box-shadow: 0 2px 5px rgba(0, 0, 0, .35); }
 /* dark display boxes inside the light theme keep the dark palette for everything in them (text, dial tracks, buttons) */
-[data-theme-id="ableton"] .lk-dk, [data-theme-id="ableton"] .lk-tdk, [data-theme-id="ableton"] .lv-pane .lv-disp-box {
+[data-theme-id="light"] .lk-dk, [data-theme-id="light"] .lk-tdk, [data-theme-id="light"] .lv-pane .lv-disp-box {
   --lv-ink: #e4e4e6; --lv-dim: #a0a0a6; --lv-trk: #5f5f66; --lv-ctl: #55555a; --lv-ctl2: #66666c; --lv-edge: #0c0c0e; --text: #e4e4e6; --dim: #a0a0a6; color: #e4e4e6; }
-[data-theme-id="ableton"] .lk-impads, [data-theme-id="ableton"] .lk-impad { --lv-ink: #e4e4e6; --lv-dim: #a0a0a6; color: #c8c8cc; }
-[data-theme-id="ableton"] .lk-impad small { color: #a0a0a6; }
-[data-theme-id="ableton"] .lk-rdrop { color: #a0a0a6; }
-[data-theme-id="ableton"] .lk-rack .lk-rlist, [data-theme-id="ableton"] .lk-rack .lk-rchains { --lv-ink: #e4e4e6; --lv-dim: #a0a0a6; }
+[data-theme-id="light"] .lk-impads, [data-theme-id="light"] .lk-impad { --lv-ink: #e4e4e6; --lv-dim: #a0a0a6; color: #c8c8cc; }
+[data-theme-id="light"] .lk-impad small { color: #a0a0a6; }
+[data-theme-id="light"] .lk-rdrop { color: #a0a0a6; }
+[data-theme-id="light"] .lk-rack .lk-rlist, [data-theme-id="light"] .lk-rack .lk-rchains { --lv-ink: #e4e4e6; --lv-dim: #a0a0a6; }

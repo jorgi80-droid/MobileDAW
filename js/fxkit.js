@@ -350,15 +350,18 @@ V[7] = (k) => {
 // EQ Eight band shapes as Live draws them on the band buttons: low cut 48 / 12, low shelf, bell, notch, high shelf, high cut 12 / 48
 const EQ8_ICO = ['M1 9 L5 2 H15', 'M1 9 Q4 2 7 2 H15', 'M1 3 H5 C7 3 8 7 10 7 H15', 'M1 8 H4 C6 8 6 2 8 2 C10 2 10 8 12 8 H15', 'M1 3 H6 L8 9 L10 3 H15', 'M1 7 H6 C8 7 9 3 11 3 H15', 'M1 2 H9 Q12 2 15 9', 'M1 2 H11 L15 9'];
 V[31] = (k) => {
-  let sel = 2; const W = 420, H = 150, ctlBox = h('div', { class: 'lk-col' });
+  let sel = 2, W = 420, H = 150; const ctlBox = h('div', { class: 'lk-col' });
   const yd = (db) => H / 2 - db / 15 * (H / 2 - 8), dy = (y) => (H / 2 - y) / (H / 2 - 8) * 15;
-  const disp = k.D(W, H, (g) => {
-    grid(g, W, H); g.fillStyle = DISPC.grid; for (const v of [-12, -6, 0, 6, 12]) g.fillRect(0, Math.round(yd(v)), W, 1); for (const v of [12, 6, 0, -6, -12]) label(g, String(v), 3, yd(v) - 2, DISPC.ink, 8);
+  const disp = k.DF(420, 150, (g, w, hh) => {
+    W = w; H = hh; grid(g, W, H);
+    g.fillStyle = 'rgba(255,255,255,.045)'; for (let dec = 10; dec < 10000; dec *= 10) for (let m = 2; m < 10; m++) { const f = dec * m; if (f > 20 && f < 20000) g.fillRect(Math.round(lx(f, W)), 0, 1, H); }   // Live: a fine log grid
+    g.fillStyle = DISPC.grid; for (const v of [-12, -6, 0, 6, 12]) g.fillRect(0, Math.round(yd(v)), W, 1); for (const v of [12, 6, 0, -6, -12]) label(g, String(v), 5, yd(v) - 3, DISPC.ink, 10);
+    for (const [f, t] of [[100, '100'], [1000, '1k'], [10000, '10k']]) label(g, t, lx(f, W) + 3, H - 4, DISPC.ink, 10);
     const sc = k.get(40), st = []; for (let b = 0; b < 8; b++) if (k.get(b * 5) > 0.5) st.push(...eq8Stages(SR, Math.round(k.get(b * 5 + 1)), k.get(b * 5 + 2), k.get(b * 5 + 3) * sc, k.get(b * 5 + 4)));
     const pts = []; for (let x = 0; x <= W; x += 2) { let m = 1; const f = xl(x, W); for (const b of st) m *= mag(b, f); pts.push([x, yd(20 * Math.log10(m + 1e-9) + k.get(41))]); }
     lvPath(g, pts, DISPC.bl, H / 2, 1.8);
-    for (let b = 0; b < 8; b++) { if (k.get(b * 5) < 0.5) continue; const t = Math.round(k.get(b * 5 + 1)), gy = t === 2 || t === 3 || t === 5 ? yd(k.get(b * 5 + 3) * sc) : H / 2; g.globalAlpha = b === sel ? 1 : 0.75; lvRing(g, lx(k.get(b * 5 + 2), W), gy, 6.5); label(g, String(b + 1), lx(k.get(b * 5 + 2), W), gy + 3, DISPC.or, 8, 'center'); g.globalAlpha = 1; }
-  }, { onDown: (x, y) => { let best = sel, bd = 1e9; for (let b = 0; b < 8; b++) { if (k.get(b * 5) < 0.5) continue; const dd = Math.abs(lx(k.get(b * 5 + 2), W) - x) + Math.abs(yd(k.get(b * 5 + 3)) - y) * 0.5; if (dd < bd) { bd = dd; best = b; } } if (best !== sel) { sel = best; fillCtl(); } return { f: k.get(sel * 5 + 2), g: k.get(sel * 5 + 3) }; },
+    for (let b = 0; b < 8; b++) { const on = k.get(b * 5) > 0.5, t = Math.round(k.get(b * 5 + 1)), gy = t === 2 || t === 3 || t === 5 ? yd(k.get(b * 5 + 3) * sc) : H / 2; g.globalAlpha = !on ? 0.3 : b === sel ? 1 : 0.8; lvRing(g, Math.max(10, Math.min(W - 10, lx(k.get(b * 5 + 2), W))), gy, 9); label(g, String(b + 1), Math.max(10, Math.min(W - 10, lx(k.get(b * 5 + 2), W))), gy + 3.5, DISPC.or, 10, 'center'); g.globalAlpha = 1; }
+  }, { onDown: (x, y) => { let best = sel, bd = 1e9; for (let b = 0; b < 8; b++) { const dd = Math.abs(lx(k.get(b * 5 + 2), W) - x) + Math.abs(yd(k.get(b * 5 + 3)) - y) * 0.5; if (dd < bd) { bd = dd; best = b; } } if (best !== sel) { sel = best; fillCtl(); } return { f: k.get(sel * 5 + 2), g: k.get(sel * 5 + 3) }; },
     onMove: (x, y, ddx, ddy, s) => { k.set(sel * 5 + 2, Math.max(10, Math.min(22000, s.f * Math.pow(2, ddx / (W / 10))))); k.set(sel * 5 + 3, Math.max(-15, Math.min(15, s.g - ddy * 15 / (H / 2 - 8)))); } });
   function fillCtl() { ctlBox.replaceChildren(h('div', { class: 'lk-st c' }, 'Band ' + (sel + 1)), k.K(sel * 5 + 2, { n: 'Freq' }), k.K(sel * 5 + 3, { n: 'Gain' }), k.K(sel * 5 + 4, { n: 'Q' })); disp.paint(); }
   fillCtl();

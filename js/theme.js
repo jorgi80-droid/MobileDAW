@@ -17,7 +17,7 @@ const LIB = {
   lighthc:  { name: 'Light Neutral High Contrast', base: 'light', a: -14, b: 1.1 },
   // the device panels of the owner's Ableton Live screenshots, colours measured in them: title bar #a5a5a5, body #878787, dark display #282828,
   // button face #a8a8a8 with a #515151 border, black text, orange #fdb443; the other greys follow the light theme shifted down to that body
-  ableton:  { name: 'Ableton Live (referensi)',  base: 'light', a: -66, b: 1.0, over: {
+  ableton:  { name: 'Light (Ableton Live)',  base: 'light', a: -66, b: 1.0, over: {
     '--lv-title': '#a5a5a5', '--lv-body': '#878787', '--lv-well': '#282828', '--lv-ctl': '#a8a8a8', '--lv-ctl2': '#b8b8b8', '--lv-ink': '#0f0f0f', '--lv-dim': '#2e2e2e', '--lv-edge': '#515151',
     '--lv-trk': '#4e4e4e', '--lv-div': '#6a6a6a', '--lv-arc': '#62cffa', '--lv-or': '#fdb443', '--lv-orink': '#1a1100', '--dim': '#2e2e2e', '--text': '#0f0f0f' } },
 };
@@ -33,8 +33,10 @@ for (const [id, t] of Object.entries(LIB)) {
   if (t.over) Object.assign(out, t.over);
   THEMES[id] = out;
 }
-export const THEME_TONE = { light: 'light', midlight: 'light', lighthc: 'light', ableton: 'light' };
-export const THEME_NAMES = { dark: 'Dark', middark: 'Mid Dark', lowc: 'Dark Neutral Low Contrast', highc: 'Dark Neutral High Contrast', live: 'Live Classic', black: 'Darkest (OLED)', midlight: 'Mid Light', light: 'Light', ableton: 'Ableton Live (referensi)', lighthc: 'Light Neutral High Contrast' };
+// the Light theme IS the Ableton Live reference palette (owner's request: 'pakai tema light'); the derived Mid Light / High Contrast themes were built from the old values above
+THEMES.light = THEMES.ableton; delete THEMES.ableton;
+export const THEME_TONE = { light: 'light', midlight: 'light', lighthc: 'light' };
+export const THEME_NAMES = { dark: 'Dark', middark: 'Mid Dark', lowc: 'Dark Neutral Low Contrast', highc: 'Dark Neutral High Contrast', live: 'Live Classic', black: 'Darkest (OLED)', midlight: 'Mid Light', light: 'Light (Ableton Live)', lighthc: 'Light Neutral High Contrast' };
 // swatches for the theme picker: background, panel, control, text
 export const themeSwatch = (id) => { const t = THEMES[id] || THEMES.dark; return [t['--bg'], t['--panel2'], t['--raise2'], t['--text']]; };
 let current = 'dark';

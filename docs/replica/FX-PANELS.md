@@ -123,3 +123,12 @@ turunan tema terang dengan beberapa token ditimpa) dan dijadikan bawaan (prefs v
 dipilih di Pengaturan). Kotak display gelap memakai palet gelap di dalamnya (CSS `[data-theme-id="ableton"] .lk-dk`).
 Display yang mengisi sisa ruang kolom (`DF` di fxkit: Delay, Echo, Beat Repeat) dan meter Out Filter Delay (engine JS + C++ `readOut`,
 hanya tampilan; audio tidak berubah, golden 125/125).
+
+## Tema Light = referensi Ableton Live (putaran 5) dan perbandingan langsung
+
+Tema `light` kini memakai palet yang diukur dari gambar Live (bukan tema terpisah); bawaan semua pengguna (prefs v7; pilihan lain tetap
+ada di Pengaturan). Perbandingan langsung 29 efek + 8 instrumen terhadap gambar pengguna (`imgdiff.py` mode layout + selisih warna
+rata-rata 64x32 piksel, skala 0-255): layout rata-rata 43,7 (sebelum tema: 42,6), selisih warna rata-rata 35. Selisih warna besar yang
+tersisa berasal dari gambar acuan itu sendiri (Spectral Time berlatar hijau pucat, Audio Effect Rack lebih terang, Electric dipotong
+besar), bukan dari tema. Panel terendah (layout): EQ Three 28, Erosion 30, Envelope Follower 31 (display kosong tanpa audio), Tuner 31.
+EQ Eight: kisi log halus, label dB / frekuensi lebih besar, titik band 8 buah (yang mati redup) dan bisa dipilih.
