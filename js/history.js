@@ -85,4 +85,4 @@ export function undoOp() { if (!undo.length) return; const e = undo.pop(); run(e
 export function revertLast() { if (!undo.length) return false; const e = undo.pop(); run(e); emit('history'); return true; }
 export function redoOp() { if (!redo.length) return; const e = redo.pop(); run(e); undo.push(e); emit('history'); }
 
-HK.hit = hit; HK.add = add; HK.group = group; HK.barrier = clearHistory;
+HK.hit = hit; HK.add = add; HK.group = group; HK.barrier = clearHistory; HK.checkpoint = checkpoint; HK.begin = begin; HK.end = end;

@@ -77,7 +77,7 @@ Stack dipertahankan: JS modul (tanpa build) + AudioWorklet + engine C++ (Android
 |---|---|---|
 | **CTRL** di transport: gerakkan kontrol → CTRL → Add Automation Track / Link to Current Track / Link to MIDI CC | Selesai | `touch-ui-test` |
 | Edit titik: tambah, seret, seleksi banyak, copy / paste (bentuk & jarak terjaga), hapus, kurva | Selesai | `touch-ui-test`, `autocurve-test` |
-| Rekam otomasi dari gerakan kontrol saat merekam | Belum | |
+| Rekam otomasi dari gerakan kontrol saat merekam | Selesai | knob / fader / pan / send / width / parameter efek & instrumen / CC MIDI yang ter-link: track + klip otomasi dibuat sendiri, titik di posisi play, gerakan menimpa titik di bawahnya, satu take = satu langkah undo; `autorec-test` |
 
 ## 10. Audio / Wave Editor
 | Fitur | Status | Bukti / catatan |
@@ -136,7 +136,7 @@ Stack dipertahankan: JS modul (tanpa build) + AudioWorklet + engine C++ (Android
 - B Rack & Mixer 1–7: 1–5 lulus (`chain-order-test`, `touch-ui-test`, `mixer-test`); 6 (AUX / Master FX) dicakup `pdc-test`; 7 (urutan mixer ikut urutan track) tidak dites ulang otomatis di sesi ini.
 - C Piano Roll 1–8: lulus kecuali slide note (belum ada).
 - D Drum 1–8: 1, 3, 4, 5 (velocity + repeat) lulus; 6 (Cut Groups / Poly / Hold / Shift) lulus (`drumseq-test`, golden `inst-drumcut`), AUX per pad belum; 8 (template kit) lulus (`drumkit-test`).
-- E Automation & Audio 1–7: 1, 3–7 lulus; 2 (rekam otomasi) belum; envelope pan/pitch per klip belum.
+- E Automation & Audio 1–7: 1–7 lulus (2 rekam otomasi: `autorec-test`); envelope pan/pitch per klip belum.
 - F Controller: 1–3, 5, 6 lulus di Chromium; 4 (USB/BT MIDI) dan 7–9 butuh HP sungguhan.
 - G Proyek & Ekspor: 1–5 lulus; 6–8 dites lewat `export-test` / `waveops-test` (render penuh di HP belum diuji).
 - H Touch: 3–5 lulus di emulator; 1, 2, 6, 7 butuh uji di HP sungguhan (pemilik).

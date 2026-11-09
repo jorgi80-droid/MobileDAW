@@ -33,7 +33,7 @@ export const onChange = (fn) => { listeners.add(fn); return () => listeners.dele
 export const emit = (what) => { if (what === 'devices' || what === 'tracks' || what === 'all') fixMods(); if (what !== 'mix' && what !== 'transport' && state.tracks.some((t) => t.frozen)) state.tracks.forEach((t, i) => { if (t.frozen) checkFrozen(i); }); listeners.forEach((f) => f(what)); };
 // Undo hook, filled in by js/history.js. hit(key) = true when this change belongs to the gesture already recorded (a knob being dragged); add(entry) stores
 // a small "before" entry. on is false while an undo / redo / project load runs, so replayed changes are not recorded again.
-export const HK = { on: true, hit: () => false, add: () => {}, group: (f) => f(), barrier: () => {} };
+export const HK = { on: true, hit: () => false, add: () => {}, group: (f) => f(), barrier: () => {}, checkpoint: () => {}, begin: () => {}, end: () => {} };
 // ------------------------------------------------------------------ time signature, markers, tempo map, groove
 export const SIGS = [[2, 4], [3, 4], [4, 4], [5, 4], [6, 4], [7, 4], [3, 8], [5, 8], [6, 8], [7, 8], [9, 8], [12, 8]];
 // meter map: state.sig = signature from bar 1, state.sigs = [{ bar (0-based, > 0), n, d }] = changes later in the song. BAR / BEAT stay the length of the FIRST signature (default clip length etc.);
@@ -721,12 +721,12 @@ export function setOut(i, k) {
 }
 export function renameTrack(i, name) { if (HK.on && name !== state.tracks[i].name) HK.add({ t: 'name', s: stripOf(i), v: state.tracks[i].name }); state.tracks[i].name = name; emit('tracks'); }
 export function noteColor(strip, before) { if (HK.on) HK.add({ t: 'color', s: strip, v: before }); }   // the colour picker edits live, so it reports the old colour when it closes
-export function setVol(i, v) { const t = tr(i); if (HK.on && t.vol !== v && !HK.hit('vol' + stripOf(i))) HK.add({ t: 'val', k: 'vol', s: stripOf(i), v: t.vol }); t.vol = v; eng.trackVol(i, v); }
-export function setPan(i, v) { const t = tr(i); if (HK.on && t.pan !== v && !HK.hit('pan' + stripOf(i))) HK.add({ t: 'val', k: 'pan', s: stripOf(i), v: t.pan }); t.pan = v; eng.trackPan(i, v); }
+export function setVol(i, v) { const ar = autoRec(i, 0, 0, null, v); const t = tr(i); if (!ar && HK.on && t.vol !== v && !HK.hit('vol' + stripOf(i))) HK.add({ t: 'val', k: 'vol', s: stripOf(i), v: t.vol }); t.vol = v; eng.trackVol(i, v); }
+export function setPan(i, v) { const ar = autoRec(i, 1, 0, null, v); const t = tr(i); if (!ar && HK.on && t.pan !== v && !HK.hit('pan' + stripOf(i))) HK.add({ t: 'val', k: 'pan', s: stripOf(i), v: t.pan }); t.pan = v; eng.trackPan(i, v); }
 // channel stereo width (0 mono .. 1 normal .. 2 wide) and phase invert (bit 0 left, bit 1 right): tracks, returns and master
-export function setWidth(i, v) { const t = tr(i); v = Math.max(0, Math.min(2, +v)); const old = t.width ?? 1; if (HK.on && old !== v && !HK.hit('wid' + stripOf(i))) HK.add({ t: 'val', k: 'width', s: stripOf(i), v: old }); if (v === 1) delete t.width; else t.width = v; eng.trackWidth(i, v); }
+export function setWidth(i, v) { const t = tr(i); v = Math.max(0, Math.min(2, +v)); const ar = autoRec(i, 7, 0, null, v); const old = t.width ?? 1; if (!ar && HK.on && old !== v && !HK.hit('wid' + stripOf(i))) HK.add({ t: 'val', k: 'width', s: stripOf(i), v: old }); if (v === 1) delete t.width; else t.width = v; eng.trackWidth(i, v); }
 export function setInvert(i, f) { const t = tr(i); f = (f | 0) & 3; const old = t.inv | 0; if (HK.on && old !== f) HK.add({ t: 'val', k: 'inv', s: stripOf(i), v: old }); if (f) t.inv = f; else delete t.inv; eng.trackInvert(i, f); emit('mix'); }
-export function setSend(i, k, v) { const t = state.tracks[i]; t.send = t.send || [0, 0]; if (HK.on && t.send[k] !== v && !HK.hit('snd' + stripOf(i) + k)) HK.add({ t: 'val', k: 'send', s: stripOf(i), p: k, v: t.send[k] }); t.send[k] = v; eng.send(i, k, v); }
+export function setSend(i, k, v) { const ar = autoRec(i, 2 + k, 0, null, v); const t = state.tracks[i]; t.send = t.send || [0, 0]; if (!ar && HK.on && t.send[k] !== v && !HK.hit('snd' + stripOf(i) + k)) HK.add({ t: 'val', k: 'send', s: stripOf(i), p: k, v: t.send[k] }); t.send[k] = v; eng.send(i, k, v); }
 // Arm = the track the record button records into (one at a time); Monitor = whether live input (keys, pads, MIDI) sounds on a MIDI / drum track. Fields t.arm / t.mon, default off / on.
 const REC_KINDS = ['audio', 'midi', 'drum'];
 export const armedTrack = () => state.tracks.findIndex((t) => t.arm && REC_KINDS.includes(t.kind));
@@ -855,8 +855,9 @@ function instVal(t, pi) {
   return pad ? [pad.gain, pad.pit, pad.dec][pi % 3] : undefined;
 }
 export function setInstParam(i, pi, v) {
+  const ar = autoRec(i, 5, pi, null, v);
   const t = state.tracks[i]; if (t.frozen) unfreezeTrack(i, true);
-  if (HK.on) { const old = instVal(t, pi); if (old !== undefined && old !== v && !HK.hit('ip' + t.id + '.' + pi)) HK.add({ t: 'val', k: 'inst', s: t.id, p: pi, v: old, u: !(pi in t.inst.params) }); }
+  if (!ar && HK.on) { const old = instVal(t, pi); if (old !== undefined && old !== v && !HK.hit('ip' + t.id + '.' + pi)) HK.add({ t: 'val', k: 'inst', s: t.id, p: pi, v: old, u: !(pi in t.inst.params) }); }
   t.inst.params[pi] = v; eng.instParam(i, pi, v); if (modsMapped) fixMods();
   if (t.kind === 'drum' && pi >= 0 && pi < MAX_PADS * 3 && t.inst.pads) {   // automation of the original pad parameters: keep the pad data equal
     const q = t.inst.pads[(pi / 3) | 0];
@@ -1073,7 +1074,7 @@ export function resetDevice(i, di) { const d = tr(i).devices[di]; if (!d) return
 // replace the whole chain (Load Rack Preset / Paste All)
 export function replaceChain(i, list) { const t = tr(i); let r = null; HK.group(() => { while (t.devices.length) removeDevice(i, t.devices.length - 1); r = insertDeviceCopies(i, 0, list); }); return r; }
 export function removeDevice(i, di) { const d0 = tr(i).devices[di]; if (HK.on && d0) HK.add({ t: 'dpres', s: stripOf(i), d: d0, di, present: false }); tr(i).devices.splice(di, 1); eng.removeDevice(i, di); emit('devices'); }
-export function setDeviceParam(i, di, pi, v) { if (i < MAX_TRACKS && state.tracks[i] && state.tracks[i].frozen) unfreezeTrack(i, true); const d = tr(i).devices[di]; if (HK.on && d.params[pi] !== v && !HK.hit('dp' + stripOf(i) + '.' + d.id + '.' + pi)) HK.add({ t: 'val', k: 'dev', s: stripOf(i), d: d.id, p: pi, v: d.params[pi] }); tr(i).devices[di].params[pi] = v; eng.devParam(i, di, pi, v);  if (modsMapped) fixMods(); }
+export function setDeviceParam(i, di, pi, v) { const ar = autoRec(i, 4, pi, di, v); if (i < MAX_TRACKS && state.tracks[i] && state.tracks[i].frozen) unfreezeTrack(i, true); const d = tr(i).devices[di]; if (!ar && HK.on && d.params[pi] !== v && !HK.hit('dp' + stripOf(i) + '.' + d.id + '.' + pi)) HK.add({ t: 'val', k: 'dev', s: stripOf(i), d: d.id, p: pi, v: d.params[pi] }); tr(i).devices[di].params[pi] = v; eng.devParam(i, di, pi, v);  if (modsMapped) fixMods(); }
 // Per-module Mix (0..1) / Gain (dB) of a device in a track / Master / return chain. Values equal to the default are removed from the device
 // (old files and untouched devices stay exactly as they were).
 export const wetOf = (d) => ({ mix: d && Number.isFinite(d.mix) ? d.mix : 1, gain: d && Number.isFinite(d.gain) ? d.gain : 0 });
@@ -1987,6 +1988,49 @@ export async function setSoundFont(i, path) { const r = await loadSoundFontFor(i
 export function setSfPreset(i, k) { const t = state.tracks[i]; if (!t.inst.sf) return; t.inst.sf.preset = k; eng.instParam(i, 1, k); emit('devices'); }
 
 // ------------------------------------------------------------------ live input (keyboard, pads, MIDI) and recording
+// ---- automation recording (FL Studio Mobile Editors: "If you are recording and move any parameter an Automation Track and Clip will be
+// automatically created"). While the transport records, a control the user moves (knob, fader, pan, send, width, device / instrument
+// parameter, a MIDI-linked CC) writes points into its automation lane at the play position: the lane and a clip are created when missing,
+// a clip grows bar by bar, the points under a moving control are replaced, a new touch keeps the old curve up to that moment. One undo step
+// (the clips as they were) before the first recorded point of a take.
+const AREC = new Map(), AWIDTH = { n: 'Width', min: 0, max: 2, def: 1, unit: '%' };
+let arecSync = 0, arecTake = -1, arecTold = false, arecOpen = false;
+function autoRec(i, kind, param, di, value) {   // -> true when the move was recorded (the take's one undo step covers it)
+  if (!rec.on || !state.playing || cinOn || !HK.on || !(value === value)) return false;
+  const tick = currentTick(); if (!inPunch(tick)) return false;
+  const o = tr(i); if (!o) return false;
+  const strip = stripOf(i), sname = i === MASTER ? 'Master' : o.name || 'Track';
+  let target, label;
+  if (kind === 0) { target = { kind, strip, param: 0, def: AUTO_VOL }; label = sname + ' \u2022 Volume'; }
+  else if (kind === 1) { target = { kind, strip, param: 0, def: AUTO_PAN }; label = sname + ' \u2022 Pan'; }
+  else if (kind === 2 || kind === 3) { target = { kind, strip, param: 0, def: AUTO_SEND }; label = sname + ' \u2022 Send ' + 'AB'[kind - 2]; }
+  else if (kind === 7) { target = { kind, strip, param: 0, def: AWIDTH }; label = sname + ' \u2022 Width'; }
+  else if (kind === 4) { const d = o.devices && o.devices[di], q = d && DEVICES[d.type] && DEVICES[d.type].params[param]; if (!q || d.missing) return false; target = { kind, strip, devId: d.id, param, def: q }; label = sname + ' \u2022 ' + DEVICES[d.type].name + ' ' + q.n; }
+  else { const q = o.inst && INSTRUMENTS[o.inst.type] && INSTRUMENTS[o.inst.type].params[param]; if (!q || typeof q.min !== 'number') return false; target = { kind: 5, strip, param, def: q }; label = sname + ' \u2022 ' + q.n; }
+  const same = (a) => a && a.kind === target.kind && a.strip === target.strip && a.devId === target.devId && a.param === target.param;
+  if (!arecOpen) { arecOpen = true; HK.begin(); HK.checkpoint(); }   // the whole take (new lanes + points) is one undo step, closed in stopRecording
+  if (arecTake !== rec.pass + rec.startTick * 1e-9) { arecTake = rec.pass + rec.startTick * 1e-9; AREC.clear(); }
+  let ai = state.tracks.findIndex((t) => t.kind === 'auto' && same(t.target));
+  if (ai < 0) {
+    if (state.tracks.length >= MAX_TRACKS) return false;
+    const sel = state.sel.track, nt = addAutoTrack(target, label); if (!nt) return false;
+    ai = state.tracks.indexOf(nt); nt.clips = []; if (sel >= 0 && sel < state.tracks.length) selectTrack(sel);
+    if (!arecTold) { arecTold = true; setTimeout(() => emit('autorec'), 0); }
+  }
+  const t = state.tracks[ai], v = normOf(target.def, value), key = [target.kind, target.strip, target.devId ?? '', target.param].join('|'), now = performance.now();
+  let s = AREC.get(key), c = s && t.clips.find((x) => x.id === s.clip);
+  const touch = !s || now - s.at > 400 || !c;
+  if (!c) c = t.clips.find((x) => tick >= x.start && tick <= x.start + x.len);
+  if (!c) { const a0 = barFloor(tick), prev = t.clips.length ? autoCurrent(t) : v; c = { id: uid(), start: a0, len: barStart(barAt(a0) + 1) - a0, name: '', pts: [{ t: 0, v: prev }] }; t.clips.push(c); }
+  if (tick > c.start + c.len) c.len = barStart(barAt(tick) + 1) - c.start;
+  const rt = Math.max(0, tick - c.start);
+  if (touch) { if (c.pts.length) c.pts.push({ t: Math.max(0, rt - 1), v: autoValueAt(c, rt) }); }   // the old curve stays up to the touch
+  else { if (rt - s.rt < 12 && Math.abs(v - s.v) < 0.01) return true; c.pts = c.pts.filter((p) => !(p.t > s.rt && p.t <= rt)); }   // overwrite under the moving control
+  c.pts.push({ t: rt, v }); c.pts.sort((a, b) => a.t - b.t);
+  AREC.set(key, { at: now, clip: c.id, rt, v });
+  if (!arecSync) arecSync = setTimeout(() => { arecSync = 0; syncAutomation(); emit('clips'); }, 120);
+  return true;
+}
 export const rec = { on: false, kind: null, track: -1, startTick: 0, open: new Map(), notes: [], pass: 0, passes: [], punch: null, loopRec: false, cinUntil: 0, cinSecs: 0, lastPos: 0, last: null };
 let cinOn = false;                                   // the engine is still counting in (the song has not started)
 const inPunch = (t) => !rec.punch || (t >= rec.punch.start && t < rec.punch.end);
@@ -2049,6 +2093,7 @@ export async function startRecording() {
 export async function stopRecording(opts = {}) {
   if (!rec.on) return null;
   rec.on = false;
+  if (arecOpen) { arecOpen = false; if (arecSync) { clearTimeout(arecSync); arecSync = 0; syncAutomation(); emit('clips'); } HK.end(); }
   const i = rec.track, endTick = Math.min(currentTick(), rec.punch ? rec.punch.end : Infinity), startTick = rec.startTick, wasCin = cinOn || performance.now() < rec.cinUntil;
   if (!opts.keepPlaying) eng.stop();
   cinOn = false;

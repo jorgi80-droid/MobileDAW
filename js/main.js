@@ -512,6 +512,7 @@ function boot() {
   for (const b of document.querySelectorAll('#dtabs .b[data-tab]')) b.onclick = () => { if (b.dataset.tab === tab && !$('#view-arr').classList.contains('shut') && !$('#view-arr').classList.contains('max') && !$('#view-arr').classList.contains('half')) setShut(true); else showTab(b.dataset.tab); };   // tapping the open tab folds the panel away
   // tapping the arrangement while the drawer is open closes it
   $('#main').addEventListener('pointerdown', () => { if (BR.isOpen() && !BR.isPinned()) BR.closeBrowser(); }, true);
+  P.onChange((w) => { if (w === 'autorec') toast('Otomasi direkam: gerakan kontrol saat merekam ditulis ke track otomasinya (bisa diedit setelahnya).', 3500); });
   P.onChange((w) => {
     if (w === 'recend' && P.rec.last) toast(recMsg(P.rec.last), P.rec.last.error ? 5000 : 3000);
     if (w === 'all') clearHistory();   // track edits are undoable now, so only loading a project starts a fresh history
