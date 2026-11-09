@@ -75,7 +75,7 @@ ok(voc.clips[2].start === 28 * 960 && voc.clips[2].len === 4 * 960 && voc.clips[
 ok(voc.clips[3].warp && voc.clips[3].warp.mode === 'repitch' && Math.abs(voc.clips[3].warp.ratio - Math.pow(2, 4 / 12)) < 1e-4, 'stretch off: the pitch knob (-4 st) resamples the clip (repitch, longer and lower)');
 ok(B.report.pitched === 2, 'report counts the pitched audio clips');
 { const lv = lead.devices.find((d) => d.missing ? d.missing.name === 'Leveller' : d.from && d.from.name === 'Leveller'); ok(lv && (lv.missing ? lv.missing.mix === 0.5 : true), 'module level / mix (SMPR) kept on the module (' + JSON.stringify(lv && (lv.missing || lv.from).mix) + ')'); }
-{ const k = drum.inst.pads[0]; ok(Math.abs(k.pit - 1.872) < 0.001 && Math.abs(k.a - 0.0096) < 1e-4 && Math.abs(k.d - 0.554) < 1e-3 && k.s === 0 && Math.abs(k.r - 0.1104) < 1e-3, 'drum pad pitch with cents (+1.872 st) and envelope from the FLM pad (A / D / S / R)'); }
+{ const k = drum.inst.pads[0]; ok(k.pit === 1 && Math.abs(k.a - 0.0096) < 1e-4 && Math.abs(k.d - 0.554) < 1e-3 && k.s === 0 && Math.abs(k.r - 0.1104) < 1e-3, 'drum pad pitch in whole semitones as FLM plays it (+1.872 -> +1 st, Honeydew drums.rs) and envelope from the FLM pad (A / D / S / R)'); }
 { const FXm = await import('../js/import/fxmap.js'), r = FXm.decide({ name: 'Leveller', params: [1, 0.7071, 0.5], mix: 0.5 }), r2 = FXm.decide({ name: 'Leveller', params: [1, 0.3536, 0.5], mix: 0.5 });
   ok(r.params[0] === 0 && Math.abs(r2.params[0] - 20 * Math.log10(0.5 + 0.5 * 0.25)) < 0.01, 'module mix 50 %: Utility gain = blend of dry and processed (-12 dB at 50 % -> ' + r2.params[0] + ' dB)'); }
 ok(voc.devices.length === 2 && voc.devices.every((d) => d.type === 0 && d.missing) && voc.devices[1].bypass && voc.devices[1].missing.name === 'Autoduck', 'plugins -> placeholder devices "[Plugin tidak tersedia]" keeping name, preset and params');
@@ -282,5 +282,24 @@ if (process.env.FLM_ZIP && fs.existsSync(process.env.FLM_ZIP)) {
   ok(tr('Both').out === -1 && Math.abs(tr('Both').send[0] - 0.5) < 1e-9 && Math.abs(ut(tr('Both'))[0] - dB(flmGain(0.6))) < 1e-9, 'FLM master + bus send: Send A relative to the main path (0.5), master level as trim');
   ok(tr('Off').mute === true, 'FLM channel with every send off is silent (muted)');
   ok(Math.abs(ut(BS.returns[1])[0] - dB(flmGain(0.5))) < 1e-9 && !ut(BS.returns[0]).length, 'FLM bus master send level as the effect track\'s trim');
+}
+// FLM drum slots (Honeydew drums.rs): pad sent to an effect bus -> a copy of the kit track with that pad only, Output on the bus, pad muted
+// in the channel's own track; Sample Start / Length kept for the load-time resolve; Speed in whole semitones
+{
+  const pad = (k, send, st = 0, len = 0, pitch = 0) => ({ path: '', name: 'P' + k, gain: 1, pan: 0, pitch, env: null, reverse: false, cut: k < 2 ? 1 : 0, poly: true, mute: false, solo: false, offset: 0, startSec: st, length: len, send });
+  const MP = { app: 'FL Studio Mobile', name: 'P', bpm: 120, channels: [{ kind: 'master', name: 'MASTER', number: 0, gain: 1, pan: 0, sends: [], tracks: [], pads: [], modules: [] },
+    { kind: 'bus', name: 'Verb', number: 9, gain: 1, pan: 0, sends: [], tracks: [], pads: [], modules: [] },
+    { kind: 'track', name: 'Kit', number: 1, gain: 0.5, pan: 0, sends: [], pads: [pad(0, -1, 0.25, 0.5), pad(1, 9, -0.1), pad(2, -1)], modules: [{ name: 'X', enabled: true, params: [] }],
+      tracks: [{ kind: 'drums', clips: [{ pos: 0, len: 4, cycle: 4, offset: 0, notes: [{ t: 0, len: 0.25, pitch: 0, vel: 0.8 }, { t: 1, len: 0.25, pitch: 1, vel: 0.8 }] }] }] }] };
+  const BP = buildMdaw(MP, { root: '/S', has: () => false }).json, kit = BP.tracks.find((t) => t.name === 'Kit'), cp = BP.tracks.find((t) => /Kit \u2192 Verb/.test(t.name));
+  ok(cp && cp.out === 0 && cp.vol === 1 && !cp.devices.length && cp.inst.pads.map((q) => q.mute).join() === 'true,false,true' && kit.inst.pads[1].mute === true && kit.inst.pads[0].mute === false,
+    'FLM pad sent to an effect bus: kit copy with only that pad, Output to the bus, past the channel rack and fader; pad muted in its own track');
+  ok(cp && cp.clips[0].notes.length === 2 && cp.clips[0].id !== kit.clips[0].id, 'the copy plays the same hits (cut groups still choke inside it)');
+  ok(kit.inst.pads[0].flmSt === 0.25 && kit.inst.pads[0].flmLen === 0.5 && kit.inst.pads[1].flmSt === -0.1, 'FLM pad Sample Start (s) and Length kept for the load-time resolve');
+  const { flmToModel: f2m } = await import('../js/import/flm.js');
+  const raw = (v10, sp) => ({ kind: 'track', name: 'K', vol: 0.8531, pan: 0.5, number: 1, hue: 0, order: 0, sends: [], modules: [], tracks: [], pads: [{ path: '', vol: 0.8531, pan: 0.5, pitch: sp, params: [0.8531, 0.5, sp, 0, 0, 0.3, 0, 1, 1, 1, v10], index: 0, reverse: false, offset: 0, cut: 0, poly: true, mute: false, solo: false, link: { id: 1, outBus: -1, key: 0xffff, send: 4 } }] });
+  const mm = f2m({ app: 'FL Studio Mobile', name: '', bpm: 120, sig: [4, 4], channels: [raw(0.75, Math.fround(0.5 + 3.5 / 48)), raw(0.25, Math.fround(0.5 - 3.5 / 48))], warnings: [] }).channels;
+  ok(mm[0].pads[0].pitch === 3 && mm[1].pads[0].pitch === -3 && mm[0].pads[0].startSec === 0.125 && mm[1].pads[0].startSec === -0.125 && mm[0].pads[0].length === 0.3 && mm[0].pads[0].send === 4,
+    'FLM slot Speed truncated to whole semitones (+3.5 -> 3, -3.5 -> -3), Sample Start = +-0.5 u^2 s, Length and LINk send read');
 }
 console.log(bad ? `\n${bad} FAILED` : '\nimport-test: all passed'); process.exit(bad ? 1 : 0);

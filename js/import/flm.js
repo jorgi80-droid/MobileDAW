@@ -50,13 +50,14 @@ export function parseFlm(buf, onProgress) {
 
   const P = { app: 'FL Studio Mobile', name: '', bpm: 120, sig: [4, 4], channels: [], warnings: [] };
   const head = one(top, 'HEAD');
-  if (head) { P.version = i32(head.a + 4); P.name = str(head.a + 8, 256); if (head.n >= 0x110) { const b = f64(head.a + 0x108); if (b >= 20 && b <= 999) P.bpm = b; } P.appVersion = str(head.a + head.n - 5, 5); }
+  if (head) { P.legacy = head.n < 358; P.version = i32(head.a + 4); P.name = str(head.a + 8, 256); if (head.n >= 0x110) { const b = f64(head.a + 0x108); if (b >= 20 && b <= 999) P.bpm = b; } P.appVersion = str(head.a + head.n - 5, 5); }
   const td = one(top, 'TDIV'); if (td && td.n >= 2 && u[td.a] > 0 && u[td.a + 1] > 0) P.sig = [u[td.a], u[td.a + 1]];
   const racks = top.filter((x) => x.tag === 'RACK'), chans = top.filter((x) => x.tag === 'CHNL');
   const presetName = {};                                     // type -> plugin name learned from preset folders in this file
 
   const readRack = (r) => {
     const ks = kids(r), out = { vol: LVL0, pan: 0.5, modules: [], pads: [] };
+    const rh = one(ks, 'RHED'); if (rh && rh.n >= 16) { out.busId = i32(rh.a + 8); out.outBus = i32(rh.a + 12); }   // RHED (Honeydew read.rs): i32, last instance id, this channel's send bus id, its output bus (legacy routing)
     const rp = one(ks, 'RPRM');                              // f32 x 6: level, pan, mute (0 / 1), solo?, 0.5, ?  (the FLM manual's channel has Activate (mute) then Solo; index 3 is a Solo candidate, 0 in every known project, not applied)
     if (rp && rp.n >= 8) { out.vol = f32(rp.a); out.pan = f32(rp.a + 4); out.rprm = []; for (let k = 0; k + 4 <= rp.n; k += 4) out.rprm.push(f32(rp.a + k)); if (rp.n >= 12) out.mute = f32(rp.a + 8) > 0.5; if (rp.n >= 16) out.solo = f32(rp.a + 12) > 0.5; }
     for (const m of ks.filter((x) => x.tag === 'RMOd')) {
@@ -82,8 +83,9 @@ export function parseFlm(buf, onProgress) {
       // MAIN (Honeydew read.rs slot()): i32, f64 pad index, name[512], folder[512], u8 reverse, f64 beat offset, f32 offset control, u8 cut group
       // (0 none, 1..3 = A..C), u8 overlapping voices (Poly). PRMS: level, pan, speed (pitch), mute, solo, length, A, D, S, R, sample start.
       const mn = one(sk, 'MAIN'), M0 = mn && mn.n >= 1051 ? mn.a : -1;
+      const ln = one(sk, 'LINk'), link = ln && ln.n >= 4 ? { id: u32(ln.a), outBus: ln.n >= 8 ? i32(ln.a + 4) : -1, key: ln.n >= 10 ? u16(ln.a + 8) : 0xffff, send: ln.n >= 14 ? i32(ln.a + 10) : -1 } : null;   // LINk: slot id, output bus, MIDI key, send target channel
       out.pads.push({ path: path1(one(sk, 'PTH1')), vol: prm[0] ?? LVL0, pan: prm[1] ?? 0.5, pitch: prm[2] ?? 0.5, params: prm, index: M0 >= 0 ? f64(M0 + 4) : out.pads.length,
-        reverse: M0 >= 0 && u[M0 + 1036] !== 0, offset: M0 >= 0 ? f64(M0 + 1037) : 0, cut: M0 >= 0 ? Math.min(3, u[M0 + 1049]) : 0, poly: M0 >= 0 ? u[M0 + 1050] !== 0 : true, mute: (prm[3] || 0) > 0.5, solo: (prm[4] || 0) > 0.5 });
+        reverse: M0 >= 0 && u[M0 + 1036] !== 0, offset: M0 >= 0 ? f64(M0 + 1037) : 0, cut: M0 >= 0 ? Math.min(3, u[M0 + 1049]) : 0, poly: M0 >= 0 ? u[M0 + 1050] !== 0 : true, mute: (prm[3] || 0) > 0.5, solo: (prm[4] || 0) > 0.5, link });
     }
     out.pads.sort((a, b) => a.index - b.index);           // a slot plays on the pad its MAIN pad index names (not in file order)
     return out;
@@ -122,6 +124,14 @@ export function parseFlm(buf, onProgress) {
     }
     P.channels.push(ch);
     if (onProgress) onProgress((k + 1) / chans.length);
+  }
+  // legacy routing (Honeydew read.rs legacy_routing: HEAD without @354): a channel without SENDs sends to the effect bus whose RHED bus id is
+  // its RHED output bus, else to the master; a drum slot's send target is the bus its LINk output bus names
+  const busOf = (b) => { const c = b >= 1 ? P.channels.find((q) => q.kind === 'bus' && q.busId === b) : null; return c ? c.number : null; };
+  for (const ch of P.channels) {
+    if (ch.kind === 'master') { ch.sends = []; continue; }
+    if (P.legacy && !ch.sends.length) ch.sends = [{ target: busOf(ch.outBus) ?? 0, enabled: true, level: LVL0 }];
+    if (P.legacy) for (const q of ch.pads) if (q.link) q.link.send = busOf(q.link.outBus) ?? -1;
   }
   // plugin names: proven ids, then names learned from preset folders in this file, else an honest id
   const nameOf = (type) => KNOWN[type] || presetName[type] || 'Efek FLM #' + type;
@@ -170,7 +180,11 @@ export function flmToModel(P) {
       if (!c.instrument.layers.length && !c.instrument.library && dw[0].sample) c.instrument.layers.push({ sample: dw[0].sample, root: dw[0].root ?? DW_ROOT0, params: dw[0].params, level: dw[0].level ?? 1, pan: dw[0].pan || 0 });
     } else if (unk) { c.instrument = { kind: 'unknown', name: 'Instrumen FLM #' + unk.type, preset: unk.preset && unk.preset !== 'Default' ? unk.preset : '', params: unk.params, enabled: unk.enabled, flmType: unk.type };
     } else if (syn) { const k = synthOf(syn); c.instrument = { kind: k.kind, name: k.name, preset: syn.preset && syn.preset !== 'Default' ? syn.preset : '', params: syn.params, enabled: syn.enabled, flmType: syn.type, ...(k.kind === 'soundfont' ? { library: syn.presetPath } : {}) }; }
-    c.pads = ch.pads.map((q, k) => ({ path: q.path, name: (q.path.split('/').pop() || 'Pad ' + (k + 1)).replace(/\.[^.]+$/, ''), gain: flmGain(q.vol), pan: q.pan * 2 - 1, pitch: (q.pitch - 0.5) * 48, env: q.params.length >= 10 ? { a: q.params[6], d: q.params[7], s: q.params[8], r: q.params[9] } : null, reverse: !!q.reverse, cut: q.cut | 0, poly: q.poly !== false, mute: !!q.mute, solo: !!q.solo, offset: Number.isFinite(q.offset) ? q.offset : 0 }));   // pitch 0.5 + st / 48 (cents kept)
+    c.pads = ch.pads.map((q, k) => ({ path: q.path, name: (q.path.split('/').pop() || 'Pad ' + (k + 1)).replace(/\.[^.]+$/, ''), gain: flmGain(q.vol), pan: q.pan * 2 - 1, pitch: Math.trunc(Math.fround(q.pitch * 48 - 24)), env: q.params.length >= 10 ? { a: q.params[6], d: q.params[7], s: q.params[8], r: q.params[9] } : null, reverse: !!q.reverse, cut: q.cut | 0, poly: q.poly !== false, mute: !!q.mute, solo: !!q.solo, offset: Number.isFinite(q.offset) ? q.offset : 0,
+      startSec: q.params.length >= 11 ? Math.sign(2 * q.params[10] - 1) * 0.5 * (2 * q.params[10] - 1) ** 2 : 0, length: q.params[5] > 0 ? q.params[5] : 0, send: q.link ? q.link.send : -1 }));
+    // Honeydew drums.rs: Speed = trunc(48 v - 24) whole semitones (f32); Sample Start = +-0.5 u^2 s, u = 2 v - 1 (later start, or silence
+    // before the hit when negative); Length > 0 = the gate at that fraction of the sample, then the release; LINk send = the pad plays into
+    // that effect channel instead of its own (past the channel's rack and fader)
     for (const t of ch.tracks) {
       if (!t.clips.length && t.kind === 'automation') continue;               // empty automation slots
       const tr = { kind: t.kind, label: t.label, clips: [] };

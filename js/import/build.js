@@ -213,6 +213,7 @@ export function buildMdaw(M, opts) {
     const firstId = [];
     (subs.length ? subs : [{ kind: ch.instrument ? 'notes' : ch.pads.length ? 'drums' : 'audio', clips: [] }]).forEach((st, k) => {
       if (out.tracks.length >= MAX_TRACKS) { report.skipped.push('Track "' + ch.name + '": jumlah track maksimum'); return; }
+      const split = new Map();
       const t = { id: uid(), name: subs.length > 1 && k > 0 ? `${ch.name} (${k + 1})` : ch.name, color, kind: 'audio', inst: null, clips: [], devices: devices(ch), vol: vol(ch.gain), pan: clamp(ch.pan || 0, -1, 1), mute: !!ch.mute, solo: false, send: [0, 0], out: -1 };
       const rt = routeOf(ch, t.name); t.out = rt.out; t.send = rt.send; if (rt.mute) t.mute = true;
       over(t, ch.gain, rt.k); if (M.app === 'FL Studio Mobile') t.panLaw = 'flm';   // FLM's balance pan law (Honeydew mixer.rs), kept for this track
@@ -224,11 +225,16 @@ export function buildMdaw(M, opts) {
         t.kind = 'drum';
         const pads = (ch.pads || []).slice(0, MAX_PADS).map((q, k2) => {
           const f = q.path ? sample(q.path, q.name) : null;
-          return { pitch: 36 + k2, name: (q.name || 'Pad ' + (k2 + 1)).slice(0, 14), kind: -1, sample: f && !f.missing ? { path: f.path, name: f.path.split('/').pop() } : null, gain: clamp(20 * Math.log10(Math.max(1e-4, q.gain ?? 1)), -60, 12), pan: clamp(q.pan || 0, -1, 1), pit: clamp(q.pitch || 0, -24, 24), dec: 1, start: 0, end: 1, rev: false, ...padEnv(q.env), mute: !!(f && f.missing) || !!q.mute, solo: !!q.solo, rev: !!q.reverse, cut: clamp(q.cut | 0, 0, 3), poly: q.poly !== false };
+          return { pitch: 36 + k2, name: (q.name || 'Pad ' + (k2 + 1)).slice(0, 14), kind: -1, sample: f && !f.missing ? { path: f.path, name: f.path.split('/').pop() } : null, gain: clamp(20 * Math.log10(Math.max(1e-4, q.gain ?? 1)), -60, 12), pan: clamp(q.pan || 0, -1, 1), pit: clamp(q.pitch || 0, -24, 24), dec: 1, start: 0, end: 1, rev: false, ...padEnv(q.env), mute: !!(f && f.missing) || !!q.mute, solo: !!q.solo, rev: !!q.reverse, cut: clamp(q.cut | 0, 0, 3), poly: q.poly !== false,
+            ...(q.startSec ? { flmSt: q.startSec } : {}), ...(q.length > 0 ? { flmLen: q.length } : {}) };   // FLM Sample Start (s) / Length (fraction): resolved against the sample's duration when it loads (project.js)
         });
         t.inst = { type: 3, params: {}, pads: pads.length ? pads : undefined };
         const map = pads.length ? (p) => (p >= 0 && p < pads.length ? pads[p].pitch : -1) : (p) => 36 + p;
         const ofs = (ch.pads || []).slice(0, MAX_PADS).map((q) => (Number.isFinite(q.offset) ? q.offset : 0));
+        // a pad whose LINk sends it to an effect bus plays into that bus, past the channel's effects and fader: per bus, a copy of the kit
+        // track (same hits, so cut groups still choke inside it) with only those pads audible, its Output on that effect track; the pads
+        // are muted in the channel's own track
+        (ch.pads || []).slice(0, pads.length).forEach((q, k2) => { const b = q.send > 0 ? busIdx.get(q.send) : null; if (b == null) return; if (!split.has(b)) split.set(b, []); split.get(b).push(k2); });
         for (const cl of st.clips) { const ns = notesOf(cl, map); if (ofs.some(Boolean)) { const byPitch = new Map(pads.map((q, k2) => [q.pitch, ofs[k2]])); for (const n of ns) { const o = byPitch.get(n.p) || 0; if (o) n.t = Math.max(0, Math.round(n.t + o * PPQ)); } } t.clips.push(patternClip(cl, ns)); }   // FLM pad Shift: hit at tick + offset beats
       } else {
         for (const cl of st.clips) {
@@ -248,6 +254,13 @@ export function buildMdaw(M, opts) {
         }
       }
       out.tracks.push(t); report.tracks++; firstId.push(t.id);
+      for (const [b, ks] of split) {
+        if (out.tracks.length >= MAX_TRACKS) { report.skipped.push('Pad "' + ch.name + '" ke ' + out.returns[b].name + ': jumlah track maksimum'); break; }
+        const pads2 = t.inst.pads.map((q, k2) => ({ ...q, mute: ks.includes(k2) ? q.mute : true }));
+        for (const k2 of ks) t.inst.pads[k2].mute = true;
+        const t2 = { ...t, id: uid(), name: (t.name + ' → ' + out.returns[b].name).slice(0, 40), devices: [], vol: 1, pan: 0, mute: t.mute, send: [0, 0], out: b, inst: { ...t.inst, pads: pads2 }, clips: t.clips.map((c) => ({ ...c, id: uid(), notes: c.notes.map((n) => ({ ...n })) })) };
+        out.tracks.push(t2); report.tracks++; report.padRoute = (report.padRoute || 0) + ks.length;
+      }
     });
     for (const at of ch.tracks.filter((x) => x.kind === 'automation')) autoLater.push({ ch, at, strip: firstId[0] });
   }
@@ -297,6 +310,7 @@ export function buildMdaw(M, opts) {
   if (prec.boost) P2.push(prec.boost + ' not dengan velocity di atas 100 % (boost) dipertahankan, tidak dipotong');
   const dwN = report.instruments.filter((x) => /^DirectWave \(/.test(x.to)).length, synN = report.instruments.filter((x) => x.how === 'preset' || x.how === 'default').length;
   if (prec.clipPan) P2.push(prec.clipPan + ' klip audio punya pan sendiri di file asli: dipakai sebagai pan klip (balance)');
+  if (report.padRoute) P2.push(report.padRoute + ' pad drum FLM dikirim ke bus efek (AUX): diputar dari salinan track kit yang Output-nya ke track efek itu, pad-nya dibisukan di track asal');
   if (report.sendTrim) P2.push(report.sendTrim + ' strip punya level send FLM ke output utama selain 0 dB: dipasang sebagai Utility di akhir rantainya');
   if (report.levelOver) P2.push(report.levelOver + ' strip punya level FLM di atas +2,9 dB (batas fader MobileDAW): sisa gain dipasang sebagai Utility di akhir rantainya');
   if (prec.clipEnv) P2.push(prec.clipEnv + ' klip audio punya envelope (A / D / S / R) sendiri di file asli: belum diterapkan');

@@ -878,6 +878,17 @@ export function padsOf(i) {
   }
   return t.inst.pads;
 }
+// an FLM drum slot's Sample Start (signed seconds) and Length (fraction of the sample) from the import, resolved once its sample's duration is
+// known (Honeydew drums.rs): a later start -> pad Start, a negative start (silence before the hit, up to 0.5 s) -> pad Shift, Length -> Hold
+// (the gate, then the release). The resolved values stay in the project; the FLM fields go.
+function flmPadTime(q) {
+  const D = q.sample && q.sample.duration;
+  if (!(D > 0) || (q.flmSt == null && q.flmLen == null)) return;
+  const st = +q.flmSt || 0;
+  if (st > 0) q.start = Math.min(0.999, st / D); else if (st < 0) q.shift = Math.min(0.25, (q.shift || 0) - st);
+  if (q.flmLen > 0) q.hold = Math.min(4, Math.max(0.001, q.flmLen * D));
+  delete q.flmSt; delete q.flmLen;
+}
 const padSolo = (ps) => ps.some((q) => q.solo);
 function sendPad(i, k) {
   const ps = padsOf(i), q = ps[k], b = 200 + k * 16, solo = padSolo(ps);
@@ -1577,7 +1588,7 @@ async function deserializeInner(text, onProgress) {
       }
       if (!q.sample) continue;
       const sm = q.sample.path ? await loadSampleObj(q.sample.path) : null;
-      if (sm) q.sample = sm; else { if (q.sample.path) missing.push(q.sample.path); q.sample = null; if (q.kind < 0) q.mute = true; }
+      if (sm) { q.sample = sm; flmPadTime(q); } else { if (q.sample.path) missing.push(q.sample.path); q.sample = null; if (q.kind < 0) q.mute = true; }
     }
   }
   let maxId = 0;
