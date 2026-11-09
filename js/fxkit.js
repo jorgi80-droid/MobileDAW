@@ -88,7 +88,7 @@ function bandDisp(k, w, hh, kf, kw, o = {}) {
   let cur = w;
   const draw = (g, w, hh) => {
     cur = w; grid(g, w, hh);
-    if (o.fill) { g.fillStyle = DISPC.grid; for (let q = 1; q < 4; q++) g.fillRect(0, Math.round(hh * q / 4), w, 1); }   // Live's filter displays carry a fine grid
+    if (o.fill) { g.fillStyle = 'rgba(255,255,255,.05)'; for (let dec = 10; dec < 20000; dec *= 10) for (let m = 2; m < 10; m++) { const f = dec * m; if (f > 20 && f < 20000) g.fillRect(Math.round(lx(f, w)), 0, 1, hh); } g.fillStyle = DISPC.grid; for (let q = 1; q < 4; q++) g.fillRect(0, Math.round(hh * q / 4), w, 1); }   // Live's filter displays carry a fine grid
     const f = k.get(kf), wd = kw != null ? k.get(kw) : 1, on = o.on == null || k.get(o.on) > 0.5;
     const hp = new Biquad(), lp = new Biquad(), bp = new Biquad(); let fn;
     if (o.peak) { bp.bandpass(SR, f, 1 / Math.max(0.05, wd)); fn = (x) => mag(bp, x); }
@@ -120,7 +120,7 @@ V[18] = (k) => {
   k.every(16, () => { if (fr++ % 3 === 0) { const r = k.out(); if (r.length >= 2) mt = [r[0], r[1]]; } mo = mo.map((v, c) => glide(v, mt[c])); meter.paint(); });
   ['L', 'L+R', 'R'].forEach((name, n) => { const o = n * 10;
     cells.push(k.col(k.row(k.T(o, name, { w: 34 }), k.T(o + 1, 'On', { w: 40 })), k.N(o + 2, { w: 78 }), k.N(o + 3, { w: 78 })),
-      bandDisp(k, 120, 62, o + 2, o + 3, { on: o + 1 }),
+      bandDisp(k, 150, 72, o + 2, o + 3, { on: o + 1 }),
       k.col(k.CH(o + 5, ['1', '2', '3', '4', '5', '6', '8', '16'], { cls: 'lk-g4' }), k.row(k.T(o + 4, 'Sync', { w: 44 }), k.N(o + 6, { w: 62 }))),
       k.K(o + 7, { n: '' }), k.K(o + 8, { n: '' }), k.K(o + 9, { n: '' }), ...(n === 0 ? [meter] : n === 2 ? [k.K(30, { n: 'Dry' })] : [])); });
   return h('div', { class: 'lk-fdg' }, ...cells);
@@ -1439,8 +1439,8 @@ V[17] = (k) => {
   const side = (o, name) => k.col(h('span', { class: 'lk-lb' }, name), syncBtn(k, o), fixH(k.swap(o, () => k.CH(o + 1, ['1', '2', '3', '4', '5', '6', '8', '16'], { cls: 'g2c' }), () => k.K(o + 2, { n: '' })), 104), k.N(o + 3, { w: 58 }));
   const disp = k.dk(bandDisp(k, 200, 70, 12, 13, { on: 11, fill: true }), k.row(k.T(11, '', { cls: 'lk-chkbox' }), h('span', { class: 'lk-lb' }, 'Filter'), k.NT(12, { w: 66, cls: 'or' }), h('span', { class: 'lk-lb' }, 'Width'), k.NT(13, { w: 46, cls: 'or' })),
     h('div', { class: 'lk-dkh' }, 'Modulation'), k.row(k.TL('Rate', k.NT(14, { w: 58, cls: 'or' })), k.TL('Filter', k.NT(15, { w: 58, cls: 'or' })), k.TL('Time', k.NT(16, { w: 58, cls: 'or' }))));
-  return k.row(k.col(k.row(side(0, 'Left'), h('div', { class: 'lk-mid' }, k.T(8, '⇄', { cls: 'link', w: 24 })), side(4, 'Right')), k.row(k.K(9), k.T(10, '∞', { cls: 'frz', w: 28 }))), disp,
-    k.col(k.TL('Mode', k.CH(17, ['Repitch', 'Fade', 'Jump'], { v: true })), k.T(18, 'Ping Pong', { w: 80 }), h('span', { class: 'lk-grow' }), k.K(19)));   // Dry/Wet sits at the bottom, level with Feedback
+  return k.row(k.col(k.row(side(0, 'Left'), h('div', { class: 'lk-mid' }, k.T(8, '⊶', { cls: 'link', w: 22 })), side(4, 'Right')), k.row(k.K(9), k.T(10, '∞', { cls: 'frz', w: 28 }))), disp,
+    k.col(k.TL('Mode', k.CH(17, ['Repitch', 'Fade', 'Jump'], { v: true })), k.T(18, 'Ping Pong', { w: 80, cls: 'lk-pp' }), h('span', { class: 'lk-grow' }), k.K(19)));   // Dry/Wet sits at the bottom, level with Feedback
 };
 // Echo (Echo tab): Left / Right with link and Sync, Input / Feedback | tunnel display with the filter below it and HP / LP readouts |
 // Reverb / Stereo, Output, Stereo / Ping Pong, Dry/Wet; Modulation and Character tabs
@@ -1478,7 +1478,7 @@ V[6] = (k) => {
     lvPath(g, pts, '#ffad32', hh / 2, 1.8); label(g, 'in', w - M, hh / 2 - 4, DISPC.ink, 9, 'right'); label(g, 'out', M + 2, 12, DISPC.ink, 9); },
     { onDown: () => ({ v: k.get(17) }), onMove: (x, y, dx, dy, s) => k.set(17, Math.max(0, Math.min(1, s.v - dy / 120))) });
   const tabs = [
-    () => k.row(k.col(k.row(k.TL('Left', tm(0, 9)), h('div', { class: 'lk-mid' }, k.T(7, '⇄', { cls: 'link', w: 24 })), k.TL('Right', tm(6, 10))), k.T(8, 'Sync', { w: 120 }), h('span', { class: 'lk-grow' }), k.row(k.K(13), k.K(1))),
+    () => k.row(k.col(k.row(k.TL('Left', tm(0, 9)), h('div', { class: 'lk-mid' }, k.T(7, '⊶', { cls: 'link', w: 24 })), k.TL('Right', tm(6, 10))), k.T(8, 'Sync', { w: 120 }), h('span', { class: 'lk-grow' }), k.row(k.K(13), k.K(1))),
       k.dk(tunnel, filt, k.row(h('span', { class: 'lk-lb' }, 'Filter HP'), k.NT(5, { w: 58 }), h('span', { class: 'lk-lb' }, 'LP'), k.NT(4, { w: 64 }))),
       k.col(k.row(k.K(11), k.K(12)), k.K(14), k.CH(3, ['Stereo', 'Ping Pong'], { v: true }), k.K(2))),
     () => k.row(k.dk(modD, k.row(h('span', { class: 'lk-lb' }, 'Delay time ± ms'), h('span', { class: 'lk-grow' }), k.NT(15, { w: 64 }), k.NT(16, { w: 56 }))), k.col(k.K(15, { n: 'Rate', big: true }), k.K(16, { n: 'Amount', big: true }))),

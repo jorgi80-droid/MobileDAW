@@ -1355,3 +1355,21 @@ html.reduce-motion .menu, html.reduce-motion .modal, html.reduce-motion .fw, htm
 .lk-brtop > .lk-brm { flex-direction: column; align-items: flex-start !important; justify-content: flex-start; gap: 3px; padding: 2px 0 1px; }
 .lk-brtop > .lk-brm > .lk-ch { align-self: stretch; }
 .lk-brm > .lk-ch { display: flex !important; } .lk-brm > .lk-ch .lv-btn { flex: 1 1 0; }
+/* Live: vertical choice lists are separate buttons with gaps (Delay Mode, Compressor Peak / RMS / Expand ...), not one joined box */
+.lk .lv-grp.lk-ch.v { gap: 4px !important; background: transparent !important; border: 0 !important; box-shadow: none !important; padding: 0 !important; }
+.lk .lv-grp.lk-ch.v > .lv-btn { border: 1px solid var(--lv-edge) !important; border-radius: 2px !important; margin: 0 !important; }
+/* the Left / Right link: a small outlined box on a thin vertical line (Live) */
+.lk-mid { position: relative; align-self: stretch !important; display: flex; align-items: center; justify-content: center; margin: 18px 4px 0 !important; }
+.lk-mid::before { content: ''; position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: var(--lv-edge); opacity: .7; }
+.lk .lk-mid .lv-btn.link { position: relative; z-index: 1; width: 22px !important; min-width: 22px; height: 18px !important; min-height: 18px; padding: 0 !important; font-size: 14px !important; line-height: 16px; background: var(--lv-body) !important; color: var(--lv-ink) !important; border: 1px solid var(--lv-edge) !important; }
+.lk .lk-mid .lv-btn.link.on { background: var(--lv-ctl) !important; }
+/* the Filter on box: 13 px square */
+.lk .lv-btn.lk-chkbox { width: 13px !important; min-width: 13px !important; height: 13px !important; min-height: 13px !important; padding: 0 !important; }
+.lk .lv-btn.lk-pp { margin-top: 16px; }
+.lk .lk-ch.g2c { gap: 3px !important; background: transparent !important; border: 0 !important; }
+.lk .lk-ch.g2c > .lv-btn { border: 1px solid var(--lv-edge) !important; border-radius: 2px; margin: 0 !important; }
+/* Filter Delay (Live): bold 14 px column titles, left aligned over Input / Filter; rows tight; tall filter displays */
+.lk-fdg > .lk-fdh { font: 600 14px/16px var(--font) !important; color: var(--lv-ink); justify-self: start; }
+.lk-fdg { row-gap: 3px !important; column-gap: 8px !important; }
+.lk-fdg > .lk-col { gap: 2px !important; }
+.lk-fdg .knob.lk-k svg { margin: -5px 0 !important; }
