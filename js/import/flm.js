@@ -89,7 +89,7 @@ export function parseFlm(buf, onProgress) {
     const clip = { pos: pos / 128, len: f64(h.a), cycle: f64(h.a + 8), offset: f64(h.a + 16), id: i32(h.a + 24), srcLen: f64(h.a + 28), muted: h.n > 36 && u[h.a + 36] === 1, events: [] };
     if (!(clip.len > 0)) { clip.len = clip.cycle > 0 ? clip.cycle : clip.srcLen > 0 ? clip.srcLen : 4; clip.lenFromCycle = true; }   // never resized: one cycle long
     const e = one(ck, 'EVN2');
-    if (e && e.n >= 2) { const rs = u16(e.a); if (rs >= 20) for (let p = e.a + 2; p + rs <= e.a + e.n; p += rs) clip.events.push({ t: u32(p) / 128, len: f64(p + 4), pitch: u16(p + 12), pan: u16(p + 14), vel: u16(p + 16), flags: u16(p + 18) }); }
+    if (e && e.n >= 2) { const rs = u16(e.a); if (rs >= 20) for (let p = e.a + 2; p + rs <= e.a + e.n; p += rs) clip.events.push({ t: u32(p) / 128, len: f64(p + 4), pitch: u16(p + 12), vel8: dv.getUint8(p + 14), pan8: dv.getUint8(p + 15), vel: u16(p + 16), value: u16(p + 16), flags: u16(p + 18) }); }
     const sm = one(ck, 'CLSm');
     if (sm) {
       const sk = kids(sm), stc = one(sk, 'STRC'), pm = one(sk, 'PRMS'), main = one(sk, 'MAIN');
@@ -135,8 +135,10 @@ function synthOf(m) {
 }
 // FLM structures -> the neutral import model (js/import/build.js). Units: beats, linear gain (1 = unity, 0 dB), pan -1..1.
 // FLM levels (track, master, bus, audio clip, drum pad) are 0..1 sliders whose default is the f32 0.85312408...: that default is unity
-// gain and the stored values are kept as gain relative to it, exactly (no rounding). Note velocity: u16 with 32767 = 100 % (the default
-// of every untouched note) and up to 65535 = 200 % (FLM boost): velocity = raw / 32767, 0..2, never clamped to 1.
+// gain and the stored values are kept as gain relative to it, exactly (no rounding). Note event (20 bytes, as Honeydew reads it): u32 position,
+// f64 length, i16 key, u8 velocity (0..255, FLM's default 204 = 80 %), u8 pan (127 = centre), u16 value (0x7FFF; a drum hit's pitch), u8 repeat,
+// u8 slide. Proven on the owner's projects: byte 14 varies note by note (204, 255, 178, 44 ...), byte 15 is 127, the u16 is 32767 on notes.
+// (Before: the u16 was read as velocity, so every imported note played at 100 %.)
 export const LVL0 = 0.85312408208847046;
 export function flmToModel(P) {
   const M = { app: P.app, name: P.name || 'FLM Project', bpm: P.bpm, sig: P.sig, channels: [], warnings: P.warnings.slice() };
@@ -170,7 +172,7 @@ export function flmToModel(P) {
         if (t.kind === 'audio') Object.assign(cl, { sample: x.sample, name: x.name, pitch: x.pitch || 0, repitch: x.repitch || 0, stretch: x.stretchOn !== false && x.stretch > 0.01 ? x.stretch : 1, gain: (x.gain ?? LVL0) / LVL0, pan: x.pan != null ? x.pan * 2 - 1 : 0,
           ...(x.params && x.params.length >= 10 && (x.params[6] > 0 || x.params[7] < 1 || x.params[8] < 1 || x.params[9] < 1) ? { env: x.params.slice(6, 10) } : {}) });   // clip envelope A D S R (not applied yet: reported)
         else if (t.kind === 'automation') cl.points = x.events.map((e) => ({ t: e.t, v: e.vel / 65535 }));
-        else cl.notes = x.events.map((e) => ({ t: e.t, len: e.len > 0 ? e.len : 0.25, pitch: t.kind === 'notes' ? Math.min(127, e.pitch + NOTE_OFS) : e.pitch, vel: Math.min(2, e.vel / 32767), pan: Math.max(-1, Math.min(1, e.pan / 32767.5 - 1)) }));
+        else cl.notes = x.events.map((e) => ({ t: e.t, len: e.len > 0 ? e.len : 0.25, pitch: t.kind === 'notes' ? Math.min(127, e.pitch + NOTE_OFS) : e.pitch, vel: e.vel8 / 255, pan: Math.max(-1, Math.min(1, (e.pan8 - 127) / 128)) }));
         tr.clips.push(cl);
       }
       c.tracks.push(tr);

@@ -9,6 +9,7 @@ import { h } from './ui.js';
 import { lvTabs, lvPath, lvRing, lvEnvPts, DISPC } from './liveui.js';
 import { Biquad } from './engine/dsp.js';
 import { cutHz, gmsWaveTable, syncBeats, GMS_SCALE, FLM_SYNC, miniPw, miniSt, miniPhaserBeats } from './engine/flmsyn.js';
+import { SS_ARP_BEATS, SS_DELAY_BEATS } from './engine/hdsaw.js';
 import * as P from './project.js';
 
 const SR = 48000, F0 = 20, F1 = 20000, CY = '#4fc3f0', OR = '#ffad32', WH = '#f2f2f2', DIM = '#3d3d42';
@@ -232,28 +233,28 @@ function miniWave(k) {
 // ---- SuperSaw oscillator: one voice (saw / pulse, Supersync with the sync amount and its own pulse width) and the sub oscillator
 function ssWave(k) {
   return disp(k, (g, w, hh) => {
-    const pm = k.get(0) > 0.5, sync = Math.round(k.get(1)) === 1, pw = sync ? clamp(k.get(11) / 100, 0.02, 0.98) : clamp(k.get(3) / 100, 0, 1) * 0.5, r2 = Math.pow(2, clamp(k.get(10) / 100, 0, 1) * 4), sub = k.get(4) / 100;
+    const pm = k.get(0) > 0.5, sync = Math.round(k.get(1)) === 1, pw = sync ? clamp(k.get(11) / 100, 0, 1) * 0.5 : clamp(k.get(3) / 100, 0, 1) * 0.5, r2 = 1 + 5 * clamp(k.get(10) / 100, 0, 1), sb = clamp(k.get(4) / 100, 0, 1), sub = sb * sb < 0.001 ? 0 : sb * sb;   // hdsaw.js: Supersync = R = 1 + 5 S slave pulses of width W / 2; sub level = knob squared
     const mid = hh / 2, amp = mid - 18, pts = [], sp = [];
     vl(g, w / 2, 0, hh); hl(g, mid, 0, w, DISPC.grid2);
     for (let x = 0; x <= w; x++) {
       const p = x / w * 2, q = p - Math.floor(p); let v;
-      if (sync) { const s = (q * r2) % 1; v = pm ? (s < pw ? 1 : -1) : 2 * s - 1; } else v = pm ? (pw <= 1e-4 ? 0 : q < pw ? 2 * pw - 2 : 2 * pw) : 2 * q - 1;
+      if (sync) { const s = (q * r2) % 1; v = s < pw ? 1 : -1; } else v = pm ? (pw <= 1e-4 ? 0 : q < pw ? 2 * pw - 2 : 2 * pw) : 2 * q - 1;
       pts.push([x, mid - v * amp]); const s2 = p / 2; sp.push([x, mid - (2 * (s2 - Math.floor(s2)) - 1) * amp * sub]);
     }
     if (sub > 0) lvPath(g, sp, 'rgba(255,173,50,.6)', null, 1.3);
     lvPath(g, pts, WH, null, 1.8);
-    txt(g, (sync ? 'Supersync' : 'Supersaw') + (pm ? ' · Pulse' + (sync ? '' : ' ' + Math.round(pw * 100) + ' %') : ''), 6, 13, WH); if (sub > 0) txt(g, 'Sub ' + Math.round(sub * 100), w - 6, 13, OR, 9, 'right');
+    txt(g, (sync ? 'Supersync · ' + r2.toFixed(2) + 'x' : 'Supersaw') + (pm && !sync ? ' · Pulse ' + Math.round(pw * 100) + ' %' : ''), 6, 13, WH); if (sub > 0) txt(g, 'Sub ' + Math.round(sub * 100), w - 6, 13, OR, 9, 'right');
   });
 }
 // ---- voices in the stereo field: x = pan, y = pitch offset; SuperSaw unison (detune in cents, spread curve, unison pan) and GMS
 // voices (scale intervals + chorus detune / stereo, keyboard below with the notes a C4 plays)
 function ssUnison(k) {
   return disp(k, (g, w, hh) => {
-    const nu = clamp(Math.round(k.get(5)) + 1, 1, 9), det = k.get(6) / 100, upan = k.get(7) / 100, ex = Math.pow(2, (0.5 - k.get(8) / 100) * 2.5), mid = hh / 2, A = mid - 16;
+    const nu = clamp(Math.round(k.get(5)) + 1, 1, 12), dk = clamp(k.get(6) / 100, 0, 1), det = dk * dk, upan = clamp(k.get(7) / 100, 0, 1), cv = 2 * clamp(k.get(8) / 100, 0, 1) - 1, ex = 1 + cv * (cv >= 0 ? 4 : 0.9), mid = hh / 2, A = mid - 16;   // hdsaw.js: +-Detune^2 semitones, voice k at 2 x^e - 1
     vl(g, w / 2, 4, hh - 4, DISPC.grid2); hl(g, mid, 0, w, DISPC.grid2); hl(g, mid - A, 0, w); hl(g, mid + A, 0, w);
     txt(g, '+100 ct', 6, mid - A - 3); txt(g, '-100 ct', 6, mid + A + 11); txt(g, 'L', 6, mid - 4, DISPC.ink, 9); txt(g, 'R', w - 6, mid - 4, DISPC.ink, 9, 'right');
     for (let u = 0; u < nu; u++) {
-      const x0 = nu === 1 ? 0 : u / (nu - 1) * 2 - 1, off = Math.sign(x0) * Math.pow(Math.abs(x0), ex), px = w / 2 + x0 * upan * (w / 2 - 16), py = mid - off * det * A;
+      const xu = nu === 1 ? 0.5 : u / (nu - 1), x0 = 2 * xu - 1, off = nu === 1 ? 0 : 2 * Math.pow(xu, ex) - 1, px = w / 2 + (nu > 1 && upan >= 0.001 ? x0 * upan : 0) * (w / 2 - 16), py = mid - off * det * A;
       g.fillStyle = 'rgba(79,195,240,.5)'; g.fillRect(Math.round(px), Math.min(mid, py), 1, Math.abs(py - mid)); lvRing(g, px, py, 4);
     }
     txt(g, nu === 1 ? 'Single' : nu + ' voices', w - 6, 13, WH, 9, 'right');
@@ -303,7 +304,7 @@ function dwSample(k) {
 // delay taps over the beat grid: dry (grey), then each repeat at the tempo time, height = mix x feedback^n, fading with the filter
 function taps(k, o) {
   return disp(k, (g, w, hh) => {
-    const on = o.on == null || k.get(o.on) > 0.5, bt = syncBeats(k.get(o.time)), fb = clamp(k.get(o.fb) / 100 * 0.9, 0, 0.95), damp = clamp(k.get(o.filt) / 100, 0, 0.98), mix = k.get(o.mix) / 100;
+    const on = o.on == null || k.get(o.on) > 0.5, bt = o.beats ? o.beats(k.get(o.time)) : syncBeats(k.get(o.time)), fb = clamp(k.get(o.fb) / 100 * 0.9, 0, 0.95), damp = clamp(k.get(o.filt) / 100, 0, 0.98), mix = k.get(o.mix) / 100;
     const span = clamp(bt * 6, 2, 32), top = 18, base = hh - 6, X = (b) => 6 + b / span * (w - 12), stp = span > 16 ? 4 : span > 6 ? 1 : 0.25;
     for (let b = 0; b <= span + 1e-9; b += stp) vl(g, X(b), top - 6, base, Math.abs(b % 4) < 1e-9 ? DISPC.grid2 : DISPC.grid);
     hl(g, base, 0, w, DISPC.grid2);
@@ -419,7 +420,7 @@ function ssArp(k) {
       txt(g, (k.get(48) > 0.5 ? 'Mono' : 'Poly ' + Math.round(k.get(43)) + ' · held notes slide') + (k.get(46) > 0.5 ? ' · Legato' : ''), w - 6, 13, DISPC.ink, 9, 'right');
       return;
     }
-    const rng = clamp(Math.round(k.get(50)) + 1, 1, 4), step = syncBeats(k.get(49)), held = [60, 64, 67], n = held.length, total = n * rng;
+    const rng = clamp(Math.round(k.get(50)) + 1, 1, 4), step = SS_ARP_BEATS[clamp(Math.round(k.get(49)), 0, 5)], held = [60, 64, 67], n = held.length, total = n * rng;
     const span = 8, steps = Math.min(96, Math.max(1, Math.floor(span / step + 1e-6))), lo = 60, hi = 67 + 12 * (rng - 1), top = 18, bot = hh - 6;
     const Y = (p) => bot - (p - lo + 1) / (hi - lo + 2) * (bot - top), rowH = Math.max(2, (bot - top) / (hi - lo + 2) - 1);
     for (let b = 0; b <= span; b++) vl(g, 6 + b / span * (w - 12), top - 4, bot, b % 4 ? DISPC.grid : DISPC.grid2);
@@ -428,7 +429,7 @@ function ssArp(k) {
       let idx;
       if (mode === 1) idx = s % total; else if (mode === 2) idx = total - 1 - (s % total);
       else if (mode === 3) { const cyc = Math.max(1, total * 2 - 2), q = s % cyc; idx = q < total ? q : cyc - q; }
-      else if (mode === 5) { const cyc = total * 2, q = s % cyc; idx = q < total ? q : cyc - 1 - q; }   // Up/Down 2: top and bottom twice
+      else if (mode === 4) { const cyc = total * 2, q = s % cyc; idx = q < total ? q : cyc - 1 - q; }   // Up/Down 2: top and bottom twice
       else { seed = (Math.imul(seed, 1103515245) + 12345) >>> 0; idx = (seed >>> 8) % total; }
       const p = held[idx % n] + 12 * Math.floor(idx / n), x = 6 + s * step / span * (w - 12), ww = Math.max(1.5, step / span * (w - 12) - 1.5);
       g.fillStyle = CY; g.fillRect(x + 0.5, Y(p) - rowH / 2, ww, rowH);
@@ -504,7 +505,7 @@ export function addFlmPanels(VI) {
     () => [FS('Voices', [FC('Poly', k.N(43, { w: 58 })), KN(k, 44, 'Transpose')]),
       FS('Glide', [KN(k, 45, 'Slide'), STACK(TG(k, 46, 'Legato'), TG(k, 47, 'Constant'), TG(k, 48, 'Mono Mode'))]),
       FS('Arpeggiator', [SEL(k, 51, 'Mode', 92), SEL(k, 49, 'Rate', 70), SEL(k, 50, 'Range', 70), ssArp(k)])],
-    () => [FS('Distortion', [KN(k, 52, 'Drive', { big: true }), KN(k, 53, 'Gain'), distWave(k, { drive: 52, dmax: 25, gain: 53 })]),
-      FS('Delay', [SEL(k, 54, 'Time', 64), KN(k, 55, 'Feedback'), KN(k, 56, 'Filter'), KN(k, 57, 'Mix', { big: true }), taps(k, { time: 54, fb: 55, filt: 56, mix: 57 })])],
+    () => [FS('Distortion', [KN(k, 52, 'Drive', { big: true }), KN(k, 53, 'Gain'), distWave(k, { drive: 52, dmax: 99, gain: 53 })]),
+      FS('Delay', [SEL(k, 54, 'Time', 64), KN(k, 55, 'Feedback'), KN(k, 56, 'Filter'), KN(k, 57, 'Mix', { big: true }), taps(k, { time: 54, fb: 55, filt: 56, mix: 57, beats: (i) => SS_DELAY_BEATS[clamp(Math.round(i), 0, 4)] })])],
   ]);
 }

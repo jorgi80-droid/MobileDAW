@@ -14,6 +14,9 @@ but the program as distributed from this point on is GPL-3.0-or-later as a whole
 - Changes: ported from Rust to JavaScript (`js/engine/`) and C++ (`native/engine/`) so that the web engine and the native engine render
   identically (golden harness); the parameter conversion to MobileDAW's units and the integration into the engine are MobileDAW's.
   Every ported file keeps the copyright line of the original and names the Rust file it follows.
+- Ported so far: SuperSaw (`crates/audio/src/supersaw.rs` -> `js/engine/hdsaw.js`, `native/engine/hdsaw.h`, `native/engine/hdsaw.cpp`),
+  its FLM parameter layout and laws (`src/params/instruments.rs` -> `ssFromFlm` in `js/import/build.js`) and the FLM note-event layout
+  (`src/flm/read.rs`: u8 velocity / u8 pan -> `js/import/flm.js`).
 - Honeydew states that it is a clean-room reimplementation of FL Studio Mobile written from a specification and contains no code,
   samples, presets or artwork of FL Studio Mobile. MobileDAW does not verify that claim; FL Studio is a trademark of Image-Line, and
   MobileDAW is not affiliated with or endorsed by Image-Line.

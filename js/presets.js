@@ -50,8 +50,8 @@ function classicUp(o) {
 // presets saved before the FL Studio Mobile manual corrections: GMS / MiniSynth / SuperSaw values -> the current format (defs.js)
 function flmUp(o) {
   if (o.flm >= FLM_FMT) return o;
-  if (o.kind === 'instrument' && Array.isArray(o.p)) migrateFlmParams(o.type, o.p);
-  if (o.kind === 'rack' && o.inst && Array.isArray(o.inst.p)) migrateFlmParams(o.inst.type, o.inst.p);
+  if (o.kind === 'instrument' && Array.isArray(o.p)) migrateFlmParams(o.type, o.p, o.flm || 1);
+  if (o.kind === 'rack' && o.inst && Array.isArray(o.inst.p)) migrateFlmParams(o.inst.type, o.inst.p, o.flm || 1);
   o.flm = FLM_FMT;
   return o;
 }

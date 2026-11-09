@@ -65,8 +65,10 @@ PRE[29] = { 2: { 0: 0 }, 7: { 0: 1, 2: 1 } };
   PRE[33] = { 3: { 0: 1 }, 6: { 5: 4 }, 7: { 5: 4 }, 8: { 5: 4, 6: 50 }, 9: { 5: 4, 2: 1 }, 10: { 1: 1 }, 11: { 1: 1, 0: 1 }, 16: { 1: 1 }, 17: { 1: 1, 16: 60, 10: 30 },
     22: flt(26, 18), 23: flt(26, 18, { 24: 0.3 }), 24: flt(26, 18), 25: flt(26, 18), 27: { 32: 60, 28: 5 }, 28: { 32: 60 }, 29: { 32: 60, 27: 2 }, 30: { 32: 60, 28: 5 }, 31: { 32: 60, 28: 5 }, 33: { 32: 60, 28: 5 },
     37: { 38: 0.3 }, 45: { 48: 1 }, 46: { 48: 1 }, 47: { 48: 1, 45: 0.5 }, 49: { 51: 1 }, 50: { 51: 1 }, 54: { 57: 50 }, 55: { 57: 50 }, 56: { 57: 50 } };
-  for (let k = 12; k < 16; k++) PRE[33][k] = { 1: 1, 16: 60 };
+  for (let k = 12; k < 16; k++) PRE[33][k] = { 1: 1, 16: 60, 14: 0.3 };   // SuperSaw (hdsaw.js, FLM's law): the sync envelope is heard in Supersync with an amount and a sustain below 100 %
+  PRE[33][17] = { 1: 1, 16: 60, 10: 30, 14: 0.3, n: [64, 55, 48] };   // Flip: a note at or below the previous one turns the sync envelope over
 }
+const PEAK_OK = { 33: { 19: 24 } };   // SuperSaw Resonance 100 %: FLM's ladder self-oscillates (Honeydew's model), the master limiter catches it
 const NO_AUDIO = { 30: [7, 10], 31: [19, 20, 21, 44], 32: [17, 18], 33: [40, 41, 42, 46],   // FLM: PB Range / mod wheel need a controller, Legato / Auto overlapping notes (tested below)
   18: [5, 38], 13: [58, 53], 14: [82], 15: [88, 84, 73, 78], 16: [13, 61, 62], 17: [75, 29, 37, 120, 128] };    // PB Range: only heard with the pitch wheel, Legato: only with overlapping notes (both tested below)
 const want = process.argv.slice(2).map(Number), types = Object.keys(INSTRUMENTS).map(Number).filter((t) => INSTRUMENTS[t].full && (!want.length || want.includes(t)));
@@ -96,16 +98,17 @@ for (const t of types) {
     if (p.hidden || (NO_AUDIO[t] || []).includes(k)) return;
     const P0 = (PRE[t] || {})[k] || {}, notes = P0.n, pre = (d) => { for (const [j, v] of Object.entries(P0)) if (j !== 'n') d.setParam(+j, v); };
     const r0 = render(t, (d) => { pre(d); d.setParam(k, p.def); }, notes); let changed = false;
-    for (const v of [p.min, p.max, p.min + (p.max - p.min) * 0.37]) { const r = render(t, (d) => { pre(d); d.setParam(k, v); }, notes); if (r.bad || r.peak > 8) { issues.push(`${p.n}=${v}: ${r.bad || 'peak ' + r.peak.toFixed(1)}`); continue; } if (diff(r, r0) > 1e-6) changed = true; }
+    for (const v of [p.min, p.max, p.min + (p.max - p.min) * 0.37]) { const r = render(t, (d) => { pre(d); d.setParam(k, v); }, notes); if (r.bad || r.peak > ((PEAK_OK[t] || {})[k] || 8)) { issues.push(`${p.n}=${v}: ${r.bad || 'peak ' + r.peak.toFixed(1)}`); continue; } if (diff(r, r0) > 1e-6) changed = true; }
     if (!changed) issues.push(`${p.n} has no audible effect`);
   });
   if (issues.length) { bad++; console.log(`FAIL ${t} ${def.name}: ${issues.join('; ')}`); } else console.log(`ok   ${t} ${def.name} (${def.params.length} parameters)`);
 }
 // FLM instruments: Legato / Auto (overlapping notes in mono: no restart) and PB Range (wheel scaled by the instrument's range)
+// (SuperSaw: FLM Legato = "slide held mode": with a Slide time it glides only while the previous key is held; tested with the first key released)
 for (const [t, mono, leg, pb, sus] of [[30, 11, 10, 7, 4], [31, 43, 44, 19, 26], [33, 48, 46, 40, 38]]) {   // sustain 30 %: a retriggered envelope is heard
   if (!types.includes(t)) continue;
-  const run = (on, bend = 0, range = 2) => { const d = makeInstrument(t, SR, BANK); if (INSTRUMENTS[t].zones) { d.setParam(100, 0); d.setParam(101, 60); } INSTRUMENTS[t].params.forEach((p, k) => d.setParam(k, p.def)); d.setParam(mono, 1); d.setParam(leg, on); d.setParam(pb, range); d.setParam(sus, 0.3); if (bend) d.setBend(bend);
-    const L = new Float32Array(N), R = new Float32Array(N), o = []; d.noteOn(48, 0.9); for (let b = 0; b < 160; b++) { if (b === 60) d.noteOn(55, 0.9); L.fill(0); R.fill(0); d.render(L, R, 0, N); o.push(...L); } return { out: Float32Array.from(o), e: o.reduce((x, y) => x + y * y, 0) }; };
+  const run = (on, bend = 0, range = 2) => { const d = makeInstrument(t, SR, BANK); if (INSTRUMENTS[t].zones) { d.setParam(100, 0); d.setParam(101, 60); } INSTRUMENTS[t].params.forEach((p, k) => d.setParam(k, p.def)); d.setParam(mono, 1); d.setParam(leg, on); if (t === 33) d.setParam(45, 0.1); d.setParam(pb, range); d.setParam(sus, 0.3); if (bend) d.setBend(bend);
+    const L = new Float32Array(N), R = new Float32Array(N), o = []; d.noteOn(48, 0.9); for (let b = 0; b < 160; b++) { if (b === 50 && t === 33) d.noteOff(48); if (b === 60) d.noteOn(55, 0.9); L.fill(0); R.fill(0); d.render(L, R, 0, N); o.push(...L); } return { out: Float32Array.from(o), e: o.reduce((x, y) => x + y * y, 0) }; };
   if (diff(run(0), run(1)) < 1e-6) { bad++; console.log(`FAIL ${t} ${INSTRUMENTS[t].name}: Legato`); } else console.log(`ok   ${t} ${INSTRUMENTS[t].name} legato`);
   if (diff(run(0, 2, 2), run(0, 2, 12)) < 1e-6) { bad++; console.log(`FAIL ${t} ${INSTRUMENTS[t].name}: PB Range`); } else console.log(`ok   ${t} ${INSTRUMENTS[t].name} pitch bend range`);
 }

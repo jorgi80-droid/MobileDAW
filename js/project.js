@@ -1519,7 +1519,7 @@ async function deserializeInner(text, onProgress) {
   state.projectName = o.name || 'Untitled';
   state.returns = Array.isArray(o.returns) && o.returns.length >= 2 && o.returns.length <= MAX_FX ? o.returns : makeReturns();
   state.tracks = o.tracks;
-  if (!(o.flm >= FLM_FMT)) for (const t of state.tracks) migrateFlmInst(t && t.inst);   // FLM synth parameters saved before the manual corrections
+  if (!(o.flm >= FLM_FMT)) for (const t of state.tracks) migrateFlmInst(t && t.inst, o.flm || 1);   // FLM synth parameters saved before the manual corrections
   migrateClassic(state.tracks);
   state.ccLinks = o.cc || {};
   for (const t of state.tracks) { const oc = OLD_COLORS.indexOf(t.color); if (oc >= 0) t.color = COLORS[oc]; else if (t.color === '#8ea2c0') t.color = AUTO_COLOR; t.send = t.send || [0, 0]; t.clips = Array.isArray(t.clips) ? t.clips : []; t.devices = Array.isArray(t.devices) ? t.devices : []; fixSubs(t); }

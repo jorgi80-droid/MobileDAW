@@ -9,6 +9,7 @@
 import { DEVICES, PRESETS, INSTRUMENTS, FLM_FMT } from '../defs.js';
 import { gmFor, GM_SF } from './gm.js';
 import { LVL0 } from './flm.js';
+import { ssEnvTime, ssLfoHz, SS_LFO_BEATS } from '../engine/hdsaw.js';
 
 // the channel's instrument -> MDAW: DirectWave layers -> zones of MDAW's DirectWave; a library program that is not in the archive -> the
 // closest General MIDI program of the bundled SoundFont; GMS / MiniSynth / SuperSaw -> MDAW's instrument of the same name (preset by name)
@@ -16,15 +17,38 @@ const SYNTH_TYPE = { gms: 31, minisynth: 32, supersaw: 33 };   // the FL Studio 
 // FL Studio Mobile's DEFAULT patch of each synth, calibrated against the owner's stems ("New Song": the untouched instruments playing an A minor
 // chord, rendered by FLM): level of the first 125 ms, octave-band spectrum and the tail after note-off, measured on MobileDAW's render of the same notes.
 //   SuperSaw: spectrum already matched (band distance 1.1 dB), FLM is 9.2 dB louder and gates at note-off -> Gain +9.5 dB, Release 3 ms
-//   MiniSynth: FLM darker above 2.4 kHz and gated -> Cutoff 80 % (distance 5.2 -> 1.2 dB), Release 3 ms, Level +9.9 dB
-//   GMS: release tail matched, FLM 2.6 dB louder -> Level +2.6 dB (its default waveform could not be proven from one chord: left as is)
+//   MiniSynth: FLM darker above 2.4 kHz and gated -> Cutoff 80 % (distance 5.2 -> 1.2 dB), Release 3 ms, Level +11.9 dB
+//   GMS: release tail matched, FLM 4.5 dB louder -> Level +4.5 dB (its default waveform could not be proven from one chord: left as is)
+//   (measured with the notes' real velocity, FLM's default 204 / 255 = 80 %; SuperSaw needs nothing: js/engine/hdsaw.js is FLM's own model)
 // Used only when the FLM module has no preset (its own default), so an imported default instrument sounds like FLM's.
-const FLM_DEFAULT = { 33: { Gain: 9.5, Release: 0.003 }, 32: { Cutoff: 80, Release: 0.003, Level: 9.9 }, 31: { Level: 2.6 } };
+const FLM_DEFAULT = { 32: { Cutoff: 80, Release: 0.003, Level: 11.9 }, 31: { Level: 4.5 } };
 // FLM raw parameters whose meaning is PROVEN (owner's "New Song 1" screenshots show the knob values of the MiniSynth preset "Cubed"; the
 // "New Song" file gives the defaults): p6 Oscillator Kind (x 9: "Saw + Square" = 3), p7 Modifier (50), p8 Noise (14), p9 Cutoff (64), p10 Kbd Trk,
 // p11 Res (49), p12 Vel Trk, p17 Filter env amount (bipolar: 0.6537 -> 30.7). Envelope times have no numbers on screen (curve unknown): not mapped.
 // Cutoff follows the default calibration (FLM 100 % sounds like MobileDAW 80 %).
-const RAW = { 32: (r) => ({ 'Oscillator Kind': Math.round(r[6] * 9), Modifier: r[7] * 100, Noise: r[8] * 100, Cutoff: r[9] * 100 * 0.8, 'Kbd Trk': r[10] * 100, Res: r[11] * 100, 'Vel Trk': r[12] * 100, 'Flt Amount': (r[17] * 2 - 1) * 100, Level: 9.9 }) };
+const RAW = { 32: (r) => ({ 'Oscillator Kind': Math.round(r[6] * 9), Modifier: r[7] * 100, Noise: r[8] * 100, Cutoff: r[9] * 100 * 0.8, 'Kbd Trk': r[10] * 100, Res: r[11] * 100, 'Vel Trk': r[12] * 100, 'Flt Amount': (r[17] * 2 - 1) * 100, Level: 11.9 }) };
+// FLM SuperSaw module parameters (normalised 0..1; the layout of Honeydew's supersaw.rs / params registry: [0] Enable, [1] Pulse Width ...
+// [59] MW Dest) -> MDAW SuperSaw (33) in FLM's units, with FLM's own laws (envelope time T(x), LFO rate, stepped menus) so the engine
+// (js/engine/hdsaw.js, the same model) plays exactly what FLM plays. Every knob of the file is used: no preset guessing.
+const SYNC_B = [32, 16, 8, 4, 2, 1, 0.75, 0.5, 1 / 3, 0.25, 1 / 6, 0.125];
+export function ssFromFlm(r) {
+  const v = (k, d) => (r && Number.isFinite(r[k]) ? clamp(r[k], 0, 1) : d), t = (x) => Math.max(0.001, Math.round(ssEnvTime(x) * 1e5) / 1e5), pc = (x) => Math.round(x * 1e4) / 100, bp = (x) => Math.round((2 * x - 1) * 1e4) / 100;
+  const tr = Math.trunc, out = {};
+  const D = [0, 1, 0, 0, 0, 0.2, 0, 0.5, 0, 0, 0, 0, 1, 0, 1, 1, 1, 0.5, 0, 1, 0, 0, 0, 1, 1, 1, 0.5, 0, 0, 1, 1, 0, 1, 0.5, 0, 0, 0.5, 0.1, 1, 0, 0, 0, 0, 0, 0.5, 0, 0, 0.2, 0.5, 0, 0, 0.5, 0, 1, 0.775, 0.4, 0, 0.5, 0.5, 0];
+  const x = (k) => v(k, D[k]);
+  out[0] = x(2) > 0.5 ? 1 : 0; out[1] = x(10) > 0.5 ? 1 : 0; out[2] = x(8) !== 0 ? 1 : 0; out[3] = pc(x(1)); out[4] = pc(x(3));
+  out[5] = Math.min(12, tr(x(4) * 11 + 1)) - 1; out[6] = pc(x(5)); out[7] = pc(x(6)); out[8] = pc(x(7)); out[9] = pc(x(9));
+  out[10] = pc(x(11)); out[11] = pc(x(12)); out[12] = t(x(13)); out[13] = t(x(14)); out[14] = x(15); out[15] = t(x(16)); out[16] = bp(x(17)); out[17] = x(18) > 0.5 ? 1 : 0;
+  out[18] = pc(x(19)); out[19] = pc(x(20)); out[20] = pc(x(21)); out[21] = pc(x(27)); out[22] = t(x(22)); out[23] = t(x(23)); out[24] = x(24); out[25] = t(x(25)); out[26] = bp(x(26));
+  out[27] = Math.min(2, tr(2 * x(41))); out[28] = Math.round(ssLfoHz(x(40)) * 1e4) / 1e4; out[29] = SYNC_B.indexOf(SS_LFO_BEATS[Math.min(9, tr(9 * x(42)))]);
+  out[30] = Math.min(3, tr(x(39) * 3 + 0.5)); out[31] = t(x(46)); out[32] = bp(x(44)); out[33] = Math.min(7, tr(x(45) * 7 + 0.5));
+  out[34] = pc(x(32)); out[35] = bp(x(33)); out[36] = t(0.9 * x(28)); out[37] = t(x(29)); out[38] = x(30); out[39] = t(0.85 * x(31) + 0.05);
+  out[40] = tr(x(37) * 11 + 1); out[41] = bp(x(58)); out[42] = Math.min(8, tr(8 * x(59))); out[43] = Math.min(8, tr(x(51) * 7 + 1)); out[44] = tr(24 * x(36)) - 12;
+  out[45] = Math.round(Math.pow(0.5 * x(35), 2) * 1e5) / 1e5; out[46] = x(34) !== 0 ? 1 : 0; out[47] = x(38) > 0.5 ? 1 : 0; out[48] = x(50) !== 0 ? 1 : 0;
+  out[49] = Math.min(5, tr(5 * x(47))); out[50] = Math.min(3, tr(3 * x(48))); out[51] = Math.min(5, tr(5 * x(49)));
+  out[52] = pc(x(52)); out[53] = Math.round((18 * x(53) - 18) * 100) / 100; out[54] = Math.min(4, tr(4 * x(54))); out[55] = pc(x(55)); out[56] = pc(x(57)); out[57] = pc(x(56));
+  return out;
+}
 const byName = (type, o) => { const out = {}; for (const [n, v] of Object.entries(o || {})) { const k = INSTRUMENTS[type].params.findIndex((q) => q.n === n); if (k >= 0) out[k] = v; } return out; };
 // FLM DirectWave module parameters (normalised 0..1, [0] = on) -> MDAW DirectWave (30). Layout worked out from the owner's FLM screenshots
 // against the values stored in two real projects (defaults of a freshly loaded sample, a library program whose filter shows 40 / 0 / 50 /
@@ -95,6 +119,10 @@ export function buildMdaw(M, opts) {
       const type = SYNTH_TYPE[I.kind], pr = presetFor(type, I.preset);
       const dflt = !pr && !(I.preset && I.preset !== 'Default');                  // FLM's own default patch: the stem-calibrated equivalent
       note(INSTRUMENTS[type].name + (pr ? ' (preset ' + pr.name + ')' : dflt ? ' (setelan awal FLM, dikalibrasi dari stem)' : ' (preset FLM "' + String(I.preset).replace(/\.\w+$/, '').replace(/^.*\//, '') + '" belum ada di MobileDAW: setelan awal)'), pr ? 'preset' : 'default');
+      if (type === 33 && (I.params || []).length >= 58) {   // SuperSaw: every knob of the file, exactly (Honeydew's layout and laws)
+        const n = report.instruments[report.instruments.length - 1]; n.to = 'SuperSaw (semua nilai knob dari file FLM)'; n.how = 'exact';
+        return { type, params: ssFromFlm(I.params), pitch: 0, from: { app: M.app, name: I.name, preset: I.preset || '', params: I.params || [] } };
+      }
       const raw = !pr && !dflt && RAW[type] && (I.params || []).length === 44 ? RAW[type](I.params) : null;   // proven knobs of an FLM preset that MobileDAW does not have
       if (raw) { const n = report.instruments[report.instruments.length - 1]; n.to = n.to.replace(': setelan awal)', ': osc / filter dari nilai file, sisanya setelan awal)'); }
       return { type, params: pr ? { ...pr.p } : dflt ? byName(type, FLM_DEFAULT[type]) : raw ? byName(type, raw) : {}, pitch: 0, from: { app: M.app, name: I.name, preset: I.preset || '', params: I.params || [] } };

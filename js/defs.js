@@ -2,6 +2,7 @@ import { factoryPresets } from './presetlib.js';
 import { wtName, WT_COUNT } from './engine/live.js';
 import { FLM_SYNC, GMS_FX, GMS_FX_RATE, GMS_WAVES, MINI_KINDS, SS_LFO_DEST } from './engine/flmsyn.js';
 import { TS_BEATS } from './engine/fx8.js';
+import { SS_ARP_RATES, SS_ARP_MODES, SS_DELAY_TIMES } from './engine/hdsaw.js';
 // Instrument + device definitions. Parameter ORDER must match the C++ side
 // (app/src/main/cpp/instruments.h and devices.h).
 export const INST = { FLM_DW: 30, FLM_GMS: 31, FLM_MINI: 32, FLM_SAW: 33, MINISYNTH: 1, SUPERSAW: 2, DRUM: 3, DIRECTWAVE: 4, GMS: 5, SOUNDFONT: 6, MOISTURE: 7, OSPHERE: 8, KEYSTONE: 9, SAMPLER: 10, WAVETABLE: 11, SIMPLER: 18, IMPULSE: 28, GRANULATOR: 29 };
@@ -961,18 +962,21 @@ export function fmtParam(p, v) {
     onoff('Delay On'), k100('Delay Feedback', 40), k100('Delay Filter', 30), k100('Delay Mix', 25), list('Delay Time', SYNC, 6),
     onoff('Chorus On'), k100('Chorus Rate', 30), k100('Chorus Mod', 40), k100('Chorus Mix', 40),
     onoff('Phaser On'), k100('Phaser Speed', 40), k100('Phaser Width', 60), k100('Phaser Feedback', 40), k100('Phaser Freq', 30), k100('Phaser Mix', 50), lvl('Level')] };
+  // SuperSaw: engine js/engine/hdsaw.js (Honeydew's SuperSaw model). Menus as FLM has them (Unison 1..12, 8 voices, ARP Rate / Mode and
+  // Delay Time lists); envelope times up to FLM's 31 s; defaults = a fresh FLM SuperSaw (Honeydew DEFAULTS, ssFromFlm in import/build.js)
+  const ssT = (n, d) => tm(n, d, 32), ssAdsr = (pre, a, d, s, r) => [ssT(pre + 'Attack', a), ssT(pre + 'Decay', d), sus(pre + 'Sustain', s), ssT(pre + 'Release', r)];
   INSTRUMENTS[33] = { name: 'SuperSaw', view: 'kit', full: true, flm: true, params: [
     onoff('Pulse Mode'), list('Osc Mode', ['Supersaw', 'Supersync'], 0), onoff('Retrig'), k100('Pulse Width', 100), k100('Sub Osc'),
-    list('Unison', ['Single', '2', '3', '4', '5', '6', '7', '8', '9'], 0), k100('Detune', 20), k100('Unison Pan'), k100('Dtn. Spread', 50), k100('Unison Phase'),
-    k100('Sync'), k100('Sync PW', 50), ...adsr('Sync ', 0.001, 0.5, 0, 0.3), bip('Sync Amount'), onoff('Flip'),
-    k100('Cutoff', 100), k100('Resonance'), bip('Kbd Trk'), bip('Vel Trk'), ...adsr('Flt ', 0.001, 0.5, 1, 0.3), bip('Flt Amount'),
-    list('LFO Mode', LFO3, 0), q('LFO Rate', 0.03, 30, 0.03, { curve: 'log', unit: 'Hz' }), list('LFO Sync', SYNC, 9), list('LFO Shape', ['Sine', 'Saw', 'Square', 'Random'], 0),
-    q('LFO Attack', 0, 5, 0, { unit: 's' }), bip('LFO Amount'), list('LFO Destination', SS_LFO_DEST, 0),
-    k100('Output Level', 100), bip('Panning'), ...adsr('', 0.001, 0.5, 1, 0.3),
+    list('Unison', ['Single', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'], 0), k100('Detune', 20), k100('Unison Pan'), k100('Dtn. Spread', 50), k100('Unison Phase'),
+    k100('Sync'), k100('Sync PW', 100), ...ssAdsr('Sync ', 0.001, 31, 1, 31), bip('Sync Amount'), onoff('Flip'),
+    k100('Cutoff', 100), k100('Resonance'), bip('Kbd Trk'), bip('Vel Trk'), ...ssAdsr('Flt ', 0.001, 31, 1, 31), bip('Flt Amount'),
+    list('LFO Mode', LFO3, 0), q('LFO Rate', 0.03, 30, 0.0333, { curve: 'log', unit: 'Hz' }), list('LFO Sync', SYNC, 11), list('LFO Shape', ['Sine', 'Saw', 'Square', 'Random'], 0),
+    ssT('LFO Attack', 0.001), bip('LFO Amount'), list('LFO Destination', SS_LFO_DEST, 0),
+    k100('Output Level', 100), bip('Panning'), ...ssAdsr('', 0.001, 31, 1, 0.014),
     st('PW Range', 0, 24, 2), bip('ModWheel Amount'), list('ModWheel Dest', ['Cutoff', 'Resonance', 'Osc Sync', 'Pulse Width', 'Unison Detune', 'Level', 'Pan', 'LFO Amount', 'LFO Rate'], 0),
-    q('Poly', 1, 16, 5, { step: 1, fmt: 'num' }), st('Transp', -24, 24), tm('Slide', 0.05, 2), onoff('Legato'), onoff('Constant', 1), onoff('Mono Mode'),
-    list('Arp Rate', SYNC, 9), list('Arp Range', ['1 Oct', '2 Oct', '3 Oct', '4 Oct'], 2), list('Arp Mode', ['Off', 'Up', 'Down', 'Up/Down', 'Random', 'Up/Down 2'], 0),
-    k100('Distortion'), q('Gain', -24, 12, 0, { unit: 'dB' }), list('Delay Time', SYNC, 6), k100('Delay Fdbk', 40), k100('Delay Filter', 50), k100('Delay Mix')] };
+    q('Poly', 1, 8, 4, { step: 1, fmt: 'num' }), st('Transp', -24, 24), q('Slide', 0, 0.25, 0, { unit: 's' }), onoff('Legato'), onoff('Constant', 1), onoff('Mono Mode'),
+    list('Arp Rate', SS_ARP_RATES, 1), list('Arp Range', ['1 Oct', '2 Oct', '3 Oct', '4 Oct'], 1), list('Arp Mode', SS_ARP_MODES, 0),
+    k100('Distortion'), q('Gain', -24, 12, 0, { unit: 'dB' }), list('Delay Time', SS_DELAY_TIMES, 3), k100('Delay Fdbk', 40), k100('Delay Filter', 50), k100('Delay Mix')] };
   // factory presets (by parameter name), after the sound-design examples of the FLM instrument guide
   const pre = (type, cat, name, vals) => { const ps = INSTRUMENTS[type].params, p = {}; for (const [n, v] of Object.entries(vals)) { const k = ps.findIndex((x) => x.n === n); if (k < 0) throw new Error('preset ' + name + ': ' + n); p[k] = v; } return { cat, name, p }; };
   PRESETS[30] = [pre(30, 'Dasar', 'Default', {}), pre(30, 'Dasar', 'Mono Bass', { Mono: 1, 'Slide Time': 0.06, Release: 0.12, Cutoff: 62, 'Vel Trk': 40 }),
@@ -1013,10 +1017,25 @@ export function fmtParam(p, v) {
 //   SuperSaw Pulse Width (old duty x %) -> 2 x min(x, 100 - x) (100 = square); ModWheel Dest "LFO Amount" 5 -> 7 (Level / Pan added)
 //   GMS filter envelope (old: decayed while the key was held) -> the Envelope Generator with dest Filter when that is free; FX LFO Rate
 //   faster than 1/4 bar -> 1/4 bar (FLM's range). GMS Scale Chord / Octave now stack voices upwards as FLM does (no equivalent kept).
-export const FLM_FMT = 2;
-export function migrateFlmParams(type, p) {
+//   Format 3 (SuperSaw on Honeydew's model, js/engine/hdsaw.js): ARP Rate / Delay Time -> the nearest step of FLM's own lists, ARP Mode
+//   order Up/Down 2 before Random, Poly at most 8, Sync PW in FLM's law (2 x the old duty), the old minimum Slide (50 ms, always on) -> off,
+//   Gain -12 dB (the new model is FLM-loud: 12 dB above the old engine for the same patch, measured).
+export const FLM_FMT = 3;
+export function migrateFlmParams(type, p, from = 1) {
   if (!p || typeof p !== 'object') return p;
   const g = (k, d) => (p[k] != null && Number.isFinite(+p[k]) ? +p[k] : d), r3 = (x) => Math.round(x * 1000) / 1000;
+  if (from < 3 && type === 33) {
+    const OLD = [32, 16, 8, 4, 2, 1, 0.75, 0.5, 1 / 3, 0.25, 1 / 6, 0.125], near = (list, b) => { let k = 0; for (let j = 1; j < list.length; j++) if (Math.abs(Math.log2(list[j] / b)) < Math.abs(Math.log2(list[k] / b))) k = j; return k; };
+    const ob = (k, d) => OLD[Math.min(11, Math.max(0, Math.round(g(k, d))))];
+    if (p[49] != null) p[49] = near([0.125, 0.25, 0.375, 0.5, 0.75, 1], ob(49, 9));
+    if (p[54] != null) p[54] = near([0.25, 0.375, 0.5, 0.75, 1], ob(54, 6));
+    if (p[51] != null) { const m = Math.round(g(51, 0)); p[51] = m === 4 ? 5 : m === 5 ? 4 : m; }
+    if (p[43] != null) p[43] = Math.min(8, Math.max(1, Math.round(g(43, 5))));
+    if (p[11] != null) p[11] = r3(Math.min(100, 2 * g(11, 50)));
+    if (p[45] != null) p[45] = g(45, 0.05) <= 0.0501 ? 0 : r3(Math.min(0.25, g(45, 0)));
+    p[53] = r3(Math.max(-24, g(53, 0) - 12));
+  }
+  if (from >= 2) return p;
   if (type === 32) {
     const kind = Math.round(g(0, 0)), m = Math.min(1, Math.max(0, g(1, 0) / 100));
     if (kind === 0) p[1] = r3(50 - 45 * m);
@@ -1033,11 +1052,11 @@ export function migrateFlmParams(type, p) {
   return p;
 }
 // an instrument object (track inst, Instrument Rack chains, Drum Rack pad chains) in format 1 -> format 2, in place
-export function migrateFlmInst(inst) {
+export function migrateFlmInst(inst, from = 1) {
   if (!inst || typeof inst !== 'object') return;
-  if (inst.type === 31 || inst.type === 32 || inst.type === 33) inst.params = migrateFlmParams(inst.type, inst.params || {});
-  for (const ch of inst.chains || []) if (ch && ch.inst) migrateFlmInst(ch.inst);
-  for (const q of inst.pads || []) if (q && q.chain && q.chain.inst) migrateFlmInst(q.chain.inst);
+  if (inst.type === 31 || inst.type === 32 || inst.type === 33) inst.params = migrateFlmParams(inst.type, inst.params || {}, from);
+  for (const ch of inst.chains || []) if (ch && ch.inst) migrateFlmInst(ch.inst, from);
+  for (const q of inst.pads || []) if (q && q.chain && q.chain.inst) migrateFlmInst(q.chain.inst, from);
 }
 
 // classic engine -> FL Studio Mobile instrument (the classic ones are no longer offered; old projects are converted when they open)
