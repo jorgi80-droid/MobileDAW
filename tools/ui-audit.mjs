@@ -85,8 +85,23 @@ for (const [kind, t] of jobs) {
     const lkR = (card.querySelector(':scope > .lk, :scope > .lv-dev') || card).getBoundingClientRect(), mg = R.length ? { l: Math.round(x0 - cr.left), r: Math.round(cr.right - x1), t: Math.round(y0 - hb), b: Math.round(cr.bottom - y1) } : null;
     // natural size: the panel at zoom 1 without the fill stretch (what it needs at the common size)
     let nat = null; { const lk0 = card.querySelector(':scope > .lk, :scope > .lv-dev'); if (lk0) { const z0 = lk0.style.zoom, m0 = lk0.style.minHeight, f0 = lk0.classList.contains('lk-fill'); lk0.style.zoom = '1'; lk0.style.minHeight = ''; lk0.classList.remove('lk-fill'); nat = [lk0.offsetWidth, lk0.offsetHeight]; lk0.style.zoom = z0; lk0.style.minHeight = m0; if (f0) lk0.classList.add('lk-fill'); } }
+    // empty space: the largest rectangle of the card body that no control or text touches (controls grown by 6 px of normal spacing)
+    let hole = null; {
+      const G = 4, bx = cr.left, by = hb, gw = Math.ceil(cr.width / G), gh = Math.ceil((cr.bottom - hb) / G), occ = new Uint8Array(gw * gh), P6 = 6;
+      for (const q of [...R, ...texts.map((e) => e.getBoundingClientRect())]) {
+        const a0 = Math.max(0, Math.floor((q.left - P6 - bx) / G)), a1 = Math.min(gw, Math.ceil((q.right + P6 - bx) / G)), b0 = Math.max(0, Math.floor((q.top - P6 - by) / G)), b1 = Math.min(gh, Math.ceil((q.bottom + P6 - by) / G));
+        for (let yy = b0; yy < b1; yy++) for (let xx = a0; xx < a1; xx++) occ[yy * gw + xx] = 1;
+      }
+      const hgt = new Int32Array(gw); let best = 0, bw = 0, bhh = 0, bxx = 0, byy = 0, free = 0;
+      for (let yy = 0; yy < gh; yy++) {
+        for (let xx = 0; xx < gw; xx++) { hgt[xx] = occ[yy * gw + xx] ? 0 : hgt[xx] + 1; if (!occ[yy * gw + xx]) free++; }
+        const st = [];
+        for (let xx = 0; xx <= gw; xx++) { const hh2 = xx < gw ? hgt[xx] : 0; let s = xx; while (st.length && st[st.length - 1][1] >= hh2) { const [s0, h0] = st.pop(); const ar = h0 * (xx - s0); if (ar > best) { best = ar; bw = xx - s0; bhh = h0; bxx = s0; byy = yy - h0 + 1; } s = s0; } st.push([s, hh2]); }
+      }
+      hole = { pct: Math.round(best / (gw * gh) * 100), w: bw * G, h: bhh * G, x: bxx * G, y: byy * G, free: Math.round(free / (gw * gh) * 100) };
+    }
     const rect = [cr.left, cr.top, cr.width, cr.height].map((v) => Math.round(v * 10) / 10), iw = innerWidth;
-    return { nat, mg, rect, iw, ks, tabs, zoom, hBody, hNeed, labPx, title, w: Math.round(cr.width), h: Math.round(cr.height), fonts: [...fonts.entries()].sort((a, b) => a[0] - b[0]), usedH: Math.round(used * 100), usedW: R.length ? Math.round((x1 - x0) / cr.width * 100) : 0, n: leaf.length, ...issues };
+    return { hole, nat, mg, rect, iw, ks, tabs, zoom, hBody, hNeed, labPx, title, w: Math.round(cr.width), h: Math.round(cr.height), fonts: [...fonts.entries()].sort((a, b) => a[0] - b[0]), usedH: Math.round(used * 100), usedW: R.length ? Math.round((x1 - x0) / cr.width * 100) : 0, n: leaf.length, ...issues };
   };
   const r = await ev(measure, [kind, t]);
   // every tab page of the panel (tabs in the title bar or in the panel) is measured too: the worst zoom and all issues count
@@ -108,7 +123,7 @@ for (const [kind, t] of jobs) {
   report.push({ kind, t, ...r });
   const bad = (r.overflow || []).length + (r.overlap || []).length + (r.clipped || []).length;
   if (r.mg && (Math.abs(r.mg.l - r.mg.r) > 10 || Math.abs(r.mg.t - r.mg.b) > 14)) r.asym = true;
-  console.error(`${kind} ${t} ${r.title || ''}${r.asym ? ' ASYM L' + r.mg.l + ' R' + r.mg.r + ' T' + r.mg.t + ' B' + r.mg.b : ''}: ${bad ? bad + ' issues' : 'ok'}  fill ${r.usedW}%x${r.usedH}%  zoom ${r.zoom} body ${r.hBody} need ${r.hNeed}  fonts ${(r.fonts || []).map((f) => f[0]).join('/')}` + (r.pages.length ? '  tabs ' + r.pages.map((q, j) => `${j + 2}:z${q.zoom}/${q.usedH}%/${q.fonts.join('/')}`).join(' ') : ''));
+  console.error(`${kind} ${t} ${r.title || ''}${r.asym ? ' ASYM L' + r.mg.l + ' R' + r.mg.r + ' T' + r.mg.t + ' B' + r.mg.b : ''}: ${bad ? bad + ' issues' : 'ok'}  fill ${r.usedW}%x${r.usedH}%  zoom ${r.zoom} body ${r.hBody} need ${r.hNeed}${r.hole ? '  hole ' + r.hole.pct + '% ' + r.hole.w + 'x' + r.hole.h + '@' + r.hole.x + ',' + r.hole.y + ' free ' + r.hole.free + '%' : ''}  fonts ${(r.fonts || []).map((f) => f[0]).join('/')}` + (r.pages.length ? '  tabs ' + r.pages.map((q, j) => `${j + 2}:z${q.zoom}/${q.usedH}%/${q.fonts.join('/')}`).join(' ') : ''));
 }
 fs.writeFileSync(out === '/dev/stdout' ? '/dev/stdout' : out, JSON.stringify({ viewport: [W, H], report, errs }, null, 1));
 await b.close(); server.close();

@@ -142,7 +142,7 @@ V[18] = (k) => {
 // Gate: level display with the threshold and return lines, attack / hold / release / floor, flip
 V[23] = (k) => {
   let lv = -80, gr = 0;
-  const disp = k.D(150, 70, (g, w, hh) => {
+  const disp = k.DF(150, 70, (g, w, hh) => {
     const y = (db) => 4 + (Math.min(0, Math.max(-80, db)) / -80) * (hh - 8);
     g.fillStyle = '#2f5b66'; g.fillRect(8, y(lv), 18, hh - 4 - y(lv)); g.fillStyle = DISPC.bl; g.fillRect(8, y(lv), 18, 2);
     g.fillStyle = DISPC.or; g.fillRect(32, y(k.get(0)), w - 40, 2); g.fillStyle = DISPC.orD; g.fillRect(32, y(k.get(0) - k.get(1)), w - 40, 1);
@@ -202,8 +202,8 @@ V[25] = (k) => {
 V[26] = (k) => k.col(bandDisp(k, 226, 92, 1, 2, { peak: true, wmin: 0.08, wmax: 10 }), k.CH(0, ['Noise', 'Wide Noise', 'Sine'], { cls: 'spc' }),
   k.row(k.TL('Freq', k.N(1, { w: 62 })), k.TL('Width', k.N(2, { w: 62 })), k.TL('Amount', k.N(3, { w: 62 }))));
 // Redux: sample-rate section (rate, jitter, pre filter) and bit section (bits, quantize, shape, DC shift), dry/wet
-V[27] = (k) => k.row(k.sec('Sample Rate', k.row(k.col(k.K(0), k.T(2, 'Pre Filter')), k.col(k.K(1), h('span', { class: 'lk-btnsp' })))), k.sep(),
-  k.sec('Bit Reduction', k.row(k.col(k.K(3), k.T(4, 'Quantize')), k.col(k.K(5), k.T(6, 'DC Shift')))), k.sep(), k.sec(null, k.K(7)));
+V[27] = (k) => k.row(k.sec('Sample Rate', k.row(k.col(k.K(0, { big: true }), k.T(2, 'Pre Filter')), k.col(k.K(1), h('span', { class: 'lk-btnsp' })))), k.sep(),
+  k.sec('Bit Reduction', k.row(k.col(k.K(3, { big: true }), k.T(4, 'Quantize')), k.col(k.K(5), k.T(6, 'DC Shift')))), k.sep(), k.sec(null, k.K(7)));
 // Vinyl Distortion: Tracing Model and Pinch, each with display + On / drive / freq / width, pinch type and stereo mode; crackle and drive
 V[28] = (k) => {
   // Live: the title line (Pinch carries Soft / Hard and Stereo / Mono on it), the display as wide as the column, then On / amount / Freq / B
@@ -283,7 +283,7 @@ V[2] = (k) => {
 };
 // Saturator: curve display, Drive, type, soft clip | Tone, Output, Dry/Wet
 V[3] = (k) => {
-  const disp = k.D(150, 90, (g, w, hh) => {
+  const disp = k.DF(150, 90, (g, w, hh) => {
     const d = Math.pow(10, k.get(0) / 20), t = Math.round(k.get(4)), cl = (x, a, b) => Math.max(a, Math.min(b, x));
     const fn = [(x) => Math.tanh(x * d) / Math.tanh(Math.max(d, 1)), (x) => Math.sin(cl(x * d, -1.5708, 1.5708)), (x) => { const y = x * d; return y / (1 + Math.abs(y)) * 1.5; }, (x) => { const y = cl(x * d, -1.5, 1.5); return y - y * y * y / 6.75; }, (x) => Math.sin(x * d), (x) => cl(x * d, -1, 1)][t];
     g.fillStyle = DISPC.grid; g.fillRect(0, hh / 2, w, 1); g.fillRect(w / 2, 0, 1, hh);
@@ -442,8 +442,9 @@ V[33] = (k) => {
 };
 // Cabinet: cabinet picture (speakers of the chosen model, the microphone ring at its position: tap / drag to move it) | microphone, position | Output Mono, Dry/Wet
 V[34] = (k) => {
-  const W = 200, H = 96, MX = [0.5, 0.78, 1.1];
-  const pic = k.D(W, H, (g) => {
+  let W = 200, H = 96; const MX = [0.5, 0.78, 1.1];
+  const pic = k.DF(W, H, (g, w, hh) => {
+    W = w; H = hh;
     const ty = Math.round(k.get(0)), cw = ty === 0 ? 70 : ty === 1 ? 116 : 104, ch = ty < 2 ? 70 : 84, x0 = 14, y0 = (H - ch) / 2;
     g.fillStyle = '#1b1c21'; g.strokeStyle = '#9a9ca3'; g.lineWidth = 1.3; rrect(g, x0, y0, cw, ch, 4); g.fill(); g.stroke();
     const n = [1, 2, 4, 4][ty], cols = n === 1 ? 1 : 2, rows = n === 4 ? 2 : 1, r = ty === 3 ? 17 : ty === 0 ? 27 : ty === 1 ? 25 : 19, sp = [];
@@ -458,14 +459,14 @@ V[34] = (k) => {
     k.col(k.TL('Output', k.T(3, 'Mono', { inv: true })), h('span', { class: 'lk-grow' }), k.K(4)));
 };
 // Overdrive: band-pass display (drag: x = Freq, y = Width), Freq / Width boxes | Drive, Tone | Dynamics, Dry/Wet
-V[35] = (k) => k.row(k.col(bandDisp(k, 190, 72, 0, 1, { wmin: 0.5, wmax: 9 }), k.row(k.LN('Freq', k.N(0, { w: 70 })), k.LN('Width', k.N(1, { w: 50 })))), k.sep(),
+V[35] = (k) => k.row(k.col(bandDisp(k, 190, 72, 0, 1, { wmin: 0.5, wmax: 9, fill: true }), k.row(k.LN('Freq', k.N(0, { w: 70 })), k.LN('Width', k.N(1, { w: 50 })))), k.sep(),
   k.col(k.K(2, { big: true }), k.K(3)), k.sep(), k.col(k.K(4), k.K(5)));
 // Pedal: OD / Distort / Fuzz, Gain, Output | Bass / Mid / Treble with the Mid frequency switch | Sub, Dry/Wet
 V[36] = (k) => k.row(k.col(k.CH(0, ['OD', 'Distort', 'Fuzz'], { v: true }), k.K(2)), k.col(k.K(1, { big: true })), k.sep(),
   k.col(k.row(k.K(3), k.K(4), k.K(5)), k.TL('Mid Freq', k.CH(6, ['Low', 'Mid', 'High']))), k.sep(), k.col(k.T(7, 'Sub'), h('span', { class: 'lk-grow' }), k.K(8)));
 // Dynamic Tube: tube curve (drag: x = Bias, y = Drive), tube A / B / C | Drive, Bias | Envelope, Attack, Release | Tone, Output, Dry/Wet
 V[37] = (k) => {
-  const disp = k.D(150, 86, (g, w, hh) => {
+  const disp = k.DF(150, 86, (g, w, hh) => {
     const dv = Math.pow(10, k.get(0) / 20) * 2, bias = (k.get(1) - 0.5) * [0.4, 0.8, 1.4][Math.round(k.get(3))];
     g.fillStyle = DISPC.grid; g.fillRect(0, hh / 2, w, 1); g.fillRect(w / 2, 0, 1, hh);
     const fn = (x) => { const y = x * dv + bias; return Math.tanh(y) - Math.tanh(bias); }, pts = [];
@@ -550,8 +551,9 @@ V[41] = (k) => {
     g.fillStyle = DISPC.grid; g.fillRect(0, hh - 12, w, 12); label(g, 'Rate', 3, hh - 3, DISPC.ink, 8); label(g, 'Crackle', w - 3, hh - 3, DISPC.ink, 8, 'right');
     lvRing(g, 6 + k.get(18) * (w - 12), 6 + (1 - k.get(19)) * (hh - 24), 5.5);
   }, { onDown: () => (Math.round(k.get(0)) === 0 ? { r: k.get(18), c: k.get(19) } : false), onMove: (x, y, dx, dy, s) => { k.set(18, Math.max(0, Math.min(1, s.r + dx / 104))); k.set(19, Math.max(0, Math.min(1, s.c - dy / 52))); } });
-  const W = 250, H = 110;
-  const bands = k.D(W, H, (g) => {
+  let W = 250, H = 110;
+  const bands = k.DF(W, H, (g, w, hh) => {
+    W = w; H = hh;
     const n = lv.length || [4, 8, 12, 16, 20, 24, 32, 40][Math.round(k.get(5))], bw = (W - 20) / n, ly = 8 + (-k.get(10) / 36 + 12 / 36) * (H - 20) * 0.5;
     g.strokeStyle = DISPC.bl; g.lineWidth = 1.5; g.beginPath(); g.moveTo(4, 12); g.lineTo(4, 4); g.lineTo(12, 4); g.moveTo(W - 12, 4); g.lineTo(W - 4, 4); g.lineTo(W - 4, 12); g.moveTo(4, H - 12); g.lineTo(4, H - 4); g.lineTo(12, H - 4); g.moveTo(W - 12, H - 4); g.lineTo(W - 4, H - 4); g.lineTo(W - 4, H - 12); g.stroke();
     g.fillStyle = DISPC.bl; for (let b = 0; b < n; b++) { const v = lv[b] == null ? -90 : lv[b], y = 14 + (1 - Math.max(0, Math.min(1, (v + 60) / 60))) * (H - 22); g.fillRect(10 + b * bw + 1, y, Math.max(1, bw - 3), H - 8 - y); }
@@ -565,7 +567,7 @@ V[41] = (k) => {
 };
 // Shifter: Pitch / Freq / Ring, shift display (input line, shifted lines), Pitch or Freq, Fine, Window | Spread, Feedback | Tone, Dry/Wet
 V[42] = (k) => {
-  const disp = k.D(206, 62, (g, w, hh) => {
+  const disp = k.DF(206, 62, (g, w, hh) => {
     grid(g, w, hh); const m = Math.round(k.get(0)), f0 = 440, x0 = lx(f0, w);
     const fs = m === 0 ? [f0 * Math.pow(2, (k.get(1) + k.get(2) / 100) / 12)] : m === 1 ? [f0 + k.get(3)] : [Math.abs(f0 - k.get(3)), f0 + k.get(3)];
     g.fillStyle = DISPC.grid2; g.fillRect(Math.round(x0), 8, 2, hh - 16);
@@ -579,8 +581,9 @@ V[42] = (k) => {
 const GD = new Map();
 V[43] = (k) => {
   const st = GD.get(k.d.id) || { x: 5, y: 8 }; GD.set(k.d.id, st);
-  const xk = () => (st.x === 2 && k.get(0) > 0.5 ? 1 : st.x), W = 300, H = 160;
-  const xy = k.D(W, H, (g) => {
+  const xk = () => (st.x === 2 && k.get(0) > 0.5 ? 1 : st.x); let W = 300, H = 160;
+  const xy = k.DF(W, H, (g, w, hh) => {
+    W = w; H = hh;
     g.fillStyle = DISPC.grid; for (let j = 1; j < 10; j++) { g.fillRect(Math.round(j * W / 10), 0, 1, H); g.fillRect(0, Math.round(j * H / 10), W, 1); }
     const px = k.def.params[xk()], py = k.def.params[st.y]; lvRing(g, 8 + normOf(px, k.get(xk())) * (W - 16), H - 8 - normOf(py, k.get(st.y)) * (H - 16), 6);
   }, { onDown: () => ({}), onMove: (x, y) => { const a = xk(); k.set(a, valOf(k.def.params[a], (x - 8) / (W - 16))); k.set(st.y, valOf(k.def.params[st.y], (H - 8 - y) / (H - 16))); } });
@@ -625,7 +628,7 @@ V[44] = (k) => {
 // Speed, Reverse | Feedback, Volume
 V[45] = (k) => {
   let o = [0, 0, 0, 0]; const ST = ['Stopped', 'Recording', 'Playing', 'Overdub'];
-  const disp = k.D(176, 66, (g, w, hh) => {
+  const disp = k.DF(176, 66, (g, w, hh) => {
     const s = Math.round(o[0]), col = s === 1 ? '#ff5a4f' : s === 3 ? DISPC.or : s === 2 ? '#5fd08a' : DISPC.ink;
     label(g, ST[s], 8, 18, col, 13); label(g, (s === 1 ? o[3] : o[1]).toFixed(1) + ' s', w - 8, 18, DISPC.bl, 13, 'right');
     g.fillStyle = DISPC.grid; g.fillRect(8, hh - 22, w - 16, 10); if (o[1] > 0) { g.fillStyle = col; g.fillRect(8, hh - 22, (w - 16) * o[2], 10); }
@@ -644,7 +647,7 @@ V[45] = (k) => {
 function sonogram(k, w, hh, col) {
   const off = document.createElement('canvas'); off.width = w; off.height = hh; const og = off.getContext('2d'); og.fillStyle = DISPC.bg; og.fillRect(0, 0, w, hh);
   let run = true;
-  const c = k.D(w, hh, (g) => { g.drawImage(off, 0, 0, w, hh); });
+  const c = k.DF(w, hh, (g, cw, ch) => { g.drawImage(off, 0, 0, cw, ch); });
   k.every(60, () => {
     if (!run) return; const v = col(); if (!v) return;
     og.drawImage(off, -2, 0); og.fillStyle = DISPC.bg; og.fillRect(w - 2, 0, 2, hh);
@@ -1617,7 +1620,7 @@ V[10] = (k) => {
 // Stereolizer (FL Studio Mobile; Live Utility look): goniometer + correlation | Width (big) | Mid / Side | Bass Mono | Balance / Output
 V[14] = (k) => {
   let o = null;
-  const disp = k.D(132, 104, (g, w, hh) => {
+  const disp = k.DF(132, 104, (g, w, hh) => {
     const cx = w / 2, cy = hh - 22, R = Math.min(w / 2 - 6, hh - 30);
     g.strokeStyle = DISPC.grid; g.lineWidth = 1; g.beginPath(); g.arc(cx, cy, R, Math.PI, 0); g.stroke();
     g.beginPath(); g.moveTo(cx, cy); g.lineTo(cx - R * 0.7071, cy - R * 0.7071); g.moveTo(cx, cy); g.lineTo(cx + R * 0.7071, cy - R * 0.7071); g.moveTo(cx, cy); g.lineTo(cx, cy - R); g.stroke();
@@ -1635,7 +1638,7 @@ V[14] = (k) => {
 // Size / Spread / Damping | Dry/Wet
 V[15] = (k) => {
   const TL0 = [0.0113, 0.0173, 0.0233, 0.0311, 0.0397, 0.0491], TR0 = [0.0131, 0.0197, 0.0269, 0.0347, 0.0433, 0.0527], G0 = [0.8, 0.66, 0.54, 0.44, 0.34, 0.26];
-  const disp = k.D(176, 84, (g, w, hh) => {
+  const disp = k.DF(176, 84, (g, w, hh) => {
     const sz = 0.3 + k.get(0) * 1.7, pre = k.get(4) / 1000, sp = k.get(1), dm = k.get(2), mid = hh / 2, tmax = 0.11, x = (t) => 8 + (t / tmax) * (w - 16);
     g.fillStyle = DISPC.grid; g.fillRect(0, Math.round(mid), w, 1);
     g.fillStyle = DISPC.ink; g.fillRect(x(0), 8, 2, mid - 8);

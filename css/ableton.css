@@ -1014,8 +1014,8 @@
 .flm-tc .lv-btn { width: 100%; }
 .flm-dbox { flex: 1 1 0; min-width: 120px; position: relative; overflow: hidden; border: 1px solid #1b1b1d; border-radius: 4px; background: #262628; }
 .flm-dbox > canvas { position: absolute; left: 0; top: 0; display: block; touch-action: none; }
-.lk-flm .knob.lk-k { width: auto; min-width: 50px; } .lk-flm .knob.lk-k svg { width: 34px; height: 34px; }   /* never a cut label: the column takes the label's width */
-.lk-flm .knob.lk-k.big { width: auto; min-width: 60px; } .lk-flm .knob.lk-k.big svg { width: 44px; height: 44px; }
+.lk-flm .knob.lk-k { width: auto; min-width: 50px; } .lk-flm .knob.lk-k svg { width: 46px; height: 46px; }   /* never a cut label: the column takes the label's width */
+.lk-flm .knob.lk-k.big { width: auto; min-width: 60px; } .lk-flm .knob.lk-k.big svg { width: 60px; height: 60px; }
 .lk-flm .knob.lk-k .k-n { max-width: none; overflow: visible; }
 .lk.lk-flm .lk-ch.v .lv-btn { min-width: 72px; padding: 0 6px; }
 .inst-row:has(> .lk-flm) { flex: 1 1 auto; align-items: stretch; }
@@ -1495,7 +1495,7 @@ html.reduce-motion .menu, html.reduce-motion .modal, html.reduce-motion .fw, htm
 .lk .lk-ch.g2:not(.sm) > .lv-btn { border: 1px solid var(--lv-edge) !important; border-radius: 1px !important; margin: 0 !important; }
 /* compact panels: every column's controls stand together, centred on the panel's middle line with one even gap - nothing floats to the
    top or bottom edge (owner: 'kontrol tidak tertata rapi'); dense synths keep the edge-to-edge columns */
-.lk.lk-fill.lk-row:not(.lk-dense):not(.lk-drift) > .lk-col, .lk.lk-fill.lk-row:not(.lk-dense):not(.lk-drift) > .lk-sec { justify-content: center !important; gap: 10px !important; }
+.lk.lk-fill.lk-row:not(.lk-dense):not(.lk-drift) > .lk-col, .lk.lk-fill.lk-row:not(.lk-dense):not(.lk-drift) > .lk-sec { justify-content: space-evenly !important; gap: 4px !important; }
 .lk.lk-fill.lk-row:not(.lk-dense):not(.lk-drift) > .lk-col > .lk-grow, .lk.lk-fill.lk-row:not(.lk-dense):not(.lk-drift) > .lk-sec > .lk-grow { display: none; }
 .lk.lk-fill.lk-row:not(.lk-dense):not(.lk-drift) > .lk-sec > .lk-st:first-child { position: relative; }
 /* Grain Delay (Live) */
@@ -1545,3 +1545,21 @@ html.reduce-motion .menu, html.reduce-motion .modal, html.reduce-motion .fw, htm
 /* Sampler: grid labels never cut ("Release Mode") */
 .lv-dev.smp .smp-grid .lv-fl > .lv-lb { font-size: 13px !important; text-overflow: ellipsis; }
 .lk.lk-fill, .lv-dev.lk-fill { box-sizing: border-box; }
+/* roomy panels (devices.js fitKit: much free height): bigger dials and buttons in steps, same text size everywhere */
+.lk.lk-roomy .knob.lk-k svg { width: 54px; height: 54px; } .lk.lk-roomy .knob.lk-k.big svg { width: 72px; height: 72px; } .lk.lk-roomy .knob.lk-k.big { width: 88px; }
+.lk.lk-roomy .lv-btn { min-height: 25px; } .lk.lk-roomy .lk-ch .lv-btn { padding-left: 9px; padding-right: 9px; }
+.lk.lk-roomy2 .knob.lk-k svg { width: 62px; height: 62px; } .lk.lk-roomy2 .knob.lk-k.big svg { width: 84px; height: 84px; } .lk.lk-roomy2 .knob.lk-k.big { width: 100px; }
+.lk.lk-roomy2 .lv-btn { min-height: 28px; }
+.lk.lk-roomy3 .knob.lk-k svg { width: 70px; height: 70px; } .lk.lk-roomy3 .knob.lk-k.big svg { width: 96px; height: 96px; } .lk.lk-roomy3 .knob.lk-k.big { width: 112px; }
+.lk.lk-roomy3 .lv-btn { min-height: 30px; }
+/* fill displays inside their own containers (Grain Delay XY, spectral sonograms, dark boxes) take the free room too */
+.lk.lk-fill .lk-gdm { align-self: stretch; grid-template-rows: 1fr auto; grid-template-columns: auto 1fr; }
+.lk .lk-gdm > .lk-dfill { min-height: 0; }
+.lk.lk-fill .lk-son { flex: 1 1 auto; }
+.lk.lk-fill .lk-son > .lk-dfill { flex: 1 1 auto; }
+.lk.lk-fill .lk-sonw { display: flex; flex-direction: column; align-self: stretch; flex: 1 1 auto; }
+.lk.lk-fill .lk-dk:has(> .lk-dfill) { align-self: stretch; flex: 1 1 auto; display: flex; flex-direction: column; }
+.lk.lk-fill.lk-row > .lk-col:has(> .lk-dk > .lk-dfill) { flex: 1 1 auto; }
+/* a section title stays on the top line; the section's controls share the rest of the height (equal room above and below each) */
+.lk.lk-fill.lk-row:not(.lk-dense):not(.lk-drift) > .lk-sec:has(> .lk-st:first-child) > :not(.lk-st:first-child) { margin-top: auto; margin-bottom: auto; }
+.lk.lk-fill.lk-row:not(.lk-dense):not(.lk-drift) > .lk-sec > .lk-st:first-child { align-self: flex-start; white-space: nowrap; }
