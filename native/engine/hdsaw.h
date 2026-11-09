@@ -25,7 +25,7 @@ struct HdVoice {
 };
 struct HdControl {
   double aA = 1, aD = 1, aS = 1, aR = 1, aRe = 1, fA = 1, fD = 1, fS = 1, fR = 1, sA = 1, sD = 1, sS = 1, sR = 1;
-  int shape = 0, mode = 0, dest = 0; double amount = 0, step = 0, syncPh = 0, fade = 1, tune = 0, drive = 0, dnorm = 1, gain = 1;
+  int shape = 0, mode = 0, dest = 0, wd = 0; double wv = 0, amount = 0, step = 0, syncPh = 0, fade = 1, tune = 0, drive = 0, dnorm = 1, gain = 1;
   int dframes = 1; double fb = 0, mix = 0, dfilt = 1;
 };
 
@@ -43,10 +43,11 @@ class HdSuperSaw : public Instrument {
   void setBend(double st) override { bendSt = st / 2 * p[40]; }
   void setBendSl(double st, double sl) override { bendSt = st / 2 * p[40] + sl; }
   void setSongPos(bool playing, double b) override { if (playing) beat = b; }
+  void setMod(double x) override { wheel = clamp(x == x ? x : 0, 0, 1); }
  private:
   double sr; double p[60] = {}; const float* T; HdVoice v[8];
   double serial = 0; double held[128]; int heldN = 0; int last = -1; int tickPos = 0;
-  double bendSt = 0, bpm = 120, beat = 0, lfoPh = 0; uint32_t rng;
+  double bendSt = 0, wheel = 0, bpm = 120, beat = 0, lfoPh = 0; uint32_t rng;
   bool arpOn = false; int arpStepN = 0; double arpTimer = 0;
   int dlen; std::vector<float> dl[2]; int dpos = 0; double dz[2] = {0, 0};
   double mixL[24] = {}, mixR[24] = {}; double tail = 0;

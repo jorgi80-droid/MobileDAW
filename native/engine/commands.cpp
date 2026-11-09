@@ -14,14 +14,14 @@ namespace mdaw {
 enum Op {
   PLAY, STOP, PLAYCOUNTIN, SEEK, TEMPO, TEMPOMAP, SETSIG, SETMETER, LOOP, SETMETRO, SETMETROVOL, MASTERLIMIT, SETPDC, TRACKLOAD,
   TRACKVOL, TRACKPAN, TRACKWIDTH, TRACKINVERT, TRACKMUTE, TRACKSOLO, TRACKSEND, TRACKOUT, TRACKINST, INSTPARAM, RESETTRACK,
-  INSERTDEVICE, REMOVEDEVICE, DEVPARAM, DEVBYPASS, RACKCMD, SOUNDFONT, PREVIEW, BEND, TRACKNOTES, TRACKCLIPS, TRACKCC, AUTOMATION, SAMPLE, PANIC
+  INSERTDEVICE, REMOVEDEVICE, DEVPARAM, DEVBYPASS, RACKCMD, SOUNDFONT, PREVIEW, BEND, MODWHEEL, TRACKNOTES, TRACKCLIPS, TRACKCC, AUTOMATION, SAMPLE, PANIC
 };
 static const std::unordered_map<std::string, int> OPS = {
   { "play", PLAY }, { "stop", STOP }, { "playCountIn", PLAYCOUNTIN }, { "seek", SEEK }, { "tempo", TEMPO }, { "tempoMap", TEMPOMAP },
   { "setSig", SETSIG }, { "setMeter", SETMETER }, { "loop", LOOP }, { "setMetro", SETMETRO }, { "setMetroVol", SETMETROVOL }, { "masterLimit", MASTERLIMIT }, { "setPdc", SETPDC }, { "trackLoad", TRACKLOAD },
   { "trackVol", TRACKVOL }, { "trackPan", TRACKPAN }, { "trackWidth", TRACKWIDTH }, { "trackInvert", TRACKINVERT }, { "trackMute", TRACKMUTE }, { "trackSolo", TRACKSOLO }, { "trackSend", TRACKSEND },
   { "trackOut", TRACKOUT }, { "trackInst", TRACKINST }, { "instParam", INSTPARAM }, { "resetTrack", RESETTRACK }, { "insertDevice", INSERTDEVICE },
-  { "removeDevice", REMOVEDEVICE }, { "devParam", DEVPARAM }, { "devBypass", DEVBYPASS }, { "rackCmd", RACKCMD }, { "sf", SOUNDFONT }, { "preview", PREVIEW }, { "bend", BEND },
+  { "removeDevice", REMOVEDEVICE }, { "devParam", DEVPARAM }, { "devBypass", DEVBYPASS }, { "rackCmd", RACKCMD }, { "sf", SOUNDFONT }, { "preview", PREVIEW }, { "bend", BEND }, { "modWheel", MODWHEEL },
   { "trackNotes", TRACKNOTES }, { "trackClips", TRACKCLIPS }, { "trackCC", TRACKCC }, { "automation", AUTOMATION }, { "sample", SAMPLE }, { "panic", PANIC },
 };
 
@@ -101,10 +101,10 @@ static ClipData* prepClips(const Arg& flat, const Arg& nArg, int stride) {
 
 static CCData* prepCC(const Arg& flat, const Arg& nArg) {
   int n = count(flat, nArg, 3);
-  std::vector<std::pair<double, double>> by[7];                      // core.js: kind 4 slide pitch, 5 slide velocity (gain ratio), 6 slide pan
-  for (int i = 0; i < n; i++) { int k = toInt32(arrAt(flat, i * 3 + 1)); if (k >= 0 && k < 7) by[k].push_back({ arrAt(flat, i * 3), arrAt(flat, i * 3 + 2) }); }
+  std::vector<std::pair<double, double>> by[8];                      // core.js: kind 4 slide pitch, 5 slide velocity (gain ratio), 6 slide pan, 7 mod wheel
+  for (int i = 0; i < n; i++) { int k = toInt32(arrAt(flat, i * 3 + 1)); if (k >= 0 && k < 8) by[k].push_back({ arrAt(flat, i * 3), arrAt(flat, i * 3 + 2) }); }
   auto* d = new CCData(); bool any = false;
-  for (int k = 0; k < 7; k++) {
+  for (int k = 0; k < 8; k++) {
     if (by[k].empty()) continue;
     std::stable_sort(by[k].begin(), by[k].end(), [](const std::pair<double, double>& x, const std::pair<double, double>& y) { return x.first < y.first; });
     auto* l = new CCLane(); for (auto& q : by[k]) { l->t.push_back(q.first); l->v.push_back(q.second); }
@@ -153,7 +153,7 @@ bool prepare(const std::string& name, const std::vector<Arg>& a, const Engine& e
     case RESETTRACK: { c.a[0] = N(0); int t = toInt32(N(0)); if (t >= 0 && t < NSTRIPS) trackType[t] = 0; break; }
     case SETMETRO: case MASTERLIMIT: case SETPDC: case TRACKLOAD: c.a[0] = B(0); break;
     case LOOP: c.a[0] = B(0); c.a[1] = N(1); c.a[2] = N(2); break;
-    case TRACKVOL: case TRACKPAN: case TRACKWIDTH: case TRACKINVERT: case TRACKOUT: case BEND: c.a[0] = N(0); c.a[1] = N(1); break;
+    case TRACKVOL: case TRACKPAN: case TRACKWIDTH: case TRACKINVERT: case TRACKOUT: case BEND: case MODWHEEL: c.a[0] = N(0); c.a[1] = N(1); break;
     case TRACKMUTE: case TRACKSOLO: c.a[0] = N(0); c.a[1] = B(1); break;
     case TRACKSEND: c.a[0] = N(0); c.a[1] = N(1); c.a[2] = N(2); break;
     case INSTPARAM: {
@@ -277,6 +277,7 @@ void apply(Engine& e, Cmd& c) {
     case RACKCMD: { Instrument* in = static_cast<Instrument*>(c.p2); c.p2 = nullptr; c.del2 = nullptr; e.rackCmd(t, a[1], toInt32(a[2]), a[3], a[4], a[5], a[6], give<Device>(c), in); break; }
     case PREVIEW: e.preview(t, (int)a[1], a[2], a[3] != 0); break;
     case BEND: e.bend(t, a[1]); break;
+    case MODWHEEL: e.modWheel(t, a[1]); break;
     case TRACKNOTES: e.trackNotes(t, give<NoteData>(c)); break;
     case TRACKCLIPS: e.trackClips(t, give<ClipData>(c)); break;
     case TRACKCC: e.trackCC(t, c.p ? give<CCData>(c) : nullptr); break;

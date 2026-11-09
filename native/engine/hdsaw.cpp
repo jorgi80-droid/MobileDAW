@@ -11,7 +11,8 @@ namespace {
 constexpr int TICK = 24, MAXV = 8, MAXU = 12, MAXP = 6, TABLES = 1024, TLEN = 2048, ISHIFT = 21, DSHIFT = 10;
 constexpr double INC_FACTOR = 0.99951, PHASE = 4294967296.0, OMEGA = 6.25, SUBSTEPS = 4096, Y1_CLIP = 1e-5, GAIN_SMOOTH = 0.01, DELAY_MAX_S = 2;
 constexpr int IDLE = 0, ATTACK = 1, DECAY = 2, RELEASE = 3;
-constexpr int M_CUT = 0, M_RES = 1, M_FREQ = 2, M_SYNC = 3, M_PW = 4, M_DET = 5, M_LEVEL = 6, M_PAN = 7;
+constexpr int M_CUT = 0, M_RES = 1, M_FREQ = 2, M_SYNC = 3, M_PW = 4, M_DET = 5, M_LEVEL = 6, M_PAN = 7, M_LFO_AMT = 8, M_LFO_RATE = 9;
+const int WHEEL_TARGETS[9] = {M_CUT, M_RES, M_SYNC, M_PW, M_DET, M_LEVEL, M_PAN, M_LFO_AMT, M_LFO_RATE};
 const double ARP_BEATS[6] = {0.125, 0.25, 0.375, 0.5, 0.75, 1}, DELAY_BEATS[5] = {0.25, 0.375, 0.5, 0.75, 1};
 
 double envTime(double x) { double e = std::pow(2.0, x); for (int i = 0; i < 6; i++) e = std::pow(2.0, e - 1); return std::pow(2.0, 5 * e - 5) - 1; }
@@ -102,13 +103,15 @@ bool HdSuperSaw::active() { if (heldN > 0 || tail > 0) return true; for (auto& o
 
 void HdSuperSaw::update() {
   const double tr = sr / TICK;
-  const double a = clamp(p[32] / 100, -1, 1), lfoBeats = flmSyncBeats(p[29]), amt = clamp(p[52] / 100, 0, 1);
+  c.wd = WHEEL_TARGETS[(int)clamp(jsRound(p[42]), 0, 8)]; c.wv = clamp(p[41] / 100, -1, 1) * wheel;
+  const double a = 2 * clamp((clamp(p[32] / 100, -1, 1) + 1) / 2 + (c.wd == M_LFO_AMT ? c.wv : 0), 0, 1) - 1, lfoBeats = flmSyncBeats(p[29]), amt = clamp(p[52] / 100, 0, 1);
   c.aA = swing(sec(p[36]), sr); c.aD = swing(sec(p[37]), sr); c.aS = clamp(p[38], 0, 1); c.aR = swing(sec(p[39]), sr);
   c.aRe = swing(jsMax(sec(p[36]), RE_ATTACK_MIN), sr);
   c.fA = swing(sec(p[22]), tr); c.fD = swing(sec(p[23]), tr); c.fS = clamp(p[24], 0, 1); c.fR = swing(sec(p[25]), tr);
   c.sA = swing(sec(p[12]), tr); c.sD = swing(sec(p[13]), tr); c.sS = clamp(p[14], 0, 1); c.sR = swing(sec(p[15]), tr);
   c.shape = (int)clamp(jsRound(p[30]), 0, 3); c.mode = (int)clamp(jsRound(p[27]), 0, 2); c.dest = (int)clamp(jsRound(p[33]), 0, 7);
-  c.amount = a * std::fabs(a); c.step = clamp(p[28], 0.001, 100) * TICK / sr;
+  double hz = clamp(p[28], 0.001, 100); if (c.wd == M_LFO_RATE && c.wv != 0) hz = 1 / (30 * std::pow(1 - clamp(1 - std::cbrt(jsMax(0, (1 / hz - 0.033333) / 30)) + c.wv, 0, 1), 3) + 0.033333);
+  c.amount = a * std::fabs(a); c.step = hz * TICK / sr;
   const double sp = beat / lfoBeats; c.syncPh = sp - std::floor(sp);
   c.fade = swing(sec(p[31]), tr); c.tune = p[44] + bendSt;
   c.drive = amt > 0.005 ? std::pow(10.0, 2 * amt) - 0.99 : 0; c.dnorm = c.drive > 0 ? 1 / std::tanh(c.drive) : 1;
@@ -201,7 +204,7 @@ void HdSuperSaw::advance(HdVoice& o) {
 }
 void HdSuperSaw::compute(HdVoice& o) {
   const double lfo = o.lfoFade * lfoShape(c.shape, o.lfoPh, o.lfoRnd) * c.amount;
-  auto m = [&](int k) { return c.dest == k ? lfo : 0.0; };
+  auto m = [&](int k) { return (c.wd == k ? c.wv : 0.0) + (c.dest == k ? lfo : 0.0); };
   const double f = 440 * std::pow(2.0, (o.pitch - 69 + c.tune + 12 * m(M_FREQ)) / 12);
   double ugain = 1;
   if (p[1] > 0.5) {

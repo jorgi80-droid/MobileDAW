@@ -95,7 +95,7 @@ Stack dipertahankan: JS modul (tanpa build) + AudioWorklet + engine C++ (Android
 | Penamaan C tengah C3 / C4 / C5 | Selesai | Pengaturan → Editor |
 | Drumpad, MIDI learn CC, MMC, pilih perangkat | Selesai | sesi sebelumnya (Web MIDI) |
 | Bluetooth MIDI / USB di APK | Batas platform | WebView Android tidak punya Web MIDI; butuh plugin native MIDI (belum) |
-| Mod wheel | Belum | |
+| Mod wheel | Selesai | roda Mod di samping Pitch pada keyboard (tetap di posisinya), MIDI CC1 -> track terpilih, lane CC kind 7; SuperSaw ModWheel Amount / Dest (9 tujuan, model Honeydew); golden `core-modwheel` JS = C++ identik |
 
 ## 12. Transport / Recording
 | Fitur | Status | Bukti / catatan |

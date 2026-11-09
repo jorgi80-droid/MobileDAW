@@ -841,6 +841,9 @@ export async function setZoneSample(i, k, path) {
 }
 export const PITCH_PARAM = { n: 'Pitch', min: -24, max: 24, def: 0, step: 1, fmt: 'int' };   // instrument param 90, handled by the engine for every instrument
 export function setBend(i, st) { const t = state.tracks[i]; if (!t || !t.inst) return; eng.bend(i, st); }
+// mod wheel position 0..1 per track (the keyboard's Mod wheel, MIDI CC1): live control, not saved with the project (as FLM)
+export const modPos = new Map();
+export function setMod(i, v) { const t = state.tracks[i]; if (!t || !t.inst) return; const x = Math.max(0, Math.min(1, +v || 0)); modPos.set(t.id, x); eng.modWheel(i, x); emit('mod'); }
 export function setPitch(i, v) { const t = state.tracks[i]; if (!t || !t.inst) return; const nv = Math.max(-24, Math.min(24, Math.round(v) || 0)); if (HK.on && nv !== (t.inst.pitch || 0) && !HK.hit('pit' + t.id)) HK.add({ t: 'val', k: 'pitch', s: t.id, v: t.inst.pitch || 0 }); t.inst.pitch = nv; eng.instParam(i, 90, t.inst.pitch); }
 // value of an instrument parameter as the engine sees it (a parameter never touched still has its default / pad value)
 function instVal(t, pi) {
@@ -2125,6 +2128,7 @@ export function midiCC(cc, value) {
   if (learn.pending) { state.ccLinks[cc] = learn.pending; const l = learn.pending; learn.pending = null; emit('learn'); return { linked: cc, label: l.label }; }
   const l = state.ccLinks[cc];
   if (l) applyTargetValue(l.target, valOf(l.target.def, value / 127));
+  else if (cc === 1) setMod(state.sel.track, value / 127);   // the controller's mod wheel (CC1) -> the selected track's instrument (unless linked)
   return null;
 }
 export function unlinkCc(cc) { delete state.ccLinks[cc]; emit('learn'); }

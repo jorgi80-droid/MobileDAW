@@ -1579,3 +1579,7 @@ html.reduce-motion .menu, html.reduce-motion .modal, html.reduce-motion .fw, htm
 .inst-row:has(> .inst-side > .zones) { align-items: stretch; }
 .inst-row > .inst-side > .zones:has(> .zmap) { max-height: none; overflow: hidden; }
 .inst-row > .inst-side > .zones:has(> .zmap) > .zone, .inst-row > .inst-side > .zones:has(> .zmap) > .b { flex: none; }
+/* Mod wheel beside the pitch bend wheel (keyboard panel): a level fill from the bottom, the thumb stays where it is left */
+.kb-body .pbw.mdw { margin-left: -4px; }
+.pbw-fill { position: absolute; left: 0; right: 0; bottom: 0; background: color-mix(in srgb, var(--lv-arc, #62cffa) 45%, transparent); border-radius: 0 0 var(--r-2) var(--r-2); pointer-events: none; }
+.pbw.mdw .pbw-thumb { margin-top: -13px; }

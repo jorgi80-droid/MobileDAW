@@ -13,7 +13,7 @@ const TAIL_SECONDS = 2;
 function newStrip() {
   return {
     inst: null, ev: null, clips: [], dev: [], vol: 0.85, pan: 0, gl: 0, gr: 0, send: [0, 0], out: -1, mute: false, solo: false, mg: 1, sg0: 0, sg1: 0,   // mg: mute / solo fade, sg0/sg1: smoothed send levels
-    silent: 0, wasAudible: true, pitch: 0, bend: 0, ccl: null, ccG: 1, ccP: 0, tpMap: Uint8Array.from({ length: 128 }, (_, i) => i), active: false, pre: [], bufL: new Float32Array(BLOCK), bufR: new Float32Array(BLOCK), peakL: 0, peakR: 0,
+    silent: 0, wasAudible: true, pitch: 0, bend: 0, mod: 0, ccl: null, ccG: 1, ccP: 0, tpMap: Uint8Array.from({ length: 128 }, (_, i) => i), active: false, pre: [], bufL: new Float32Array(BLOCK), bufR: new Float32Array(BLOCK), peakL: 0, peakR: 0,
     sevT: new Int32Array(512), sevP: new Uint8Array(512), sevV: new Float32Array(512), sevOn: new Uint8Array(512), sevPn: new Float32Array(512), sevSt: new Float32Array(512), nPan: 0,
     lat: 0, pd: 0, pdl: new PdcLine(),   // PDC: latency of this strip's chain, compensation delay applied after it, its delay ring
     width: 1, sw: 1, inv: 0, pL: 1, pR: 1,   // stereo width (0 mono .. 1 .. 2 wide, smoothed sw) and phase invert (bit 0 L, bit 1 R; ramped polarity pL / pR)
@@ -145,7 +145,7 @@ export class Engine {
     if (!this.ok(t) || t >= MASTER) return;
     const inst = type === 12 ? new InstrumentRack(this.sr, (k) => makeInstrument(k, this.sr, this.bank, this.sfs)) : makeInstrument(type, this.sr, this.bank, this.sfs);   // 12 = Instrument Rack (fx7.js)
     this.s[t].inst = inst;
-    if (inst) { inst.setTempo(this.bpm); if (inst.pitchNative) inst.setParam(90, this.s[t].pitch); }
+    if (inst) { inst.setTempo(this.bpm); if (inst.pitchNative) inst.setParam(90, this.s[t].pitch); if (this.s[t].mod && inst.setMod) inst.setMod(this.s[t].mod); }
   }
   // Instrument pitch (-24..+24 semitones) is param 90 of every instrument: instruments with pitchNative (drums, samplers) shift themselves, the rest get transposed notes
   setPitch(t, v) { if (!this.ok(t) || t >= MASTER) return; const st = this.s[t]; st.pitch = clamp(Math.round(v) || 0, -24, 24); if (st.inst && st.inst.pitchNative) st.inst.setParam(90, st.pitch); }
@@ -180,6 +180,8 @@ export class Engine {
     if (s.inst && s.inst.setBend) { if (sl && s.inst.setBendSl) s.inst.setBendSl(st, sl); else s.inst.setBend(tot); return; }   // Live 12 instruments scale the wheel by their own PB Range
     if (s.inst && s.inst.bendVoice && r !== 1) for (const v of s.inst.v) if (v.on) s.inst.bendVoice(v, r);
   }
+  // Mod wheel (MIDI CC1, 0..1): instruments with a mod wheel destination (FLM SuperSaw MW Amount / Dest) read it; it stays where it was left
+  modWheel(t, v) { if (!this.ok(t) || t >= MASTER) return; const s = this.s[t]; s.mod = clamp(+v || 0, 0, 1); if (s.inst && s.inst.setMod) s.inst.setMod(s.mod); }
   bendNew(s) { const n = s.inst.counter, r = Math.pow(2, s.bend / 12); for (const v of s.inst.v) if (v.on && v.age === n) s.inst.bendVoice(v, r); }
   preview(t, pitch, vel, on) { if (this.ok(t) && t < MASTER && this.s[t].inst && this.s[t].pre.length < 64) this.s[t].pre.push({ p: pitch | 0, v: vel, on: !!on }); }
   // flat = [start tick, length ticks, pitch, velocity, pan, (stride 6: pitch offset in semitones, drum pads)] * n   (pan -1..1; stride 4 is accepted for old callers)
@@ -199,13 +201,13 @@ export class Engine {
   trackCC(t, flat, n) {
     if (!this.ok(t) || t >= MASTER) return;
     n = Math.trunc(Math.max(0, Math.min(n === n ? +n || 0 : 0, Math.floor(flat.length / 3))));   // never more points than the array holds (commands.cpp count)
-    const s = this.s[t], by = [[], [], [], [], [], [], []];            // kind 4 = slide notes (semitones, exact), 5 = slide velocity (gain ratio), 6 = slide pan (offset)
-    for (let i = 0; i < n; i++) { const k = flat[i * 3 + 1] | 0; if (k >= 0 && k < 7) by[k].push([flat[i * 3], flat[i * 3 + 2]]); }
+    const s = this.s[t], by = [[], [], [], [], [], [], [], []];        // kind 4 = slide notes (semitones, exact), 5 = slide velocity (gain ratio), 6 = slide pan (offset), 7 = mod wheel (CC1, 0..127)
+    for (let i = 0; i < n; i++) { const k = flat[i * 3 + 1] | 0; if (k >= 0 && k < 8) by[k].push([flat[i * 3], flat[i * 3 + 2]]); }
     const ccl = by.map((a) => { if (!a.length) return null; a.sort((x, y) => x[0] - y[0]); return { t: Float64Array.from(a, (q) => q[0]), v: Float64Array.from(a, (q) => q[1]) }; });
     s.ccl = ccl.some(Boolean) ? ccl : null;
     if (!s.ccl) this.ccReset(s, t);
   }
-  ccReset(s, t) { s.ccG = 1; s.ccP = 0; if (s.bend) this.bend(t, 0); }
+  ccReset(s, t) { s.ccG = 1; s.ccP = 0; if (s.bend) this.bend(t, 0); if (s.mod) this.modWheel(t, 0); }
   ccAt(l, tick) {
     const n = l.t.length; if (tick <= l.t[0]) return l.v[0]; if (tick >= l.t[n - 1]) return l.v[n - 1];
     let a = 0, b = n - 1; while (b - a > 1) { const m = (a + b) >> 1; if (l.t[m] <= tick) a = m; else b = m; }
@@ -217,6 +219,7 @@ export class Engine {
     let g = 1; if (c[1]) g *= clamp(this.ccAt(c[1], tick) / 127, 0, 1); if (c[3]) g *= clamp(this.ccAt(c[3], tick) / 127, 0, 1); if (c[5]) g *= clamp(this.ccAt(c[5], tick), 0, 4);
     let p = c[2] ? clamp((this.ccAt(c[2], tick) - 64) / 63, -1, 1) : 0; if (c[6]) p = clamp(p + clamp(this.ccAt(c[6], tick), -2, 2), -1, 1);
     s.ccG = g; s.ccP = p;
+    if (c[7]) { const m = clamp(this.ccAt(c[7], tick) / 127, 0, 1); if (Math.abs(m - s.mod) > 1e-4) this.modWheel(idx, m); }
   }
   // flat = [start tick, length ticks, sample id, gain, offset seconds, fade in seconds, fade out seconds, (stride 8: pan -1..1 balance)] * n
   trackClips(t, flat, n, stride = 7) {

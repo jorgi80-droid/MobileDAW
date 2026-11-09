@@ -31,7 +31,8 @@ class Instrument {
   virtual bool hasSetBend() { return false; }                   // JS: inst.setBend exists (Live 12 instruments scale the wheel by their PB Range)
   virtual void setBend(double st) {}
   virtual void setBendSl(double st, double sl) { setBend(st + sl); }   // slide notes (exact semitones) on top of the wheel
-  virtual void setSongPos(bool playing, double beat) {}         // JS inst.setSongPos (FLM SuperSaw tempo-sync LFO, in phase with the song)
+  virtual void setSongPos(bool playing, double beat) {}
+  virtual void setMod(double v) {}                              // JS inst.setMod: mod wheel 0..1 (FLM SuperSaw MW Amount / Dest)         // JS inst.setSongPos (FLM SuperSaw tempo-sync LFO, in phase with the song)
   virtual void bendSounding(double ratio) {}                    // every voice that is on
   virtual void bendNewest(double ratio) {}                      // voices started by the last noteOn (v.age === counter)
   virtual int voicesOn() { return 0; }

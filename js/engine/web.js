@@ -178,7 +178,7 @@ class OfflineTarget {
     e.lanes = e.lanes.filter((l) => !(l.track === t && [0, 1, 2, 3, 7].includes(l.kind)));
   }
   rawMaster() { const e = this.e, m = e.s[MASTER]; for (const d of m.dev) d.bypass = true; m.vol = 1; m.gl = 1; e.lanes = e.lanes.filter((l) => l.track !== MASTER); }
-  preview() {} bend(t, st) { this.e.bend(t, st); } devOut() { return []; } poll() { return null; } start() { return this.e.sr; }
+  preview() {} bend(t, st) { this.e.bend(t, st); } modWheel(t, v) { this.e.modWheel(t, v); } devOut() { return []; } poll() { return null; } start() { return this.e.sr; }
 }
 
 export function createWebBackend() {
@@ -198,7 +198,7 @@ export function createWebBackend() {
   // complete and going back to Web is instant. While the native engine is selected it receives the same command stream (nativesink.js).
   // It only plays when every instrument and effect of the project is ported; otherwise the Web engine plays (automatic fallback). A switch
   // happens only while the transport is stopped.
-  const TRANSPORT = new Set(['play', 'playCountIn', 'preview', 'bend']);
+  const TRANSPORT = new Set(['play', 'playCountIn', 'preview', 'bend', 'modWheel']);
   const nat = { sink: isNativeApp() ? createNativeSink() : null, want: false, ready: false, mirror: false, on: false, only: false, pending: false, inst: new Array(NSTRIPS).fill(0), dev: Array.from({ length: NSTRIPS }, () => []), rk: Array.from({ length: NSTRIPS }, () => new Set()), replay: null };   // rk: device types ever put into a rack on the strip (kept until the strip is reset: a conservative check)
   function note(c, a) {                                    // instrument / effect types per strip, to know whether the native engine can play the project
     const t = a[0] | 0; if (t < 0 || t >= NSTRIPS) return;
@@ -335,7 +335,7 @@ export function createWebBackend() {
     play: () => { if (st.ctx) st.ctx.resume().catch(() => {}); post('play'); }, playCountIn: (b) => { if (st.ctx) st.ctx.resume().catch(() => {}); post('playCountIn', b); }, stop: cmd('stop'), seek: cmd('seek'), tempo: cmd('tempo'), tempoMap: cmd('tempoMap'), sig: cmd('setSig'), meter: cmd('setMeter'), loop: cmd('loop'), metro: cmd('metro', 'setMetro'), metroVol: cmd('metroVol', 'setMetroVol'),
     trackVol: cmd('trackVol'), trackPan: cmd('trackPan'), trackWidth: cmd('trackWidth'), trackInvert: cmd('trackInvert'), trackMute: cmd('trackMute'), trackSolo: cmd('trackSolo'), trackInst: cmd('trackInst'), instParam: cmd('instParam'),
     trackNotes: cmd('trackNotes'), trackCC: cmd('trackCC'), trackClips: cmd('trackClips'), resetTrack: cmd('resetTrack'), insertDevice: cmd('insertDevice'), removeDevice: cmd('removeDevice'),
-    devParam: cmd('devParam'), devBypass: cmd('devBypass'), rackCmd: cmd('rackCmd'), preview: cmd('preview'), bend: cmd('bend'), send: cmd('trackSend'), trackOut: cmd('trackOut'), trackLoad: cmd('trackLoad'), automation: cmd('automation'),
+    devParam: cmd('devParam'), devBypass: cmd('devBypass'), rackCmd: cmd('rackCmd'), preview: cmd('preview'), bend: cmd('bend'), modWheel: cmd('modWheel'), send: cmd('trackSend'), trackOut: cmd('trackOut'), trackLoad: cmd('trackLoad'), automation: cmd('automation'),
     masterLimit: (on) => { st.limOn = !!on; post('masterLimit', !!on); },   // output-stage safety limiter (also used by the mix export)
     pdc: (on) => { st.pdcOn = !!on; post('setPdc', !!on); },              // plugin delay compensation (also used by every export)
     pdcMs: () => { const sr = nat.on && nat.sink && nat.sink.sr ? nat.sink.sr : st.ctx ? st.ctx.sampleRate : 0; return sr && st.poll && st.poll.lat ? st.poll.lat / sr * 1000 : 0; },   // how far the heard output trails the song position

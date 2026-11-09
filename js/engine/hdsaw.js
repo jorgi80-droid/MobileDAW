@@ -24,7 +24,8 @@ const TABLES = 1024, TLEN = 2048, INDEX_SHIFT = 21, DITHER_SHIFT = 10, INC_FACTO
 const SUBSTEPS_LOG2 = 12, SUBSTEPS = 4096, OMEGA = 6.25, Y1_CLIP = 1e-5;
 const GAIN_SMOOTH = 0.01, DELAY_MAX_S = 2;
 // modulation targets (LFO Destination menu order, then the two only the mod wheel reaches)
-const M_CUT = 0, M_RES = 1, M_FREQ = 2, M_SYNC = 3, M_PW = 4, M_DET = 5, M_LEVEL = 6, M_PAN = 7;
+const M_CUT = 0, M_RES = 1, M_FREQ = 2, M_SYNC = 3, M_PW = 4, M_DET = 5, M_LEVEL = 6, M_PAN = 7, M_LFO_AMT = 8, M_LFO_RATE = 9;
+const WHEEL_TARGETS = [M_CUT, M_RES, M_SYNC, M_PW, M_DET, M_LEVEL, M_PAN, M_LFO_AMT, M_LFO_RATE];   // ModWheel Dest menu order
 const IDLE = 0, ATTACK = 1, DECAY = 2, RELEASE = 3;
 
 // FLM envelope time law: e = 2^x, six times e <- 2^(e - 1); T(x) = 2^(5e - 5) - 1 seconds (0 .. 31 s)
@@ -119,11 +120,11 @@ export class HdSuperSaw {
     this.p = new Float64Array(60); this.T = ssTables();
     this.v = Array.from({ length: MAX_VOICES }, (_, i) => newVoice(i));
     this.serial = 0; this.held = new Float64Array(128).fill(-1); this.heldN = 0; this.last = -1; this.tickPos = 0;
-    this.bendSt = 0; this.bpm = 120; this.beat = 0; this.lfoPh = 0; this.rng = { s: rngNew(0) };
+    this.bendSt = 0; this.wheel = 0; this.bpm = 120; this.beat = 0; this.lfoPh = 0; this.rng = { s: rngNew(0) };
     this.arp = { on: false, step: 0, timer: 0 };
     this.dlen = Math.trunc(DELAY_MAX_S * this.sr) + 1; this.dl = [new Float32Array(this.dlen), new Float32Array(this.dlen)]; this.dpos = 0; this.dz = new Float64Array(2);
     this.mixL = new Float64Array(TICK); this.mixR = new Float64Array(TICK); this.tail = 0;
-    this.c = { aA: 1, aD: 1, aS: 1, aR: 1, aRe: 1, fA: 1, fD: 1, fS: 1, fR: 1, sA: 1, sD: 1, sS: 1, sR: 1, shape: 0, mode: 0, dest: 0, amount: 0, step: 0, syncPh: 0, fade: 1, tune: 0, drive: 0, dnorm: 1, gain: 1, dframes: 1, fb: 0, mix: 0, dfilt: 1 };
+    this.c = { aA: 1, aD: 1, aS: 1, aR: 1, aRe: 1, fA: 1, fD: 1, fS: 1, fR: 1, sA: 1, sD: 1, sS: 1, sR: 1, shape: 0, mode: 0, dest: 0, wd: 0, wv: 0, amount: 0, step: 0, syncPh: 0, fade: 1, tune: 0, drive: 0, dnorm: 1, gain: 1, dframes: 1, fb: 0, mix: 0, dfilt: 1 };
     // defaults = FLM's (Honeydew DEFAULTS in MobileDAW units)
     const D = [0, 0, 0, 100, 0, 0, 20, 0, 50, 0, 0, 100, 0.001, 31, 1, 31, 0, 0, 100, 0, 0, 0, 0.001, 31, 1, 31, 0, 0, ssLfoHz(0), 11, 0, 0.001, 0, 0, 100, 0, 0.001, 31, 1, 0.014, 2, 0, 0, 4, 0, 0, 0, 1, 0, 1, 1, 0, 0, 0, 3, 40, 50, 0];   // = defs.js INSTRUMENTS[33] defaults (a fresh FLM SuperSaw)
     D.forEach((x, i) => { this.p[i] = x; });
@@ -139,19 +140,22 @@ export class HdSuperSaw {
   setBend(st) { this.bendSt = st / 2 * this.p[40]; }                            // the UI wheel sends +-2: scaled by PB Range
   setBendSl(st, sl) { this.bendSt = st / 2 * this.p[40] + sl; }
   setSongPos(playing, beat) { if (playing) this.beat = beat; }
+  setMod(v) { this.wheel = clamp(+v || 0, 0, 1); }                              // mod wheel 0..1: (ModWheel Amount) x wheel at the ModWheel Dest, from the next tick
   arpMode() { return clamp(Math.round(this.p[51]), 0, 5); }
   active() { if (this.heldN > 0 || this.tail > 0) return true; for (const v of this.v) if (v.amp.st !== IDLE) return true; return false; }
 
   // the tick's global state from the parameters, the tempo and the song position
   update() {
     const p = this.p, sr = this.sr, tr = sr / TICK, c = this.c;
-    const a = clamp(p[32] / 100, -1, 1), lfoBeats = syncBeats(p[29]), amt = clamp(p[52] / 100, 0, 1);
+    c.wd = WHEEL_TARGETS[clamp(Math.round(p[42]), 0, 8)]; c.wv = clamp(p[41] / 100, -1, 1) * this.wheel;   // FLM: (2 v58 - 1) x wheel, on FLM's 0..1 scale of the target
+    const a = 2 * clamp((clamp(p[32] / 100, -1, 1) + 1) / 2 + (c.wd === M_LFO_AMT ? c.wv : 0), 0, 1) - 1, lfoBeats = syncBeats(p[29]), amt = clamp(p[52] / 100, 0, 1);
     c.aA = swing(sec(p[36]), sr); c.aD = swing(sec(p[37]), sr); c.aS = clamp(p[38], 0, 1); c.aR = swing(sec(p[39]), sr);
     c.aRe = swing(Math.max(sec(p[36]), RE_ATTACK_MIN), sr);
     c.fA = swing(sec(p[22]), tr); c.fD = swing(sec(p[23]), tr); c.fS = clamp(p[24], 0, 1); c.fR = swing(sec(p[25]), tr);
     c.sA = swing(sec(p[12]), tr); c.sD = swing(sec(p[13]), tr); c.sS = clamp(p[14], 0, 1); c.sR = swing(sec(p[15]), tr);
     c.shape = clamp(Math.round(p[30]), 0, 3); c.mode = clamp(Math.round(p[27]), 0, 2); c.dest = clamp(Math.round(p[33]), 0, 7);
-    c.amount = a * Math.abs(a); c.step = clamp(p[28], 0.001, 100) * TICK / sr;
+    let hz = clamp(p[28], 0.001, 100); if (c.wd === M_LFO_RATE && c.wv !== 0) hz = ssLfoHz(1 - Math.cbrt(Math.max(0, (1 / hz - 0.033333) / 30)) + c.wv);   // the wheel moves FLM's rate knob
+    c.amount = a * Math.abs(a); c.step = hz * TICK / sr;
     const sp = this.beat / lfoBeats; c.syncPh = sp - Math.floor(sp);
     c.fade = swing(sec(p[31]), tr); c.tune = p[44] + this.bendSt;
     c.drive = amt > 0.005 ? Math.pow(10, 2 * amt) - 0.99 : 0; c.dnorm = c.drive > 0 ? 1 / Math.tanh(c.drive) : 1;
@@ -250,7 +254,7 @@ export class HdSuperSaw {
   // the tick's derived values: oscillator increments and tables, the ladder, the output targets
   compute(v) {
     const p = this.p, c = this.c, sr = this.sr;
-    const lfo = v.lfoFade * lfoShape(c.shape, v.lfoPh, v.lfoRnd) * c.amount, m = (k) => (c.dest === k ? lfo : 0);
+    const lfo = v.lfoFade * lfoShape(c.shape, v.lfoPh, v.lfoRnd) * c.amount, m = (k) => (c.wd === k ? c.wv : 0) + (c.dest === k ? lfo : 0);
     const f = 440 * Math.pow(2, (v.pitch - 69 + c.tune + 12 * m(M_FREQ)) / 12);
     let ugain = 1;
     if (p[1] > 0.5) {                                                            // Supersync: R = 1 + 5S slave periods, each a pair of saws

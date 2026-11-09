@@ -25,7 +25,7 @@ void Retire::drain() {
 void Strip::init(double v) {
   inst = nullptr; ev = nullptr; clips = nullptr; ndev = 0; for (auto& d : dev) d = nullptr;
   vol = v; pan = 0; gl = 0; gr = 0; send[0] = send[1] = 0; out = -1; mute = false; solo = false; mg = 1; sg0 = 0; sg1 = 0;
-  silent = 0; wasAudible = true; pitch = 0; bend = 0; ccl = nullptr; ccG = 1; ccP = 0;
+  silent = 0; wasAudible = true; pitch = 0; bend = 0; mod = 0; ccl = nullptr; ccG = 1; ccP = 0;
   for (int i = 0; i < 128; i++) tpMap[i] = (uint8_t)i;
   lat = 0; pd = 0; pdl.n = 0; pdl.w = 0; pdl.used = false; width = 1; sw = 1; pL = 1; pR = 1; inv = 0;   // core.js newStrip(): a fresh PdcLine (same storage)
   active = false; npre = 0; std::memset(bufL, 0, sizeof bufL); std::memset(bufR, 0, sizeof bufR); peakL = 0; peakR = 0; nPan = 0;
@@ -121,7 +121,7 @@ void Engine::trackInst(int t, Instrument* inst) {
   if (!ok(t) || t >= MASTER) { retire.put(inst); return; }
   retire.put(s[t].inst);
   s[t].inst = inst;
-  if (inst) { inst->setTempo(bpm); if (inst->pitchNative) inst->setParam(90, s[t].pitch); }
+  if (inst) { inst->setTempo(bpm); if (inst->pitchNative) inst->setParam(90, s[t].pitch); if (s[t].mod != 0) inst->setMod(s[t].mod); }
 }
 void Engine::setPitch(int t, double v) {
   if (!ok(t) || t >= MASTER) return;
@@ -191,6 +191,7 @@ void Engine::bend(int t, double st0, double sl0) {
   if (st.inst && st.inst->hasSetBend()) { if (sl != 0) st.inst->setBendSl(x, sl); else st.inst->setBend(tot); return; }
   if (st.inst && st.inst->canBend() && r != 1) st.inst->bendSounding(r);
 }
+void Engine::modWheel(int t, double v) { if (!ok(t) || t >= MASTER) return; Strip& st = s[t]; st.mod = clamp(v == v ? v : 0, 0, 1); if (st.inst) st.inst->setMod(st.mod); }
 void Engine::bendNew(Strip& st) { double r = std::pow(2, st.bend / 12); st.inst->bendNewest(r); }
 void Engine::preview(int t, int pitch, double vel, bool on) {
   if (ok(t) && t < MASTER && s[t].inst && s[t].npre < 64) { s[t].pre[s[t].npre++] = { pitch, vel, on }; }
@@ -201,7 +202,7 @@ void Engine::trackCC(int t, CCData* d) {
   retire.put(s[t].ccl); s[t].ccl = d;
   if (!s[t].ccl) ccReset(s[t], t);
 }
-void Engine::ccReset(Strip& st, int t) { st.ccG = 1; st.ccP = 0; if (st.bend) bend(t, 0); }
+void Engine::ccReset(Strip& st, int t) { st.ccG = 1; st.ccP = 0; if (st.bend) bend(t, 0); if (st.mod != 0) modWheel(t, 0); }
 double Engine::ccAt(const CCLane& l, double tick) {
   int n = (int)l.t.size(); if (tick <= l.t[0]) return l.v[0]; if (tick >= l.t[n - 1]) return l.v[n - 1];
   int a = 0, b = n - 1; while (b - a > 1) { int m = (a + b) >> 1; if (l.t[m] <= tick) a = m; else b = m; }
@@ -213,6 +214,7 @@ void Engine::applyCC(Strip& st, int idx, double tick) {
   double g = 1; if (c->lane[1]) g *= clamp(ccAt(*c->lane[1], tick) / 127, 0, 1); if (c->lane[3]) g *= clamp(ccAt(*c->lane[3], tick) / 127, 0, 1); if (c->lane[5]) g *= clamp(ccAt(*c->lane[5], tick), 0, 4);
   double p = c->lane[2] ? clamp((ccAt(*c->lane[2], tick) - 64) / 63, -1, 1) : 0; if (c->lane[6]) p = clamp(p + clamp(ccAt(*c->lane[6], tick), -2, 2), -1, 1);
   st.ccG = g; st.ccP = p;
+  if (c->lane[7]) { double m = clamp(ccAt(*c->lane[7], tick) / 127, 0, 1); if (std::fabs(m - st.mod) > 1e-4) modWheel(idx, m); }
 }
 void Engine::trackClips(int t, ClipData* d) { if (!ok(t) || t >= MASTER) { retire.put(d); return; } retire.put(s[t].clips); s[t].clips = d; }
 void Engine::automation(LaneData* d) { retire.put(lanes); lanes = d; }

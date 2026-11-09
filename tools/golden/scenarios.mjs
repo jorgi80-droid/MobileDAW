@@ -263,6 +263,19 @@ export const SCENARIOS = [
       }
       e.play(); play(e, 8, [128, 77, 256]);
     } },
+  { name: 'core-modwheel', info: 'Mod wheel (modWheel command and trackCC kind 7 = CC1): FLM SuperSaw ModWheel Amount / Dest to Cutoff, Pulse Width, Unison Detune, Level, LFO Amount and LFO Rate; a wheel lane on a second SuperSaw; instrument re-created while the wheel is up',
+    run(e) {
+      e.tempo(120); e.trackInst(0, 33); e.trackInst(1, 33);
+      const P = (t, k, v) => e.instParam(t, k, v);
+      P(0, 18, 40); P(0, 19, 50); P(0, 41, 80); P(0, 5, 4); P(0, 0, 1); P(0, 32, 50); P(0, 28, 2);
+      const f = []; for (let k = 0; k < 6; k++) f.push(k * PPQ * 2, PPQ * 1.8, 52 + k, 0.8, 0); e.trackNotes(0, f, 6); e.trackNotes(1, f, 6);
+      P(1, 42, 0); P(1, 41, -60); P(1, 18, 70);
+      e.trackCC(1, [0, 7, 0, PPQ * 4, 7, 127, PPQ * 8, 7, 30, PPQ * 12, 7, 90], 4);
+      e.play();
+      for (const [dest, w] of [[0, 1], [3, 0.6], [4, 1], [5, 0.5], [7, 1], [8, 0.8]]) { P(0, 42, dest); e.modWheel(0, w); play(e, 0.5, [128, 77]); e.modWheel(0, 0.2); play(e, 0.3); }
+      e.modWheel(0, 0.9); e.trackInst(0, 33); P(0, 41, 100); P(0, 42, 0); P(0, 18, 30); play(e, 0.6, [128, 256]);
+      e.trackCC(1, [], 0); play(e, 0.4);
+    } },
   { name: 'inst-drumpitch', info: 'Drum Sampler per-step pitch (stride-6 note events, step graph Pitch lane): sample pad and built-in pads hit at -12 / -5 / 0 / +7 / +12 semitones, pan per step, old stride-5 track next to it',
     run(e) {
       samples(e); testSample(e); e.tempo(120); e.trackInst(0, 3); e.trackInst(1, 3);

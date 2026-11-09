@@ -72,7 +72,7 @@ export function render() {
       h('button', { class: 'kb-a', 'aria-label': 'Oktaf naik', disabled: octave >= 8 - nOct ? '' : null, onclick: () => step(1) }, '\u203a')),
     sc ? h('button', { class: 'kb-sw' + (prefs.keysScale !== false ? ' on' : ''), onclick: () => { prefs.keysScale = prefs.keysScale === false; savePrefs(); render(); } }, 'Skala ' + NAMES[th.key] + ' ' + th.scale) : h('span', { class: 'kb-sub' }, 'Kromatik (skala diatur di Clip View)'),
     modeSeg(), h('span', { class: 'grow' }), h('span', { class: 'kb-sub' }, 'Ketuk lebih ke bawah = lebih keras'));
-  root.replaceChildren(bar, h('div', { class: 'kb-body' }, bendWheel(i), keys));
+  root.replaceChildren(bar, h('div', { class: 'kb-body' }, bendWheel(i), modWheel(i), keys));
 }
 
 // ---- keyboard modes (FL Studio Mobile Controllers): Classic, Scale (only the notes of the Clip View key / scale, as equal keys), Chord (one
@@ -127,7 +127,7 @@ function renderAlt(i, t, col, mode) {
       body.append(strip);
     }
   }
-  root.replaceChildren(bar, h('div', { class: 'kb-body' }, bendWheel(i), body));
+  root.replaceChildren(bar, h('div', { class: 'kb-body' }, bendWheel(i), modWheel(i), body));
 }
 const clampMs = (v) => ([15, 35, 70].includes(+v) ? +v : 35);
 
@@ -147,6 +147,22 @@ function bendWheel(track) {
     raf = requestAnimationFrame(back);
   };
   wheel.addEventListener('pointerup', up); wheel.addEventListener('pointercancel', up);
+  show();
+  return wheel;
+}
+
+// Mod wheel (FL Studio Mobile "Mod & Pitch Bend" beside the keyboard): drag up / down = 0..100 %, it stays where it is left (MIDI CC1 moves it too)
+function modWheel(track) {
+  const t = P.state.tracks[track], fill = h('div', { class: 'pbw-fill' }), thumb = h('div', { class: 'pbw-thumb' }), lab = h('div', { class: 'pbw-l' }, 'Mod');
+  const wheel = h('div', { class: 'pbw mdw', 'aria-label': 'Mod wheel' }, h('div', { class: 'pbw-slot' }, fill, thumb), lab);
+  let v = t ? P.modPos.get(t.id) || 0 : 0, down = false;
+  const show = () => { thumb.style.top = `calc(14px + (100% - 28px) * ${(1 - v).toFixed(4)})`; fill.style.height = v > 0 ? `calc(14px + (100% - 28px) * ${v.toFixed(4)})` : "0"; thumb.classList.toggle('on', v > 0); };   // the thumb stays inside the slot at 0 and 100 %
+  const at = (e) => { const r = wheel.querySelector('.pbw-slot').getBoundingClientRect(); v = Math.max(0, Math.min(1, 1 - (e.clientY - r.top - 14) / Math.max(1, r.height - 28))); if (v < 0.02) v = 0; show(); P.setMod(track, v); };
+  wheel.addEventListener('pointerdown', (e) => { e.preventDefault(); down = true; wheel.setPointerCapture(e.pointerId); at(e); });
+  wheel.addEventListener('pointermove', (e) => { if (down) at(e); });
+  for (const n of ['pointerup', 'pointercancel']) wheel.addEventListener(n, () => { down = false; });
+  wheel.addEventListener('dblclick', () => { v = 0; show(); P.setMod(track, 0); });
+  const off = P.onChange((w) => { if (!wheel.isConnected) { if (w !== 'mod') off(); return; } if (w === 'mod' && !down && t) { v = P.modPos.get(t.id) || 0; show(); } });   // unsubscribes once the keyboard is re-rendered
   show();
   return wheel;
 }

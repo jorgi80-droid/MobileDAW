@@ -60,6 +60,7 @@ const nativeEng = {
   devParam: (t, d, p, v) => call('devParam', t, d, p, v), devBypass: (t, d, b) => call('devBypass', t, d, b), rackCmd: (t, d, op, c, j, a, b) => call('rackCmd', t, d, op, c, j, a, b),
   preview: (t, pitch, vel, on) => call('preview', t, pitch, vel, on),
   bend: (t, st) => call('bend', t, st),
+  modWheel: (t, v) => call('modWheel', t, v),
   send: (t, idx, v) => call('trackSend', t, idx, v), automation: (flat, n) => call('automation', flat, n),
   devOut: (t, d) => call('devOut', t, d),
   poll: () => call('poll'),
