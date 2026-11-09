@@ -1317,3 +1317,16 @@ html.reduce-motion .menu, html.reduce-motion .modal, html.reduce-motion .fw, htm
 .lk:not(.lk-dense) .knob.lk-k { width: max-content !important; min-width: 56px; }
 .lk:not(.lk-dense) .knob.lk-k .k-n, .lk:not(.lk-dense) .knob.lk-k .k-v { white-space: nowrap; overflow: visible; max-width: none; width: auto; }
 .lk:not(.lk-dense) { padding-left: 9px !important; padding-right: 11px !important; }
+/* Compressor (Live): the display box fills the middle column (height and width), the strip's view icons are unboxed with thin
+   separators, Knee / Look / Env in one line; Makeup top, Peak / RMS / Expand, Dry/Wet bottom; Ratio / Attack / Release, Auto bottom */
+.lk .lk-cmpd { width: auto !important; flex: 1 1 auto; align-self: stretch !important; padding: 0 !important; gap: 0 !important; overflow: hidden; }
+.lk .lk-cmpd > .lk-dfill { border-radius: 0; min-width: 330px; }
+.lk .lk-cmpd .lk-ceqs { gap: 0 !important; padding: 0 6px 0 0 !important; height: 26px; border-top: 1px solid #3a3a3e; background: #232325; }
+.lk .lk-cmpd .lk-ceqs .lv-btn.lk-vbtn { width: 30px; height: 26px; border: 0 !important; border-right: 1px solid #3a3a3e !important; border-radius: 0; background: transparent !important; color: #8e8e94; box-shadow: none !important; }
+.lk .lk-cmpd .lk-ceqs .lv-btn.lk-vbtn.on { color: #fdb443 !important; }
+.lk .lk-cmpd .lk-ceqs .lk-ln { gap: 5px; margin-left: 10px; }
+.lk .lk-cmpd .lk-ceqs .lk-ln > span { color: #9a9aa2; font-size: 13px; }
+.lk-cmp > .lk-col:last-child { justify-content: flex-start; gap: 10px; }
+.lk-cmp > .lk-col:last-child > .lk-ch { margin-top: 8px; }
+/* Compressor: the meters as framed columns (Live) and the panel a little shorter than the rack, like Live's card */
+.lk-cmp .lk-cmpd { margin: 2px 0 4px; }

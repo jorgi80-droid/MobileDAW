@@ -285,13 +285,15 @@ V[4] = (k) => {
   let o = [0, -80, -80], grs = 0, pi = -80, po = -80, view = 1; const hist = new Float32Array(160), hin = new Float32Array(160); let hw = 0;
   // symmetric layout, measured from both edges: [In pair + arrow] gap [curve] gap [GR] gap [Out pair + arrow]; labels centred above the
   // meters, dB values centred under them, the same margin left and right
-  const M = 13, PW = 18, AW = 9, GW = 12, GAP = 10;
-  const geo = (w) => { const inX = M, outX = w - M - AW - PW, grX = outX - GAP - GW, L0 = inX + PW + AW + GAP, W0 = view === 0 ? 0 : grX - GAP - L0; return { inX, outX, grX, L0, W0 }; };
-  const disp = k.D(352, 182, (g, w, hh) => {
-    const T = 22, Bt = hh - 22, yd = (db) => T + ((Math.min(6, Math.max(-60, db)) - 6) / -66) * (Bt - T), { inX, outX, grX, L0, W0 } = geo(w), cx = (db) => L0 + ((db + 60) / 60) * W0;
+  // Live's proportions: labels 13 px over the meters, the dB values under them, a SQUARE transfer grid right after the input meter, GR and
+  // Out at the right edge; the display fills the whole middle column (DF)
+  const M = 12, PW = 22, AW = 10, GW = 14, GAP = 12; let cw = 352, ch = 182;
+  const geo = (w, hh = ch) => { const inX = M, outX = w - M - AW - PW, grX = outX - GAP - GW, L0 = inX + PW + AW + GAP, room = grX - GAP - L0, W0 = view === 0 ? 0 : room; return { inX, outX, grX, L0, W0 }; };
+  const disp = k.DF(330, 170, (g, w, hh) => {
+    cw = w; ch = hh; const T = 26, Bt = hh - 24, yd = (db) => T + ((Math.min(6, Math.max(-60, db)) - 6) / -66) * (Bt - T), { inX, outX, grX, L0, W0 } = geo(w, hh), cx = (db) => L0 + ((db + 60) / 60) * W0;
     const thr = k.get(0), ratio = Math.max(1, k.get(1)), knee = Math.max(0.01, k.get(5)), mode = Math.round(k.get(7));
     const tf = (x) => { if (mode === 2) return x < thr ? thr + (x - thr) * ratio : x; const over = x - thr, slope = 1 / ratio - 1; let r = 0; if (2 * over > knee) r = slope * over; else if (2 * over > -knee) r = slope * (over + knee / 2) * (over + knee / 2) / (2 * knee); return x + r; };
-    const pair = (x, v, pk, arrowDb) => { g.fillStyle = '#121214'; g.fillRect(x, T - 1, PW, Bt - T + 2); for (const xx of [x + 1, x + PW / 2 + 0.5]) { const yt = yd(v); if (Bt - yt > 0.5) { const gr = g.createLinearGradient(0, yt, 0, Bt); gr.addColorStop(0, '#8af0a8'); gr.addColorStop(1, '#3fb46a'); g.save(); g.shadowColor = 'rgba(95,208,138,.7)'; g.shadowBlur = 7; g.fillStyle = gr; g.fillRect(xx, yt, PW / 2 - 1.5, Bt - yt); g.restore(); } g.fillStyle = '#d8f8e0'; g.fillRect(xx, Math.round(yd(pk)), PW / 2 - 1.5, 1.2); }
+    const pair = (x, v, pk, arrowDb) => { g.fillStyle = '#121214'; g.fillRect(x, T - 1, PW, Bt - T + 2); g.fillStyle = 'rgba(255,255,255,.16)'; for (let v = 0; v >= -54; v -= 6) g.fillRect(x + PW / 2 - 0.5, Math.round(yd(v)), 1, 1); for (const xx of [x + 1, x + PW / 2 + 0.5]) { const yt = yd(v); if (Bt - yt > 0.5) { const gr = g.createLinearGradient(0, yt, 0, Bt); gr.addColorStop(0, '#8af0a8'); gr.addColorStop(1, '#3fb46a'); g.save(); g.shadowColor = 'rgba(95,208,138,.7)'; g.shadowBlur = 7; g.fillStyle = gr; g.fillRect(xx, yt, PW / 2 - 1.5, Bt - yt); g.restore(); } g.fillStyle = '#d8f8e0'; g.fillRect(xx, Math.round(yd(pk)), PW / 2 - 1.5, 1.2); }
       const ay = yd(arrowDb), ax = x + PW + 2; g.fillStyle = '#c8c8ce'; g.beginPath(); g.moveTo(ax, ay); g.lineTo(ax + AW - 2, ay - 4.5); g.lineTo(ax + AW - 2, ay + 4.5); g.closePath(); g.fill(); };
     pair(inX, o[1], pi, thr);
     if (view === 1) {                                                         // transfer curve on a 6 dB grid
@@ -307,11 +309,11 @@ V[4] = (k) => {
     }
     g.fillStyle = '#121214'; g.fillRect(grX, T - 1, GW, Bt - T + 2); g.save(); g.shadowColor = 'rgba(255,173,50,.7)'; g.shadowBlur = 7; g.fillStyle = '#ffad32'; g.fillRect(grX + 1, T, GW - 2, Math.min(Bt - T, grs * (Bt - T) / 24)); g.restore();
     pair(outX, o[2], po, k.get(4));
-    const top = T - 8, mid = (x, ww) => x + ww / 2;
-    label(g, 'Thresh', mid(inX, PW), top, DISPC.ink, 10, 'center'); label(g, 'GR', mid(grX, GW), top, DISPC.ink, 10, 'center'); label(g, 'Out', mid(outX, PW), top, DISPC.ink, 10, 'center');
-    if (view === 2) label(g, 'Activity', mid(L0, W0), top, DISPC.ink, 10, 'center');
-    label(g, thr.toFixed(1) + ' dB', Math.max(28, mid(inX, PW)), hh - 7, DISPC.ink, 10, 'center'); label(g, k.get(4).toFixed(2) + ' dB', Math.min(w - 28, mid(outX, PW)), hh - 7, DISPC.ink, 10, 'center');
-  }, { onDown: (x) => ({ x, t: k.get(0), o: k.get(4) }), onMove: (x, y, dx, dy, s) => { if (s.x > geo(352).grX - 4) k.set(4, Math.max(k.def.params[4].min, Math.min(k.def.params[4].max, s.o - dy * 0.2))); else k.set(0, Math.max(-60, Math.min(0, s.t - dy * 0.4))); } });
+    const top = T - 9, mid = (x, ww) => x + ww / 2;
+    label(g, 'Thresh', inX + 2, top, DISPC.ink, 13); label(g, 'GR', mid(grX, GW), top, DISPC.ink, 13, 'center'); label(g, 'Out', mid(outX, PW), top, DISPC.ink, 13, 'center');
+    if (view === 2) label(g, 'Activity', mid(L0, W0), top, DISPC.ink, 13, 'center');
+    label(g, thr.toFixed(1) + ' dB', inX, hh - 7, DISPC.ink, 13); label(g, k.get(4).toFixed(2) + ' dB', w - M, hh - 7, DISPC.ink, 13, 'right');
+  }, { onDown: (x) => ({ x, t: k.get(0), o: k.get(4) }), onMove: (x, y, dx, dy, s) => { if (s.x > geo(cw).grX - 4) k.set(4, Math.max(k.def.params[4].min, Math.min(k.def.params[4].max, s.o - dy * 0.2))); else k.set(0, Math.max(-60, Math.min(0, s.t - dy * 0.4))); } });
   let tg = [0, -80, -80], fr = 0; k.every(16, () => { if (fr++ % 3 === 0) { const r = k.out(); if (r.length) tg = r; hist[hw] = grs; hin[hw] = o[1]; hw = (hw + 1) % hist.length; } o = [glide(o[0], tg[0]), glide(o[1], tg[1]), glide(o[2], tg[2])]; grs = glide(grs, tg[0], 0.4, 0.12); pi = Math.max(pi - 0.35, o[1]); po = Math.max(po - 0.35, o[2]); disp.paint(); });
   // the three view buttons of Live's display strip (collapsed = meters only, transfer curve, activity)
   const ICON = ['<rect x="3" y="3" width="3" height="10"/><rect x="8" y="6" width="3" height="7"/>', '<path d="M2 13 L8 7 L14 4" fill="none" stroke="currentColor" stroke-width="1.8"/>', '<path d="M1 10 L3 6 L5 11 L7 4 L9 9 L11 5 L13 10 L15 7" fill="none" stroke="currentColor" stroke-width="1.4"/>'];
