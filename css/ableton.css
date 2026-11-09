@@ -1459,3 +1459,16 @@ html.reduce-motion .menu, html.reduce-motion .modal, html.reduce-motion .fw, htm
 .lk.lk-drift .knob.lk-k .k-n, .lk.lk-drift .knob.lk-k .k-v { font-size: 13px !important; line-height: 14px; height: 14px; }
 .lk.lk-drift .lk-dlb { padding: 2px 6px; }
 .lk.lk-drift .lk-st { font-size: 14px; }
+/* Drift columns: box / display / box share ONE width (Live), contents spread evenly, "1" / "2" at the left edge */
+.lk.lk-drift .lk-dlfo3 { align-items: stretch !important; justify-content: space-between !important; flex: 1 1 auto; }
+.lk.lk-drift .lk-dlfo3 > * { align-self: stretch !important; width: auto !important; margin: 0 !important; }
+.lk.lk-drift .lk-dlfo3 > .lk-dlb { justify-content: space-between !important; padding: 3px 8px !important; }
+.lk.lk-drift .lk-denv > .lk-dlb > .lk-row { justify-content: space-between !important; width: 100%; }
+.lk.lk-drift .lk-denv > .lk-dlb.lk-row { justify-content: space-between !important; }
+.lk.lk-drift > .lk-dlfo { align-items: stretch !important; }
+.lk.lk-drift > .lk-dlfo > .lk-page { display: flex; flex: 1 1 auto; align-items: stretch; }
+.lk.lk-drift .lk-denv .lk-st.c { text-align: center; align-self: center !important; }
+.lk.lk-drift .lk-dlfod .lk-dfill, .lk.lk-drift .lk-dlfod > .lv-disp { flex: 1 1 auto; }
+.lk.lk-drift .lk-denv .lk-dlfod > .lv-disp { width: auto !important; flex: 1 1 auto; }
+.lk.lk-drift .lk-dlfo .lk-dlfo3 > .lk-dlb { justify-content: center !important; gap: 8px !important; }
+.lk.lk-drift .lk-denv > .lk-dlb { gap: 0 !important; }
