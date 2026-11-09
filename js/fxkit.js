@@ -1118,7 +1118,7 @@ VI[17] = (k) => {
         ...MELD_TGT.flatMap((tn, t) => [h('span', { class: 'lk-pgt' }, tn), ...MELD_SRC.map((_, s2) => k.NT(b + t * 5 + s2, { w: 50 }))]))); };
   function fill() {
     const e = st.tab;
-    const body = e === 2 ? grid() : k.col(k.row(lvChoice([{ label: 'Envelopes' }, { label: 'LFOs' }], () => st.sub, (j) => { st.sub = j; fill(); }, { cls: 'lk-ch cy lk-msub' })),
+    const body = e === 2 ? grid() : k.col(k.row(lvTabs([{ label: 'Envelopes' }, { label: 'LFOs' }], st.sub, (j) => { st.sub = j; fill(); }, { cls: 'lk-msub' })),
       st.sub === 0 ? k.row(env(e, B(e) + O.aenv, 'A Env'), k.sep(), env(e, B(e) + O.menv, 'M Env')) : lfos(e));
     centre.replaceChildren(lvTabs([{ label: 'A' }, { label: 'B' }, { label: 'Settings' }], st.tab, (j) => { st.tab = j; fill(); }, { cls: 'lk-tabs lk-mtabs' }), k.dk(body));
   }

@@ -95,7 +95,7 @@ for (const [kind, t] of jobs) {
   const on0 = await ev(([kind]) => { const cs = [...document.querySelectorAll('.dev-scroll > .card')].filter((c) => c.querySelector(':scope > h4')), card = kind === 'inst' ? cs[0] : cs[cs.length - 1]; return card ? [...card.querySelectorAll(':scope > h4 > .lk-htabs .lv-tab')].findIndex((b) => b.classList.contains('on')) : 0; }, [kind]);
   for (let j = 0; j < nTabs; j++) {
     if (j === on0) continue;
-    await ev(([kind, j]) => { const cs = [...document.querySelectorAll('.dev-scroll > .card')].filter((c) => c.querySelector(':scope > h4')), card = kind === 'inst' ? cs[0] : cs[cs.length - 1]; const b = card.querySelectorAll(':scope > h4 > .lk-htabs .lv-tab')[j]; b.click(); }, [kind, j]);
+    await ev(([kind, j]) => { const cs = [...document.querySelectorAll('.dev-scroll > .card')].filter((c) => c.querySelector(':scope > h4')), card = kind === 'inst' ? cs[0] : cs[cs.length - 1]; const b = card.querySelectorAll(':scope > h4 > .lk-htabs .lv-tab')[j]; if (b) b.click(); }, [kind, j]);
     await page.waitForTimeout(300);
     const q = await ev(measure, [kind, t]);
     r.pages.push({ zoom: q.zoom, need: q.hNeed, n: q.n, usedH: q.usedH, fonts: q.fonts.map((f) => f[0]) });
