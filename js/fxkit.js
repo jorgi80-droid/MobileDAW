@@ -57,9 +57,34 @@ const grid = (g, w, hh) => { g.fillStyle = 'rgba(255,255,255,.05)'; for (let dec
 const label = (g, t, x, y, col = DISPC.ink, sz = 9, al = 'left') => { g.fillStyle = col; g.font = `600 ${sz}px system-ui,sans-serif`; g.textAlign = al; g.textBaseline = 'alphabetic'; g.fillText(t, x, y); g.textAlign = 'left'; };
 
 // ---- the kit: controls bound to device parameters (a bipolar knob gets Live's small centre triangle above its dial) ---------
+const EZ_ID = new Map(), EZ_OBJ = new WeakMap();
+function easeMap(d) {
+  if (d && d.id != null) { let m = EZ_ID.get(d.id); if (!m) { if (EZ_ID.size > 300) EZ_ID.clear(); m = new Map(); EZ_ID.set(d.id, m); } return m; }
+  if (d && typeof d === 'object') { let m = EZ_OBJ.get(d); if (!m) { m = new Map(); EZ_OBJ.set(d, m); } return m; }
+  return new Map();
+}
 function kit(ctx) {
   const { i, di, d, def } = ctx, draws = [], ctls = [];
-  const get = (k) => d.params[k];
+  // fluid displays: while a display paints (inDraw), a continuous parameter reads a value that glides to the real one in about 60 ms on the
+  // knob's own scale (log knobs glide evenly in octaves), so curves / envelopes / waveforms morph instead of jumping on presets, menus,
+  // automation, undo and drags. Menus and switches stay exact. Off with Reduce motion.
+  const ez = easeMap(d); let drawing = 0, need = false, raf = 0, lastT = 0;   // kept per device: a panel rebuilt after a change still glides from where it was
+  const easeable = (p) => p && typeof p.min === 'number' && typeof p.max === 'number' && p.max > p.min && p.fmt !== 'list' && p.fmt !== 'onoff' && !p.items && !(p.step >= 1 && p.max - p.min <= 16);
+  const get = (k) => {
+    const v = d.params[k];
+    if (!drawing || typeof v !== 'number' || !def.params) return v;
+    const p = def.params[k]; if (!easeable(p)) return v;
+    const t = normOf(p, v), e = ez.get(k);
+    if (e === undefined || calm() || Math.abs(e - t) < 1e-4) { ez.set(k, t); return v; }
+    need = true; return valOf(p, e);
+  };
+  const step = (now) => {
+    raf = 0; const dt = Math.min(0.05, Math.max(0.001, (now - (lastT || now - 16)) / 1000)); lastT = now;
+    const f = 1 - Math.exp(-dt / 0.06);
+    for (const [k, e] of ez) { const p = def.params[k], v = d.params[k]; if (!p || typeof v !== 'number') { ez.delete(k); continue; } const t = normOf(p, v); ez.set(k, Math.abs(t - e) < 1e-4 ? t : e + (t - e) * f); }
+    redraw();
+  };
+  const inDraw = (fn) => { drawing++; need = false; try { fn(); } finally { drawing--; } if (need && !raf) { if (!lastT || performance.now() - lastT > 100) lastT = 0; raf = requestAnimationFrame(step); } };
   const redraw = () => { for (const f of draws) f(); };
   const set = (k, v) => { if (ctx.setParam) ctx.setParam(k, v); else P.setDeviceParam(i, di, k, v); redraw(); for (const c of ctls) if (c.update && c._k !== k) c.update(); };
   const auto = (k) => (ctx.autoFn ? ctx.autoFn(k) : ctx.nested ? null : (rect) => offerAutomation(rect, { kind: 4, strip: P.stripOf(i), devId: d.id, param: k, def: def.params[k] }, `${def.name} ${def.params[k].n}`));   // devices inside a rack have no automation lanes (map them to a macro)
@@ -77,10 +102,10 @@ function kit(ctx) {
   const dk = (...kids) => h('div', { class: 'lk-dk' }, ...kids.filter(Boolean));                // dark display area holding controls
   const LN = (text, el) => h('div', { class: 'lk-ln' }, h('span', {}, text), el);           // label left, control right (Live rows like "Freq [5.08 kHz]")
   const TL = (text, ...kids) => h('div', { class: 'lk-tl' }, h('span', { class: 'lk-lb' }, text), ...kids);   // title above a control
-  const D = (w, hh, draw, drag) => { const c = lvDisp(w, hh, (g) => draw(g, w, hh)); c.classList.add('lk-d', w * hh < 26000 ? 'lk-dsm' : 'lk-dbig'); draws.push(() => c.paint()); if (drag) lvDrag(c, drag); return c; };
+  const D = (w, hh, draw, drag) => { const c = lvDisp(w, hh, (g) => inDraw(() => draw(g, w, hh))); c.classList.add('lk-d', w * hh < 26000 ? 'lk-dsm' : 'lk-dbig'); draws.push(() => c.paint()); if (drag) lvDrag(c, drag); return c; };
   // DF: a display that fills the free room of its column (min size w x hh): draw(g, w, hh) gets the REAL size, the canvas follows its box
   const DF = (w, hh, draw, drag) => {
-    const wrap = h('div', { class: 'lk-dfill', style: `min-width:${w}px;min-height:${hh}px` }), c = lvDisp(w, hh, (g, cw, ch) => draw(g, cw, ch));
+    const wrap = h('div', { class: 'lk-dfill', style: `min-width:${w}px;min-height:${hh}px` }), c = lvDisp(w, hh, (g, cw, ch) => inDraw(() => draw(g, cw, ch)));
     c.classList.add('lk-dfc'); wrap.append(c); wrap.paint = () => c.paint(); draws.push(() => c.paint()); if (drag) lvDrag(c, drag);
     const ro = new ResizeObserver(() => { const cw = wrap.clientWidth, ch = wrap.clientHeight; if (cw > 20 && ch > 20 && (cw !== c._w || ch !== c._h)) c.resize(cw, ch); }); ro.observe(wrap);
     return wrap;
@@ -95,7 +120,7 @@ function kit(ctx) {
   const swap = (k, on, off) => { const box = h('div', { class: 'lk-swap' }); const fill = () => box.replaceChildren(get(k) > 0.5 ? on() : off()); fill(); draws.push(() => { const want = get(k) > 0.5; if (box._on !== want) { box._on = want; fill(); } }); box._on = get(k) > 0.5; return box; };
   // like swap, for a list parameter: fn(value) builds the content (Spectral Time: Time / Notes / 16th knob by Mode)
   const swapN = (k, fn) => { const box = h('div', { class: 'lk-swap' }); let cur = null; const fill = () => { const v = Math.round(get(k)); if (v !== cur) { cur = v; box.replaceChildren(fn(v)); } }; fill(); draws.push(fill); return box; };
-  return { ctx, d, def, get, set, K, swapN, T, CY, CH, S, N, NT, dk, LN, TL, D, DF, sec, row, col, sep, every, out, swap, redraw, reg, auto };
+  return { ctx, d, def, get, set, inDraw, K, swapN, T, CY, CH, S, N, NT, dk, LN, TL, D, DF, sec, row, col, sep, every, out, swap, redraw, reg, auto };
 }
 // filter (band) display with a draggable ring: x = freq, y = width (or Q); used by the delays, Beat Repeat, Erosion, Vinyl
 function bandDisp(k, w, hh, kf, kw, o = {}) {

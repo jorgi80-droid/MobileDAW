@@ -1583,3 +1583,10 @@ html.reduce-motion .menu, html.reduce-motion .modal, html.reduce-motion .fw, htm
 .kb-body .pbw.mdw { margin-left: -4px; }
 .pbw-fill { position: absolute; left: 0; right: 0; bottom: 0; background: color-mix(in srgb, var(--lv-arc, #62cffa) 45%, transparent); border-radius: 0 0 var(--r-2) var(--r-2); pointer-events: none; }
 .pbw.mdw .pbw-thumb { margin-top: -13px; }
+/* fluid page changes: a device tab page (title-bar tabs, FLM pages, Live's own pages) glides in when it is shown */
+@keyframes lkPageIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
+.lk-tabpg, .flm-pg > *, .lk-page > * { animation: lkPageIn .2s cubic-bezier(.2, .8, .2, 1); }
+html.reduce-motion .lk-tabpg, html.reduce-motion .flm-pg > *, html.reduce-motion .lk-page > * { animation: none; }
+@media (prefers-reduced-motion: reduce) { .lk-tabpg, .flm-pg > *, .lk-page > * { animation: none; } }
+/* switches and choice buttons: the lit state fades instead of snapping */
+.lk .lv-btn, .flm-card .lv-btn { transition: background-color .16s ease, color .16s ease, border-color .16s ease, transform .14s cubic-bezier(.3, 1.6, .5, 1); }

@@ -192,8 +192,18 @@ export function knob(p, get, set, fmt, color = null, onLong = null) {
   track.setAttribute('d', arc(20, 20, 15.5, A0, A1));
   const vEl = h('div', { class: 'k-v' }), nEl = h('div', { class: 'k-n' + (String(p.n).length > 9 ? ' long' : ''), title: p.n }, p.n);
   const root = h('div', { class: 'knob' }, nEl, svg, vEl);
-  const draw = () => {
+  // paintAt draws the dial at position n (0..1) with the text of value v; a change from outside (preset, automation, undo, another control)
+  // glides there in 140 ms (update), a drag or a tap shows it at once (draw). Reduce motion: always at once.
+  let shown = null, tw = 0;
+  const draw = () => { cancelAnimationFrame(tw); tw = 0; const v = get(); shown = toNorm(p, v); paintAt(shown, v); };
+  const glideTo = () => {
     const v = get(), n = toNorm(p, v);
+    if (shown === null || start || Math.abs(n - shown) < 0.004 || document.documentElement.classList.contains('reduce-motion') || (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) || !root.isConnected) { draw(); return; }
+    const from = shown, t0 = performance.now(); cancelAnimationFrame(tw);
+    const f = (now) => { const x = Math.min(1, (now - t0) / 140), e = 1 - Math.pow(1 - x, 3); shown = from + (n - from) * e; paintAt(shown, v); tw = x < 1 ? requestAnimationFrame(f) : 0; };
+    tw = requestAnimationFrame(f);
+  };
+  const paintAt = (n, v) => {
     const bipolar = p.min < 0 && p.max > 0 && !p.curve;
     const a = A0 + n * (A1 - A0), z = A0 + toNorm(p, 0) * (A1 - A0);
     val.setAttribute('d', bipolar ? (Math.abs(a - z) > 0.6 ? arc(20, 20, 15.5, Math.min(a, z), Math.max(a, z)) : '') : (n > 0.002 ? arc(20, 20, 15.5, A0, a) : ''));
@@ -236,7 +246,7 @@ export function knob(p, get, set, fmt, color = null, onLong = null) {
   };
   root.addEventListener('pointerup', end);
   root.addEventListener('pointercancel', () => { if (start) clearTimeout(start.timer); root.classList.remove('act'); start = null; });
-  root.update = draw;
+  root.update = glideTo;
   draw();
   return root;
 }

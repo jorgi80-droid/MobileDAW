@@ -95,7 +95,7 @@ function disp(k, draw, drag, o = {}) {
   if (o.min) box.style.minWidth = o.min + 'px';
   if (o.w) box.style.flexGrow = String(o.w);
   let w = 0, hh = 0, sc = 1;
-  c.paint = () => { if (!w || !c.isConnected) return; const g = c.getContext('2d'); g.setTransform(sc, 0, 0, sc, 0, 0); g.fillStyle = DISPC.bg; g.fillRect(0, 0, w, hh); g.save(); draw(g, w, hh); g.restore(); };
+  c.paint = () => { if (!w || !c.isConnected) return; const g = c.getContext('2d'); g.setTransform(sc, 0, 0, sc, 0, 0); g.fillStyle = DISPC.bg; g.fillRect(0, 0, w, hh); g.save(); k.inDraw(() => draw(g, w, hh)); g.restore(); };
   const size = () => {
     const W = Math.floor(box.clientWidth), H = Math.floor(box.clientHeight); if (W < 8 || H < 8) return;
     const r = box.getBoundingClientRect(), z = box.offsetWidth > 0 && r.width > 0 ? r.width / box.offsetWidth : 1, s = Math.min(4, (window.devicePixelRatio || 1) * z);
