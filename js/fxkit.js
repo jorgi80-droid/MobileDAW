@@ -1421,7 +1421,7 @@ VI[29] = (k) => {
     h('div', { class: 'lk-row lk-dsk' }, k.col(k.S(0, { w: 86 }), glyph), k.sep(), k.K(1, { big: true }), k.swapN(0, (m) => (m === 2 ? k.K(6, { big: true }) : k.K(2, { big: true }))), k.K(3, { big: true }), k.K(4, { big: true }), k.sep(), k.K(5), k.swapN(0, (m) => (m === 1 ? k.K(7, { n: 'Loop' }) : k.K(8, { n: 'Pitch' }))), k.K(9), k.sep(), k.K(10), k.K(11), k.sep(), k.K(12), k.K(13)));
 };
 // synths with many sections (Drift, Operator, Poli, Analog, Meld, Wavetable, Sampler, Simpler, the FLM synths) keep the denser size; effects and compact instruments use Live's larger text and dials
-const DENSE_INST = new Set([10, 11, 13, 14, 15, 16, 17, 18, 30, 31, 32, 33]);
+const DENSE_INST = new Set([10, 11, 14, 15, 16, 17, 18, 30, 31, 32, 33]);
 export function instKitView(i, t, every) {
   const def = INSTRUMENTS[t.inst.type]; if (!VI[t.inst.type]) return null;
   const d = { id: 'in' + t.id, type: t.inst.type, params: new Proxy({}, { get: (_, kk) => t.inst.params[kk] ?? (def.params[kk] ? def.params[kk].def : undefined) }) };

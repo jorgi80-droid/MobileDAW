@@ -1454,3 +1454,8 @@ html.reduce-motion .menu, html.reduce-motion .modal, html.reduce-motion .fw, htm
 .lk.lk-drift > .lk-denv { background: transparent !important; padding: 0 !important; }
 .lk.lk-drift .lk-denv .lk-dlfod { flex-direction: row !important; align-items: stretch !important; }
 .lk.lk-drift .lk-denv > .lk-dlb .lk-row { justify-content: space-between; width: 100%; }
+/* Drift at Live's size: tight rows so the three dial rows fit the rack height */
+.lk.lk-drift .knob.lk-k svg { width: 40px !important; height: 40px !important; margin: -4px 0 !important; }
+.lk.lk-drift .knob.lk-k .k-n, .lk.lk-drift .knob.lk-k .k-v { font-size: 13px !important; line-height: 14px; height: 14px; }
+.lk.lk-drift .lk-dlb { padding: 2px 6px; }
+.lk.lk-drift .lk-st { font-size: 14px; }
