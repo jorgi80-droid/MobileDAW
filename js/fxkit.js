@@ -636,7 +636,7 @@ V[45] = (k) => {
   k.every(80, () => { const r = k.out(); if (r.length >= 4) { o = r; paint(); } });
   paint();
   return k.row(k.col(disp, k.row(big, lvBtn('■', () => { k.set(0, 0); o[0] = 0; paint(); }, { cls: 'lk-t', w: 40 }), lvBtn('Clear', () => { k.set(6, k.get(6) + 1); paint(); }, { cls: 'lk-t' }))), k.sep(),
-    k.col(k.TL('Record', k.S(1, { w: 76 })), k.TL('Monitor', k.S(5, { w: 96 }))), k.sep(), k.col(k.K(2), k.T(3, 'Reverse')), k.col(k.K(4), k.K(7)));
+    h('div', { class: 'lk-lpg' }, k.TL('Record', k.S(1, { w: 96 })), k.K(2), k.K(4), k.TL('Monitor', k.S(5, { w: 96 })), k.T(3, 'Reverse', { w: 76 }), k.K(7)));   // Live: two aligned rows
 };
 
 // ================================================================================================ Live 12 set, part 3: spectral (engine: js/engine/fx5.js)

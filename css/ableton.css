@@ -1538,3 +1538,4 @@ html.reduce-motion .menu, html.reduce-motion .modal, html.reduce-motion .fw, htm
 .card > h4 > .sp-h.lk-htabs:first-of-type { margin-left: auto; }
 .card > h4 > .sp-h.lk-htabs + .sp-h.lk-htabs { margin-left: 8px; }
 .card > h4:has(> .sp-h.lk-htabs) > .pre, .card > h4:has(> .sp-h.lk-htabs) > .fw-pop { margin-left: auto; }
+.lk .lk-lpg { display: grid; grid-template-columns: repeat(3, auto); grid-template-rows: 1fr 1fr; column-gap: 16px; row-gap: 6px; align-items: center; justify-items: center; align-self: stretch; padding: 4px 0; }
