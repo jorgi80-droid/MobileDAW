@@ -439,7 +439,7 @@ function hoistTabs(card, lk, bar) {
   lk.dataset.htabs = '1'; return true;
 }
 function tabify(lk, card, maxW, maxH) {
-  if (lk.querySelector(':scope > .lv-tabs') || lk.dataset.htabs || lk.classList.contains('lk-wt')) return;   // panels with their own tabs (Wavetable, Hybrid Reverb ...)
+  if (lk.querySelector(':scope > .lv-tabs') || lk.classList.contains('lk-fdg') || lk.dataset.htabs || lk.classList.contains('lk-wt')) return;   // .lk-fdg: Filter Delay's one grid is never taken apart (it shrinks a little instead)   // panels with their own tabs (Wavetable, Hybrid Reverb ...)
   // blocks: the panel's top-level children; a block taller than the rack that is itself a stack (column with 2+ parts) is split into its parts
   // nothing may be lost: hidden parts (a swap's other face, registration spans) ride along hidden on the first page; a tall column is only opened up
   // when every child is an element (no loose text) so its contents survive as blocks of their own
@@ -506,7 +506,7 @@ function fitKit() {
     lk.style.zoom = ''; lk.style.minHeight = ''; lk.classList.remove('lk-fill');
     const own = lk.querySelector(':scope > .lv-tabs'); if (own && !lk.dataset.htabs && hoistTabs(card, lk, own)) lk.style.minWidth = lk.offsetWidth + 'px';   // the card keeps its width on the other tabs
     const head = card.querySelector(':scope > h4'), avail = avail0 - (head ? head.offsetHeight : 0) - 4, Z0 = Math.max(0.6, Math.min(1.2, avail / DESIGN_H));
-    if (!globalThis.__noTabify && avail > 80 && sc.clientWidth > 200 && (lk.offsetHeight * Z0 > avail * 1.05 || lk.offsetWidth * Z0 > sc.clientWidth - 24) && !lk.dataset.tabbed) tabify(lk, card, Math.max(260, (sc.clientWidth - 40) / Z0), avail / Z0);
+    if (!globalThis.__noTabify && avail > 80 && sc.clientWidth > 200 && (lk.offsetHeight * Z0 > avail * 1.12 || lk.offsetWidth * Z0 > sc.clientWidth - 24) && !lk.dataset.tabbed) tabify(lk, card, Math.max(260, (sc.clientWidth - 40) / Z0), avail / Z0);
     const need = lk.offsetHeight;
     if (!(need > 0) || !(avail > 40)) continue;
     const Z = Math.max(0.6, Math.min(1.2, avail / DESIGN_H)), z = need * Z > avail ? Math.max(0.6, avail / need) : Z;

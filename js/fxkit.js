@@ -63,7 +63,7 @@ function kit(ctx) {
   const dk = (...kids) => h('div', { class: 'lk-dk' }, ...kids.filter(Boolean));                // dark display area holding controls
   const LN = (text, el) => h('div', { class: 'lk-ln' }, h('span', {}, text), el);           // label left, control right (Live rows like "Freq [5.08 kHz]")
   const TL = (text, ...kids) => h('div', { class: 'lk-tl' }, h('span', { class: 'lk-lb' }, text), ...kids);   // title above a control
-  const D = (w, hh, draw, drag) => { const c = lvDisp(w, hh, (g) => draw(g, w, hh)); c.classList.add('lk-d'); draws.push(() => c.paint()); if (drag) lvDrag(c, drag); return c; };
+  const D = (w, hh, draw, drag) => { const c = lvDisp(w, hh, (g) => draw(g, w, hh)); c.classList.add('lk-d', w * hh < 26000 ? 'lk-dsm' : 'lk-dbig'); draws.push(() => c.paint()); if (drag) lvDrag(c, drag); return c; };
   const sec = (title, ...kids) => h('div', { class: 'lk-sec' }, title ? h('div', { class: 'lk-st' }, title) : null, ...kids.filter(Boolean));
   const row = (...kids) => h('div', { class: 'lk-row' }, ...kids.filter(Boolean));
   const col = (...kids) => h('div', { class: 'lk-col' }, ...kids.filter(Boolean));
@@ -224,6 +224,7 @@ V[30] = (k) => {
     else label(g, NN[((n % 12) + 12) % 12], cx - 34, hh - 22, DISPC.or, 30, 'right');
     label(g, hz > 0 ? (ui.hz ? hz.toFixed(1) + ' Hz' : (cents >= 0 ? '+' : '') + cents.toFixed(1) + ' ct') : '', cx - 20, hh - 22, DISPC.or, 28);
   });
+  disp.classList.add('lk-hero');
   k.every(80, () => { const r = k.out(); if (r.length) { hz = r[0]; cl = r[1]; } disp.paint(); if (typeof strip !== 'undefined') strip.querySelectorAll('.lk-tico').forEach((x, q) => x.classList.toggle('on', (q === 1) === ui.strobe)); });
   const opt = (label2, key) => { const b = h('button', { class: 'lv-btn lk-t' + (ui[key] ? ' on' : ''), onclick: () => { ui[key] = !ui[key]; b.classList.toggle('on', ui[key]); disp.paint(); } }, label2); return b; };
   // Live: ONE dark display; its bottom strip holds the view icons (arc / strobe), the Strobe and Hz chips and Reference in cyan
@@ -369,6 +370,7 @@ V[32] = (k) => {
     else lvPath(g, Array.from(sp, (v, b) => [b / (N - 1) * W, yd(v)]), DISPC.bl, H - 12, 1.4);
     if (k.get(4) > 0.5 && mx) lvPath(g, Array.from(mx, (v, b) => [b / (N - 1) * W, yd(v)]), DISPC.or, null, 1);
   });
+  disp.classList.add('lk-hero');
   k.every(60, () => { const r = k.out(); if (r.length) { sp = r; if (k.get(4) > 0.5) { mx = mx && mx.length === r.length ? mx.map((v, j) => Math.max(v - 0.15, r[j])) : r.slice(); } else mx = null; disp.paint(); } });
   // Live: a compact settings column in groups split by thin rules (Block / Channel | Avg | Graph + Max, Scale X, Auto) and the analyser filling the rest
   const hr = () => h('div', { class: 'lk-hr' });
@@ -394,6 +396,7 @@ V[33] = (k) => {
     g.save(); g.translate(22, 55); g.rotate(-0.16); g.font = 'italic 700 27px "Brush Script MT","Segoe Script","Snell Roundhand",cursive'; g.textBaseline = 'middle'; g.lineJoin = 'round';
     const t = AMPN[Math.round(k.get(0))]; g.lineWidth = 6; g.strokeStyle = '#1b1c21'; g.strokeText(t, 0, 0); g.lineWidth = 1.4; g.strokeStyle = '#c9cbd1'; g.strokeText(t, 0, 0); g.restore();
   });
+  pic.style.zoom = '1.45';   // Live: the amp picture fills the width of the device
   const O = (j) => k.K(j, { col: ORK });
   return k.row(k.col(pic, k.CH(0, AMPN, { cls: 'spc' }), k.row(O(1), O(2), O(3), O(4), O(5))), k.sep(),
     k.col(k.TL('Output', k.T(7, 'Mono', { inv: true })), h('span', { class: 'lk-grow' }), O(6), O(8)));
@@ -1317,6 +1320,7 @@ VI[27] = (k) => {
     }
     label(c, 'Partials', 6, 12, DISPC.ink, 9);
   });
+  modes.classList.add('lk-hero');
   const N = (j, w = 60) => k.N(j, { w });
   return h('div', { class: 'lk-col lk-phys' }, h('div', { class: 'lk-pr lk-colr' },
     box(k.T(0, 'Mallet', { w: 72 }), k.K(1, { n: 'Volume' }), k.TL('Stiffness', N(2)), k.TL('Noise', N(3)), k.TL('Color', N(4))),
@@ -1373,12 +1377,14 @@ VI[29] = (k) => {
   return h('div', { class: 'lk-col lk-ds' }, k.dk(wave, info),
     h('div', { class: 'lk-row lk-dsk' }, k.col(k.S(0, { w: 86, cls: 'dk or' }), glyph), k.sep(), k.K(1, { big: true }), k.swapN(0, (m) => (m === 2 ? k.K(6, { big: true }) : k.K(2, { big: true }))), k.K(3, { big: true }), k.K(4, { big: true }), k.sep(), k.K(5), k.swapN(0, (m) => (m === 1 ? k.K(7, { n: 'Loop' }) : k.K(8, { n: 'Pitch' }))), k.K(9), k.sep(), k.K(10), k.K(11), k.sep(), k.K(12), k.K(13)));
 };
+// synths with many sections (Drift, Operator, Poli, Analog, Meld, Wavetable, Sampler, Simpler, the FLM synths) keep the denser size; effects and compact instruments use Live's larger text and dials
+const DENSE_INST = new Set([10, 11, 13, 14, 15, 16, 17, 18, 30, 31, 32, 33]);
 export function instKitView(i, t, every) {
   const def = INSTRUMENTS[t.inst.type]; if (!VI[t.inst.type]) return null;
   const d = { id: 'in' + t.id, type: t.inst.type, params: new Proxy({}, { get: (_, kk) => t.inst.params[kk] ?? (def.params[kk] ? def.params[kk].def : undefined) }) };
   const ctx = { i, di: -1, d, def, every, setParam: (kk, v) => P.setInstParam(i, +kk, v),
     autoFn: (kk) => (rect) => offerAutomation(rect, { kind: 5, strip: P.stripOf(i), param: +kk, def: def.params[kk] }, `${t.name} • ${def.params[kk].n}`) };
-  const k = kit(ctx), el = VI[t.inst.type](k); el.classList.add('lk', 'lk-inst'); return { el, draw: k.redraw };
+  const k = kit(ctx), el = VI[t.inst.type](k); el.classList.add('lk', 'lk-inst'); if (DENSE_INST.has(t.inst.type)) el.classList.add('lk-dense'); return { el, draw: k.redraw };
 }
 
 // ---- shared pieces for the Live 12 layouts: Sync / Time switch (orange "Sync" when synced, cyan "Time" when free), icon choices, checkbox

@@ -93,3 +93,16 @@ berdampingan dengan gambar Live pengguna (`Ui_Refrences`, `Pictures.zip`, `uiref
   di kiri baris knob), Echo (tunnel dan filter lebih besar, busur lebih tebal), Simpler (display tidak lagi keluar kotak).
 - Belum bisa ditiru karena engine tidak punya fungsinya: Mode / Edit A-B / Adaptive Q (EQ Eight), Sidechain (Glue), Resonator 2
   (Collision), Refresh (Spectrum), meter Out (Filter Delay), baris Velocity/Random di tiap kolom Impulse selain Volume.
+
+## Skala Live (Jan 2026 putaran 2): teks, knob, tombol, display
+
+Penyebab "masih tidak sama" yang ditemukan lewat perbandingan berdampingan pada tinggi kartu yang sama: teks, knob dan tombol Live
+kira-kira 1,4x lebih besar terhadap kartunya, display lebih kecil, busur knob lebih tebal. Tata letak kita sudah mirip, ukurannya tidak.
+- Efek dan instrumen kompak: teks 12 px (token `--fs-*` naik), knob 38 px (besar 54), busur 4,4, tombol 24 px; display besar 0,9x,
+  display kecil (< 26000 px persegi) 1,3x, display utama (Spectrum, Tuner, Collision) 1x (`lk-hero`), Filter Delay 1x.
+- Sintesis padat (Drift, Operator, Poli, Analog, Meld, Wavetable, Sampler, Simpler, DirectWave / GMS / MiniSynth / SuperSaw) tetap
+  di ukuran lama (`lk-dense`) supaya tetap satu panel seperti di Live.
+- Tab otomatis hanya jika panel > 12% terlalu tinggi; grid Filter Delay tidak pernah dibongkar. Panel yang sedikit kelebihan tinggi
+  mengecil 0,89-0,98 (Echo 0,90 dengan tab bawaannya).
+- Warna: gambar Live berbadan abu sedang-terang (RGB ~135-165) dengan teks hitam; tema `Mid Light` paling dekat, tema bawaan
+  `Dark` jauh berbeda. `THEME=midlight node tools/ui-audit.mjs ...` mengaudit tema lain.

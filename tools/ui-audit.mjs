@@ -21,6 +21,7 @@ if (process.env.NOTAB) await page.addInitScript(() => { globalThis.__noTabify = 
 await page.addInitScript(() => localStorage.setItem('mobiledaw.prefs.v1', JSON.stringify({ folderAsked: true, haptics: false, floatPlugins: false })));
 await page.goto(`http://127.0.0.1:${server.address().port}/index.html`); await page.waitForFunction(() => window.__dawBooted, null, { timeout: 15000 }); await page.waitForTimeout(1200);
 const ev = (f, a) => page.evaluate(f, a);
+if (process.env.THEME) { await ev(async (th) => { const { prefs, savePrefs } = await import('./js/prefs.js'), T = await import('./js/theme.js'); prefs.theme = th; savePrefs(); T.applyTheme(th); }, process.env.THEME); await page.waitForTimeout(500); }   // THEME=midlight|light|live ... : audit in another theme
 const list = await ev(async () => { const D = await import('./js/defs.js'); return { fx: Object.keys(D.DEVICES).map(Number).filter((k) => !D.HIDDEN_FX.includes(k)), inst: [...D.INST_LIST] }; });
 await ev(async () => { const P = await import('./js/project.js'); P.newProject(false); P.addTrack('midi'); P.selectTrack(P.state.tracks.length - 1); document.querySelector('#dtabs .b[data-tab="dev"]').click(); });
 await page.waitForTimeout(400);
@@ -78,8 +79,10 @@ for (const [kind, t] of jobs) {
     const ks = [...new Set([...card.querySelectorAll('*')].filter((e) => e._k != null).map((e) => e._k))].sort((a, b) => a - b), tabs = card.querySelectorAll('.lk-autotabs .lv-tab').length;
     // symmetry: free space left / right of the controls and above / below them inside the card (a tidy panel has them (nearly) equal)
     const lkR = (card.querySelector(':scope > .lk, :scope > .lv-dev') || card).getBoundingClientRect(), mg = R.length ? { l: Math.round(x0 - cr.left), r: Math.round(cr.right - x1), t: Math.round(y0 - hb), b: Math.round(cr.bottom - y1) } : null;
+    // natural size: the panel at zoom 1 without the fill stretch (what it needs at the common size)
+    let nat = null; { const lk0 = card.querySelector(':scope > .lk, :scope > .lv-dev'); if (lk0) { const z0 = lk0.style.zoom, m0 = lk0.style.minHeight, f0 = lk0.classList.contains('lk-fill'); lk0.style.zoom = '1'; lk0.style.minHeight = ''; lk0.classList.remove('lk-fill'); nat = [lk0.offsetWidth, lk0.offsetHeight]; lk0.style.zoom = z0; lk0.style.minHeight = m0; if (f0) lk0.classList.add('lk-fill'); } }
     const rect = [cr.left, cr.top, cr.width, cr.height].map((v) => Math.round(v * 10) / 10), iw = innerWidth;
-    return { mg, rect, iw, ks, tabs, zoom, hBody, hNeed, labPx, title, w: Math.round(cr.width), h: Math.round(cr.height), fonts: [...fonts.entries()].sort((a, b) => a[0] - b[0]), usedH: Math.round(used * 100), usedW: R.length ? Math.round((x1 - x0) / cr.width * 100) : 0, n: leaf.length, ...issues };
+    return { nat, mg, rect, iw, ks, tabs, zoom, hBody, hNeed, labPx, title, w: Math.round(cr.width), h: Math.round(cr.height), fonts: [...fonts.entries()].sort((a, b) => a[0] - b[0]), usedH: Math.round(used * 100), usedW: R.length ? Math.round((x1 - x0) / cr.width * 100) : 0, n: leaf.length, ...issues };
   };
   const r = await ev(measure, [kind, t]);
   // every tab page of the panel (tabs in the title bar or in the panel) is measured too: the worst zoom and all issues count
