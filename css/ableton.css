@@ -1401,3 +1401,10 @@ html.reduce-motion .menu, html.reduce-motion .modal, html.reduce-motion .fw, htm
 .lk .lv-btn.lk-chkl { position: relative; background: transparent !important; border: 0 !important; box-shadow: none !important; color: var(--lv-ink) !important; padding-left: 20px !important; font-size: 14px !important; justify-content: flex-start; }
 .lk .lv-btn.lk-chkl::before { content: ''; position: absolute; left: 3px; top: 50%; width: 12px; height: 12px; margin-top: -6px; border: 1px solid var(--lv-edge); background: var(--lv-ctl); }
 .lk .lv-btn.lk-chkl.on::before { background: #fdb443; border-color: #8a6020; }
+/* Audio / Instrument Rack chain list (Live): a light framed list, chain rows in cyan, white Create Chain button */
+[data-theme-id="light"] .lk-cbox { background: #b4b4b4 !important; border: 1px solid #515151 !important; --lv-ink: #0f0f0f; --lv-dim: #2e2e2e; color: #0f0f0f; }
+[data-theme-id="light"] .lk-cbox .lk-crow { background: transparent; }
+[data-theme-id="light"] .lk-cbox .lk-cname { background: #62cffa !important; color: #0f0f0f !important; }
+[data-theme-id="light"] .lk-cbox .lv-btn.lk-cchain { background: #f2f2f2 !important; color: #0f0f0f !important; border: 1px solid #2a2a2a !important; box-shadow: 0 1px 0 #2a2a2a; }
+[data-theme-id="light"] .lk-cbox .lk-rdrop { color: #0f0f0f !important; }
+[data-theme-id="light"] .lk-rack .lk-rdrop { color: #0f0f0f !important; }
