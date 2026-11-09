@@ -1222,3 +1222,28 @@ html.reduce-motion .menu, html.reduce-motion .modal, html.reduce-motion .fw, htm
 .lk.lk-dense .knob.lk-k svg path { stroke-width: 3.8 !important; }
 .lk .lv-disp.lk-hero { zoom: 1 !important; }
 .lk-fdg .lv-disp { zoom: 1 !important; }
+/* ===== Live card details (owner's close-ups): rounded card, flat title bar, big power circle, round header buttons with the fold arrow beside the power
+   circle, rounded dark displays, outlined square buttons with regular-weight text ===== */
+.dev-scroll > .card:not(.addcard):not(.fold) { border-radius: 8px; overflow: hidden; border: 1px solid var(--lv-edge); }
+.dev-scroll > .card:not(.fold) > h4 { height: 26px; background: transparent; background-image: none; border-bottom: 0; padding: 0 5px 0 5px; gap: 5px; }
+.dev-scroll > .card > h4 > span, .card > h4 button.dv-name span { font: 700 13px/26px var(--font); }
+.card > h4 button.dv-name.dv-name:not(.pw) { height: 26px; }
+.card > h4 button.pw { width: 24px; min-width: 24px; order: 0; }
+.card > h4 button.pw::before { width: 17px; height: 17px; margin: -8.5px 0 0 -8.5px; border: 1.5px solid var(--lv-edge); border-radius: 50%; }
+.card > h4 .pdot { width: 17px; height: 17px; margin: 0 3px 0 2px; border: 1.5px solid var(--lv-edge); border-radius: 50%; order: 0; }
+.card > h4 .fold-b { order: 1; }
+.card > h4 button.dv-name { order: 2; }
+.card > h4 .fold-b, .card > h4 .fw-pop, .card > h4 button.dv-more.dv-more:not(.pw) {
+  width: 20px; min-width: 20px; height: 20px; padding: 0; border: 1.5px solid var(--lv-edge); border-radius: 50%; background: transparent; color: var(--lv-ink);
+  display: inline-flex; align-items: center; justify-content: center; font: 700 11px/1 var(--font); letter-spacing: 0; flex: none; }
+.card > h4 .fw-pop { order: 5; } .card > h4 button.dv-more.dv-more:not(.pw) { order: 6; }
+.card > h4 button.dv-wet { order: 4; }
+.card > h4 .fold-b:active, .card > h4 .fw-pop:active, .card > h4 button.dv-more:active { background: var(--lv-ctl); }
+.lk-dk { border-radius: 8px; }
+.lv-disp { border-radius: 6px; }
+.lk-dk > .lv-disp, .lk-tdk > .lv-disp, .lk-ds > .lk-dk > .lv-disp { border-radius: 0; }
+.lk .lv-btn { border: 1px solid var(--lv-edge); border-radius: 2px; font-weight: 500; }
+.lk .lv-btn.on { font-weight: 600; }
+.lk .lv-fld { border-radius: 2px; }
+.card > h4 > span:not(.pdot) { order: 2; flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card > h4 button.pre { order: 7; }

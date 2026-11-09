@@ -35,7 +35,7 @@ function titleFold(head, k) {                 // Live: double-click a device's t
   return head;
 }
 
-const foldBtn = (k, on) => { const b = h('button', { class: 'fold-b', 'aria-label': on ? 'Buka lipatan' : 'Lipat modul', onclick: () => setFolded(k, !on) }, on ? '\u25B8' : '\u25C2'); return b; };
+const foldBtn = (k, on) => { const b = h('button', { class: 'fold-b', 'aria-label': on ? 'Buka lipatan' : 'Lipat modul', onclick: () => setFolded(k, !on) }, on ? '\u25B8' : '\u25BE'); return b; };
 function foldedCard(k, name, pw) {
   const c = h('div', { class: 'card fold', 'aria-label': 'Buka ' + name, onclick: (e) => { if (e.target.closest && e.target.closest('.pw')) return; setFolded(k, false); } }, pw || null, h('span', { class: 'fn' }, name), foldBtn(k, true));
   return c;

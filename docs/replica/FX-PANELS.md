@@ -106,3 +106,11 @@ kira-kira 1,4x lebih besar terhadap kartunya, display lebih kecil, busur knob le
   mengecil 0,89-0,98 (Echo 0,90 dengan tab bawaannya).
 - Warna: gambar Live berbadan abu sedang-terang (RGB ~135-165) dengan teks hitam; tema `Mid Light` paling dekat, tema bawaan
   `Dark` jauh berbeda. `THEME=midlight node tools/ui-audit.mjs ...` mengaudit tema lain.
+
+## Detail kartu Live (putaran 3)
+
+Dari pembesaran judul dan sudut kartu Live (kiri) vs kita: kartu bersudut membulat (8 px) dengan border tipis; bar judul rata dengan
+badan (tanpa bar gelap dan garis pemisah); tombol power lingkaran 17 px dengan cincin; tombol fold ▾ bulat di sebelah power (di Live
+posisinya di kiri); tombol header kanan (jendela mengambang, menu, Mix) bulat bercincin; kotak display gelap membulat (8 px) dan
+display 6 px; tombol persegi berborder tegas dengan teks reguler (bukan tebal). Urutan elemen header diatur dengan CSS `order`
+(power 0, fold 1, nama 2, Mix 4, jendela 5, menu 6, Preset 7).
