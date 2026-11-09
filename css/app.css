@@ -646,3 +646,16 @@ button { font: inherit; color: inherit; }
 
 /* UI scale by CSS when the viewport meta tag is ignored (fullscreen): see js/uiscale.js. Everything lives in body, so one transform scales the whole app. */
 html.emu body { width: calc(100% / var(--k, 1)); height: calc(100% / var(--k, 1)); transform: scale(var(--k, 1)); transform-origin: 0 0; }
+
+/* narrow portrait phones (OPPO Find X8: about 419 CSS px wide): the control bar takes two rows instead of cutting buttons off.
+   Row 1: browser, tempo, undo / redo | Arrange / Mixer, menu; row 2: the transport, centred. */
+@media (orientation: portrait) and (max-width: 720px) {
+  #top { width: 100%; box-sizing: border-box; height: calc(var(--top-h) * 2 + 4px + var(--sat)) !important; display: grid !important; grid-template-columns: minmax(0, 1fr) auto auto; grid-template-rows: 1fr 1fr; grid-template-areas: "l seg menu" "c c perf"; align-items: center; column-gap: 6px; }
+  #top > #top-l { grid-area: l; min-width: 0; overflow: visible; }
+  #top > #top-c { grid-area: c; justify-self: stretch; display: flex; justify-content: center; min-width: 0; }
+  #top > #top-r { display: contents; }
+  #top-r > .perf { grid-area: perf; justify-self: end; } #top-r > .seg { grid-area: seg; } #top-r > #btn-menu { grid-area: menu; }
+  #top-r .seg .b { padding: 0 8px; }
+  .pwa-card { top: calc(var(--top-h) * 2 + var(--sat) + 14px); }
+}
+.hit-flash { filter: brightness(1.25); }

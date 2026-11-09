@@ -31,6 +31,7 @@ import * as PM from './projects.js';
 import * as IMP from './import/ui.js';
 import * as KM from './keymap.js';
 import { cancelGestures, gestureTiming } from './gesture.js';
+import { initTouchHit } from './touchhit.js';
 import { setOctaveNaming } from './defs.js';
 setOctaveNaming(prefs.midC);
 const { state } = P;
@@ -485,7 +486,7 @@ function boot() {
   initLog(prefs.logLevel);
   initNative(toast);                                   // Android app (Capacitor): back button, html.native-app; nothing in the browser
   applyTheme(prefs.theme);
-  initEdgeGuard();
+  initEdgeGuard(); initTouchHit();   // taps on empty panel surface next to a small button reach it (44 px touch areas)
   initLayout();
   initFloat();
   icons(); wireTransport(); wireSplit(); keys();

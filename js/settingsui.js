@@ -221,6 +221,35 @@ function keysSection() {
     h('div', { class: 'sv' }, 'Opsional, untuk keyboard fisik / Bluetooth. Semua fungsi tetap bisa dijalankan dengan sentuhan. Pintasan tidak aktif saat mengetik di kotak teks. Di tab Keys, baris Z\u2013M dan Q\u2013I memainkan piano.'),
     list, btn('Kembalikan pintasan bawaan', () => { if (stop) stop(); KM.resetKeymap(); paint(); toast('Pintasan bawaan dipulihkan.'); }));
 }
+// "Info Layar": the real numbers of this phone's screen as the browser reports them (for tuning the layout to a device, e.g. OPPO Find X8:
+// its 6.59" / 2760 x 1256 panel says nothing about CSS pixels). Updates live while the phone rotates or the browser bars come and go.
+function screenInfo() {
+  const box = h('div', { class: 'sv', style: 'font-variant-numeric:tabular-nums;white-space:pre-wrap;user-select:text;-webkit-user-select:text' });
+  const probe = h('div', { style: 'position:fixed;left:0;top:0;width:0;height:0;visibility:hidden;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)' });
+  const fill = () => {
+    if (!box.isConnected) return;
+    if (!probe.isConnected) document.body.append(probe);
+    const cs = getComputedStyle(probe), vv = window.visualViewport, sc = vv ? vv.scale : 1, r = (x) => Math.round(x * 10) / 10;
+    const css = vv ? `${r(vv.width * sc)} x ${r(vv.height * sc)}` : '?';
+    box.textContent = [
+      `Viewport CSS (layar): ${css} px`,
+      `Viewport tata letak: ${innerWidth} x ${innerHeight} px (skala UI ${r(sc)})`,
+      `Device pixel ratio: ${r(devicePixelRatio)}`,
+      `Layar (screen): ${screen.width} x ${screen.height} px, piksel fisik ${Math.round(screen.width * devicePixelRatio)} x ${Math.round(screen.height * devicePixelRatio)}`,
+      `Orientasi: ${(screen.orientation && screen.orientation.type) || (innerWidth > innerHeight ? 'landscape' : 'portrait')}`,
+      `Safe area atas / kanan / bawah / kiri: ${cs.paddingTop} / ${cs.paddingRight} / ${cs.paddingBottom} / ${cs.paddingLeft}`,
+      `Mode: ${matchMedia('(display-mode: standalone)').matches ? 'aplikasi terpasang (PWA)' : matchMedia('(display-mode: fullscreen)').matches || document.fullscreenElement ? 'layar penuh' : 'tab browser'}`,
+      `Browser: ${navigator.userAgent.replace(/^Mozilla\/5\.0 /, '').slice(0, 120)}`,
+    ].join('\n');
+  };
+  // live while the preferences window is open (the tab can be shown later; the phone can rotate): stops when the window closes
+  let seen = false;
+  const iv = setInterval(() => { const open = document.querySelector('#layer .prefsw'); if (open) seen = true; if (seen && !open) { clearInterval(iv); probe.remove(); window.removeEventListener('resize', fill); if (window.visualViewport) visualViewport.removeEventListener('resize', fill); return; } fill(); }, 400);
+  window.addEventListener('resize', fill); if (window.visualViewport) visualViewport.addEventListener('resize', fill);
+  const copy = h('button', { class: 'b', onclick: () => { try { navigator.clipboard.writeText(box.textContent); toast('Info layar disalin', 1500); } catch (_) { /* no clipboard */ } } }, 'Salin');
+  return section('Info Layar', h('div', { class: 'sv' }, 'Ukuran layar yang dilaporkan browser HP ini (untuk menyesuaikan tata letak ke perangkat Anda).'), box, copy);
+}
+
 export function openSettings() {
   const body = h('div', { class: 'settings' });
   const info = eng.info();
@@ -326,6 +355,7 @@ export function openSettings() {
     Log: [logSection()],
     About: aboutTabs(),
     Lainnya: [
+      screenInfo(),
       section('Reset', h('div', { class: 'sv' }, 'Mengembalikan semua pengaturan aplikasi. Proyek, sample, preset dan file lain tidak dihapus.'), btn('Kembalikan pengaturan awal\u2026', () => modal('Kembalikan pengaturan awal?', 'Semua pengaturan (tema, sentuhan, pintasan, audio, ekspor) kembali ke bawaan. Proyek dan file Anda tidak disentuh.', [{ label: 'Batal' }, { label: 'Kembalikan', go: true, fn: () => { resetPrefs(); eng.setLatencyMs(0); setLogLevel(prefs.logLevel); applyTimelinePrefs(); applyTheme(prefs.theme); applyViewportMeta(); applyUiPrefs(); relayoutSoon(); scaleSlider.value = Math.round(prefs.uiScale * 100); paintScale(); eng.metroVol(prefs.metroVol ?? 1); setOctaveNaming(prefs.midC); toast('Pengaturan dikembalikan.'); } }]))),
     ],
   };

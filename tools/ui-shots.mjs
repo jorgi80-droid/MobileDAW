@@ -15,7 +15,7 @@ const server = http.createServer((q, r) => {
 }).listen(0, '127.0.0.1');
 await new Promise((ok) => server.once('listening', ok));
 const browser = await chromium.launch(process.env.PLAY ? { args: ['--autoplay-policy=no-user-gesture-required'] } : {});   // PLAY=1: the song plays during the device shots (meters / displays show audio)
-const page = await (await browser.newContext({ viewport: { width: +(process.env.VW || 1180), height: +(process.env.VH || 560) }, deviceScaleFactor: 2, hasTouch: true })).newPage();
+const page = await (await browser.newContext({ viewport: { width: +(process.env.VW || 1180), height: +(process.env.VH || 560) }, deviceScaleFactor: +(process.env.DPR || 2), hasTouch: true, isMobile: !!process.env.MOBILE })).newPage();
 const errs = [];
 page.on('pageerror', (e) => errs.push(e.message)); page.on('console', (m) => { if (m.type() === 'error') errs.push(m.text()); });
 await page.addInitScript((th) => { try { localStorage.setItem('mobiledaw.prefs.v1', JSON.stringify({ folderAsked: true, theme: th, floatPlugins: false })); } catch (_) { /* no storage */ } }, process.env.THEME || 'dark');
@@ -45,7 +45,45 @@ await page.evaluate(async () => {                         // the test project
   P.addMarker(BAR * 2); P.syncAll(); P.emit('all');
 });
 await page.waitForTimeout(1000);
-const shot = async (name) => { await page.waitForTimeout(500); await page.screenshot({ path: path.join(out, name + '.png') }); console.log('shot', name); };
+// CHECK=1: after every shot, the layout check of the whole screen (js below): page scrolling sideways, controls cut by a box that cannot
+// scroll, controls off the screen with no way to scroll to them, controls covered by another element (hit test at their centre), and
+// touch targets smaller than 32 / 44 CSS px. Findings go to stdout ("check <shot>: ...") and to <out>/check.json.
+const CHECKS = {};
+const layoutCheck = () => {
+  const W = innerWidth, H = innerHeight, o = { page: [], cut: [], off: [], covered: [], small32: [], small44: 0, n: 0 };
+  const de = document.documentElement; if (de.scrollWidth > W + 1) o.page.push('scrollWidth ' + de.scrollWidth + ' > ' + W); if (document.body.scrollWidth > W + 1) o.page.push('body scrollWidth ' + document.body.scrollWidth);
+  const hidden = (e) => { for (let p = e; p && p !== document.body; p = p.parentElement) { const s = getComputedStyle(p); if (s.display === 'none' || s.visibility === 'hidden' || +s.opacity === 0) return true; } return false; };
+  const name = (e) => (e.id ? '#' + e.id : (typeof e.className === 'string' && e.className ? '.' + e.className.trim().split(/\s+/).slice(0, 2).join('.') : e.tagName.toLowerCase())) + (e.textContent && e.textContent.trim() ? ' "' + e.textContent.trim().slice(0, 14) + '"' : e.getAttribute('aria-label') ? ' [' + e.getAttribute('aria-label').slice(0, 14) + ']' : '');
+  const sel = 'button, select, input:not([type=hidden]), [role=button], .knob, .lv-btn, .lv-fld, .lk-n, .lv-tab, .mi, .readout';
+  const all = [...document.querySelectorAll(sel)].filter((e) => { const r = e.getBoundingClientRect(); return r.width > 2 && r.height > 2 && !hidden(e); });
+  const els = all.filter((e) => !all.some((x) => x !== e && x.contains(e) && x.matches('button, .knob, .lv-fld, .lk-n')));
+  const scrolls = (p, ax) => { const s = getComputedStyle(p), v = ax === 'x' ? s.overflowX : s.overflowY; return (v === 'auto' || v === 'scroll') && (ax === 'x' ? p.scrollWidth > p.clientWidth + 1 : p.scrollHeight > p.clientHeight + 1); };
+  for (const e of els) {
+    o.n++; const r = e.getBoundingClientRect();
+    let canScroll = false, cutBy = null;
+    for (let p = e.parentElement; p && p !== document.documentElement; p = p.parentElement) {
+      const s = getComputedStyle(p); if (s.display === 'contents' || (s.overflowX === 'visible' && s.overflowY === 'visible')) continue;
+      const q = p.getBoundingClientRect(), outX = r.left < q.left - 1 || r.right > q.right + 1, outY = r.top < q.top - 1 || r.bottom > q.bottom + 1;
+      if ((outX && scrolls(p, 'x')) || (outY && scrolls(p, 'y'))) { canScroll = true; break; }
+      if ((outX && s.overflowX !== 'visible') || (outY && s.overflowY !== 'visible')) { cutBy = p; break; }
+    }
+    if (cutBy) o.cut.push(name(e) + ' in ' + name(cutBy).slice(0, 30));
+    else if (!canScroll && (r.right > W + 1 || r.bottom > H + 1 || r.left < -1 || r.top < -1)) o.off.push(name(e));
+    let sc = null; for (let p = e.parentElement; p && p !== document.documentElement; p = p.parentElement) { if (scrolls(p, 'x') || scrolls(p, 'y')) { sc = p; break; } }
+    const sr = sc && sc.getBoundingClientRect(), scrolledOut = sr && (r.left < sr.left - 1 || r.right > sr.right + 1 || r.top < sr.top - 1 || r.bottom > sr.bottom + 1);   // hidden in its scroll box: reachable by scrolling
+    if (!cutBy && !scrolledOut && r.left >= 0 && r.top >= 0 && r.right <= W && r.bottom <= H) {
+      const cx = Math.min(W - 1, r.left + r.width / 2), cy = Math.min(H - 1, r.top + r.height / 2), t = document.elementFromPoint(cx, cy);
+      const layer = document.getElementById('layer');
+      if (t && t !== e && !e.contains(t) && !t.contains(e) && !(layer && layer.contains(t) && !layer.contains(e)) && getComputedStyle(t).pointerEvents !== 'none') o.covered.push(name(e) + ' under ' + name(t).slice(0, 30));
+    }
+    const m = Math.min(r.width, r.height); if (m < 32 && !e.closest('#top-x')) o.small32.push(name(e) + ' ' + Math.round(r.width) + 'x' + Math.round(r.height)); if (m < 44) o.small44++;
+  }
+  return o;
+};
+const shot = async (name) => {
+  await page.waitForTimeout(500); await page.screenshot({ path: path.join(out, name + '.png') }); console.log('shot', name);
+  if (process.env.CHECK) { const c = await page.evaluate(layoutCheck); CHECKS[name] = c; console.log(`check ${name}: ${c.n} controls; page ${c.page.length}; cut ${c.cut.length}; off-screen ${c.off.length}; covered ${c.covered.length}; <32px ${c.small32.length}; <44px ${c.small44}` + [...c.page, ...c.cut.slice(0, 6).map((x) => 'CUT ' + x), ...c.off.slice(0, 6).map((x) => 'OFF ' + x), ...c.covered.slice(0, 6).map((x) => 'COVERED ' + x)].map((x) => '\n    ' + x).join('')); fs.writeFileSync(path.join(out, 'check.json'), JSON.stringify(CHECKS, null, 1)); }
+};
 const ev = (fn, ...a) => page.evaluate(fn, ...a);
 const sel = (i, c = 0) => ev(async ([i, c]) => { const P = await import('./js/project.js'); P.selectTrack(i); const t = P.state.tracks[i]; if (t && t.clips[c]) P.selectClip(i, t.clips[c].id); }, [i, c]);
 const tab = (k) => ev((k) => document.querySelector(`#dtabs .b[data-tab="${k}"]`).click(), k);

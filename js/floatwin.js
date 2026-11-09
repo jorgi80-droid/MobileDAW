@@ -54,7 +54,7 @@ function place(w) {
 function keepInside(w) {
   const A = area(), s = w.s;
   if (s.max) { s.x = 4; s.y = 4; s.w = A.w - 8; s.h = A.h - 8; return; }
-  s.w = clamp(s.w, w.minW, Math.max(w.minW, A.w - 4)); s.h = clamp(s.h, w.minH, Math.max(w.minH, A.h - 4));
+  s.w = clamp(s.w, Math.min(w.minW, A.w - 8), A.w - 4); s.h = clamp(s.h, Math.min(w.minH, A.h - 8), A.h - 4);   // never wider / taller than the screen (narrow portrait phones): the content scales down (applyFit)
   s.x = clamp(s.x, 70 - s.w, A.w - 70); s.y = clamp(s.y, 0, Math.max(0, A.h - w.bh));       // the title bar always stays reachable
 }
 
@@ -228,7 +228,9 @@ export function openFloat(opts) {
       if (nw && nh) { const sc = Math.min(1, (A.w - 12) / (nw + 2), (A.h - 12) / (nh + w.bh + 2)); w.s.w = Math.round(nw * sc) + 2; w.s.h = Math.round(nh * sc) + w.bh + 2; }
     }
   }
-  w.s.w = clamp(w.s.w, w.minW, Math.max(w.minW, A.w - 8)); w.s.h = clamp(w.s.h, w.minH, Math.max(w.minH, A.h - 8));
+  w.s.w = clamp(w.s.w, Math.min(w.minW, A.w - 8), A.w - 8); w.s.h = clamp(w.s.h, Math.min(w.minH, A.h - 8), A.h - 8);
+  // opening: the whole window on screen, under the control bar when there is room (its buttons stay usable)
+  { const top = document.getElementById('top'), tb = top ? top.offsetHeight : 0; w.s.x = clamp(w.s.x, 4, Math.max(4, A.w - w.s.w - 4)); if (A.h - tb - 4 >= w.s.h) w.s.y = clamp(w.s.y, tb + 2, A.h - w.s.h - 4); else w.s.y = clamp(w.s.y, 0, Math.max(0, A.h - w.s.h)); }
   if (g && g.max) { w.prev = { x: w.s.x, y: w.s.y, w: w.s.w, h: w.s.h, shade: false }; w.s.max = true; }
   keepInside(w); layout(w); raise(w);
   emit();
