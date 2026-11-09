@@ -1035,9 +1035,9 @@
 .lk .lv-btn:active { transform: scale(.94); }
 .lk .lv-fld, .lk .lk-n { transition: box-shadow .2s, transform .14s cubic-bezier(.3, 1.6, .5, 1); }
 .lk .lv-fld:active, .lk .lk-n:active { transform: scale(.97); box-shadow: 0 0 8px rgba(79, 195, 240, .45); }
-.lk .knob.lk-k svg { overflow: visible; transition: transform .16s cubic-bezier(.3, 1.6, .5, 1), filter .2s; filter: drop-shadow(0 2px 2px rgba(0, 0, 0, .35)); }
-.lk .knob.lk-k svg path:nth-of-type(2) { filter: drop-shadow(0 0 2.5px rgba(79, 195, 240, .75)); }   /* the value arc glows */
-.lk .knob.lk-k:active svg { transform: scale(1.08); filter: drop-shadow(0 0 6px rgba(79, 195, 240, .55)); }
+.lk .knob.lk-k svg { overflow: visible; transition: transform .16s cubic-bezier(.3, 1.6, .5, 1); filter: none; }   /* no shadow on a dial (owner); only the coloured arc glows, below */
+.lk .knob.lk-k svg path:nth-of-type(2) { filter: drop-shadow(0 0 3px var(--lv-arc, #62cffa)) drop-shadow(0 0 6px color-mix(in srgb, var(--lv-arc, #62cffa) 55%, transparent)); }   /* the filled value arc glows in its own colour */
+.lk .knob.lk-k:active svg { transform: scale(1.06); filter: none; }
 .lk .lk-lamp { transition: background-color .25s, box-shadow .25s; }
 .dev-scroll > .card { transition: box-shadow .25s cubic-bezier(.2, .8, .2, 1), transform .25s cubic-bezier(.2, .8, .2, 1), opacity var(--d3, .15s) var(--e-std, ease); }
 .dev-scroll > .card:active { box-shadow: 0 14px 30px -8px rgba(0, 0, 0, .6), 0 4px 10px rgba(0, 0, 0, .32), inset 0 1px 0 rgba(255, 255, 255, .08); }
@@ -1271,3 +1271,11 @@ html.reduce-motion .menu, html.reduce-motion .modal, html.reduce-motion .fw, htm
 [data-theme-id="light"] .lk-impad small { color: #a0a0a6; }
 [data-theme-id="light"] .lk-rdrop { color: #a0a0a6; }
 [data-theme-id="light"] .lk-rack .lk-rlist, [data-theme-id="light"] .lk-rack .lk-rchains { --lv-ink: #e4e4e6; --lv-dim: #a0a0a6; }
+
+.knob svg, .knob:active svg { filter: none; }
+.knob svg path:nth-of-type(2) { filter: drop-shadow(0 0 3px var(--lv-arc, #62cffa)); }   /* mixer / classic dials: the same glow on the filled arc only */
+.lk .knob.lk-k svg path:nth-of-type(2) { filter: drop-shadow(0 0 3px var(--lv-arc, #62cffa)) drop-shadow(0 0 6px color-mix(in srgb, var(--lv-arc, #62cffa) 55%, transparent)); }
+/* dial ring track as dark as Live's (light theme), needle a little heavier */
+[data-theme-id="light"] .knob svg path:first-of-type { stroke: #3a3a3a !important; }
+[data-theme-id="light"] .lk-dk .knob svg path:first-of-type { stroke: #55555a !important; }
+.knob svg line { stroke-width: 3px !important; }

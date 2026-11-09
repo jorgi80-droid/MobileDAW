@@ -170,7 +170,7 @@ export function fromNorm(p, x) {
   return clamp(v, p.min, p.max);
 }
 
-const A0 = 135, A1 = 405;   // degrees, clockwise from 12 o'clock offset
+const A0 = 120, A1 = 420;   // degrees, clockwise from 12 o'clock offset
 function arc(cx, cy, r, a, b) {
   const pt = (d) => [cx + r * Math.sin((d * Math.PI) / 180), cy - r * Math.cos((d * Math.PI) / 180)];
   const [x0, y0] = pt(a), [x1, y1] = pt(b);
@@ -198,8 +198,8 @@ export function knob(p, get, set, fmt, color = null, onLong = null) {
     const a = A0 + n * (A1 - A0), z = A0 + toNorm(p, 0) * (A1 - A0);
     val.setAttribute('d', bipolar ? (Math.abs(a - z) > 0.6 ? arc(20, 20, 15.5, Math.min(a, z), Math.max(a, z)) : '') : (n > 0.002 ? arc(20, 20, 15.5, A0, a) : ''));
     const rad = (a * Math.PI) / 180, sn = Math.sin(rad), cs = -Math.cos(rad);
-    ptr.setAttribute('x1', (20 + 0 * sn).toFixed(2)); ptr.setAttribute('y1', (20 + 0 * cs).toFixed(2));
-    ptr.setAttribute('x2', (20 + 15.5 * sn).toFixed(2)); ptr.setAttribute('y2', (20 + 15.5 * cs).toFixed(2));
+    ptr.setAttribute('x1', (20 + 3.5 * sn).toFixed(2)); ptr.setAttribute('y1', (20 + 3.5 * cs).toFixed(2));   // Live: the needle starts off-centre and stops inside the ring
+    ptr.setAttribute('x2', (20 + 12 * sn).toFixed(2)); ptr.setAttribute('y2', (20 + 12 * cs).toFixed(2));
     vEl.textContent = fmt(p, v);
   };
   let start = null;
