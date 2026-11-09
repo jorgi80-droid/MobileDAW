@@ -1,5 +1,5 @@
 // Auto Filter, Echo and Roar (replace Filter, Delay and Distortion). Same Fx interface as fx.js: setParam(i, v), process(L, R, n), readOut(out).
-import { TWO_PI, clamp, dbToLin, linToDb, Biquad, fastTanh, lcg } from './dsp.js';
+import { TWO_PI, clamp, dbToLin, linToDb, Biquad, fastTanh, lcg, SpecTap } from './dsp.js';
 
 const tanh = fastTanh;
 class Fx { constructor(sr, sc) { this.sr = sr; this.sc = sc; this.bypass = false; } readOut() { return 0; } }
@@ -10,7 +10,7 @@ class Fx { constructor(sr, sc) { this.sr = sr; this.sc = sc; this.bypass = false
 // readOut: 0 current cutoff Hz, 1 envelope 0..1, 2 LFO -1..1
 export class AutoFilter extends Fx {
   constructor(sr) {
-    super(sr); this.type = 0; this.f = 20000; this.q = 0.707; this.slope = 0; this.envAmt = 0; this.atk = 6; this.rel = 200; this.lfoAmt = 0; this.rate = 1; this.shape = 0; this.drive = 1; this.mix = 1; this.phs = 0; this.curR = -99;
+    super(sr); this.tap = new SpecTap(); this.type = 0; this.f = 20000; this.q = 0.707; this.slope = 0; this.envAmt = 0; this.atk = 6; this.rel = 200; this.lfoAmt = 0; this.rate = 1; this.shape = 0; this.drive = 1; this.mix = 1; this.phs = 0; this.curR = -99;
     this.b = [[new Biquad(), new Biquad()], [new Biquad(), new Biquad()]];     // [stage][channel]
     this.rng = { seed: 4242 }; this.env = 0; this.ph = 0; this.sh = 0; this.lfo = 0; this.cur = -99; this.fc = 20000; this.dirty = true; this.cnt = 0; this.envN = 0; this.upA(); this.upR();
   }
@@ -51,6 +51,7 @@ export class AutoFilter extends Fx {
           this.dirty = false;
         } else if (this.dirty || Math.abs(oct - this.cur) > 0.003) { this.cur = oct; this.fc = f; this.coef(f); this.dirty = false; }
       }
+      this.tap.push((L[i] + R[i]) * 0.5);   // input spectrum for the display
       const dl = this.drive !== 1 ? Math.tanh(L[i] * this.drive) : L[i], dr = this.drive !== 1 ? Math.tanh(R[i] * this.drive) : R[i];
       let l = s0[0].process(dl), r = s0[1].process(dr);
       if (two) { l = s1[0].process(l); r = s1[1].process(r); }
@@ -58,7 +59,7 @@ export class AutoFilter extends Fx {
     }
     this.env = env;
   }
-  readOut(o) { o[0] = this.fc; o[1] = this.envN; o[2] = this.lfo; return 3; }
+  readOut(o) { o[0] = this.fc; o[1] = this.envN; o[2] = this.lfo; return 3 + this.tap.read(o, 3, this.sr); }   // 3.. = input spectrum (display only)
 }
 
 // ---- Echo ----------------------------------------------------------------------------------------------------------

@@ -2,7 +2,7 @@
 // Glue Compressor, Channel EQ, Erosion, Redux, Vinyl Distortion, Drum Buss, Tuner.
 // Interface as in fx.js: setParam(i, v), process(L, R, n) in place, readOut(out) -> count, bypass flag; optional setTempo(bpm) and
 // tr(playing, beat) (transport, called once per block by the engine before process).
-import { TWO_PI, clamp, dbToLin, linToDb, Biquad, fastTanh, lcg, fft } from './dsp.js';
+import { TWO_PI, clamp, dbToLin, linToDb, Biquad, fastTanh, lcg, fft, SpecTap } from './dsp.js';
 
 class Fx { constructor(sr) { this.sr = sr; this.bypass = false; this.bpm = 120; } readOut() { return 0; } setTempo(b) { this.bpm = b; } }
 const tanh = fastTanh;
@@ -439,7 +439,7 @@ export class EqEight extends Fx {
   constructor(sr) {
     super(sr); this.p = []; const T = [1, 2, 3, 3, 3, 3, 5, 6], F = [30, 100, 250, 1000, 2500, 5000, 10000, 18000];
     for (let b = 0; b < 8; b++) this.p.push(b === 0 || b === 7 ? 0 : 1, T[b], F[b], 0, 0.71); this.p.push(1, 0);
-    this.st = [[], []]; this.upd();
+    this.st = [[], []]; this.upd(); this.tap = new SpecTap();
   }
   setParam(i, v) { this.p[i] = v; this.upd(); }
   upd() {
@@ -448,8 +448,9 @@ export class EqEight extends Fx {
   }
   process(L, R, n) {
     const g = dbToLin(this.p[41]), a = this.st[0], b = this.st[1];
-    for (let i = 0; i < n; i++) { let l = L[i], r = R[i]; for (let k = 0; k < a.length; k++) { l = a[k].process(l); r = b[k].process(r); } L[i] = l * g; R[i] = r * g; }
+    for (let i = 0; i < n; i++) { let l = L[i], r = R[i]; for (let k = 0; k < a.length; k++) { l = a[k].process(l); r = b[k].process(r); } L[i] = l * g; R[i] = r * g; this.tap.push((L[i] + R[i]) * 0.5); }
   }
+  readOut(o) { return this.tap.read(o, 0, this.sr); }   // the output spectrum behind the curve (display only)
 }
 
 // ================================================================================================ Spectrum (pass-through analyser)

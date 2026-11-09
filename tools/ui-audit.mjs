@@ -14,7 +14,7 @@ const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/ja
 const server = http.createServer((q, r) => { const f = path.join(root, decodeURIComponent(new URL(q.url, 'http://x').pathname)); if (!f.startsWith(root) || !fs.existsSync(f) || fs.statSync(f).isDirectory()) { r.writeHead(404); r.end(); return; } r.writeHead(200, { 'content-type': TYPES[path.extname(f)] || 'application/octet-stream' }); fs.createReadStream(f).pipe(r); }).listen(0, '127.0.0.1');
 await new Promise((ok) => server.once('listening', ok));
 const W = +(process.env.VW || 904), H = +(process.env.VH || 411), DPR = +(process.env.DPR || 2.625);
-const b = await chromium.launch();
+const b = await chromium.launch(process.env.PLAY ? { args: ['--autoplay-policy=no-user-gesture-required'] } : {});
 const page = await (await b.newContext({ viewport: { width: W, height: H }, deviceScaleFactor: DPR, isMobile: true, hasTouch: true })).newPage();
 const errs = []; page.on('pageerror', (e) => errs.push(e.message));
 if (process.env.NOTAB) await page.addInitScript(() => { globalThis.__noTabify = true; });
@@ -42,6 +42,10 @@ for (const [kind, t] of jobs) {
     P.syncAll(); P.selectTrack(i); P.emit('all');
   }, [kind, t]);
   await page.waitForTimeout(450);
+  if (process.env.PLAY) {   // PLAY=1: a held chord on the track so meters and analysers show signal in the shots
+    await ev(async () => { const P = await import('./js/project.js'), E = await import('./js/engine.js'), i = P.state.tracks.length - 1; try { E.eng.resume && await E.eng.resume(); } catch (_) {} for (const nn of [36, 48, 55, 60, 64, 67, 72]) P.noteEvent(i, nn, 0.9, true); });
+    await page.waitForTimeout(1600);
+  }
   const measure = ([kind, t]) => {
     const cards = [...document.querySelectorAll('.dev-scroll > .card')].filter((c) => c.querySelector(':scope > h4'));   // not the empty 'add effect' card
     const card = kind === 'inst' ? cards[0] : cards[cards.length - 1];
@@ -99,7 +103,8 @@ for (const [kind, t] of jobs) {
     if (process.env.SHOTDIR) await page.screenshot({ path: path.join(process.env.SHOTDIR, `${kind}-${t}-p${j + 1}.png`) });
   }
   if (nTabs > 1) await ev(([kind, j0]) => { const cs = [...document.querySelectorAll('.dev-scroll > .card')].filter((c) => c.querySelector(':scope > h4')), card = kind === 'inst' ? cs[0] : cs[cs.length - 1]; card.querySelectorAll(':scope > h4 > .lk-htabs .lv-tab')[j0]?.click(); }, [kind, Math.max(0, on0)]);
-  if (process.env.SHOTDIR) await page.screenshot({ path: path.join(process.env.SHOTDIR, `${kind}-${t}.png`) });   // whole screen (the panel as the phone shows it)
+  if (process.env.SHOTDIR) await page.screenshot({ path: path.join(process.env.SHOTDIR, `${kind}-${t}.png`) });
+  if (process.env.PLAY) await ev(async () => { const P = await import('./js/project.js'), i = P.state.tracks.length - 1; for (const nn of [36, 48, 55, 60, 64, 67, 72]) P.noteEvent(i, nn, 0, false); });   // whole screen (the panel as the phone shows it)
   report.push({ kind, t, ...r });
   const bad = (r.overflow || []).length + (r.overlap || []).length + (r.clipped || []).length;
   if (r.mg && (Math.abs(r.mg.l - r.mg.r) > 10 || Math.abs(r.mg.t - r.mg.b) > 14)) r.asym = true;

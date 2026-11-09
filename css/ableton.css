@@ -1427,3 +1427,13 @@ html.reduce-motion .menu, html.reduce-motion .modal, html.reduce-motion .fw, htm
 .lv-dev.smp .smp-head .lv-info { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lv-dev.smp .lv-pane > .lv-sec { flex: 1 1 0 !important; min-width: 0 !important; box-sizing: border-box; }
 [data-theme-id="light"] .lk-gglyph { color: #2e2e2e; }
+/* Drift (Live): one tight panel, sections as columns of equal height */
+.lk.lk-drift { align-items: stretch !important; }
+.lk.lk-drift > .lk-col, .lk.lk-drift > .lk-sec, .lk.lk-drift > .lk-row, .lk.lk-drift > .lk-dk { justify-content: flex-start !important; gap: 4px !important; }
+.lk.lk-drift .lk-envw { align-self: stretch; }
+.lk.lk-drift .lk-dlfo > .lk-tabs { align-self: flex-start; }
+.lk.lk-drift .lk-dlfo .lk-dk { align-self: stretch; }
+.lk.lk-drift > :not(.lk-dk):not(.lk-sep) { background: var(--lv-title); border-radius: 6px; padding: 4px 6px; }
+.lk.lk-drift > .lk-sep { display: none; }
+.lk.lk-drift { gap: 4px !important; }
+.lk.lk-drift .lk-tl { align-items: flex-start; }

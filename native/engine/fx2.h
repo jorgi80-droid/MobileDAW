@@ -1,5 +1,6 @@
 // Ports of js/engine/fx2.js: Auto Filter, Echo, Roar. Same maths and order of operations as the JS originals.
 #pragma once
+#include "spectap.h"
 #include "fx.h"
 
 namespace mdaw {
@@ -16,7 +17,8 @@ class AutoFilter : public Device {
   double lfoAt(double p);
   void setParam(int i, double v) override;
   void process(float* L, float* R, int n) override;
-  int readOut(float* o) override { o[0] = (float)fc; o[1] = (float)envN; o[2] = (float)lfo; return 3; }
+  SpecTap tap;   // input spectrum for the display (fx2.js AutoFilter.tap)
+  int readOut(float* o) override { o[0] = (float)fc; o[1] = (float)envN; o[2] = (float)lfo; return 3 + tap.read(o, 3, sr); }
 };
 class Echo : public Device {
  public:

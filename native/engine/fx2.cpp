@@ -41,6 +41,7 @@ void AutoFilter::process(float* L, float* R, int n) {
         dirty = false;
       } else if (dirty || std::fabs(oct - cur) > 0.003) { cur = oct; fc = fq; coef(fq); dirty = false; }
     }
+    tap.push(((double)L[i] + R[i]) * 0.5);
     double dl = drive != 1 ? std::tanh(L[i] * drive) : L[i], dr = drive != 1 ? std::tanh(R[i] * drive) : R[i];
     double l = b[0][0].process(dl), r = b[0][1].process(dr);
     if (two) { l = b[1][0].process(l); r = b[1][1].process(r); }

@@ -33,6 +33,20 @@ function scaleK(k, j, steps) {
     w.append(h('i', { class: 'lk-scl', style: `left:calc(50% + ${x.toFixed(1)}px);top:calc(50% + ${y.toFixed(1)}px)` }, t)); });
   el.classList.add('lk-sclk'); return el;
 }
+// specFill: Live's grey analyser behind a filter curve. spec = 128 log bins (20 Hz .. 20 kHz, dB) from the engine; drawn as a filled
+// shape over the display's width (the x axis of grid() / lx() is the same 20 Hz .. 20 kHz log scale)
+function specFill(g, spec, w, hh, top = 0, bottom = hh) {
+  if (!spec || !spec.length) return; const n = spec.length, pts = [[0, bottom]];
+  for (let b = 0; b < n; b++) pts.push([(b + 0.5) / n * w, bottom - Math.max(0, Math.min(1, (spec[b] + 90) / 84)) * (bottom - top)]);
+  pts.push([w, bottom]); g.fillStyle = 'rgba(150,150,156,.55)'; g.beginPath(); g.moveTo(pts[0][0], pts[0][1]); for (const q of pts) g.lineTo(q[0], q[1]); g.closePath(); g.fill();
+}
+// specFeed: polls the device read-out from `off` (128 bins) and glides the shown spectrum every frame
+function specFeed(k, off, paint) {
+  const st = { spec: null, tgt: null };
+  k.every(60, () => { const r = k.out(); if (r.length >= off + 128) { const a = new Float32Array(128); for (let b = 0; b < 128; b++) { let m = -150; for (let j = -1; j <= 1; j++) { const q = b + j; if (q >= 0 && q < 128) m = Math.max(m, r[off + q]); } a[b] = m; } st.tgt = a; } });
+  k.every(16, () => { if (!st.tgt) return; if (!st.spec) st.spec = Float32Array.from(st.tgt); else for (let b = 0; b < 128; b++) st.spec[b] = glide(st.spec[b], st.tgt[b], 0.35, 0.08); paint(); });
+  return st;
+}
 // tn: the name a section gets when the rack is too small for the whole panel and it is shown as tabs (devices.js tabify)
 const tn = (el, n) => { el.dataset.tn = n; return el; };
 const SR = 48000, F0 = 20, F1 = 20000;
@@ -353,10 +367,10 @@ V[7] = (k) => {
 // EQ Eight band shapes as Live draws them on the band buttons: low cut 48 / 12, low shelf, bell, notch, high shelf, high cut 12 / 48
 const EQ8_ICO = ['M1 9 L5 2 H15', 'M1 9 Q4 2 7 2 H15', 'M1 3 H5 C7 3 8 7 10 7 H15', 'M1 8 H4 C6 8 6 2 8 2 C10 2 10 8 12 8 H15', 'M1 3 H6 L8 9 L10 3 H15', 'M1 7 H6 C8 7 9 3 11 3 H15', 'M1 2 H9 Q12 2 15 9', 'M1 2 H11 L15 9'];
 V[31] = (k) => {
-  let sel = 2, W = 420, H = 150; const ctlBox = h('div', { class: 'lk-col' });
+  let sel = 2, W = 420, H = 150, sp = { spec: null }; const ctlBox = h('div', { class: 'lk-col' });
   const yd = (db) => H / 2 - db / 15 * (H / 2 - 8), dy = (y) => (H / 2 - y) / (H / 2 - 8) * 15;
   const disp = k.DF(420, 150, (g, w, hh) => {
-    W = w; H = hh; grid(g, W, H);
+    W = w; H = hh; specFill(g, sp.spec, W, H, 8, H); grid(g, W, H);
     g.fillStyle = 'rgba(255,255,255,.045)'; for (let dec = 10; dec < 10000; dec *= 10) for (let m = 2; m < 10; m++) { const f = dec * m; if (f > 20 && f < 20000) g.fillRect(Math.round(lx(f, W)), 0, 1, H); }   // Live: a fine log grid
     g.fillStyle = DISPC.grid; for (const v of [-12, -6, 0, 6, 12]) g.fillRect(0, Math.round(yd(v)), W, 1); for (const v of [12, 6, 0, -6, -12]) label(g, String(v), 5, yd(v) - 3, DISPC.ink, 10);
     for (const [f, t] of [[100, '100'], [1000, '1k'], [10000, '10k']]) label(g, t, lx(f, W) + 3, H - 4, DISPC.ink, 10);
@@ -366,6 +380,7 @@ V[31] = (k) => {
     for (let b = 0; b < 8; b++) { const on = k.get(b * 5) > 0.5, t = Math.round(k.get(b * 5 + 1)), gy = t === 2 || t === 3 || t === 5 ? yd(k.get(b * 5 + 3) * sc) : H / 2; g.globalAlpha = !on ? 0.3 : b === sel ? 1 : 0.8; lvRing(g, Math.max(10, Math.min(W - 10, lx(k.get(b * 5 + 2), W))), gy, 9); label(g, String(b + 1), Math.max(10, Math.min(W - 10, lx(k.get(b * 5 + 2), W))), gy + 3.5, DISPC.or, 10, 'center'); g.globalAlpha = 1; }
   }, { onDown: (x, y) => { let best = sel, bd = 1e9; for (let b = 0; b < 8; b++) { const dd = Math.abs(lx(k.get(b * 5 + 2), W) - x) + Math.abs(yd(k.get(b * 5 + 3)) - y) * 0.5; if (dd < bd) { bd = dd; best = b; } } if (best !== sel) { sel = best; fillCtl(); } return { f: k.get(sel * 5 + 2), g: k.get(sel * 5 + 3) }; },
     onMove: (x, y, ddx, ddy, s) => { k.set(sel * 5 + 2, Math.max(10, Math.min(22000, s.f * Math.pow(2, ddx / (W / 10))))); k.set(sel * 5 + 3, Math.max(-15, Math.min(15, s.g - ddy * 15 / (H / 2 - 8)))); } });
+  sp = specFeed(k, 0, () => disp.paint());
   function fillCtl() { ctlBox.replaceChildren(k.K(sel * 5 + 2, { n: 'Freq' }), k.K(sel * 5 + 3, { n: 'Gain' }), k.K(sel * 5 + 4, { n: 'Q' })); disp.paint(); }
   fillCtl();
   // Live: under the display one cell per band - the filter-shape icon with its menu arrow, then the band's on box and number
@@ -938,15 +953,18 @@ VI[13] = (k) => {
     h('div', { class: 'lk-envw' }, envD, envTabs), k.row(k.T(39, '⟳', { w: 22 }), k.K(35, { n: 'Attack' }), k.K(36, { n: 'Decay' }), k.K(37, { n: 'Sustain' }), k.K(38, { n: 'Release' })));
   const page = h('div', { class: 'lk-page' });
   const lfoD = k.D(170, 52, (g, w, hh) => { const wf = Math.round(k.get(40)), pts = []; for (let x = 0; x <= w; x++) { const t = x / w * 4, a = t - Math.floor(t); let v; switch (wf) { case 1: v = 1 - 4 * Math.abs(a - 0.5); break; case 2: v = 2 * a - 1; break; case 3: v = 1 - 2 * a; break; case 4: v = a < 0.5 ? 1 : -1; break; case 5: { const r = Math.sin(Math.floor(t) * 12.9898) * 43758.5; v = (r - Math.floor(r)) * 2 - 1; break; } case 6: v = Math.sin(t * 2.1) * 0.6 + Math.sin(t * 5.3) * 0.3; break; case 7: v = t < 1 ? 1 - 2 * a : -1; break; case 8: v = t < 1 ? 2 * Math.exp(-a * 5) - 1 : -1; break; default: v = Math.sin(2 * Math.PI * a); } pts.push([x, hh / 2 - v * k.get(47) * (hh / 2 - 6)]); } lvPath(g, pts, DISPC.bl, null, 1.6); });
+  // Live: Ratio / Rate with the 2 x 2 unit chips on top, the dark box (shape menu, R, wave) in the middle, Amount and Mod under it
   const tabs = [
-    () => k.row(k.col(k.swapN(41, (m) => k.K([42, 43, 44, 45][m], { n: ['Rate', 'Ratio', 'Time', 'Rate'][m] })), k.K(47, { n: 'Amount' })), k.CH(41, ['Hz', '1:1', 'ms', '♪'], { cls: 'g2 sm' }),
-      k.col(k.dk(k.row(waveSel(k, 40, DB), h('span', { class: 'lk-grow' }), k.T(46, 'R', { cls: 'lk-r', w: 22 })), lfoD), k.row(k.TL('Mod', k.S(48, { w: 64 })), k.N(49, { w: 60, fill: false })))),
+    () => k.col(k.row(k.swapN(41, (m) => k.K([42, 43, 44, 45][m], { n: ['Rate', 'Ratio', 'Time', 'Rate'][m] })), k.CH(41, ['Hz', '1:1', 'ms', '♪'], { cls: 'g2 sm' })),
+      k.dk(k.row(waveSel(k, 40, DB), h('span', { class: 'lk-grow' }), k.T(46, 'R', { cls: 'lk-r', w: 22 })), lfoD),
+      k.row(k.K(47, { n: 'Amount' }), k.col(k.TL('Mod', k.S(48, { w: 64 })), k.N(49, { w: 64, fill: false })))),
     () => k.col(...[0, 1, 2].map((m) => k.row(k.S(59 + m * 3, { w: 76 }), h('span', { class: 'lk-lb' }, '→'), k.S(60 + m * 3, { w: 96 }), k.N(61 + m * 3, { w: 60, fill: false })))),
   ];
   const tb = lvTabs([{ label: 'LFO' }, { label: 'Mod' }], 0, (j) => page.replaceChildren(tabs[j]()), { cls: 'lk-tabs' }); page.replaceChildren(tabs[0]());
   const glob = k.row(k.col(k.TL('Mode', k.S(50, { w: 80 })), k.TL('Voices', k.S(51, { w: 80 })), k.TL('Drift', k.N(52, { w: 80 })), k.T(53, 'Legato', { w: 80 }), k.TL('Glide', k.N(54, { w: 80, fill: false }))), k.sep(),
     k.col(k.K(55), k.TL('Vel > Vol', k.N(56, { w: 80 })), k.TL('Transpose', k.N(57, { w: 80, fill: false })), k.TL('PB Range', k.N(58, { w: 80 }))));
-  return k.row(tn(osc, 'Osc'), k.sep(), tn(filt, 'Filter'), k.sep(), tn(envs, 'Env'), k.sep(), tn(k.col(tb, page), 'LFO / Mod'), k.sep(), tn(glob, 'Global'));
+  // ONE panel like Live (wide: the rack scrolls sideways) - never split into tabs
+  const r = k.row(osc, k.sep(), filt, k.sep(), envs, k.sep(), h('div', { class: 'lk-col lk-dlfo' }, tb, page), k.sep(), glob); r.classList.add('lk-notab', 'lk-drift'); return r;
 };
 // Operator: operator rows D / C / B / A (Coarse + Fine, or Freq + Multi when Fixed; Level; coloured switch = operator on, tap a row = show it
 // on the right), dark display with the selected operator's envelope (drag the Peak / Sustain points) and oscillator, algorithm picture,
@@ -1494,15 +1512,16 @@ V[6] = (k) => {
 // Auto Filter: Freq, type, 12 / 24, Res | filter display with the LFO strip (LFO, Phase) inside, LFO Amt / Rate / Wave / Envelope (attack, release)
 // below it | Drive, Dry/Wet
 V[1] = (k) => {
-  let fc = 0;
+  let fc = 0, sp = { spec: null };
   const disp = k.DF(420, 110, (g, w, hh) => {
-    grid(g, w, hh); g.fillStyle = DISPC.grid; g.fillRect(0, Math.round(hh / 2), w, 1); const b = new Biquad(), t = Math.round(k.get(0)), q = k.get(2);
+    specFill(g, sp.spec, w, hh, 6, hh); grid(g, w, hh); g.fillStyle = DISPC.grid; g.fillRect(0, Math.round(hh / 2), w, 1); const b = new Biquad(), t = Math.round(k.get(0)), q = k.get(2);
     const draw = (f, col, fill) => { if (t === 0) b.lowpass(SR, f, q); else if (t === 1) b.highpass(SR, f, q); else if (t === 2) b.bandpass(SR, f, q); else b.notch(SR, f, q);
       const pts = []; for (let x = 0; x <= w; x += 2) { let m = mag(b, xl(x, w)); if (k.get(3) > 0.5) m *= m; pts.push([x, hh - 6 - Math.min(2, m) / 2 * (hh - 16)]); } lvPath(g, pts, col, null, 1.8); };
     if (fc > 20 && Math.abs(fc - k.get(1)) > k.get(1) * 0.01) draw(fc, DISPC.or, false);
     draw(k.get(1), DISPC.bl, true); { const f = k.get(1); if (t === 0) b.lowpass(SR, f, q); else if (t === 1) b.highpass(SR, f, q); else if (t === 2) b.bandpass(SR, f, q); else b.notch(SR, f, q); let m = mag(b, f); if (k.get(3) > 0.5) m *= m; lvRing(g, Math.max(8, Math.min(w - 8, lx(f, w))), hh - 6 - Math.min(2, m) / 2 * (hh - 16), 6); }
   }, { onDown: () => ({ f: k.get(1), q: k.get(2) }), onMove: (x, y, dx, dy, s) => { k.set(1, Math.max(20, Math.min(20000, s.f * Math.pow(2, dx / 30)))); k.set(2, Math.max(0.3, Math.min(12, s.q * Math.pow(2, -dy / 30)))); } });
-  k.every(60, () => { const r = k.out(); if (r.length) { fc = r[0]; disp.paint(); } });
+  k.every(60, () => { const r = k.out(); if (r.length) fc = r[0]; });
+  sp = specFeed(k, 3, () => disp.paint());
   // Live: filter section in a light box on the left, the display with the LFO strip flush at its bottom, LFO Amt / Rate / Wave under it and
   // Envelope in its own box, Drive over Dry/Wet on the right
   return k.row(h('div', { class: 'lk-col lk-ebox' }, k.K(1, { n: 'Freq', big: true }), k.S(0, { w: 86 }), k.CH(3, ['12', '24']), k.K(2, { n: 'Res' })),

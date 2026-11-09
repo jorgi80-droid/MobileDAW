@@ -92,7 +92,7 @@ void EqEight::upd() {
 }
 void EqEight::process(float* L, float* R, int n) {
   double g = dbToLin(p[41]);
-  for (int i = 0; i < n; i++) { double l = L[i], r = R[i]; for (int k = 0; k < ns; k++) { l = st[0][k].process(l); r = st[1][k].process(r); } L[i] = (float)(l * g); R[i] = (float)(r * g); }
+  for (int i = 0; i < n; i++) { double l = L[i], r = R[i]; for (int k = 0; k < ns; k++) { l = st[0][k].process(l); r = st[1][k].process(r); } L[i] = (float)(l * g); R[i] = (float)(r * g); tap.push(((double)L[i] + R[i]) * 0.5); }
 }
 void Spectrum::process(float* L, float* R, int n) {
   int ch = (int)jsRound(p[1]); for (int i = 0; i < n; i++) { buf[toInt32(w) & 16383] = (float)(ch == 0 ? L[i] : ch == 1 ? R[i] : ((double)L[i] + R[i]) * 0.5); w++; }

@@ -219,3 +219,21 @@ export class ClickLine {
   }
   clear() { if (this.used) { this.b.fill(0); this.used = false; } }
 }
+
+// SpecTap: the display analyser behind an effect's curve (Live: EQ Eight, Auto Filter, Channel EQ). push() one mono sample per frame; read(o, off, sr)
+// writes 128 log bins 20 Hz .. 20 kHz (dB, smoothed) from a 2048-point FFT at o[off..]. Display only: the audio is untouched.
+export class SpecTap {
+  constructor() { this.sb = new Float32Array(4096); this.sw = 0; this.sav = new Float32Array(128).fill(-150); this.re = new Float64Array(2048); this.im = new Float64Array(2048); }
+  push(x) { this.sb[this.sw & 4095] = x; this.sw = (this.sw + 1) & 0x7fffffff; }
+  read(o, off, sr) {
+    const n = 2048, re = this.re, im = this.im, nyq = sr / 2;
+    for (let k = 0; k < n; k++) { re[k] = this.sb[(this.sw - n + k) & 4095] * (0.5 - 0.5 * Math.cos(2 * Math.PI * k / (n - 1))); im[k] = 0; }
+    fft(re, im, n);
+    for (let b = 0; b < 128; b++) {
+      const f0 = 20 * Math.pow(1000, b / 128), f1 = 20 * Math.pow(1000, (b + 1) / 128); const k0 = Math.floor(f0 / nyq * n / 2), k1 = Math.max(k0 + 1, Math.ceil(f1 / nyq * n / 2)); let m = 0;
+      for (let k = k0; k < k1 && k < n / 2; k++) { const v = re[k] * re[k] + im[k] * im[k]; if (v > m) m = v; }
+      const db = 10 * Math.log10(m / (n * n / 16) + 1e-16); this.sav[b] += (db - this.sav[b]) * 0.5; o[off + b] = this.sav[b];
+    }
+    return 128;
+  }
+}

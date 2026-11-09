@@ -1,5 +1,6 @@
 // Ports of js/engine/fx3.js (part 2): Erosion, Redux, Vinyl Distortion, Drum Buss, Tuner, EQ Eight, Spectrum.
 #pragma once
+#include "spectap.h"
 #include "fx3.h"
 
 namespace mdaw {
@@ -52,6 +53,8 @@ class EqEight : public FxBase {
   void upd();
   void setParam(int i, double v) override { FxBase::setParam(i, v); upd(); }
   void process(float* L, float* R, int n) override;
+  SpecTap tap;   // output spectrum for the display (fx3.js EqEight.tap)
+  int readOut(float* o) override { return tap.read(o, 0, sr); }
 };
 class Spectrum : public FxBase {
  public:
