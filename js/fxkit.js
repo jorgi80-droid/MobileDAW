@@ -53,7 +53,7 @@ const SR = 48000, F0 = 20, F1 = 20000;
 const lx = (f, w) => (Math.log(f / F0) / Math.log(F1 / F0)) * w, xl = (x, w) => F0 * Math.pow(F1 / F0, Math.max(0, Math.min(1, x / w)));
 const mag = (b, f) => { const w = 2 * Math.PI * f / SR, c1 = Math.cos(w), c2 = Math.cos(2 * w), s1 = Math.sin(w), s2 = Math.sin(2 * w);
   const nr = b.b0 + b.b1 * c1 + b.b2 * c2, ni = -(b.b1 * s1 + b.b2 * s2), dr = 1 + b.a1 * c1 + b.a2 * c2, di = -(b.a1 * s1 + b.a2 * s2); return Math.sqrt((nr * nr + ni * ni) / (dr * dr + di * di)); };
-const grid = (g, w, hh) => { g.fillStyle = DISPC.grid; for (const f of [100, 1000, 10000]) g.fillRect(Math.round(lx(f, w)), 0, 1, hh); };
+const grid = (g, w, hh) => { g.fillStyle = 'rgba(255,255,255,.05)'; for (let dec = 10; dec < 20000; dec *= 10) for (let m = 2; m < 10; m++) { const f = dec * m; if (f > 20 && f < 20000 && m !== 10) g.fillRect(Math.round(lx(f, w)), 0, 1, hh); } g.fillStyle = DISPC.grid; for (const f of [100, 1000, 10000]) g.fillRect(Math.round(lx(f, w)), 0, 1, hh); };   // Live: a fine log grid under the decade lines
 const label = (g, t, x, y, col = DISPC.ink, sz = 9, al = 'left') => { g.fillStyle = col; g.font = `600 ${sz}px system-ui,sans-serif`; g.textAlign = al; g.textBaseline = 'alphabetic'; g.fillText(t, x, y); g.textAlign = 'left'; };
 
 // ---- the kit: controls bound to device parameters (a bipolar knob gets Live's small centre triangle above its dial) ---------

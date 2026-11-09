@@ -1490,3 +1490,6 @@ html.reduce-motion .menu, html.reduce-motion .modal, html.reduce-motion .fw, htm
 .lk .lk-mfr > .lk-col:first-child > .lk-row { gap: 4px; }
 .lk .lk-mfr .lv-fld.lk-nt { color: var(--lv-ink) !important; font-weight: 600; }
 .lk .lk-mfr > .lk-col:last-child { overflow: visible; }
+/* icon choice grids (Auto Pan waves ...): separate boxes with a gap, as in Live */
+.lk .lk-ch.g2:not(.sm) { gap: 4px !important; background: transparent !important; border: 0 !important; }
+.lk .lk-ch.g2:not(.sm) > .lv-btn { border: 1px solid var(--lv-edge) !important; border-radius: 1px !important; margin: 0 !important; }
