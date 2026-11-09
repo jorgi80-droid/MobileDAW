@@ -1279,3 +1279,41 @@ html.reduce-motion .menu, html.reduce-motion .modal, html.reduce-motion .fw, htm
 [data-theme-id="light"] .knob svg path:first-of-type { stroke: #3a3a3a !important; }
 [data-theme-id="light"] .lk-dk .knob svg path:first-of-type { stroke: #55555a !important; }
 .knob svg line { stroke-width: 3px !important; }
+/* ===== round 6: Live metrics measured at equal card height (owner's Compressor / Glue comparison) and ONE size per control kind
+   (the audit found 31 button sizes and 22 dial sizes): label, dial and value sit tight together as in Live ===== */
+.lk:not(.lk-dense) { --fs-1: 12px; --fs-2: 14px; --fs-3: 14px; --fs-4: 15px; --fs-5: 16px; }
+.lk:not(.lk-dense) .knob.lk-k { width: auto; min-width: 56px; gap: 0; }
+.lk:not(.lk-dense) .knob.lk-k svg { width: 46px; height: 46px; margin: -1px 0; }
+.lk:not(.lk-dense) .knob.lk-k.big svg { width: 60px; height: 60px; }
+.lk:not(.lk-dense) .knob.lk-k .k-n, .lk:not(.lk-dense) .knob.lk-k .k-v { font-size: 14px !important; line-height: 15px; height: 15px; }
+.lk:not(.lk-dense) .knob.lk-k .k-v { font-weight: 400; }
+.lk:not(.lk-dense) .lk-lb, .lk:not(.lk-dense) .lk-tl > span, .lk:not(.lk-dense) .lk-ln > span { font-size: 14px; font-weight: 400; }
+.lk:not(.lk-dense) .lk-st { font-size: 14px; font-weight: 600; }
+/* one button size, one field size (small grid / icon buttons keep their own) */
+.lk:not(.lk-dense) .lv-btn:not(.lk-eqico):not(.lk-vbtn):not(.lk-hph):not(.lk-pill):not(.lk-tico):not(.lk-marr):not(.lk-ax):not(.lk-mixb):not(.lk-r):not(.lk-loop):not(.lk-tplay):not(.lk-sfp) { height: 22px; min-height: 22px; font-size: 13px !important; font-weight: 500; line-height: 20px; padding-left: 7px; padding-right: 7px; }
+.lk:not(.lk-dense) .lk-ch.g2c .lv-btn, .lk:not(.lk-dense) .lk-ch.lk-g4 .lv-btn { height: 20px !important; min-height: 20px; font-size: 12px !important; }
+.lk:not(.lk-dense) .lv-fld { height: 22px; min-height: 22px; font-size: 13px !important; }
+.lk.lk-dense .lv-btn:not(.lk-eqico):not(.lk-vbtn):not(.lk-hph):not(.lk-tico) { height: 20px; min-height: 20px; font-size: 11px !important; }
+.lk.lk-dense .lv-fld { height: 20px; min-height: 20px; font-size: 11px; }
+.lk.lk-dense .knob.lk-k .k-n, .lk.lk-dense .knob.lk-k .k-v { font-size: 11px !important; }
+/* Glue Compressor: Live draws it with its own dark skin (dark blue-grey body, pink power, white text) */
+.dev-scroll > .card:has(> .lk.lk-glue) { background: #2e3139 !important; }
+.lk.lk-glue { --lv-ink: #e8e8ea; --lv-dim: #a6a8ae; --lv-trk: #1c1d22; --lv-ctl: #4a4d56; --lv-ctl2: #5a5d66; --lv-edge: #15161a; color: #e8e8ea; background: #2e3139; }
+.lk.lk-glue .knob svg path:first-of-type { stroke: #17181c !important; }
+.lk.lk-glue .knob svg line { stroke: #e8e8ea; }
+.dev-scroll > .card:has(> .lk.lk-glue) > h4 button.pw.on::before, .dev-scroll > .card:has(> .lk.lk-glue) > h4 .pdot { background: #ff8fc8 !important; box-shadow: 0 0 5px rgba(255, 143, 200, .5); }
+.lk.lk-glue .lk-dk { background: #1f2127 !important; border-color: #15161a !important; }
+.lk.lk-glue .lv-btn.lk-pink.on { background: #ff8fc8; color: #1a0d14; }
+/* Live's spacing: tight columns, thin panel padding (the dial's own ring margin is cut) */
+.lk:not(.lk-dense) { padding: 4px 6px 4px; }
+.lk:not(.lk-dense) .lk-col, .lk:not(.lk-dense).lk-col { row-gap: 2px; }
+.lk:not(.lk-dense) .knob.lk-k svg { margin: -3px 0; }
+.lk:not(.lk-dense) .knob.lk-k.big svg { margin: -3px 0; }
+.lk:not(.lk-dense) .lk-tl { gap: 1px; }
+.dev-scroll > .card:has(> .lk.lk-glue) > h4 { background: var(--lv-title) !important; }
+.lk.lk-glue { overflow: visible; }
+.lk.lk-glue > .lk-col { flex: none; }
+/* a dial is as wide as its longest text (14 px "Dry/Wet" was cut at the card edge) */
+.lk:not(.lk-dense) .knob.lk-k { width: max-content !important; min-width: 56px; }
+.lk:not(.lk-dense) .knob.lk-k .k-n, .lk:not(.lk-dense) .knob.lk-k .k-v { white-space: nowrap; overflow: visible; max-width: none; width: auto; }
+.lk:not(.lk-dense) { padding-left: 9px !important; padding-right: 11px !important; }

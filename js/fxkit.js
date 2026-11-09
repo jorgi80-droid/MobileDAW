@@ -153,7 +153,7 @@ V[24] = (k) => {
   const lampC = h('span', { class: 'lk-lamp' }), fC = () => lampC.classList.toggle('on', k.get(6) > 0.5); fC(); k.reg(Object.assign(lampC, { update: fC }), 6);
   const clip = h('div', { class: 'lk-gclip' }, lampC, h('span', { class: 'lk-lb' }, 'Clip'));
   const soft = k.T(6, 'Soft', { cls: 'lk-pink', w: 56 });
-  return k.row(k.col(scaleK(k, 0, ['.01', '.1', '.3', '1', '3', '10', '30']), scaleK(k, 1, ['.1', '.2', '.4', '.6', '.8', '1.2', 'A']), scaleK(k, 2, ['2', '4', '10'])),
+  return h('div', { class: 'lk-row lk-glue' }, k.col(scaleK(k, 0, ['.01', '.1', '.3', '1', '3', '10', '30']), scaleK(k, 1, ['.1', '.2', '.4', '.6', '.8', '1.2', 'A']), scaleK(k, 2, ['2', '4', '10'])),
     tn(k.dk(vu, k.row(k.K(3, { big: true }), k.K(4, { big: true }))), 'Meter'), k.sep(), k.col(clip, soft, k.K(5), k.K(7)));
 };
 // Channel EQ: curve display with the HP switch and the mid frequency readout, Low / Mid / High / Output
@@ -1425,7 +1425,7 @@ V[19] = (k) => {
   const o = k.out; k.every(100, () => { const r = o(); pos.style.outline = r[0] ? '1px solid #ffad32' : ''; });
   return k.col(
     k.row(pos, k.col(bandDisp(k, 150, 50, 9, 10, { on: 8, fill: true }), k.row(k.N(9, { w: 70 }), k.N(10, { w: 70 })))),
-    k.row(fixH(k.row(k.K(0), k.K(1), k.K(2), k.K(3)), 64), h('span', { class: 'lk-grow' }), k.col(k.T(8, 'Filter', { w: 124 }))),
+    k.row(k.row(k.K(0), k.K(1), k.K(2), k.K(3)), h('span', { class: 'lk-grow' }), k.col(k.T(8, 'Filter', { w: 124 }))),
     k.row(k.T(15, 'Repeat', { w: 64 }), k.T(14, 'No Trpl', { w: 64 }), h('span', { class: 'lk-grow' }), k.CH(11, ['Mix', 'Ins', 'Gate'])),
     k.row(k.K(4), k.K(5), k.K(6), k.K(7), k.K(12), k.K(13)));
 };

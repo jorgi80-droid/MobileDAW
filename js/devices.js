@@ -512,9 +512,10 @@ function fitKit() {
     const Z = Math.max(0.6, Math.min(1.2, avail / DESIGN_H)), z = need * Z > avail ? Math.max(0.6, avail / need) : Z;
     if (Math.abs(z - 1) > 0.01) lk.style.zoom = z.toFixed(3);
     if (need * z < avail - 6) { lk.style.minHeight = Math.floor(avail / z) + 'px'; lk.classList.add('lk-fill'); }
+    const over = lk.offsetHeight * (parseFloat(lk.style.zoom) || 1) - avail; if (over > 1) lk.style.zoom = Math.max(0.6, (parseFloat(lk.style.zoom) || 1) * avail / (avail + over)).toFixed(3);   // never taller than the rack
   }
 }
-let fitRO = null;
+let fitRO = null, fitLate = 0;
 export function render() {
   if (!root) return;
   if (!fitRO && typeof ResizeObserver !== 'undefined') { fitRO = new ResizeObserver(() => requestAnimationFrame(fitKit)); fitRO.observe(root); }
@@ -552,7 +553,7 @@ export function render() {
   } }, h('b', { 'aria-hidden': 'true' }, '+'), h('span', {}, full ? 'Rantai penuh (16 efek)' : 'Ketuk untuk menambah efek'), h('small', {}, 'atau seret efek dari Browser ke sini'));
   put(add, 'add');
   root.replaceChildren(scroll);
-  requestAnimationFrame(fitKit);
+  requestAnimationFrame(fitKit); clearTimeout(fitLate); fitLate = setTimeout(fitKit, 350);   // again once fill displays and fonts have their final size (a card could stay taller than the rack)
   if (same) { scroll.scrollLeft = sl; flip(scroll, before); }
   else if (old && !quiet()) scroll.animate([{ opacity: 0.25 }, { opacity: 1 }], { duration: dur(170), easing: 'ease-out' });
   const title = document.getElementById('dtitle');
