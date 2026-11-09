@@ -1514,3 +1514,16 @@ html.reduce-motion .menu, html.reduce-motion .modal, html.reduce-motion .fw, htm
 .lk:has(> .lk-clfo) { gap: 4px !important; }
 .lk:has(> .lk-clfo) > .lk-sep { display: none; }
 .lk:has(> .lk-clfo) > .lk-col:not(:first-child) { background: var(--lv-title); border-radius: 6px; padding: 4px 6px !important; align-self: stretch !important; }
+/* classic synth cards (Moisture, Osphere, Keystone): the same text and dial sizes as every other device (they used 8.5 - 9 px) */
+.card.syn .sp { padding: 4px 6px 4px; gap: 3px; }
+.card.syn .sp-h { min-height: 22px; gap: 2px; }
+.card.syn .sp-h .st { height: 22px; padding: 0 10px; font-size: 13px !important; display: inline-flex; align-items: center; }
+.card.syn .sp-h b, .card.syn .lv-st { font-size: 13px !important; letter-spacing: 0; color: var(--lv-ink); }
+.card.syn .sp-ro { height: auto; font-size: 12px !important; line-height: 15px; color: var(--lv-ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card.syn .sp-k { gap: 2px; justify-content: space-evenly; }
+.card.syn .sp-k .knob { width: auto; min-width: 46px; }
+.card.syn .sp-k .knob svg { width: 36px; height: 36px; }
+.card.syn .sp-k .knob .k-n, .card.syn .sp-k .knob .k-v { font-size: 12px !important; line-height: 14px; height: 14px; white-space: nowrap; overflow: visible; }
+.card.syn .sp .viz { width: 170px !important; height: 134px !important; }
+.card.syn .inst-side { width: 190px; }
+.card.syn .inst-side .lv-btn, .card.syn .inst-side .b { font-size: 13px; }
