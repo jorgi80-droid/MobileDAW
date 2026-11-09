@@ -1381,3 +1381,15 @@ html.reduce-motion .menu, html.reduce-motion .modal, html.reduce-motion .fw, htm
 .lk .lk-edisp > .lk-row { padding: 3px 8px; background: #232325; border-top: 1px solid #3a3a3e; justify-content: flex-start; gap: 6px; }
 .lk .lk-eright { display: grid; grid-template-columns: auto auto; column-gap: 8px; row-gap: 4px; align-content: space-between; justify-items: center; align-items: end; }
 .lk .lk-eright > .lk-ch { align-self: end; }
+.lk .lk-vdp { align-items: stretch !important; gap: 3px !important; }
+.lk .lk-vdp > .lk-dfill { min-height: 60px; flex: 1 1 auto; }
+.lk .lk-vdp > .lk-row { justify-content: flex-start; gap: 6px; }
+.lk .lv-btn.lk-pill { border-radius: 10px !important; min-width: 40px; height: 20px !important; min-height: 20px; }
+.lk .lv-btn.lk-hph { border-radius: 50% !important; width: 22px !important; height: 22px !important; min-height: 22px; padding: 0 !important; }
+.lk .lk-afd { min-width: 360px; min-height: 140px; }
+.lk .lk-afd + .lk-row { justify-content: space-between; align-items: flex-end; gap: 8px; }
+/* Glue: the whole card dark, the title bar too (Live) */
+.dev-scroll > .card:has(> .lk.lk-glue) > h4 { background: #2a2d34 !important; }
+.dev-scroll > .card:has(> .lk.lk-glue) > h4, .dev-scroll > .card:has(> .lk.lk-glue) > h4 * { color: #e8e8ea !important; }
+.dev-scroll > .card:has(> .lk.lk-glue) > h4 button:not(.pw):not(.pdot) { border-color: #5a5d66 !important; }
+.lk .lk-edisp > .lk-row { align-self: stretch !important; width: auto !important; }

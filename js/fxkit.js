@@ -192,9 +192,10 @@ V[27] = (k) => k.row(k.sec('Sample Rate', k.row(k.K(0, { big: true }), k.col(k.K
   k.sec('Bit Reduction', k.row(k.col(k.T(4, 'Quantize'), k.K(3)), k.col(k.K(5), k.T(6, 'DC Shift')))), k.sep(), k.sec(null, k.K(7)));
 // Vinyl Distortion: Tracing Model and Pinch, each with display + On / drive / freq / width, pinch type and stereo mode; crackle and drive
 V[28] = (k) => {
-  const part = (o, title, extra) => k.col(h('div', { class: 'lk-st' }, title), bandDisp(k, 176, 48, o + 2, o + 3, { peak: true, on: o, wmin: 0.1, wmax: 10 }),
-    k.row(k.T(o, 'On', { w: 34 }), k.N(o + 1, { w: 46 }), k.LN('Freq', k.N(o + 2, { w: 64 })), k.LN('B', k.N(o + 3, { w: 44 }))), extra);
-  return k.row(k.col(part(0, 'Tracing Model', null), part(4, 'Pinch', k.row(k.CH(9, ['Soft', 'Hard']), k.CH(8, ['Stereo', 'Mono'])))), k.sep(),
+  // Live: the title line (Pinch carries Soft / Hard and Stereo / Mono on it), the display as wide as the column, then On / amount / Freq / B
+  const part = (o, head) => h('div', { class: 'lk-col lk-vdp' }, head, bandDisp(k, 230, 60, o + 2, o + 3, { peak: true, on: o, wmin: 0.1, wmax: 10, fill: true }),
+    k.row(k.T(o, 'On', { w: 34 }), k.N(o + 1, { w: 46 }), k.LN('Freq', k.N(o + 2, { w: 64 })), k.LN('B', k.N(o + 3, { w: 44 }))));
+  return k.row(k.col(part(0, h('div', { class: 'lk-st' }, 'Tracing Model')), part(4, k.row(h('div', { class: 'lk-st' }, 'Pinch'), k.CH(9, ['Soft', 'Hard']), k.CH(8, ['Stereo', 'Mono'])))), k.sep(),
     k.col(h('div', { class: 'lk-st c' }, 'Crackle'), k.K(10, { n: 'Volume' }), k.K(11), k.K(12)));
 };
 // Drum Buss: drive + type, trim / comp, crunch / damp / transients, boom section with meters, output / dry-wet
@@ -222,7 +223,7 @@ V[29] = (k) => {
   note.addEventListener('click', () => { k.set(8, Math.max(30, Math.min(90, 440 * Math.pow(2, (midi() - 69) / 12)))); nUp(); }); k.reg(Object.assign(note, { update: nUp }), 8);
   const aud = k.T(12, '', { w: 26, cls: 'lk-hph' }); aud.title = 'Boom Audition'; { const sv = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); sv.setAttribute('viewBox', '0 0 16 16'); sv.setAttribute('width', '14'); sv.setAttribute('height', '14'); sv.innerHTML = '<path d="M3 10 V8 a5 5 0 0 1 10 0 V10" fill="none" stroke="currentColor" stroke-width="1.6"/><rect x="2" y="9" width="3" height="5" rx="1" fill="currentColor"/><rect x="11" y="9" width="3" height="5" rx="1" fill="currentColor"/>'; aud.append(sv); }
   const box = h('div', { class: 'lk-dk lk-dbm' }, met, h('div', { class: 'lk-dbw' }, h('span', {}, 'Dry / Wet'), k.NT(11, { w: 54 })));
-  return k.row(k.col(k.K(0, { big: true }), k.CH(1, ['Soft', 'Medium', 'Hard'], { v: true }), k.TL('Trim', k.N(2, { w: 62 })), k.T(3, 'Comp')), k.sep(),
+  return k.row(k.col(k.K(0), k.CH(1, ['Soft', 'Medium', 'Hard'], { v: true }), k.TL('Trim', k.N(2, { w: 62 })), k.T(3, 'Comp')), k.sep(),
     k.col(k.K(4), k.K(5), k.K(6)), k.sep(), k.col(k.K(7), k.K(8), k.TL('Decay', k.N(9, { w: 62 })), k.row(note, aud)), box);
 };
 // Tuner: arc meter with the cents dot, note + frequency, reference; display options: strobe / histogram and Hz / cents readout
@@ -1494,17 +1495,19 @@ V[6] = (k) => {
 // below it | Drive, Dry/Wet
 V[1] = (k) => {
   let fc = 0;
-  const disp = k.D(420, 92, (g, w, hh) => {
-    grid(g, w, hh); const b = new Biquad(), t = Math.round(k.get(0)), q = k.get(2);
+  const disp = k.DF(420, 110, (g, w, hh) => {
+    grid(g, w, hh); g.fillStyle = DISPC.grid; g.fillRect(0, Math.round(hh / 2), w, 1); const b = new Biquad(), t = Math.round(k.get(0)), q = k.get(2);
     const draw = (f, col, fill) => { if (t === 0) b.lowpass(SR, f, q); else if (t === 1) b.highpass(SR, f, q); else if (t === 2) b.bandpass(SR, f, q); else b.notch(SR, f, q);
-      const pts = []; for (let x = 0; x <= w; x += 2) { let m = mag(b, xl(x, w)); if (k.get(3) > 0.5) m *= m; pts.push([x, hh - 20 - Math.min(2, m) / 2 * (hh - 30)]); } lvPath(g, pts, col, fill ? hh - 16 : null, 1.7); };
+      const pts = []; for (let x = 0; x <= w; x += 2) { let m = mag(b, xl(x, w)); if (k.get(3) > 0.5) m *= m; pts.push([x, hh - 6 - Math.min(2, m) / 2 * (hh - 16)]); } lvPath(g, pts, col, null, 1.8); };
     if (fc > 20 && Math.abs(fc - k.get(1)) > k.get(1) * 0.01) draw(fc, DISPC.or, false);
-    draw(k.get(1), DISPC.bl, true); lvRing(g, lx(k.get(1), w), (hh - 16) * 0.35, 5);
+    draw(k.get(1), DISPC.bl, true); { const f = k.get(1); if (t === 0) b.lowpass(SR, f, q); else if (t === 1) b.highpass(SR, f, q); else if (t === 2) b.bandpass(SR, f, q); else b.notch(SR, f, q); let m = mag(b, f); if (k.get(3) > 0.5) m *= m; lvRing(g, Math.max(8, Math.min(w - 8, lx(f, w))), hh - 6 - Math.min(2, m) / 2 * (hh - 16), 6); }
   }, { onDown: () => ({ f: k.get(1), q: k.get(2) }), onMove: (x, y, dx, dy, s) => { k.set(1, Math.max(20, Math.min(20000, s.f * Math.pow(2, dx / 30)))); k.set(2, Math.max(0.3, Math.min(12, s.q * Math.pow(2, -dy / 30)))); } });
   k.every(60, () => { const r = k.out(); if (r.length) { fc = r[0]; disp.paint(); } });
-  return k.row(k.col(k.K(1, { n: 'Freq', big: true }), k.S(0, { w: 76 }), k.CH(3, ['12', '24']), k.K(2, { n: 'Res' })), k.sep(),
-    k.col(k.dk(disp, k.row(h('span', { class: 'lk-st' }, 'LFO'), h('span', { class: 'lk-lb' }, 'Phase'), k.NT(12, { w: 52, cls: 'or' }))),
-      k.row(k.K(7, { n: 'LFO Amt' }), k.K(8, { n: 'Rate' }), k.TL('Wave', k.S(9, { w: 72 })), k.sep(), k.K(4, { n: 'Envelope' }), k.col(k.TL('Attack', k.N(5, { w: 58, fill: false })), k.TL('Release', k.N(6, { w: 58, fill: false }))))), k.sep(),
+  // Live: filter section in a light box on the left, the display with the LFO strip flush at its bottom, LFO Amt / Rate / Wave under it and
+  // Envelope in its own box, Drive over Dry/Wet on the right
+  return k.row(h('div', { class: 'lk-col lk-ebox' }, k.K(1, { n: 'Freq', big: true }), k.S(0, { w: 86 }), k.CH(3, ['12', '24']), k.K(2, { n: 'Res' })),
+    k.col(h('div', { class: 'lk-dk lk-edisp lk-afd' }, disp, k.row(h('span', { class: 'lk-st' }, 'LFO'), h('span', { class: 'lk-lb' }, 'Phase'), k.NT(12, { w: 52, cls: 'or' }))),
+      k.row(k.K(7, { n: 'LFO Amt' }), k.K(8, { n: 'Rate' }), k.TL('Wave', k.S(9, { w: 80 })), h('div', { class: 'lk-row lk-ebox' }, k.K(4, { n: 'Envelope' }), k.col(k.TL('Attack', k.N(5, { w: 62, fill: false })), k.TL('Release', k.N(6, { w: 62, fill: false })))))),
     k.col(k.K(10), h('span', { class: 'lk-grow' }), k.K(11)));
 };
 // Auto Pan: L / R display, Amount / Rate / Phase / Shape, Normal / Invert, Hz / sync, Offset, waveform icons (2 x 2)
