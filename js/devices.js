@@ -445,7 +445,7 @@ function hoistAll(card, lk) {
   const head = card.querySelector(':scope > h4'); if (!head || !lk) return false;
   let moved = false;
   for (const s of [...head.querySelectorAll(':scope > .lk-htabs')]) if (s._ph && !s._ph.isConnected) { s.remove(); moved = true; }
-  const strips = [...lk.querySelectorAll('.lv-tabs')].filter((t) => !t.classList.contains('lk-htabs') && t.closest('.card') === card && !t.closest('h4'));
+  const strips = [...lk.querySelectorAll('.lv-tabs, .sp-h:has(> .st + .st)')].filter((t) => !t.classList.contains('lk-htabs') && t.closest('.card') === card && !t.closest('h4'));   // .sp-h: the classic synths' section tabs
   if (!strips.length) return moved;
   const first = !lk.dataset.htabs; if (first) lk.style.minWidth = lk.offsetWidth + 'px';
   const name = head.querySelector('.dv-name') || [...head.children].find((c) => c.tagName === 'SPAN' && c.textContent.trim());
@@ -519,7 +519,7 @@ function fitKit() {
   // panel (DESIGN_H). A panel taller than that shrinks a little more on its own (never below 0.7); a shorter one keeps the common zoom and
   // spreads its controls over the height (lk-fill) instead of being blown up, so text and knobs stay the same size in every device.
   const DESIGN_H = 250, cards = [...sc.querySelectorAll(':scope > .card.lkcard:not(.flm-card), :scope > .card.lvcard:not(.flm-card)')];
-  for (const c of sc.querySelectorAll(':scope > .card.flm-card')) hoistAll(c, c.querySelector('.lk, .lv-dev') || c);
+  for (const c of sc.querySelectorAll(':scope > .card.flm-card, :scope > .card.syn')) hoistAll(c, c.querySelector('.lk, .lv-dev, .sps, .inst-row') || c);
   for (const card of cards) {
     const lk = card.querySelector(':scope > .lk, :scope > .lv-dev'); if (!lk) continue;
     lk.style.zoom = ''; lk.style.minHeight = ''; lk.classList.remove('lk-fill');
@@ -539,7 +539,7 @@ export function render() {
   if (!root) return;
   if (!fitRO && typeof ResizeObserver !== 'undefined') { fitRO = new ResizeObserver(() => requestAnimationFrame(fitKit)); fitRO.observe(root); }
   if (!tabMO && typeof MutationObserver !== 'undefined') {
-    let q = 0; tabMO = new MutationObserver(() => { if (q) return; q = requestAnimationFrame(() => { q = 0; if (root && root.querySelector('.card .lv-tabs:not(.lk-htabs)')) fitKit(); }); });
+    let q = 0; tabMO = new MutationObserver(() => { if (q) return; q = requestAnimationFrame(() => { q = 0; if (root && root.querySelector('.card .lv-tabs:not(.lk-htabs), .card.syn .sp-h:has(> .st + .st):not(.lk-htabs)')) fitKit(); }); });
     tabMO.observe(root, { childList: true, subtree: true });
   }
   for (const t of timers) clearInterval(t);
