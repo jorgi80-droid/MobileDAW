@@ -63,7 +63,12 @@ export function padPanel(track, k, { onClose, onChange }) {
           B('Poly', () => { P.setPad(track, k, 'poly', q.poly === false); redraw(); }, q.poly !== false)),
         h('div', { class: 'sv pp-hint' }, 'Cut Group: pad dalam grup yang sama saling membungkam (mis. hi-hat tertutup memotong yang terbuka). Poly mati: pad memotong dirinya sendiri saat dipukul lagi. Hold: pad dilepas sekian detik setelah dipukul (0 = mati). Shift: pukulan ditunda.'));
     } else if (q.sample) {
-      body.append(h('div', { class: 'knobs' }, kn('a'), kn('d'), kn('s'), kn('r')), h('div', { class: 'sv pp-hint' }, 'REL 0 = sample dimainkan sampai habis. REL > 0 = sample memudar saat step berakhir.'));
+      // envelope model: MobileDAW (seconds) or FL Studio Mobile (its 0..1 sliders and curve, as an imported FLM kit plays)
+      const flm = q.eg === 1, pc = (f) => knob({ ...K[f], min: 0, max: 1, def: f === 'a' ? 0 : 1, unit: '%' }, () => q[f], (v) => P.setPad(track, k, f, v), fmtParam, col);
+      const model = (on) => { if ((q.eg === 1) === on) return; P.setPad(track, k, 'eg', on ? 1 : 0); const d = on ? { a: 0, d: 1, s: 1, r: 1 } : { a: 0, d: 0, s: 1, r: 0 }; for (const f in d) P.setPad(track, k, f, d[f]); redraw(); };
+      body.append(h('div', { class: 'pp-r' }, h('span', { class: 'sv' }, 'Model'), B('MobileDAW', () => model(false), !flm), B('FL Mobile', () => model(true), flm)),
+        h('div', { class: 'knobs' }, ...(flm ? [pc('a'), pc('d'), kn('s'), pc('r')] : [kn('a'), kn('d'), kn('s'), kn('r')])),
+        h('div', { class: 'sv pp-hint' }, flm ? 'Envelope FL Studio Mobile: ATK / DEC / REL adalah slider 0-100 % dengan kurva FLM. Sample memudar ke Sustain, lalu dilepas saat not berakhir atau Hold habis.' : 'REL 0 = sample dimainkan sampai habis. REL > 0 = sample memudar saat step berakhir.'));
     } else {
       body.append(h('div', { class: 'sv pp-hint' }, 'Envelope berlaku untuk pad sample. Pad sintetis bawaan memakai Decay di tab Sample.'));
     }

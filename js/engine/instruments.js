@@ -17,6 +17,8 @@ import { TWO_PI, clamp, midiToHz, lcg, Biquad, Adsr, adsrParams, polyBlep, sawBl
 
 // 4-point Hermite interpolation of sample data at position pos (frames), indices clamped to [0, last]: keeps the highs of pitched samples
 // (linear interpolation dulls them and smears transients)
+// FLM drum slot envelope coefficient per sample (Honeydew drums.rs coefficient()): 0.0002 / (scale x^4), x = 0.95 v + 0.05; 1 = instant
+function flmEgCoef(v, scale) { const x = 0.95 * v + 0.05, den = scale * (x * x * x * x); return v < 0.001 || den < 0.001 ? 1 : 0.0002 / den; }
 function herm(a, pos, last) {
   const i = pos | 0, t = pos - i, i0 = i > 0 ? i - 1 : 0, i2 = i + 1 < last ? i + 1 : last, i3 = i + 2 < last ? i + 2 : last;
   const x0 = a[i0], x1 = a[i > last ? last : i], x2 = a[i2], x3 = a[i3];
@@ -118,6 +120,11 @@ export class SuperSaw extends Base {
 //                     12 cut group (0 none, 1..3 = A / B / C: a pad of the group silences the others of the group), 13 poly (1 = a re-trigger overlaps
 //                     itself, 0 = it cuts itself), 14 hold s (0 = off; > 0 releases the pad that long after the hit, like a held key), 15 shift s (0..0.25:
 //                     the hit starts that much after its step). As in the FL Studio Mobile Stepsequencer "Seq" tab; a choke is a 6 ms fade, never a click.
+//   500 + pad: envelope model. 0 = MDAW (linear segments, attack / decay / release in seconds). 1 = FL Studio Mobile's drum slot envelope
+//                     (port of Honeydew crates/audio/src/drums.rs, GPL-3.0-or-later, see THIRD_PARTY_NOTICES.md): fields 6 / 7 / 9 are then
+//                     FLM's 0..1 sliders, each a one-pole coefficient per sample c = 0.0002 / (scale x^4), x = 0.95 v + 0.05 (scale 500 for A,
+//                     50 for D and R; instant below 0.001): attack towards 5 and clipped at 1, decay towards the sustain level, release
+//                     (note-off or Hold) towards 0 until -80 dB.
 const N_PADS = 16, DEF_PITCH = [36, 38, 39, 42, 46, 41];
 // level of each built-in sound (kick, snare, clap, closed hat, open hat, tom) as in a mixed drum machine: kick -5.6 dBFS peak, snare / clap /
 // tom a little under it, hats about 8 dB under the kick, so kick + clap + hat hitting together still leave headroom
@@ -137,7 +144,7 @@ export class DrumSynth extends Base {
       f2: new Biquad(), f3: new Biquad(), ph2: 0, mp: new Float64Array(6), dly: 0, hl: 0, cf: 0 }));
     this.cutN = Math.max(1, Math.round(sr * 0.006));
     this.gain = 1; this.rate = 1; this.pitchNative = true;   // gain 1: velocity 1 = the pad sample at unity, the built-in kit peaks about -1 dBFS
-    this.pads = Array.from({ length: N_PADS }, (_, k) => ({ pitch: k < 6 ? DEF_PITCH[k] : -1, kind: k < 6 ? k : -1, sid: -1, lvl: 1, pit: 0, dec: 1, pan: 0, start: 0, end: 1, rev: false, a: 0, d: 0, s: 1, r: 0, mute: false, cut: 0, poly: true, hold: 0, shift: 0 }));
+    this.pads = Array.from({ length: N_PADS }, (_, k) => ({ pitch: k < 6 ? DEF_PITCH[k] : -1, kind: k < 6 ? k : -1, sid: -1, lvl: 1, pit: 0, dec: 1, pan: 0, start: 0, end: 1, rev: false, a: 0, d: 0, s: 1, r: 0, mute: false, cut: 0, poly: true, hold: 0, shift: 0, eg: 0 }));
   }
   setParam(i, x) {
     if (!Number.isFinite(x)) return;
@@ -157,7 +164,9 @@ export class DrumSynth extends Base {
         case 12: q.cut = clamp(x | 0, 0, 3); break; case 13: q.poly = x > 0.5; break; case 14: q.hold = clamp(x, 0, 4); break; case 15: q.shift = clamp(x, 0, 0.25); break;
         default: break;
       }
+      return;
     }
+    if (i >= 500 && i < 500 + N_PADS) this.pads[i - 500].eg = x > 0.5 ? 1 : 0;
   }
   padFor(p) {
     const a = this.pads;
@@ -202,6 +211,7 @@ export class DrumSynth extends Base {
       v.ea = Math.max(0.00012, q.a);                       // attack 0 = ~6 samples (no click, the transient stays)
       v.ed = q.d; v.es = q.s; v.er = q.r;                  // (was hidden in the comment above: pad Decay / Sustain / Release had no effect)
       v.lv = 0; v.st = 0; v.g = this.gain * v.lvl * vel;
+      v.fe = q.eg === 1; if (v.fe) { v.ca = flmEgCoef(q.a, 500); v.cd = flmEgCoef(q.d, 50); v.cr = flmEgCoef(q.r, 50); }
     } else {
       v.smp = false; v.held = false; v.kind = q.kind; v.n.seed = 777 + this.counter * 31; v.hp = 0; v.ph2 = 0; v.mp.fill(0);
       for (const f of [v.bp, v.f2, v.f3]) f.z1 = f.z2 = 0;
@@ -216,7 +226,7 @@ export class DrumSynth extends Base {
   }
   // Cut group / Poly: fade a sounding voice out in ~6 ms (samples through their release stage, built-in sounds with a gain ramp)
   chokeVoice(o) {
-    if (o.smp) { const rel = Math.max(o.lv, 1e-4) / (0.006 * this.sr); o.held = false; if (o.st < 3) { o.st = 3; o.rel = rel; } else o.rel = Math.max(o.rel, rel); }
+    if (o.smp) { const rel = Math.max(o.lv, 1e-4) / (0.006 * this.sr); o.held = false; if (o.st < 3 || o.st === 4) { o.st = 3; o.rel = rel; } else o.rel = Math.max(o.rel, rel); }
     else if (o.cf === 0) o.cf = this.cutN;
   }
   choke(k, q) {
@@ -231,7 +241,8 @@ export class DrumSynth extends Base {
     const k = this.padFor(p); if (k >= 0 && this.ch[k].inst && this.ch[k].note >= 0) { this.ch[k].inst.noteOff(this.ch[k].note); this.ch[k].note = -1; }
     for (const v of this.v) if (v.on && v.smp && v.held && v.pitch === p && v.st < 3) {
       v.held = false;
-      if (v.er > 0) { v.st = 3; v.rel = Math.max(v.lv, 1e-4) / (v.er * this.sr); }   // release 0 = one-shot: the sample plays to its end
+      if (v.fe) v.st = 4;
+      else if (v.er > 0) { v.st = 3; v.rel = Math.max(v.lv, 1e-4) / (v.er * this.sr); }   // release 0 = one-shot: the sample plays to its end
     }
   }
   allOff() { for (const v of this.v) v.on = false; for (const x of this.ch) if (x.inst) { x.inst.allOff(); x.note = -1; } }
@@ -242,11 +253,12 @@ export class DrumSynth extends Base {
     const sl = s.l, sr_ = s.r || s.l, sr = this.sr, g = v.g, pl = v.pl, pr = v.pr, lo = v.lo, hi = v.hi, dir = v.dir, ratio = v.ratio;
     for (let i = from; i < to; i++) {
       if (v.dly > 0) { v.dly--; continue; }
-      if (v.hl > 0 && --v.hl === 0 && v.st < 3) { v.held = false; v.st = 3; v.rel = Math.max(v.lv, 1e-4) / (Math.max(v.er, 0.004) * sr); }
+      if (v.hl > 0 && --v.hl === 0 && v.st < 3) { v.held = false; if (v.fe) v.st = 4; else { v.st = 3; v.rel = Math.max(v.lv, 1e-4) / (Math.max(v.er, 0.004) * sr); } }
       switch (v.st) {
-        case 0: v.lv += 1 / (v.ea * sr); if (v.lv >= 1) { v.lv = 1; v.st = v.ed > 0 && v.es < 1 ? 1 : 2; } break;
-        case 1: v.lv -= (1 - v.es) / (v.ed * sr); if (v.lv <= v.es) { v.lv = v.es; v.st = 2; } break;
+        case 0: if (v.fe) { v.lv += (5 - v.lv) * v.ca; if (v.lv > 1) { v.lv = 1; v.st = 1; } } else { v.lv += 1 / (v.ea * sr); if (v.lv >= 1) { v.lv = 1; v.st = v.ed > 0 && v.es < 1 ? 1 : 2; } } break;
+        case 1: if (v.fe) v.lv += (v.es - v.lv) * v.cd; else { v.lv -= (1 - v.es) / (v.ed * sr); if (v.lv <= v.es) { v.lv = v.es; v.st = 2; } } break;
         case 2: v.lv = v.es; break;
+        case 4: v.lv -= v.lv * v.cr; if (v.lv < 1e-4) { v.on = false; return; } break;
         default: v.lv -= v.rel; if (v.lv <= 0) { v.on = false; return; }
       }
       const pos = v.pos;

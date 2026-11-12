@@ -312,6 +312,21 @@ export const SCENARIOS = [
       S(6, 12, 3); S(7, 12, 3); S(9, 14, 0); S(10, 15, 0.25); play(e, 1.5);
       e.stop(); play(e, 1);
     } },
+  { name: 'inst-drumflmeg', info: 'Drum Sampler pad envelope model 1 (FL Studio Mobile drum slot, Honeydew drums.rs): one-pole attack / decay to sustain / release from the 0..1 sliders, release by note-off and by Hold, cut group choke of a releasing voice, default sliders (0 / 1 / 1 / 1), model switched while playing',
+    run(e) {
+      samples(e); testSample(e); e.tempo(120); e.trackInst(0, 3);
+      const S = (pad, f, v) => e.instParam(0, 200 + pad * 16 + f, v), EG = (pad, v) => e.instParam(0, 500 + pad, v);
+      S(6, 0, 3); S(6, 11, 50); EG(6, 1); S(6, 6, 0); S(6, 7, 1); S(6, 8, 1); S(6, 9, 1);              // FLM defaults: instant attack, slow release
+      S(7, 0, 0); S(7, 11, 52); EG(7, 1); S(7, 6, 0.35); S(7, 7, 0.3); S(7, 8, 0.4); S(7, 9, 0.25);    // attack, decay to 0.4, short release
+      S(8, 0, 2); S(8, 11, 54); EG(8, 1); S(8, 6, 0.1); S(8, 7, 0.6); S(8, 8, 0); S(8, 9, 0.5); S(8, 14, 0.08);   // decay to silence, Hold 80 ms
+      S(9, 0, 3); S(9, 11, 55); EG(9, 1); S(9, 9, 0.6); S(9, 12, 1); S(10, 0, 1); S(10, 11, 56); EG(10, 1); S(10, 12, 1); S(10, 9, 0.0005);   // cut group A, instant release
+      const pat = [50, 52, 54, 55, 56, 52, 50, 54];
+      const f = []; for (let k = 0; k < 32; k++) f.push(k * PPQ / 4, PPQ * (k % 3 ? 0.15 : 0.6), pat[k % 8], 0.5 + (k % 4) * 0.15, 0); e.trackNotes(0, f, f.length / 5);
+      e.play(); play(e, 3, [128, 77, 256]);
+      EG(7, 0); S(7, 6, 0.01); S(7, 7, 0.2); S(7, 9, 0.1); EG(6, 0); play(e, 1.5);
+      EG(7, 1); S(7, 6, 0.5); S(7, 7, 0.5); S(7, 9, 0.3); play(e, 1.5);
+      e.stop(); play(e, 1);
+    } },
   { name: 'core-width-invert', info: 'channel stereo width (0 / 0.4 / 2, smoothed) and phase invert (L, R, both; ramped) on tracks, a return and the master, plus width automation (lane kind 7)',
     run(e) {
       samples(e); e.tempo(120); e.trackClips(0, clipsA, 3); e.trackClips(1, clipsB, 3); e.trackSend(0, 0, 0.5); e.insertDevice(65, 0, 7);

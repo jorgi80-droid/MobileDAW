@@ -341,8 +341,12 @@ void DrumSynth::setParam(int i, double x) {
       case 12: q.cut = (int)clamp(toInt32(x), 0, 3); break; case 13: q.poly = x > 0.5; break; case 14: q.hold = clamp(x, 0, 4); break; case 15: q.shift = clamp(x, 0, 0.25); break;
       default: break;
     }
+    return;
   }
+  if (i >= 500 && i < 500 + N_PADS) pads[i - 500].eg = x > 0.5 ? 1 : 0;   // envelope model: 1 = FLM drum slot (Honeydew drums.rs)
 }
+// FLM drum slot envelope coefficient per sample (Honeydew drums.rs coefficient()): 0.0002 / (scale x^4), x = 0.95 v + 0.05; 1 = instant
+static inline double flmEgCoef(double v, double scale) { double x = 0.95 * v + 0.05, den = scale * (x * x * x * x); return v < 0.001 || den < 0.001 ? 1 : 0.0002 / den; }
 void DrumSynth::setTempo(double b) { bpm = b; for (auto& x : ch) { if (x.inst) x.inst->setTempo(b); for (int j = 0; j < x.n; j++) x.dev[j]->setTempo(b); } }
 int DrumSynth::padFor(int p) const {
   for (int k = 0; k < N_PADS; k++) if (pads[k].pitch == p) return k;
@@ -372,6 +376,7 @@ void DrumSynth::noteOn(int p, double vel) {
     x.ratio = (s->rate / sr) * x.rt;
     x.ea = jsMax(0.00012, q.a); x.ed = q.d; x.es = q.s; x.er = q.r;
     x.lv = 0; x.st = 0; x.g = gain * x.lvl * vel;
+    x.fe = q.eg == 1; if (x.fe) { x.ca = flmEgCoef(q.a, 500); x.cd = flmEgCoef(q.d, 50); x.cr = flmEgCoef(q.r, 50); }
   } else {
     x.smp = false; x.held = false; x.kind = q.kind; x.nseed = 777 + counter * 31; x.hp = 0; x.ph2 = 0; for (auto& m : x.mp) m = 0;
     x.bp.z1 = x.bp.z2 = 0; x.f2.z1 = x.f2.z2 = 0; x.f3.z1 = x.f3.z2 = 0;
@@ -385,7 +390,7 @@ void DrumSynth::noteOn(int p, double vel) {
   }
 }
 void DrumSynth::chokeVoice(DrumVoice& o) {
-  if (o.smp) { double rel = jsMax(o.lv, 1e-4) / (0.006 * sr); o.held = false; if (o.st < 3) { o.st = 3; o.rel = rel; } else o.rel = jsMax(o.rel, rel); }
+  if (o.smp) { double rel = jsMax(o.lv, 1e-4) / (0.006 * sr); o.held = false; if (o.st < 3 || o.st == 4) { o.st = 3; o.rel = rel; } else o.rel = jsMax(o.rel, rel); }
   else if (o.cf == 0) o.cf = cutN;
 }
 void DrumSynth::choke(int k, const DrumPad& q) {
@@ -400,7 +405,8 @@ void DrumSynth::noteOff(int p) {
   int k = padFor(p); if (k >= 0 && ch[k].inst && ch[k].note >= 0) { ch[k].inst->noteOff(ch[k].note); ch[k].note = -1; }
   for (auto& x : v) if (x.on && x.smp && x.held && x.pitch == p && x.st < 3) {
     x.held = false;
-    if (x.er > 0) { x.st = 3; x.rel = jsMax(x.lv, 1e-4) / (x.er * sr); }
+    if (x.fe) x.st = 4;
+    else if (x.er > 0) { x.st = 3; x.rel = jsMax(x.lv, 1e-4) / (x.er * sr); }
   }
 }
 void DrumSynth::allOff() { for (auto& x : v) x.on = false; for (auto& x : ch) if (x.inst) { x.inst->allOff(); x.note = -1; } }
@@ -411,11 +417,12 @@ void DrumSynth::renderSample(DrumVoice& x, float* L, float* R, int from, int to)
   const float* sl = s->l; const float* sr_ = s->r ? s->r : s->l; double g = x.g;
   for (int i = from; i < to; i++) {
     if (x.dly > 0) { x.dly--; continue; }
-    if (x.hl > 0 && --x.hl == 0 && x.st < 3) { x.held = false; x.st = 3; x.rel = jsMax(x.lv, 1e-4) / (jsMax(x.er, 0.004) * sr); }
+    if (x.hl > 0 && --x.hl == 0 && x.st < 3) { x.held = false; if (x.fe) x.st = 4; else { x.st = 3; x.rel = jsMax(x.lv, 1e-4) / (jsMax(x.er, 0.004) * sr); } }
     switch (x.st) {
-      case 0: x.lv += 1 / (x.ea * sr); if (x.lv >= 1) { x.lv = 1; x.st = x.ed > 0 && x.es < 1 ? 1 : 2; } break;
-      case 1: x.lv -= (1 - x.es) / (x.ed * sr); if (x.lv <= x.es) { x.lv = x.es; x.st = 2; } break;
+      case 0: if (x.fe) { x.lv += (5 - x.lv) * x.ca; if (x.lv > 1) { x.lv = 1; x.st = 1; } } else { x.lv += 1 / (x.ea * sr); if (x.lv >= 1) { x.lv = 1; x.st = x.ed > 0 && x.es < 1 ? 1 : 2; } } break;
+      case 1: if (x.fe) x.lv += (x.es - x.lv) * x.cd; else { x.lv -= (1 - x.es) / (x.ed * sr); if (x.lv <= x.es) { x.lv = x.es; x.st = 2; } } break;
       case 2: x.lv = x.es; break;
+      case 4: x.lv -= x.lv * x.cr; if (x.lv < 1e-4) { x.on = false; return; } break;
       default: x.lv -= x.rel; if (x.lv <= 0) { x.on = false; return; }
     }
     double pos = x.pos;

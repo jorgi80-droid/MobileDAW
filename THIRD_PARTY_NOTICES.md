@@ -17,7 +17,10 @@ but the program as distributed from this point on is GPL-3.0-or-later as a whole
 - Ported so far: SuperSaw (`crates/audio/src/supersaw.rs` -> `js/engine/hdsaw.js`, `native/engine/hdsaw.h`, `native/engine/hdsaw.cpp`),
   its FLM parameter layout and laws (`src/params/instruments.rs` -> `ssFromFlm` in `js/import/build.js`) and the FLM note-event layout
   (`src/flm/read.rs`: u8 velocity / u8 pan, repeat, slide, drum hit pitch, drum slot MAIN / PRMS fields, channel SEND -> `js/import/flm.js`),
-  FLM's mixer laws (`crates/audio/src/mixer.rs`: Level law dB = 66 v^0.6 - 60, balance pan law -> `flmGain`, engine `trackPanLaw`).
+  FLM's mixer laws (`crates/audio/src/mixer.rs`: Level law dB = 66 v^0.6 - 60, balance pan law -> `flmGain`, engine `trackPanLaw`),
+  the drum slot sampler laws (`crates/audio/src/drums.rs`: envelope coefficients, attack / decay / release recurrence, Sample Start,
+  Length gate, whole-semitone Speed -> pad envelope model 1 in `js/engine/instruments.js` and `native/engine/inst_classic.cpp`,
+  `js/import/flm.js`, `flmPadTime` in `js/project.js`) and the drum slot routing (`src/flm/read.rs` LINk / legacy routing, `src/audio_engine/drums.rs`).
 - Honeydew states that it is a clean-room reimplementation of FL Studio Mobile written from a specification and contains no code,
   samples, presets or artwork of FL Studio Mobile. MobileDAW does not verify that claim; FL Studio is a trademark of Image-Line, and
   MobileDAW is not affiliated with or endorsed by Image-Line.

@@ -145,7 +145,9 @@ export function buildMdaw(M, opts) {
   };
   let needSf = false;
   // FLM pad envelope (0..1 sliders): applied when it shapes the sound (attack, sustain below full, release); full settings = play the sample through
-  const padEnv = (e) => { if (!e || (e.a < 0.005 && e.s > 0.995 && e.r > 0.995)) return { a: 0, d: 0, s: 1, r: 0 }; return { a: e.a < 0.005 ? 0 : fT(e.a), d: fT(e.d), s: clamp(e.s, 0, 1), r: e.r > 0.995 ? 0 : fT(e.r) }; };
+  // FLM pads keep FLM's own envelope: the four sliders as they are, played by the drum engine's FLM model (pad eg 1, Honeydew drums.rs);
+  // other sources (no sliders) play the sample through
+  const padEnv = (e) => (e && [e.a, e.d, e.s, e.r].every(Number.isFinite) ? { a: clamp(e.a, 0, 1), d: clamp(e.d, 0, 1), s: clamp(e.s, 0, 1), r: clamp(e.r, 0, 1), eg: 1 } : { a: 0, d: 0, s: 1, r: 0 });
   const vol = (g) => clamp(Number.isFinite(g) ? g : 1, 0, VMAX);   // model gain 1 = the source app's default level = 0 dB in MDAW
   const util = DEVICES[0].params.map((q) => q.def);
   // a level above MDAW's fader top (+2.9 dB; FLM goes to +6 dB): the rest as a Utility Gain at the end of the strip's chain (FLM's fader is

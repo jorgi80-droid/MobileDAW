@@ -59,6 +59,24 @@ ok(seq.cutB === 2 && seq.cutA === 1, 'Cut Group buttons set the pad (B = 2, A = 
 ok(seq.polyBefore === true && seq.polyAfter === false && seq.polyOn === false, 'Poly toggles off and the button follows');
 await ev(async () => { (await import('./js/project.js')).setPad(0, 0, 'cut', 0); (await import('./js/project.js')).setPad(0, 0, 'poly', true); });
 
+// ---- the Envelope tab: envelope model MobileDAW (seconds) / FL Mobile (FLM sliders + curve, pad eg 1), with undo
+const egt = await ev(async () => {
+  const D = await import('./js/drumpad.js'), P = await import('./js/project.js'), H = await import('./js/history.js');
+  P.padsOf(0)[0].sample = P.state.samples['/Samples/x.wav'];
+  const root = D.padPanel(0, 0, { onClose() {}, onChange() {} }); document.body.append(root); root.style.cssText = 'position:fixed;left:0;top:0;z-index:99999;background:#222';
+  const tabB = (l) => [...root.querySelectorAll('.pp-h .b')].find((e) => e.textContent === l), btn = (l) => [...root.querySelectorAll('.pp-b .b')].find((e) => e.textContent === l);
+  tabB('Envelope').click();
+  const before = { eg: P.padsOf(0)[0].eg, mdOn: btn('MobileDAW').classList.contains('on'), knobs: root.querySelectorAll('.pp-b .knobs > *').length };
+  btn('FL Mobile').click();
+  const q = P.padsOf(0)[0], flm = { eg: q.eg, a: q.a, d: q.d, s: q.s, r: q.r, on: btn('FL Mobile').classList.contains('on'), txt: root.querySelector('.pp-b').textContent, knobs: root.querySelectorAll('.pp-b .knobs > *').length };
+  const box = root.getBoundingClientRect(); window.__ppBox = { x: box.x, y: box.y, w: box.width, h: box.height };
+  return { before, flm };
+});
+ok(egt.before.eg === 0 && egt.before.mdOn && egt.before.knobs === 4, 'Envelope tab: model MobileDAW by default, four knobs');
+ok(egt.flm.eg === 1 && egt.flm.on && egt.flm.a === 0 && egt.flm.d === 1 && egt.flm.s === 1 && egt.flm.r === 1 && egt.flm.knobs === 4 && /FL Studio Mobile/.test(egt.flm.txt), 'FL Mobile model: pad eg 1 with FLM\'s default sliders (0 / 1 / 1 / 1), the button follows');
+if (process.env.SHOT) { const bx = await ev(() => window.__ppBox); await page.screenshot({ path: process.env.SHOT, clip: { x: bx.x, y: bx.y, width: Math.min(bx.w, 780), height: Math.min(bx.h, 350) } }); }
+await ev(async () => { const P = await import('./js/project.js'); document.querySelectorAll('body > .pp').forEach((e) => e.remove()); P.setPad(0, 0, 'eg', 0); for (const [f, v] of [['a', 0], ['d', 0], ['s', 1], ['r', 0]]) P.setPad(0, 0, f, v); P.padsOf(0)[0].sample = null; });
+
 // ---- header menus per track kind
 let m = await headMenuOf(0);
 ok(m.includes('Duplikat track') && m.includes('Simpan sebagai MIDI') && m.some((x) => x.startsWith('Impor MIDI ke track ini')) && m.includes('Simpan kit drum…') && m.includes('Muat kit drum…'), 'drum track menu: Duplicate, Save as MIDI, Import MIDI, Save / Load drum kit');
