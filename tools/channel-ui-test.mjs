@@ -53,8 +53,8 @@ const seq = await ev(async () => {
   const res = { tabs, txt, cutB, cutA, polyBefore, polyAfter, polyOn: on('Poly'), aOn: on('A') };
   root.remove(); return res;
 });
-ok(seq.tabs.join() === 'Mixer,Sample,Envelope,Seq,✕', 'pad panel tabs: Mixer, Sample, Envelope, Seq (' + seq.tabs.join(' ') + ')');
-ok(/Hold/.test(seq.txt) && /Shift/.test(seq.txt) && /Cut Group/.test(seq.txt) && /Poly/.test(seq.txt), 'Seq tab shows Hold, Shift, Cut Group and Poly');
+ok(seq.tabs.join() === '✕,Mixer,Sample,Envelope,Seq', 'pad panel tabs: Mixer, Sample, Envelope, Seq (' + seq.tabs.join(' ') + ')');
+ok(/Hold/.test(seq.txt) && /Shift/.test(seq.txt) && /Cut/.test(seq.txt) && /Poly/.test(seq.txt), 'Seq tab shows Hold, Shift, Cut Group and Poly');
 ok(seq.cutB === 2 && seq.cutA === 1, 'Cut Group buttons set the pad (B = 2, A = 1)');
 ok(seq.polyBefore === true && seq.polyAfter === false && seq.polyOn === false, 'Poly toggles off and the button follows');
 await ev(async () => { (await import('./js/project.js')).setPad(0, 0, 'cut', 0); (await import('./js/project.js')).setPad(0, 0, 'poly', true); });
@@ -66,14 +66,14 @@ const egt = await ev(async () => {
   const root = D.padPanel(0, 0, { onClose() {}, onChange() {} }); document.body.append(root); root.style.cssText = 'position:fixed;left:0;top:0;z-index:99999;background:#222';
   const tabB = (l) => [...root.querySelectorAll('.pp-h .b')].find((e) => e.textContent === l), btn = (l) => [...root.querySelectorAll('.pp-b .b')].find((e) => e.textContent === l);
   tabB('Envelope').click();
-  const before = { eg: P.padsOf(0)[0].eg, mdOn: btn('MobileDAW').classList.contains('on'), knobs: root.querySelectorAll('.pp-b .knobs > *').length };
-  btn('FL Mobile').click();
-  const q = P.padsOf(0)[0], flm = { eg: q.eg, a: q.a, d: q.d, s: q.s, r: q.r, on: btn('FL Mobile').classList.contains('on'), txt: root.querySelector('.pp-b').textContent, knobs: root.querySelectorAll('.pp-b .knobs > *').length };
+  const before = { eg: P.padsOf(0)[0].eg, mdOn: btn('MDAW').classList.contains('on'), knobs: root.querySelectorAll('.pp-b .knobs > *').length };
+  btn('FLM').click();
+  const q = P.padsOf(0)[0], flm = { eg: q.eg, a: q.a, d: q.d, s: q.s, r: q.r, on: btn('FLM').classList.contains('on'), txt: root.querySelector('.pp-b').textContent, knobs: root.querySelectorAll('.pp-b .knobs > *').length };
   const box = root.getBoundingClientRect(); window.__ppBox = { x: box.x, y: box.y, w: box.width, h: box.height };
   return { before, flm };
 });
 ok(egt.before.eg === 0 && egt.before.mdOn && egt.before.knobs === 4, 'Envelope tab: model MobileDAW by default, four knobs');
-ok(egt.flm.eg === 1 && egt.flm.on && egt.flm.a === 0 && egt.flm.d === 1 && egt.flm.s === 1 && egt.flm.r === 1 && egt.flm.knobs === 4 && /FL Studio Mobile/.test(egt.flm.txt), 'FL Mobile model: pad eg 1 with FLM\'s default sliders (0 / 1 / 1 / 1), the button follows');
+ok(egt.flm.eg === 1 && egt.flm.on && egt.flm.a === 0 && egt.flm.d === 1 && egt.flm.s === 1 && egt.flm.r === 1 && egt.flm.knobs === 4, 'FLM curve: pad eg 1 with FLM\'s default sliders (0 / 1 / 1 / 1), the button follows');
 if (process.env.SHOT) { const bx = await ev(() => window.__ppBox); await page.screenshot({ path: process.env.SHOT, clip: { x: bx.x, y: bx.y, width: Math.min(bx.w, 780), height: Math.min(bx.h, 350) } }); }
 await ev(async () => { const P = await import('./js/project.js'); document.querySelectorAll('body > .pp').forEach((e) => e.remove()); P.setPad(0, 0, 'eg', 0); for (const [f, v] of [['a', 0], ['d', 0], ['s', 1], ['r', 0]]) P.setPad(0, 0, f, v); P.padsOf(0)[0].sample = null; });
 

@@ -550,14 +550,18 @@ button { font: inherit; color: inherit; }
 .ed-side { flex: none; width: 236px; border-left: 1px solid var(--line); background: var(--panel); overflow: auto; touch-action: pan-y; }
 .ed-side[hidden] { display: none; }
 .pp { display: flex; flex-direction: column; min-height: 100%; }
-.pp-h { display: flex; flex-wrap: wrap; gap: 3px; align-items: center; padding: 4px; border-bottom: 1px solid var(--line); background: var(--panel2); }
-.pp-h .b { height: 26px; min-width: 0; padding: 0 7px; font-size: 11.5px; }
-.pp-name { flex: 1 1 100%; height: 26px; text-align: left; font-weight: var(--fw-sb); color: var(--accent); background: none; border: 0; padding: 0 4px; }
-.pp-b { padding: 6px 4px; display: flex; flex-direction: column; gap: var(--sp-3); }
-.pp-b .knobs { display: flex; flex-wrap: wrap; gap: var(--sp-2); max-width: none; justify-content: flex-start; }
-.pp-r { display: flex; flex-wrap: wrap; gap: var(--sp-2); align-items: center; }
-.pp-r .b { height: var(--ctl); }
-.pp-file { flex: 1 1 100%; justify-content: flex-start; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* pad panel: compact (name + close on one row, the four tabs as one row of equal cells, small buttons, knobs only) */
+.pp-h { display: grid; grid-template-columns: repeat(4, 1fr); gap: 2px; align-items: center; padding: 3px; border-bottom: 1px solid var(--line); background: var(--panel2); }
+.pp-h .b { height: 22px; min-width: 0; padding: 0 2px; font-size: 11px; }
+.pp-name { grid-column: 1 / 4; height: 22px; text-align: left; font-weight: var(--fw-sb); color: var(--accent); background: none; border: 0; padding: 0 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pp-h .pp-x { grid-column: 4; justify-self: end; width: 26px; }
+.pp-b { padding: 4px; display: flex; flex-direction: column; gap: 4px; }
+.pp-b .knobs { display: flex; flex-wrap: wrap; gap: 2px; max-width: none; justify-content: space-evenly; }
+.pp-r { display: flex; flex-wrap: wrap; gap: 2px; align-items: center; }
+.pp-r .b { height: 22px; min-width: 0; padding: 0 7px; font-size: 11px; }
+.pp-r .sv { font-size: 11px; margin-right: 2px; }
+.pp-r .pp-file { flex: 1 1 0; min-width: 0; justify-content: flex-start; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pp-r:has(.pp-file) { flex-wrap: nowrap; }
 .pp-hint { padding: 2px 4px; color: var(--dim); line-height: 1.35; }
 
 /* ---- file drawer v28: compact Ableton-style browser (header, search, places strip, dense list, slim preview) */
