@@ -20,6 +20,7 @@
 #include "fxm.h"
 #include "flmsyn.h"
 #include "hdsaw.h"
+#include "hdmini.h"
 #include "fx8.h"
 
 namespace mdaw {
@@ -34,7 +35,7 @@ Instrument* makeInstrument(int type, double sr, Bank* bank) {
     case 22: return new DsHH(sr); case 23: return new DsClap(sr); case 24: return new DsFm(sr);
     case 25: return new Electric(sr); case 26: return new Tension(sr); case 27: return new Collision(sr);
     case 28: return new Impulse(sr, bank); case 29: return new Granulator(sr, bank);
-    case 30: return new FlmDirectWave(sr, bank); case 31: return new FlmGms(sr); case 32: return new FlmMiniSynth(sr); case 33: return new HdSuperSaw(sr);
+    case 30: return new FlmDirectWave(sr, bank); case 31: return new FlmGms(sr); case 32: return new HdMiniSynth(sr); case 33: return new HdSuperSaw(sr);
     default: return nullptr;
   }
 }

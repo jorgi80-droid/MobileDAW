@@ -13,6 +13,7 @@ import { Meld } from './meld.js';
 import { Simpler } from './simpler.js';
 import { FlmDirectWave, FlmGms, FlmMiniSynth } from './flmsyn.js';
 import { HdSuperSaw } from './hdsaw.js';
+import { HdMiniSynth } from './hdmini.js';
 import { TWO_PI, clamp, midiToHz, lcg, Biquad, Adsr, adsrParams, polyBlep, sawBl, squareBl, triNaive, wave4, JOBS, runJobNow, adsrInto, fxRun, devSet } from './dsp.js';
 
 // 4-point Hermite interpolation of sample data at position pos (frames), indices clamped to [0, last]: keeps the highs of pitched samples
@@ -768,7 +769,7 @@ export function makeInstrument(type, sr, bank, sfs) {
     case 19: return new DsKick(sr); case 20: return new DsSnare(sr); case 21: return new DsTom(sr);
     case 28: return new Impulse(sr, bank); case 29: return new Granulator(sr, bank);
     case 25: return new Electric(sr); case 26: return new Tension(sr); case 27: return new Collision(sr);
-    case 30: return new FlmDirectWave(sr, bank); case 31: return new FlmGms(sr); case 32: return new FlmMiniSynth(sr); case 33: return new HdSuperSaw(sr);   // FL Studio Mobile instruments (flmsyn.js)
+    case 30: return new FlmDirectWave(sr, bank); case 31: return new FlmGms(sr); case 32: return new HdMiniSynth(sr); case 33: return new HdSuperSaw(sr);   // FL Studio Mobile instruments (flmsyn.js)
     case 22: return new DsHH(sr); case 23: return new DsClap(sr); case 24: return new DsFm(sr);
     default: return null;
   }

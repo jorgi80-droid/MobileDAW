@@ -10,7 +10,7 @@ const D = await import(path.join(root, 'js/defs.js'));
 let bad = 0; const ok = (c, m) => { if (!c) bad++; console.log((c ? 'ok   ' : 'FAIL ') + m); };
 const SR = 48000, N = SR;
 function render(setup) {
-  const e = new Engine(SR); e.masterLimit(false); e.tempo(120); e.trackInst(0, 32); e.trackVol(0, 1);
+  const e = new Engine(SR); e.masterLimit(false); e.tempo(120); e.trackInst(0, 32); e.instParam(0, 43, -12); e.trackVol(0, 1);   // MiniSynth at -12 dB: FLM-loud, the sum with the reverb must stay below the output's clip
   const f = []; for (let k = 0; k < 8; k++) f.push(k * PPQ / 4, PPQ / 5, 48 + k * 3, 0.8, 0); e.trackNotes(0, f, f.length / 5);
   setup(e); e.play();
   const L = new Float32Array(N), R = new Float32Array(N);
@@ -33,8 +33,8 @@ const cmp = render((e) => { e.insertDevice(0, 0, 4); [-30, 10, 1, 80].forEach((v
 const lat = cmp.e.s[0].dev[0].lat();
 ok(lat > 0 && same(cmp.L, ref.L, 12000, lat) && same(cmp.R, ref.R, 12000, lat), `Mix 0 % on a Compressor with 10 ms look-ahead: the dry is delayed by its latency (${lat} frames) and lines up exactly (after the fader smoothing at the start)`);
 const m50 = render((e) => { e.insertDevice(0, 0, 7); e.devParam(0, 0, 2, 0.7); e.devParam(0, 0, D.MIX_P, 0.5); });
-let bok = true; for (let k = 128; k < N; k += 97) { const x = ref.L[k] + (rev.L[k] - ref.L[k]) * 0.5; if (Math.abs(m50.L[k] - x) > 1e-6) { bok = false; break; } }
-ok(bok, 'Mix 50 %: halfway between the dry and the wet signal');
+let mx50 = 0; for (let k = 0; k < N; k++) mx50 = Math.max(mx50, Math.abs(ref.L[k]), Math.abs(rev.L[k])); let bok = true, worst50 = 0; for (let k = 128; k < N; k += 97) worst50 = Math.max(worst50, Math.abs(m50.L[k] - (ref.L[k] + (rev.L[k] - ref.L[k]) * 0.5))); for (let k = 128; k < N; k += 97) { const x = ref.L[k] + (rev.L[k] - ref.L[k]) * 0.5; if (Math.abs(m50.L[k] - x) > 1e-6 * Math.max(1, mx50)) { bok = false; break; } }
+ok(bok, 'Mix 50 %: halfway between the dry and the wet signal (worst ' + worst50.toExponential(1) + ' at a peak of ' + mx50.toFixed(2) + ')');
 const md = render((e) => { e.insertDevice(0, 0, 50); e.insertDevice(0, 1, 7); e.devParam(0, 1, D.MIX_P, 0.3); });
 ok(md.L.every(Number.isFinite), 'a modulator ahead of a mixed effect: no NaN');
 

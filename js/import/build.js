@@ -21,15 +21,26 @@ const SYNTH_TYPE = { gms: 31, minisynth: 32, supersaw: 33 };   // the FL Studio 
 //   GMS: release tail matched, FLM 4.5 dB louder -> Level +4.5 dB (its default waveform could not be proven from one chord: left as is)
 //   (measured with the notes' real velocity, FLM's default 204 / 255 = 80 %; SuperSaw needs nothing: js/engine/hdsaw.js is FLM's own model)
 // Used only when the FLM module has no preset (its own default), so an imported default instrument sounds like FLM's.
-const FLM_DEFAULT = { 32: { Cutoff: 80, Release: 0.003, Level: 11.9 }, 31: { Level: 4.5 } };
+const FLM_DEFAULT = { 31: { Level: 4.5 } };   // MiniSynth (32) needs none since js/engine/hdmini.js is FLM's own model: miniFromFlm
 // FLM raw parameters whose meaning is PROVEN (owner's "New Song 1" screenshots show the knob values of the MiniSynth preset "Cubed"; the
 // "New Song" file gives the defaults): p6 Oscillator Kind (x 9: "Saw + Square" = 3), p7 Modifier (50), p8 Noise (14), p9 Cutoff (64), p10 Kbd Trk,
 // p11 Res (49), p12 Vel Trk, p17 Filter env amount (bipolar: 0.6537 -> 30.7). Envelope times have no numbers on screen (curve unknown): not mapped.
 // Cutoff follows the default calibration (FLM 100 % sounds like MobileDAW 80 %).
-const RAW = { 32: (r) => ({ 'Oscillator Kind': Math.round(r[6] * 9), Modifier: r[7] * 100, Noise: r[8] * 100, Cutoff: r[9] * 100 * 0.8, 'Kbd Trk': r[10] * 100, Res: r[11] * 100, 'Vel Trk': r[12] * 100, 'Flt Amount': (r[17] * 2 - 1) * 100, Level: 11.9 }) };
+const RAW = {};   // (MiniSynth's partial mapping from screenshots is replaced by miniFromFlm: all 44 values)
 // FLM SuperSaw module parameters (normalised 0..1; the layout of Honeydew's supersaw.rs / params registry: [0] Enable, [1] Pulse Width ...
 // [59] MW Dest) -> MDAW SuperSaw (33) in FLM's units, with FLM's own laws (envelope time T(x), LFO rate, stepped menus) so the engine
 // (js/engine/hdsaw.js, the same model) plays exactly what FLM plays. Every knob of the file is used: no preset guessing.
+// FLM MiniSynth module parameters (44 values 0..1, the layout of Honeydew's minisynth.rs PARAMETERS: [0] Enable, [1] Voices Mode,
+// [2] Transpose ... [43] PHASER Freq) -> MDAW MiniSynth (32): every knob as FLM stores it (x 100), menus by FLM's own truncation (in
+// float, as the module computes them), so the engine (js/engine/hdmini.js, the same model) plays what FLM plays. Level stays 0 dB.
+export function miniFromFlm(r) {
+  const D = [1, 0, 0.5, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 1, 1, 0.5, 0, 0, 0.25, 0.5, 0, 1, 1, 0.07, 0, 0, 0, 0, 0.7, 0.5, 1, 0.5, 0, 0.25, 0.5, 0.5, 0, 0.1122, 0.4, 0.1, 1, 0.5];
+  const v = (k) => Math.fround(r && Number.isFinite(r[k]) ? clamp(r[k], 0, 1) : D[k]), pc = (k) => v(k) * 100, bp = (k) => v(k) * 200 - 100, mi = (k, n) => Math.min(n, Math.trunc(Math.fround(n * v(k)))), on = (k) => (v(k) !== 0 ? 1 : 0);
+  return { 0: mi(6, 9), 1: pc(7), 2: pc(8), 3: Math.trunc(Math.fround(v(2) * 24 - 12)), 4: pc(9), 5: pc(11), 6: pc(12), 7: pc(10), 8: pc(13), 9: pc(14), 10: v(15), 11: pc(16), 12: bp(17),
+    13: bp(21), 14: mi(20, 11), 15: mi(18, 2), 16: mi(19, 2), 17: pc(5), 18: mi(4, 2), 19: pc(22), 20: pc(23), 21: v(24), 22: pc(25), 23: mi(1, 2), 24: pc(3),
+    25: on(26), 26: pc(27), 27: pc(28), 28: on(29), 29: pc(31), 30: pc(32), 31: pc(33), 32: mi(30, 3), 33: on(34), 34: pc(35), 35: pc(36), 36: pc(37),
+    37: on(38), 38: pc(39), 39: pc(40), 40: pc(41), 41: pc(43), 42: pc(42), 43: 0 };
+}
 const SYNC_B = [32, 16, 8, 4, 2, 1, 0.75, 0.5, 1 / 3, 0.25, 1 / 6, 0.125];
 export function ssFromFlm(r) {
   const v = (k, d) => (r && Number.isFinite(r[k]) ? clamp(r[k], 0, 1) : d), t = (x) => Math.max(0.001, Math.round(ssEnvTime(x) * 1e5) / 1e5), pc = (x) => Math.round(x * 1e4) / 100, bp = (x) => Math.round((2 * x - 1) * 1e4) / 100;
@@ -122,6 +133,10 @@ export function buildMdaw(M, opts) {
       if (type === 33 && (I.params || []).length >= 58) {   // SuperSaw: every knob of the file, exactly (Honeydew's layout and laws)
         const n = report.instruments[report.instruments.length - 1]; n.to = 'SuperSaw (semua nilai knob dari file FLM)'; n.how = 'exact';
         return { type, params: ssFromFlm(I.params), pitch: 0, from: { app: M.app, name: I.name, preset: I.preset || '', params: I.params || [] } };
+      }
+      if (type === 32 && (I.params || []).length >= 44) {   // MiniSynth: every knob of the file, exactly (Honeydew's layout and laws)
+        const n = report.instruments[report.instruments.length - 1]; n.to = 'MiniSynth (semua nilai knob dari file FLM)'; n.how = 'exact';
+        return { type, params: miniFromFlm(I.params), pitch: 0, from: { app: M.app, name: I.name, preset: I.preset || '', params: I.params || [] } };
       }
       const raw = !pr && !dflt && RAW[type] && (I.params || []).length === 44 ? RAW[type](I.params) : null;   // proven knobs of an FLM preset that MobileDAW does not have
       if (raw) { const n = report.instruments[report.instruments.length - 1]; n.to = n.to.replace(': setelan awal)', ': osc / filter dari nilai file, sisanya setelan awal)'); }

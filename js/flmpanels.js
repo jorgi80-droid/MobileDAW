@@ -8,8 +8,9 @@
 import { h } from './ui.js';
 import { lvTabs, lvPath, lvRing, lvEnvPts, DISPC } from './liveui.js';
 import { Biquad } from './engine/dsp.js';
-import { cutHz, gmsWaveTable, syncBeats, GMS_SCALE, FLM_SYNC, miniPw, miniSt, miniPhaserBeats } from './engine/flmsyn.js';
+import { cutHz, gmsWaveTable, syncBeats, GMS_SCALE, FLM_SYNC } from './engine/flmsyn.js';
 import { SS_ARP_BEATS, SS_DELAY_BEATS } from './engine/hdsaw.js';
+import { MS_RATE_BEATS, MS_RATES, MS_DELAY_BEATS, msRateIndex, msHarmonic, msAttackRate, msDecayRate, msAmpReleaseRate } from './engine/hdmini.js';
 import * as P from './project.js';
 
 const SR = 48000, F0 = 20, F1 = 20000, CY = '#4fc3f0', OR = '#ffad32', WH = '#f2f2f2', DIM = '#3d3d42';
@@ -117,10 +118,13 @@ function envPts(w, hh, A, D, S, R, pad, hold) {                                 
     return [[pad, hh - pad], [pad + wa * kx, 2 * pad], [pad + (wa + wd) * kx, hh - pad], [w - pad, hh - pad]]; }
   return lvEnvPts(w, hh - pad, A, D, S, R, pad).map(([x, y]) => [x, y + pad]);
 }
-function env(k, a, d, s, r, col = CY, lab = null) {
+// law (optional): { a, d, r } = knob value -> seconds, for envelopes whose knobs are sliders (FLM MiniSynth); the handles then move the
+// knobs linearly instead of scaling a time
+function env(k, a, d, s, r, col = CY, lab = null, law = null) {
   const PAD = 9, lim = (j, v) => clamp(v, k.def.params[j].min, k.def.params[j].max), hold = s === 'hold';
   if (hold) s = null;
-  const pts = (w, hh) => envPts(w, hh, k.get(a), k.get(d), s == null ? null : k.get(s), r == null ? 0 : k.get(r), PAD, hold);
+  const T = (j, f) => (law ? f(k.get(j)) : k.get(j));
+  const pts = (w, hh) => envPts(w, hh, T(a, law && law.a), T(d, law && law.d), s == null ? null : k.get(s), r == null ? 0 : T(r, law && law.r), PAD, hold);
   const hs = (q) => (hold ? [[1, q[1]], [2, q[3]]] : s == null ? [[1, q[1]], [2, q[2]]] : [[1, q[1]], [2, q[2]], [4, q[4]]]);
   let box = null;
   box = disp(k, (g, w, hh) => {
@@ -136,6 +140,7 @@ function env(k, a, d, s, r, col = CY, lab = null) {
     onDown: (x, y) => { const c = box.cv, q = pts(c._w, c._h); let n = 1, bd = 1e9; for (const [m, p] of hs(q)) { const dd = Math.hypot(p[0] - x, p[1] - y); if (dd < bd) { bd = dd; n = m; } }
       return { n, A: k.get(a), D: k.get(d), S: s == null ? 0 : k.get(s), R: r == null ? 0 : k.get(r), H: c._h }; },
     onMove: (x, y, dx, dy, st) => { const f = Math.pow(2, dx / 28);
+      if (law) { if (st.n === 1) k.set(a, lim(a, st.A + dx * 0.6)); else if (st.n === 2) { k.set(d, lim(d, st.D + dx * 0.6)); if (s != null) k.set(s, clamp(st.S - dy / Math.max(20, st.H - 3 * PAD), 0, 1)); } else if (r != null) k.set(r, lim(r, st.R + dx * 0.6)); return; }
       if (st.n === 1) k.set(a, lim(a, st.A * f));
       else if (st.n === 2) { k.set(d, lim(d, st.D * f)); if (s != null) k.set(s, clamp(st.S - dy / Math.max(20, st.H - 3 * PAD), 0, 1)); }
       else if (r != null) k.set(r, lim(r, st.R * f)); },
@@ -145,12 +150,12 @@ function env(k, a, d, s, r, col = CY, lab = null) {
 
 // ---- filter response in dB over a log frequency axis, handle at the cutoff; drag: cutoff (x) / resonance (y).
 // type(): -1 off, 0 low-pass, 1 high-pass, 2 band-pass; two(): 24 dB slope (GMS LP 24: two stages, half resonance each, as the engine)
-function filt(k, cut, res, type, two) {
+function filt(k, cut, res, type, two, hzOf) {
   let box = null;
   box = disp(k, (g, w, hh) => {
     const top = 4, bot = hh - 13, Y = (db) => top + (18 - clamp(db, -48, 18)) / 66 * (bot - top);
     freqAxis(g, w, hh, top, bot); hl(g, Y(0), 0, w, DISPC.grid2);
-    const t = type(), f = cutHz(k.get(cut)), dbl = !!(two && two()), q = 0.5 + Math.pow(k.get(res) / 100 * (dbl ? 0.5 : 1), 2) * 18, bq = new Biquad();
+    const t = type(), f = hzOf ? hzOf(k.get(cut)) : cutHz(k.get(cut)), dbl = !!(two && two()), q = 0.5 + Math.pow(k.get(res) / 100 * (dbl ? 0.5 : 1), 2) * 18, bq = new Biquad();
     if (t < 0) { lvPath(g, [[0, Y(0)], [w, Y(0)]], DISPC.grid2, bot, 1.6); txt(g, 'Filter Off', 6, 13); return; }
     if (t === 1) bq.highpass(SR, f, q); else if (t === 2) bq.bandpass(SR, f, q); else bq.lowpass(SR, f, q);
     const dbAt = (x) => 20 * Math.log10(Math.max(1e-6, mag(bq, x))) * (dbl ? 2 : 1), pts = [];
@@ -165,8 +170,8 @@ function filt(k, cut, res, type, two) {
 // plays them; the full-size wave shows faintly behind. o: shape, amt, mode (Hertz / One Shot / Tmp Sync), rate (Hz), sync (tempo list), att
 function lfo(k, o) {
   return disp(k, (g, w, hh) => {
-    const sh = Math.round(k.get(o.shape)), a = o.amt == null ? 1 : k.get(o.amt) / 100, mode = o.mode == null ? 2 : Math.round(k.get(o.mode));
-    const per = mode === 2 ? syncBeats(k.get(o.sync)) * 60 / (P.state.bpm || 120) : 1 / Math.max(0.01, k.get(o.rate));
+    const sh = Math.round(k.get(o.shape)), a = o.amt == null ? 1 : o.depth ? o.depth(k.get(o.amt)) : k.get(o.amt) / 100, mode = o.mode == null ? 2 : Math.round(k.get(o.mode));
+    const per = mode === 2 ? (o.beats ? o.beats(k.get(o.sync)) : syncBeats(k.get(o.sync))) * 60 / (P.state.bpm || 120) : 1 / Math.max(0.01, k.get(o.rate));
     const span = (mode === 1 ? 1.5 : 2) * per, att = o.att == null ? 0 : k.get(o.att), mid = hh / 2, amp = mid - 10;
     for (let j = 1; j < 4; j++) vl(g, w * j / 4, 0, hh); hl(g, mid, 0, w, DISPC.grid2);
     const ghost = [], live = [];
@@ -206,27 +211,38 @@ function gmsOsc(k) {
 // ---- MiniSynth: the oscillator kind's wave with the Modifier applied, the same formulas as the engine (Saw: square width 0 at 0 / 100,
 // second wave -24..+24 st, Pulse: two squares cancelling at 0 / 100, SuperSaw detune, spread voices), drawn at full height
 const SS8 = [0, -1, 1, -0.6, 0.6, -0.3, 0.3, -0.85];
+// MiniSynth oscillator: two cycles of the OSC Kind as the engine sums it from FLM's base wave (js/engine/hdmini.js: one table, read at
+// fixed offsets or intervals), the Modifier's meaning for that kind as the label
+let MSW = null;
+function msWave() {                                                             // the base wave with 48 harmonics, 512 points (display only)
+  if (MSW) return MSW;
+  MSW = new Float32Array(512);
+  for (let h = 1; h <= 48; h++) { const [mg, ph] = msHarmonic(h); for (let n = 0; n < 512; n++) MSW[n] += mg * Math.cos(ph + 2 * Math.PI * h * n / 512); }
+  return MSW;
+}
+const MS_SPREAD = [-0.05, -0.0375, -0.025, -0.0125, 0, 0.0125, 0.025, 0.0375];
 function miniWave(k) {
   return disp(k, (g, w, hh) => {
-    const kind = Math.round(k.get(0)), m = k.get(1) / 100, fr = (p) => p - Math.floor(p), saw = (p) => 2 * fr(p) - 1, pul = (p, pw = 0.5) => (fr(p) < pw ? -1 : 1);
-    const pz = (p, w0) => (w0 <= 1e-4 ? 0 : fr(p) < w0 ? 2 * w0 - 2 : 2 * w0);   // zero-mean pulse (engine pulseZ)
-    const r2 = Math.pow(2, miniSt(m) / 12), pw = miniPw(m), sp = Math.pow(2, ((kind === 8 ? 12 : 7) + m * 0.25) / 12), mid = hh / 2, vs = [];
+    const kind = Math.round(k.get(0)), m = clamp(k.get(1) / 100, 0, 1), T = msWave(), S = (p) => { const x = (p - Math.floor(p)) * 512, i = Math.floor(x), f = x - i; return T[i] + (T[(i + 1) % 512] - T[i]) * f; };
+    const st = Math.trunc(Math.fround(Math.fround(m) * 2 - 1) * 12), r = Math.pow(2, st / 12 + 0.00625), d = 1 - m, mid = hh / 2, vs = [];
     vl(g, w / 2, 0, hh); hl(g, mid, 0, w, DISPC.grid2);
     for (let x = 0; x <= w; x++) {
       const p = x / w * 2; let v;
       switch (kind) {
-        case 0: v = 0.6 * saw(p) + 0.4 * pz(p, pw); break; case 1: v = saw(p) + saw(p * r2); break; case 2: v = pul(p) - pul(p + m); break;
-        case 3: v = pul(p) + saw(p * r2); break; case 4: v = pul(p) + pul(p * r2); break;
-        case 5: v = 0; for (let u = 0; u < 8; u++) v += saw(p * Math.pow(2, SS8[u] * m * 0.5 / 12) + u * 0.137); break;
-        case 6: v = 0.7 * saw(p) + m * 0.6 * Math.sin(6 * Math.PI * p) * Math.sin(2 * Math.PI * p); break;
-        case 7: v = saw(p) + saw(p + 0.15 + m * 0.35); break; default: v = saw(p) + saw(p * sp);
+        case 0: v = 2 * S(p) - S(p + d); break; case 1: v = S(p) + S(p * r); break; case 2: v = S(p) - S(p + d); break;
+        case 3: v = S(p) - S(p + 0.5) + S(p * r); break; case 4: v = S(p) - S(p + 0.5625) + S(p * r) - S(p * r + 0.5625); break;
+        case 5: v = 0; for (let u = 0; u < 8; u++) v += 0.5 * S(p * (1 + m * MS_SPREAD[u]) + u * 0.137); break;
+        case 6: v = S(p); for (let u = 1; u <= 5; u++) v += S(p + u * m / 2); v *= 0.5; break;
+        case 7: v = S(p) + S(p + d); break;
+        case 8: v = S(p * (0.5 - 0.005 * m)) + S(p) + S(p * (2 + 0.02 * m)); break;
+        default: v = S(p * (1.5 - 0.015 * m)) + S(p) + S(p * (2 + 0.02 * m));
       }
       vs.push(v);
     }
     const pk = Math.max(0.05, ...vs.map(Math.abs)), A = mid - 18;
     lvPath(g, vs.map((v, x) => [x, mid - v / pk * A]), WH, null, 1.8);
-    const st = miniSt(m), info = kind === 0 ? (pw <= 1e-4 ? 'Pure Saw' : 'PW ' + Math.round(pw * 100) + ' %') : kind === 2 ? (pw <= 1e-4 ? 'Cancelled (silent)' : 'Offset ' + Math.round(m * 100) + ' %')
-      : kind === 1 || kind === 3 || kind === 4 ? (st > 0 ? '+' : '') + st.toFixed(st % 1 ? 1 : 0) + ' st' : 'Modifier ' + Math.round(m * 100);
+    const info = kind === 0 || kind === 2 || kind === 7 ? (kind === 2 && (m <= 0 || m >= 1) ? 'Cancelled (silent)' : 'Offset ' + Math.round(d * 100) + ' %')
+      : kind === 1 || kind === 3 || kind === 4 ? (st > 0 ? '+' : '') + st + ' st' : kind === 5 ? 'Detune ' + Math.round(m * 100) : 'Modifier ' + Math.round(m * 100);
     txt(g, item(k, 0), 6, 13, WH); txt(g, info, w - 6, 13, OR, 9, 'right');
   });
 }
@@ -304,7 +320,7 @@ function dwSample(k) {
 // delay taps over the beat grid: dry (grey), then each repeat at the tempo time, height = mix x feedback^n, fading with the filter
 function taps(k, o) {
   return disp(k, (g, w, hh) => {
-    const on = o.on == null || k.get(o.on) > 0.5, bt = o.beats ? o.beats(k.get(o.time)) : syncBeats(k.get(o.time)), fb = clamp(k.get(o.fb) / 100 * 0.9, 0, 0.95), damp = clamp(k.get(o.filt) / 100, 0, 0.98), mix = k.get(o.mix) / 100;
+    const on = o.on == null || k.get(o.on) > 0.5, bt = o.beats ? o.beats(k.get(o.time)) : syncBeats(k.get(o.time)), fb = clamp(k.get(o.fb) / 100 * (o.flm ? 1 : 0.9), 0, o.flm ? 0.999 : 0.95), damp = o.flm ? clamp(1 - k.get(o.filt) / 100, 0, 0.98) : clamp(k.get(o.filt) / 100, 0, 0.98), mix = o.flm ? (k.get(o.mix) / 100) ** 2 : k.get(o.mix) / 100;   // flm: MiniSynth's laws (feedback as is, the loop low-pass opens with Filter, mix squared)
     const span = clamp(bt * 6, 2, 32), top = 18, base = hh - 6, X = (b) => 6 + b / span * (w - 12), stp = span > 16 ? 4 : span > 6 ? 1 : 0.25;
     for (let b = 0; b <= span + 1e-9; b += stp) vl(g, X(b), top - 6, base, Math.abs(b % 4) < 1e-9 ? DISPC.grid2 : DISPC.grid);
     hl(g, base, 0, w, DISPC.grid2);
@@ -323,12 +339,14 @@ function taps(k, o) {
 function distWave(k, o) {
   return disp(k, (g, w, hh) => {
     const on = o.on == null || k.get(o.on) > 0.5, dr = k.get(o.drive) / 100, drive = 1 + dr * o.dmax, nrm = dr > 0 ? 1 / Math.tanh(drive) : 1;
-    const gn = o.gain == null ? 1 : Math.pow(10, k.get(o.gain) / 20), dec = o.decim == null ? 0 : k.get(o.decim) / 100, hold = 1 + dec * 31, bits = Math.pow(2, 16 - dec * 12);
+    const gn = o.gain == null ? 1 : Math.pow(10, k.get(o.gain) / 20), dec = o.decim == null ? 0 : k.get(o.decim) / 100, hold = o.flm ? Math.max(1, Math.trunc(64 * dec * dec) / 4) : 1 + dec * 31, bits = o.flm ? 65536 : Math.pow(2, 16 - dec * 12);
+    // flm (MiniSynth): D = 20 v^2, y = 1 - (1 - x) 10^(-D x) (mirrored below 0), x (0.7 (1 - D / 16)^8 + 0.3); the Decimator holds frames
+    const D = 20 * dr * dr, dgn = 0.7 * Math.pow(1 - D / 16, 8) + 0.3, od = (x) => (x >= 0 ? 1 - (1 - x) * Math.pow(10, -D * x) : -1 + (1 + x) * Math.pow(10, D * x)) * dgn;
     const mid = hh / 2, sc = (mid - 10) / Math.max(1, gn), N = 220, pin = [], pout = [];
     hl(g, mid, 0, w, DISPC.grid2); hl(g, mid - sc, 0, w); hl(g, mid + sc, 0, w);
     for (let x = 0; x <= w; x++) {
       const n = x / w * N, nh = dec > 0 ? Math.floor(n / hold) * hold : n, s0 = Math.sin(2 * Math.PI * n / 110), s1 = Math.sin(2 * Math.PI * nh / 110);
-      let v = dr > 0 ? Math.tanh(s1 * drive) * nrm : s1; if (dec > 0) v = Math.round(v * bits) / bits; v *= gn;
+      let v = o.flm ? od(s1 * 0.6) / 0.6 : dr > 0 ? Math.tanh(s1 * drive) * nrm : s1; if (dec > 0) v = Math.round(v * bits) / bits; v *= gn;
       pin.push([x, mid - s0 * sc]); pout.push([x, mid - clamp(v, -1.6, 1.6) * sc]);
     }
     lvPath(g, pin, DIM, null, 1.2); lvPath(g, pout, on ? OR : DISPC.grid2, null, 1.9);
@@ -338,7 +356,7 @@ function distWave(k, o) {
 // chorus: the two modulated delay lines (L sine, R cosine) over 2 s, depth = Mod, brightness = Mix
 function chorusDisp(k, o) {
   return disp(k, (g, w, hh) => {
-    const on = k.get(o.on) > 0.5, hz = 0.1 + k.get(o.rate) / 100 * 4, dep = k.get(o.mod) / 100, mix = k.get(o.mix) / 100, mid = hh / 2, A = (mid - 14) * Math.max(0.04, dep), L = [], R = [];
+    const on = k.get(o.on) > 0.5, hz = o.flm ? 4 * (k.get(o.rate) / 100) ** 2 + 0.2 : 0.1 + k.get(o.rate) / 100 * 4, dep = k.get(o.mod) / 100, mix = k.get(o.mix) / 100, mid = hh / 2, A = (mid - 14) * Math.max(0.04, dep), L = [], R = [];
     hl(g, mid, 0, w, DISPC.grid2); for (let j = 1; j < 4; j++) vl(g, w * j / 4, 0, hh);
     for (let x = 0; x <= w; x++) { const ph = 2 * Math.PI * hz * (x / w * 2); L.push([x, mid - Math.sin(ph) * A]); R.push([x, mid - Math.cos(ph) * A]); }
     const al = on ? 0.35 + 0.65 * mix : 0.25;
@@ -349,8 +367,10 @@ function chorusDisp(k, o) {
 // phaser: response of the 6 all-pass stages with feedback at the middle of the sweep, the sweep range shaded (engine Phaser)
 function phaserDisp(k, o) {
   return disp(k, (g, w, hh) => {
-    const on = k.get(o.on) > 0.5, f0 = 80 + k.get(o.freq) / 100 * 1500, wd = k.get(o.width) / 100, fbk = k.get(o.fb) / 100 * 0.85, mix = k.get(o.mix) / 100;
-    const f1 = Math.min(SR * 0.45, f0 * Math.pow(2, wd * 5)), fc = Math.min(SR * 0.45, f0 * Math.pow(2, wd * 2.5)), top = 4, bot = hh - 13, Y = (db) => top + (12 - clamp(db, -36, 12)) / 48 * (bot - top);
+    const on = k.get(o.on) > 0.5, wd = k.get(o.width) / 100, mix = k.get(o.mix) / 100;
+    // flm (MiniSynth): allpass frequency 50 + 19950 (Freq^2 + sweep) Hz, sweep 0 .. Width^3, feedback 0.98 cbrt(v)
+    const f0 = o.flm ? 50 + 19950 * Math.max(1e-5, (k.get(o.freq) / 100) ** 2) : 80 + k.get(o.freq) / 100 * 1500, fbk = o.flm ? 0.98 * Math.cbrt(k.get(o.fb) / 100) : k.get(o.fb) / 100 * 0.85;
+    const f1 = o.flm ? Math.min(SR * 0.45, f0 + 19950 * wd * wd * wd) : Math.min(SR * 0.45, f0 * Math.pow(2, wd * 5)), fc = o.flm ? Math.min(SR * 0.45, (f0 + f1) / 2) : Math.min(SR * 0.45, f0 * Math.pow(2, wd * 2.5)), top = 4, bot = hh - 13, Y = (db) => top + (12 - clamp(db, -36, 12)) / 48 * (bot - top);
     g.fillStyle = 'rgba(255,173,50,.12)'; g.fillRect(lx(f0, w), top, Math.max(2, lx(f1, w) - lx(f0, w)), bot - top);
     freqAxis(g, w, hh, top, bot); hl(g, Y(0), 0, w, DISPC.grid2);
     const t = Math.tan(Math.PI * fc / SR), a = (t - 1) / (t + 1), pts = [];
@@ -363,8 +383,9 @@ function phaserDisp(k, o) {
       pts.push([x, Y(20 * Math.log10(Math.max(1e-5, Math.sqrt(hr * hr + hi * hi))))]);
     }
     lvPath(g, pts, on ? CY : DISPC.grid2, bot, 1.8);
-    txt(g, fmtHz(f0) + ' – ' + fmtHz(f1), 6, 13, on ? WH : DISPC.ink, 9);
-    if (o.speed != null) { const b = miniPhaserBeats(k.get(o.speed)), lab = FLM_SYNC[[32, 16, 8, 4, 2, 1, 0.75, 0.5, 1 / 3, 0.25].indexOf(b)] || ''; txt(g, 'Speed ' + lab, w - 6, 13, on ? OR : DISPC.ink, 9, 'right'); }
+    const narrow = w < 170;                                                      // a narrow display: the range and the speed on two lines
+    txt(g, narrow ? fmtHz(f0) : fmtHz(f0) + ' – ' + fmtHz(f1), 6, 13, on ? WH : DISPC.ink, 9);
+    if (o.speed != null) { if (narrow) txt(g, MS_RATES[msRateIndex(k.get(o.speed))], 6, 24, on ? OR : DISPC.ink, 9); else txt(g, 'Speed ' + MS_RATES[msRateIndex(k.get(o.speed))], w - 6, 13, on ? OR : DISPC.ink, 9, 'right'); }
   }, null, { min: o.min });
 }
 // GMS FX slot: X / Y pad (what X and Y do depends on the kind, as in the FLM guide), the LFO sweep of X in orange; drag the point
@@ -475,19 +496,22 @@ export function addFlmPanels(VI) {
     () => [0, 1, 2].map((s) => { const o = 47 + s * 7, xy = (j) => k.swapN(o + 1, (m) => KN(k, o + 3 + j, (GMS_XY[m] || ['X', 'Y'])[j]));   // X / Y named by the kind
       return FS('FX ' + (s + 1), [SEL(k, o + 1, 'Kind', 74), SEL(k, o + 5, 'LFO Rate', 74), xy(0), xy(1), KN(k, o + 2, 'LFO Amt'), SEL(k, o + 6, 'Shape', 60), fxPad(k, o)], { sw: SW(k, o) }); }),
   ]);
+  // MiniSynth (js/engine/hdmini.js): the displays use the engine's own laws; envelope knobs are FLM's sliders (the curve shows their time)
+  const msT = 1 / 44100, msLaw = { a: (x) => { const v = x / 100; return v < 0.001 ? 0 : 0.28768 / msAttackRate(v) * msT; }, d: (x) => { const v = x / 100; return v < 0.0177 ? 0 : 3 / msDecayRate(v) * msT; }, r: (x) => 3 / msAmpReleaseRate(x / 100) * msT };
+  const msLawF = { ...msLaw, r: msLaw.d }, msHz = (x) => Math.min(20000, Math.pow(2, 4 + 10.3 * clamp(x / 100, 0, 1)));
   VI[32] = (k) => tabs(k, ['OSC', 'FILTER', 'FLT EG', 'LFO', 'MASTER', 'FX'], [
     () => [FS('Oscillator', [SEL(k, 0, 'Kind', 116), KN(k, 1, 'Modifier', { big: true }), miniWave(k)]),
       FS('Tone', [KN(k, 2, 'Noise'), KN(k, 3, 'Transpose')]), FS('Output', [KN(k, 43, 'Level', { big: true })])],
-    () => [FS('Filter', [filt(k, 4, 7, () => 0), KN(k, 4, 'Cutoff', { big: true }), KN(k, 7, 'Res'), KN(k, 5, 'Kbd Trk'), KN(k, 6, 'Vel Trk')])],
-    () => [FS('Filter Envelope', [env(k, 8, 9, 10, 11, OR, () => 'Amount ' + Math.round(k.get(12))), ...ADSR(k, 8, 9, 10, 11), KN(k, 12, 'Amount', { big: true })])],
-    () => [FS('LFO', [lfo(k, { shape: 15, amt: 13, sync: 14 }), KN(k, 13, 'Amount', { big: true }), SEL(k, 14, 'Rate', 70), SEL(k, 15, 'Shape', 70), SEL(k, 16, 'Dest', 70)]),
+    () => [FS('Filter', [filt(k, 4, 7, () => 0, () => true, msHz), KN(k, 4, 'Cutoff', { big: true }), KN(k, 7, 'Res'), KN(k, 5, 'Kbd Trk'), KN(k, 6, 'Vel Trk')])],
+    () => [FS('Filter Envelope', [env(k, 8, 9, 10, 11, OR, () => 'Amount ' + Math.round(k.get(12)), msLawF), ...ADSR(k, 8, 9, 10, 11), KN(k, 12, 'Amount', { big: true })])],
+    () => [FS('LFO', [lfo(k, { shape: 15, amt: 13, sync: 14, beats: (i) => MS_RATE_BEATS[clamp(Math.round(i), 0, 11)], depth: (x) => Math.sign(x) * (x / 100) ** 2 }), KN(k, 13, 'Amount', { big: true }), SEL(k, 14, 'Rate', 70), SEL(k, 15, 'Shape', 70), SEL(k, 16, 'Dest', 70)]),
       FS('Mod Wheel', [KN(k, 17, 'Amount'), SEL(k, 18, 'Dest', 70)])],
-    () => [FS('Master Envelope', [env(k, 19, 20, 21, 22), ...ADSR(k, 19, 20, 21, 22)]),
+    () => [FS('Master Envelope', [env(k, 19, 20, 21, 22, CY, null, msLaw), ...ADSR(k, 19, 20, 21, 22)]),
       FS('Voices', [CHV(k, 23, ['Poly', 'Mono', 'Lead']), KN(k, 24, 'Slide')])],
-    () => [FS('Distortion', [KN(k, 26, 'Drive'), KN(k, 27, 'Decim'), distWave(k, { on: 25, drive: 26, dmax: 20, decim: 27, min: 84 })], { sw: SW(k, 25) }),
-      FS('Delay', [SEL(k, 32, 'Time', 58), KN(k, 31, 'Mix'), KN(k, 29, 'Feedback'), KN(k, 30, 'Filter'), taps(k, { on: 28, time: 32, fb: 29, filt: 30, mix: 31, min: 84 })], { sw: SW(k, 28) }),
-      FS('Chorus', [KN(k, 34, 'Rate'), KN(k, 35, 'Mod'), KN(k, 36, 'Mix'), chorusDisp(k, { on: 33, rate: 34, mod: 35, mix: 36, min: 84 })], { sw: SW(k, 33) }),
-      FS('Phaser', [KN(k, 38, 'Speed'), KN(k, 39, 'Width'), KN(k, 40, 'Feedback'), KN(k, 41, 'Freq'), KN(k, 42, 'Mix'), phaserDisp(k, { on: 37, speed: 38, width: 39, fb: 40, freq: 41, mix: 42, min: 84 })], { sw: SW(k, 37) })],
+    () => [FS('Distortion', [KN(k, 26, 'Drive'), KN(k, 27, 'Decim'), distWave(k, { on: 25, drive: 26, dmax: 20, decim: 27, min: 84, flm: true })], { sw: SW(k, 25) }),
+      FS('Delay', [SEL(k, 32, 'Time', 58), KN(k, 31, 'Mix'), KN(k, 29, 'Feedback'), KN(k, 30, 'Filter'), taps(k, { on: 28, time: 32, fb: 29, filt: 30, mix: 31, min: 84, flm: true, beats: (i) => MS_DELAY_BEATS[clamp(Math.round(i), 0, 3)] })], { sw: SW(k, 28) }),
+      FS('Chorus', [KN(k, 34, 'Rate'), KN(k, 35, 'Mod'), KN(k, 36, 'Mix'), chorusDisp(k, { on: 33, rate: 34, mod: 35, mix: 36, min: 84, flm: true })], { sw: SW(k, 33) }),
+      FS('Phaser', [KN(k, 38, 'Speed'), KN(k, 39, 'Width'), KN(k, 40, 'Feedback'), KN(k, 41, 'Freq'), KN(k, 42, 'Mix'), phaserDisp(k, { on: 37, speed: 38, width: 39, fb: 40, freq: 41, mix: 42, min: 84, flm: true })], { sw: SW(k, 37) })],
   ]);
   VI[33] = (k) => tabs(k, ['OSC', 'FILTER', 'LFO', 'LEVEL', 'MOD', 'VOICES', 'FX'], [
     () => [FS('Oscillator', [STACK(CHV(k, 1, ['Supersaw', 'Supersync']), TG(k, 0, 'Pulse Mode', 72), TG(k, 2, 'Retrig', 72)), KN(k, 3, 'Pulse Width'), KN(k, 4, 'Sub Osc'), ssWave(k)]),

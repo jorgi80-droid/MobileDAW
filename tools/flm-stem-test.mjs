@@ -40,8 +40,8 @@ const ns1 = process.env.FLM_NS1 || '/root/.claude/uploads/c47664c0-803d-5780-bec
 if (fs.existsSync(ns1)) {
   const M1 = F.flmToModel(F.parseFlm(new Uint8Array(fs.readFileSync(ns1)))), J1 = B.buildMdaw(M1, { root: '/FLM/x', resolve: (p) => p, relName: (e) => e }).json, cub = J1.tracks.find((x) => x.name === 'Cubed');
   const P1 = D0.INSTRUMENTS[32].params, v = (n) => cub.inst.params[P1.findIndex((q) => q.n === n)];
-  ok(cub && v('Oscillator Kind') === 3 && Math.round(v('Modifier')) === 50 && Math.floor(v('Noise')) === 14 && Math.round(v('Res')) === 50 && Math.abs(v('Flt Amount') - 30.7) < 0.1 && Math.abs(v('Cutoff') / 0.8 - 64.9) < 0.2,
-    'MiniSynth preset "Cubed": the knobs shown in FLM (Saw + Square, Modifier 50, Noise 14, Cutoff 64, Res 49, Flt Amount 30.7) come from the file');
+  ok(cub && v('Oscillator Kind') === 3 && Math.round(v('Modifier')) === 50 && Math.floor(v('Noise')) === 14 && Math.floor(v('Res')) === 49 && Math.abs(v('Flt Amount') - 30.7) < 0.1 && Math.floor(v('Cutoff')) === 64 && Object.keys(cub.inst.params).length === 44,
+    'MiniSynth preset "Cubed": the knobs shown in FLM (Saw + Square, Modifier 50, Noise 14, Cutoff 64, Res 49, Flt Amount 30.7) come from the file, all 44 values (miniFromFlm)');
   const M1t = (await import(path.join(root, 'js/import/fxmap.js'))).FLM_TYPES;
   ok(M1t[18] && M1t[18].name === 'Tape Delay' && M1t[16] && M1t[16].name === 'Trance Delay' && !M1t[11], 'rack screenshot: type 18 = Tape Delay, 16 = Trance Delay (11 no longer guessed)');
 }
