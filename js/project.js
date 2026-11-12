@@ -868,7 +868,15 @@ export function setInstParam(i, pi, v) {
 // ---- drum pads: every drum track owns up to 16 pads; a pad is a built-in synth sound or a sample, with gain / pan / sample / envelope settings
 export const MAX_PADS = 16;
 const PAD_FREE = [37, 43, 45, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59];   // MIDI pitches given to added pads (35, 40 and 44 stay GM aliases)
-export const newPad = (o) => ({ pitch: 36, name: 'Pad', kind: -1, sample: null, gain: 0, pan: 0, pit: 0, dec: 1, start: 0, end: 1, rev: false, a: 0, d: 0, s: 1, r: 0, mute: false, solo: false, cut: 0, poly: true, hold: 0, shift: 0, eg: 0, ...o });   // eg: envelope model (0 MDAW seconds, 1 FL Studio Mobile sliders)
+// pad envelope = FL Studio Mobile's drum slot envelope (engine model 1, Honeydew drums.rs): a / d / r are FLM's 0..1 sliders. A pad saved
+// before that (no eg: attack / decay / release in seconds) is converted to the sliders that play closest (3 time constants per segment).
+const padSlider = (c) => Math.min(1, Math.max(0, (Math.pow(0.0002 / c, 0.25) - 0.05) / 0.95));
+function padEnvToFlm(o) {
+  if (!o || o.eg === 1 || (o.a == null && o.d == null && o.r == null)) return o;
+  const a = +o.a || 0, d = +o.d || 0, r = +o.r || 0, R3 = (x) => Math.round(x * 1000) / 1000;
+  return { ...o, eg: 1, a: a <= 0.0005 ? 0 : R3(padSlider(500 * 0.2231 / (a * 44100))), d: d <= 0 ? 0 : R3(padSlider(50 * 3 / (d * 44100))), r: r <= 0 ? 1 : R3(padSlider(50 * 3 / (r * 44100))) };
+}
+export const newPad = (o) => ({ pitch: 36, name: 'Pad', kind: -1, sample: null, gain: 0, pan: 0, pit: 0, dec: 1, start: 0, end: 1, rev: false, a: 0, d: 1, s: 1, r: 1, mute: false, solo: false, cut: 0, poly: true, hold: 0, shift: 0, eg: 1, ...padEnvToFlm(o) });
 export function padsOf(i) {
   const t = state.tracks[i];
   if (!t || t.kind !== 'drum' || !t.inst) return [];
@@ -898,7 +906,7 @@ function sendPad(i, k) {
   eng.instParam(i, b + 3, q.start); eng.instParam(i, b + 4, q.end); eng.instParam(i, b + 5, q.rev ? 1 : 0);
   eng.instParam(i, b + 6, q.a); eng.instParam(i, b + 7, q.d); eng.instParam(i, b + 8, q.s); eng.instParam(i, b + 9, q.r);
   eng.instParam(i, b + 10, q.mute || (solo && !q.solo) ? 1 : 0); eng.instParam(i, b + 11, q.pitch);
-  eng.instParam(i, b + 12, q.cut || 0); eng.instParam(i, b + 13, q.poly === false ? 0 : 1); eng.instParam(i, b + 14, q.hold || 0); eng.instParam(i, b + 15, q.shift || 0); eng.instParam(i, 500 + k, q.eg ? 1 : 0);   // Seq: cut group, poly, hold, shift (projects before these had none: defaults)
+  eng.instParam(i, b + 12, q.cut || 0); eng.instParam(i, b + 13, q.poly === false ? 0 : 1); eng.instParam(i, b + 14, q.hold || 0); eng.instParam(i, b + 15, q.shift || 0); eng.instParam(i, 500 + k, 1);   // Seq: cut group, poly, hold, shift (projects before these had none: defaults)
 }
 export function syncPads(i) {
   const t = state.tracks[i];

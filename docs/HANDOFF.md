@@ -16,6 +16,8 @@ Baca juga `README-ANDROID.md` (build, install, status fase 2).
 - **Arah utama (pemilik, 9 Nov 2026): Design dan visual = Ableton Live. Mesin = FL Studio Mobile.** Semua tampilan (Arrangement, Mixer,
   Clip View, editor audio, piano roll, device) meniru Ableton Live 12: rapi, simetris, padat. Semua perilaku suara/engine (instrumen,
   efek, mixer, level/pan law, drum sampler, import FLM) meniru FL Studio Mobile (referensi: Honeydew, GPL-3.0, dengan atribusi).
+- Tidak ada pilihan "model MobileDAW / model FL Studio Mobile" di UI (pemilik, 12 Nov 2026): mesin selalu memakai hukum FL Studio Mobile
+  dari Honeydew; data lama dikonversi otomatis saat dibuka. Modul FX dan instrumen virtual gaya Ableton Live tetap ada.
 - Kode hasil dekompilasi software berhak cipta (mis. libFLM.so, VST komersial seperti reFX Nexus) tidak dipakai dan tidak di-port.
 
 ## Status

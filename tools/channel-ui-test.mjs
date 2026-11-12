@@ -59,23 +59,20 @@ ok(seq.cutB === 2 && seq.cutA === 1, 'Cut Group buttons set the pad (B = 2, A = 
 ok(seq.polyBefore === true && seq.polyAfter === false && seq.polyOn === false, 'Poly toggles off and the button follows');
 await ev(async () => { (await import('./js/project.js')).setPad(0, 0, 'cut', 0); (await import('./js/project.js')).setPad(0, 0, 'poly', true); });
 
-// ---- the Envelope tab: envelope model MobileDAW (seconds) / FL Mobile (FLM sliders + curve, pad eg 1), with undo
+// ---- the Envelope tab: FL Studio Mobile's drum slot envelope only (no model switch); an old pad (seconds) is converted when it loads
 const egt = await ev(async () => {
-  const D = await import('./js/drumpad.js'), P = await import('./js/project.js'), H = await import('./js/history.js');
+  const D = await import('./js/drumpad.js'), P = await import('./js/project.js');
   P.padsOf(0)[0].sample = P.state.samples['/Samples/x.wav'];
   const root = D.padPanel(0, 0, { onClose() {}, onChange() {} }); document.body.append(root); root.style.cssText = 'position:fixed;left:0;top:0;z-index:99999;background:#222';
-  const tabB = (l) => [...root.querySelectorAll('.pp-h .b')].find((e) => e.textContent === l), btn = (l) => [...root.querySelectorAll('.pp-b .b')].find((e) => e.textContent === l);
-  tabB('Envelope').click();
-  const before = { eg: P.padsOf(0)[0].eg, mdOn: btn('MDAW').classList.contains('on'), knobs: root.querySelectorAll('.pp-b .knobs > *').length };
-  btn('FLM').click();
-  const q = P.padsOf(0)[0], flm = { eg: q.eg, a: q.a, d: q.d, s: q.s, r: q.r, on: btn('FLM').classList.contains('on'), txt: root.querySelector('.pp-b').textContent, knobs: root.querySelectorAll('.pp-b .knobs > *').length };
-  const box = root.getBoundingClientRect(); window.__ppBox = { x: box.x, y: box.y, w: box.width, h: box.height };
-  return { before, flm };
+  [...root.querySelectorAll('.pp-h .b')].find((e) => e.textContent === 'Envelope').click();
+  const q = P.padsOf(0)[0], box = root.getBoundingClientRect(); window.__ppBox = { x: box.x, y: box.y, w: box.width, h: box.height };
+  const old = P.newPad({ a: 0.2, d: 0.3, s: 0.5, r: 0 }), cur = P.newPad({ eg: 1, a: 0.4, d: 0.5, s: 0.5, r: 0.6 });
+  return { eg: q.eg, a: q.a, d: q.d, s: q.s, r: q.r, knobs: root.querySelectorAll('.pp-b .knobs > *').length, btns: root.querySelectorAll('.pp-b .b').length, old, cur };
 });
-ok(egt.before.eg === 0 && egt.before.mdOn && egt.before.knobs === 4, 'Envelope tab: model MobileDAW by default, four knobs');
-ok(egt.flm.eg === 1 && egt.flm.on && egt.flm.a === 0 && egt.flm.d === 1 && egt.flm.s === 1 && egt.flm.r === 1 && egt.flm.knobs === 4, 'FLM curve: pad eg 1 with FLM\'s default sliders (0 / 1 / 1 / 1), the button follows');
+ok(egt.eg === 1 && egt.a === 0 && egt.d === 1 && egt.s === 1 && egt.r === 1 && egt.knobs === 4 && egt.btns === 0, "Envelope tab: FLM's envelope with its default sliders (0 / 1 / 1 / 1), four knobs, no model switch");
+ok(egt.old.eg === 1 && egt.old.a > 0.2 && egt.old.a < 1 && egt.old.d > 0.1 && egt.old.d < 1 && egt.old.r === 1 && egt.old.s === 0.5 && egt.cur.a === 0.4 && egt.cur.r === 0.6, `a pad saved in seconds converts to FLM sliders (A 0.2 s -> ${egt.old.a}, D 0.3 s -> ${egt.old.d}, R 0 = play through -> 1); an FLM pad is kept`);
 if (process.env.SHOT) { const bx = await ev(() => window.__ppBox); await page.screenshot({ path: process.env.SHOT, clip: { x: bx.x, y: bx.y, width: Math.min(bx.w, 780), height: Math.min(bx.h, 350) } }); }
-await ev(async () => { const P = await import('./js/project.js'); document.querySelectorAll('body > .pp').forEach((e) => e.remove()); P.setPad(0, 0, 'eg', 0); for (const [f, v] of [['a', 0], ['d', 0], ['s', 1], ['r', 0]]) P.setPad(0, 0, f, v); P.padsOf(0)[0].sample = null; });
+await ev(async () => { const P = await import('./js/project.js'); document.querySelectorAll('body > .pp').forEach((e) => e.remove()); P.padsOf(0)[0].sample = null; });
 
 // ---- header menus per track kind
 let m = await headMenuOf(0);
