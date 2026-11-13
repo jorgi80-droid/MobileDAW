@@ -67,7 +67,8 @@ npm run apk               # -> android/app/build/outputs/apk/debug/app-debug.apk
 Engine audio JS (`js/engine/`) tetap jadi referensi. Port C++-nya ada di `native/engine/`. Kode yang sama dipakai di dua tempat:
 host desktop untuk tes kesetaraan (`native/host/golden_host`) dan library Android (`android/app/src/main/cpp/`, output lewat Oboe).
 
-- **Pilih engine:** Pengaturan → Audio → *Engine audio*: Web (bawaan) / Native (C++). Bisa diganti kapan saja tanpa restart.
+- **Pilih engine:** Pengaturan → Audio → *Engine audio*: **Native (C++ / Oboe, bawaan sejak prefs v8)** / WebView (mesin C++ yang sama sebagai
+  WebAssembly di dalam WebView). Bisa diganti kapan saja tanpa restart. Ekspor, stem dan freeze dirender oleh mesin C++ (WebAssembly) di WebView.
   Selama proyek memakai instrumen/efek yang belum di-port, proyek otomatis diputar engine Web dan alasannya ditampilkan.
   Pergantian engine hanya terjadi saat transport berhenti.
 - **Ukur performa:** Pengaturan → Audio → *Ukur beban CPU* menampilkan beban per blok audio (rata-rata, p50, p99, maks dalam %

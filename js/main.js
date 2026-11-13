@@ -526,9 +526,9 @@ function boot() {
     eng.setLatencyMs(prefs.latencyMs); eng.metroVol(prefs.metroVol ?? 1); eng.masterLimit(prefs.masterLimit !== false); if (eng.pdc) eng.pdc(prefs.pdc !== false);
     restore().then((ok) => { if (!ok) P.newProject(true); }).catch(() => P.newProject(true)).then(() => { showTab('dev'); startAutosave(); QS.initSaveState(); QS.onSaveState((d) => $('#btn-menu').classList.toggle('unsaved', d)); });
     if (prefs.midiOn && !isNativeApp()) enableMidi(true);   // no Web MIDI in the Android WebView
-    if (isNativeApp() && eng.setEngine) {                 // Android: C++ engine when chosen in Pengaturan -> Audio (falls back to Web by itself)
+    if (isNativeApp() && eng.setEngine) {                 // Android: the native C++ engine (Oboe) unless Pengaturan -> Audio chose the WebView (falls back to it by itself)
       addEventListener('enginechange', (e) => engineToast(e.detail));
-      if (prefs.engine === 'native') eng.setEngine('native');
+      if (prefs.engine !== 'web') eng.setEngine('native');   // the native C++ engine by default (prefs v8)
     }
     initAutoFullscreen();
     initUiPrefs();
@@ -557,11 +557,12 @@ function askFolder() {
     { label: 'Pilih folder', go: true, fn: () => { prefs.folderAsked = true; savePrefs(); FS.chooseFolder().then(async (r) => { if (r.error) toast(r.error, 5000); else if (r.ok) { const s = await eng.syncFolder(); toast('Folder ' + r.name + ' siap' + (s && s.added ? `, ${s.added} file ditemukan.` : '.'), 3500); } }); } },
   ]);
 }
-let lastEngine = 'web';
+let lastEngine = null;
 function engineToast(i) {
   if (i.active === lastEngine) return;
-  lastEngine = i.active;
-  toast(i.active === 'native' ? 'Engine audio: Native (C++)' : i.want === 'native' ? 'Engine audio: Web (proyek ini memakai instrumen/efek yang belum ada di engine native)' : 'Engine audio: Web', 3500);
+  const first = lastEngine === undefined || lastEngine === null; lastEngine = i.active;
+  if (first && i.active === 'native') return;                         // the default: no toast at every start
+  toast(i.active === 'native' ? 'Engine audio: Native (C++)' : i.want === 'native' ? 'Engine audio: WebView (proyek ini memakai sesuatu yang belum bisa diputar engine native)' : 'Engine audio: WebView (C++ WebAssembly)', 3500);
 }
 function showFatal(e) {
   const d = document.createElement('div');

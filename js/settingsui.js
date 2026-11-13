@@ -126,9 +126,9 @@ function engineSection() {
   const onChange = () => { if (!stat.isConnected) { removeEventListener('enginechange', onChange); return; } paint(); };   // gone with the settings panel
   addEventListener('enginechange', onChange);
   return section('Engine audio',
-    choice('Mesin yang memutar audio', 'engine', [['web', 'Web'], ['native', 'Native (C++)']], async () => { stat.textContent = 'Beralih\u2026'; await eng.setEngine(prefs.engine); paint(); }),
+    choice('Mesin yang memutar audio', 'engine', [['native', 'Native (C++ / Oboe)'], ['web', 'WebView (C++ WebAssembly)']], async () => { stat.textContent = 'Beralih\u2026'; await eng.setEngine(prefs.engine); paint(); }),
     stat,
-    h('div', { class: 'sv' }, 'Native = engine C++ dengan Oboe (latensi rendah). Selama sebuah instrumen/efek di proyek belum tersedia di engine native, proyek diputar oleh engine Web. Berganti engine tidak perlu memulai ulang dan proyek tetap utuh.'),
+    h('div', { class: 'sv' }, 'Native (bawaan) = engine C++ langsung ke Oboe, latensi paling rendah. WebView = engine C++ yang sama sebagai WebAssembly di dalam WebView (cadangan). Kalau engine native belum bisa memutar sesuatu di proyek, aplikasi otomatis memakai WebView. Berganti engine tidak perlu memulai ulang dan proyek tetap utuh.'),
     btn('Ukur beban CPU', () => measure(false)), btn('Reset statistik', () => measure(true)), meas);
 }
 
