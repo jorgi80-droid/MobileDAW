@@ -4,7 +4,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <map>
-#include <mutex>
+#include "mdmutex.h"
 #include <unordered_map>
 #include "inst_classic.h"
 #include "live.h"
@@ -129,9 +129,9 @@ static LaneData* prepLanes(const Arg& flat, const Arg& cnt) {
 }
 
 // SoundFont sample data staged by the Android bridge (it arrives through the sample channel, too large for a text command)
-static std::mutex sfMu; static std::map<int, std::vector<float>> sfStaged;
-void stageSoundFont(int id, std::vector<float>&& data) { std::lock_guard<std::mutex> g(sfMu); sfStaged[id] = std::move(data); }
-bool takeStagedSoundFont(int id, std::vector<float>& out) { std::lock_guard<std::mutex> g(sfMu); auto it = sfStaged.find(id); if (it == sfStaged.end()) return false; out = std::move(it->second); sfStaged.erase(it); return true; }
+static MdMutex sfMu; static std::map<int, std::vector<float>> sfStaged;
+void stageSoundFont(int id, std::vector<float>&& data) { MdLock g(sfMu); sfStaged[id] = std::move(data); }
+bool takeStagedSoundFont(int id, std::vector<float>& out) { MdLock g(sfMu); auto it = sfStaged.find(id); if (it == sfStaged.end()) return false; out = std::move(it->second); sfStaged.erase(it); return true; }
 
 bool supported(const std::string& name, const std::vector<Arg>& a) {
   if (name == "trackInst") { int ty = toInt32(at(a, 1).n()); return instPorted(ty) || at(a, 0).n() >= MASTER; }

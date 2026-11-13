@@ -3,7 +3,7 @@
 #include "fx.h"
 #include <atomic>
 #include <cmath>
-#include <mutex>
+#include "mdmutex.h"
 
 namespace mdaw {
 
@@ -226,10 +226,10 @@ static double gen(int g, int h, double t, int f, double& ph) {
   }
 }
 static std::atomic<const float*> WT[WT_COUNT];
-static std::mutex wtMu;
+static MdMutex wtMu;
 void wtEnsure(int idx) {
   if (idx < 0 || idx >= WT_COUNT || WT[idx].load(std::memory_order_acquire)) return;
-  std::lock_guard<std::mutex> g(wtMu);
+  MdLock g(wtMu);
   if (WT[idx].load(std::memory_order_relaxed)) return;
   float* d = new float[WT_NF * WT_NM * (WT_TL + 1)](); float acc[WT_TL], row[WT_TL];
   for (int f = 0; f < WT_NF; f++) {
