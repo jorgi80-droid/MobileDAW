@@ -18,6 +18,11 @@ Baca juga `README-ANDROID.md` (build, install, status fase 2).
   efek, mixer, level/pan law, drum sampler, import FLM) meniru FL Studio Mobile (referensi: Honeydew, GPL-3.0, dengan atribusi).
 - Tidak ada pilihan "model MobileDAW / model FL Studio Mobile" di UI (pemilik, 12 Nov 2026): mesin selalu memakai hukum FL Studio Mobile
   dari Honeydew; data lama dikonversi otomatis saat dibuka. Modul FX dan instrumen virtual gaya Ableton Live tetap ada.
+- **Satu mesin C++ untuk semua (pemilik, 13 Nov 2026).** Mesin audio = `native/engine` (C++): di Android lewat Oboe, di web/PWA lewat
+  WebAssembly (`js/engine/mdaw.wasm`, dibangun `sh native/wasm/build.sh`; butuh `clang`, `lld`, `wasi-libc`, `libc++-18-dev-wasm32`,
+  `libclang-rt-18-dev-wasm32`). Port baru ditulis sekali di C++. Setiap kali `native/engine` berubah: bangun ulang `mdaw.wasm`, jalankan
+  `node tools/golden/wasm-golden.mjs` dan `node tools/wasm-web-test.mjs`. Mesin JS (`js/engine/core.js` dst.) masih jadi cadangan
+  (`prefs.webEngine = 'js'`, atau otomatis kalau WASM gagal dimuat) dan masih dipakai untuk ekspor/freeze offline sampai itu dipindah.
 - Kode hasil dekompilasi software berhak cipta (mis. libFLM.so, VST komersial seperti reFX Nexus) tidak dipakai dan tidak di-port.
 
 ## Status

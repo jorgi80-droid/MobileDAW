@@ -291,21 +291,33 @@ export function createWebBackend() {
     // SharedArrayBuffer channels (sabio.js) only when the page is cross-origin isolated (COOP / COEP headers); otherwise postMessage only
     let shared = null;
     if (sabAvailable()) { try { shared = makeShared(NSTRIPS, 64); } catch (e) { shared = null; log('warn', 'SharedArrayBuffer tidak bisa dibuat', e); } }
-    st.node = new AudioWorkletNode(st.ctx, 'daw', { numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [2], processorOptions: shared ? { shared } : {} });
+    // The audio engine: the C++ engine as WebAssembly (mdaw.wasm, the same code the Android app runs natively) in its own worklet
+    // processor; the JS engine (worklet.js) stays as the fallback when the module cannot be loaded or started, or with prefs.webEngine 'js'.
+    let wasm = null;
+    if (prefs.webEngine !== 'js' && globalThis.WebAssembly) {
+      try { const r = await fetch(new URL('./mdaw.wasm', import.meta.url)); if (!r.ok) throw new Error('HTTP ' + r.status); wasm = await r.arrayBuffer(); await st.ctx.audioWorklet.addModule(new URL('./worklet-wasm.js', import.meta.url)); }
+      catch (e) { wasm = null; log('warn', 'engine WebAssembly tidak bisa dimuat, memakai engine JS', e); }
+    }
+    const mkNode = (useWasm) => {
+      st.node = new AudioWorkletNode(st.ctx, useWasm ? 'daw-wasm' : 'daw', { numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [2], processorOptions: { ...(shared ? { shared } : {}), ...(useWasm ? { wasm } : {}) } });
+      st.wasm = useWasm;
+      st.node.connect(st.ctx.destination);
+      st.node.port.onmessage = (ev) => {
+        const d = ev.data;
+        if (d.fail) { log('warn', 'engine WebAssembly gagal dimulai (' + d.fail + '), memakai engine JS'); try { st.node.disconnect(); } catch (_) { /* already gone */ } mkNode(false); }
+        else if (d.ready) { st.ready = true; log('info', 'engine audio: ' + (d.wasm ? 'C++ (WebAssembly)' : 'JS')); for (const q of st.queue) st.node.port.postMessage(q); st.queue = []; }
+        else if (d.err) { if (globalThis.onEngineError) globalThis.onEngineError(d.err); }
+        else if (d.m && !nat.on) { d.rx = performance.now(); st.poll = d; st.dev = d.dev || {}; if (nat.pending && !d.playing) evaluate(); }   // rx = arrival time: the playhead clock needs it (a poll may be read several times)
+      };
+      st.node.onprocessorerror = () => { if (globalThis.onEngineError) globalThis.onEngineError({ kind: 'engine', msg: 'prosesor audio berhenti, muat ulang aplikasi' }); };
+    };
+    mkNode(!!wasm);
     if (shared) { st.ring = new RingWriter(shared); st.pr = new PollReader(shared); st.sab = true; setInterval(sabPoll, 100); }
     log('info', 'kanal engine: ' + (shared ? 'SharedArrayBuffer (ring buffer perintah + blok poll)' : 'postMessage (halaman tidak cross-origin isolated)'));
-    st.node.connect(st.ctx.destination);
-    st.node.port.onmessage = (ev) => {
-      const d = ev.data;
-      if (d.ready) { st.ready = true; for (const q of st.queue) st.node.port.postMessage(q); st.queue = []; }
-      else if (d.err) { if (globalThis.onEngineError) globalThis.onEngineError(d.err); }
-      else if (d.m && !nat.on) { d.rx = performance.now(); st.poll = d; st.dev = d.dev || {}; if (nat.pending && !d.playing) evaluate(); }   // rx = arrival time: the playhead clock needs it (a poll may be read several times)
-    };
     const resume = () => { if (st.ctx.state !== 'running') st.ctx.resume().catch(() => {}); };
     // The browser may suspend / interrupt the audio context (phone call, tab switch, screen lock): bring it back when the app is visible again
     document.addEventListener('visibilitychange', () => { if (!document.hidden) resume(); });
     st.ctx.onstatechange = () => { if (st.ctx.state === 'interrupted' || (st.ctx.state === 'suspended' && !document.hidden)) resume(); };
-    st.node.onprocessorerror = () => { if (globalThis.onEngineError) globalThis.onEngineError({ kind: 'engine', msg: 'prosesor audio berhenti, muat ulang aplikasi' }); };
     for (const ev of ['pointerdown', 'keydown', 'touchend']) addEventListener(ev, resume, true);
     setInterval(pruneWatch, 250);
     return st.ctx.sampleRate;
@@ -616,7 +628,7 @@ export function createWebBackend() {
 
   me.setLatencyMs = (v) => { st.latencyMs = v; };
   me.latencyMs = () => st.latencyMs;
-  me.info = () => ({ sampleRate: st.ctx ? st.ctx.sampleRate : 0, baseLatency: st.ctx ? Math.round((st.ctx.baseLatency || 0) * 1000) : 0, outputLatency: st.ctx ? Math.round((st.ctx.outputLatency || 0) * 1000) : 0, state: st.ctx ? st.ctx.state : 'none' });
+  me.info = () => ({ engine: st.wasm ? 'wasm' : 'js', sampleRate: st.ctx ? st.ctx.sampleRate : 0, baseLatency: st.ctx ? Math.round((st.ctx.baseLatency || 0) * 1000) : 0, outputLatency: st.ctx ? Math.round((st.ctx.outputLatency || 0) * 1000) : 0, state: st.ctx ? st.ctx.state : 'none' });
 
   // ---- WAV export: render the project in this thread, as fast as the CPU allows
   // PDC: the output trails the song by off.e.pdcLatency() frames (compensation + master chain + output limiter when on). Render that much and
