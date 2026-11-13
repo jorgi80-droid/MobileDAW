@@ -10,10 +10,10 @@
 import path from 'node:path'; import { fileURLToPath } from 'node:url';
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 globalThis.localStorage = globalThis.localStorage || { getItem: () => null, setItem() {}, removeItem() {} };
-const S = await import(path.join(root, 'js/engine/flmsyn.js')), D = await import(path.join(root, 'js/defs.js')), HM = await import(path.join(root, 'js/engine/hdmini.js'));
+const S = await import(path.join(root, 'js/engine/flmsyn.js')), D = await import(path.join(root, 'js/defs.js')), HM = await import(path.join(root, 'js/engine/hdmini.js')), HG = await import(path.join(root, 'js/engine/hdgms.js'));
 const SR = 48000;
 let bad = 0; const ok = (c, m) => { if (!c) { bad++; console.log('FAIL', m); } else console.log('ok  ', m); };
-const CLS = { 31: S.FlmGms, 32: HM.HdMiniSynth, 33: S.FlmSuperSaw };   // MiniSynth: Honeydew's model (js/engine/hdmini.js)
+const CLS = { 31: HG.HdGms, 32: HM.HdMiniSynth, 33: S.FlmSuperSaw };   // MiniSynth: Honeydew's model (js/engine/hdmini.js)
 function synth(type, p = {}) { const s = new CLS[type](SR); s.setTempo(120); D.INSTRUMENTS[type].params.forEach((q, k) => s.setParam(k, p[k] ?? q.def)); return s; }
 // events [time s, on, pitch]; returns the left channel
 function play(s, ev, sec) {
@@ -31,21 +31,26 @@ const hz = (m) => 440 * Math.pow(2, (m - 69) / 12);
 
 // ---------------------------------------------------------------- GMS
 {
-  ok(JSON.stringify(S.GMS_SCALE[1]) === '[0,7,14,21]' && JSON.stringify(S.GMS_SCALE[2]) === '[0,12,24,36]', 'GMS Scale table: Chord 0/7/14/21, Octave 0/12/24/36 (manual)');
-  // sine A only, filter open, 4 voices, no chorus detune: the spectrum has exactly the scale's partials
-  const base = { 7: 1, 8: 1, 12: -100, 0: 100, 41: 0, 42: 0, 45: 3, 26: 1 };
-  for (const [sc, iv, name] of [[1, [0, 7, 14, 21], 'Chord'], [2, [0, 12, 24, 36], 'Octave']]) {
+  // GMS = Honeydew's GMSynth model (js/engine/hdgms.js). Choir: sine A only, filter open, 4 copies, no detune: odd copies x 1.5 (Chord) or x 2 (Octave)
+  const base = { 7: 18, 8: 18, 12: 0, 0: 100, 41: 0, 42: 0, 45: 3, 26: 1 };
+  for (const [sc, ratio, name] of [[1, 1.5, 'Chord'], [2, 2, 'Octave']]) {
     const x = play(synth(31, { ...base, 46: sc }), [[0, 1, 48]], 0.8), a = Math.round(0.2 * SR), b = Math.round(0.7 * SR);
-    const on = iv.map((s) => goertzel(x, a, b, hz(48 + s))), off = [-12, 5, 19, 26].map((s) => goertzel(x, a, b, hz(48 + s)));
-    ok(Math.min(...on) > 20 * Math.max(...off), `GMS Scale ${name}: voices at ${iv.join(' / ')} st (weakest ${db(Math.min(...on)).toFixed(0)} dB, strongest elsewhere ${db(Math.max(...off)).toFixed(0)} dB)`);
+    const on = [1, ratio].map((r) => goertzel(x, a, b, hz(48) * r)), off = [0.5, 1.25, 3, ratio === 2 ? 1.5 : 2].map((r) => goertzel(x, a, b, hz(48) * r));
+    ok(Math.min(...on) > 20 * Math.max(...off), `GMS Scale ${name}: the odd choir copies play at x ${ratio} (weakest ${db(Math.min(...on)).toFixed(0)} dB, strongest elsewhere ${db(Math.max(...off)).toFixed(0)} dB)`);
   }
-  // filter envelope: Amount +60 from a low cutoff; held 1.5 s then released (long amp release): bright while held, dark again after Decay
-  const fe = synth(31, { 7: 3, 8: 3, 12: -100, 0: 25, 2: 0.005, 3: 0.25, 4: 60, 27: 3 }), x = play(fe, [[0, 1, 48], [1.5, 0, 48]], 2.6);
+  // filter envelope (attack, then decay to 0, key held or not): Amount +80 from a low cutoff: bright at the start, dark after the decay
+  const fe = synth(31, { 7: 16, 8: 16, 12: 0, 0: 30, 2: 0, 3: 45, 4: 80, 27: 100 }), x = play(fe, [[0, 1, 48], [1.5, 0, 48]], 1.6);
   const hi = (t) => { const a = Math.round(t * SR), b = a + 4800; return goertzel(x, a, b, 10 * hz(48)) / Math.max(1e-9, goertzel(x, a, b, hz(48))); };   // 10th harmonic vs fundamental
-  ok(hi(1.3) > 0.7 * hi(0.15) && hi(1.3) > 0.01, `GMS filter envelope holds its peak while the key is down (1.3 s vs 0.15 s: ${(hi(1.3) / hi(0.15)).toFixed(2)})`);
-  ok(hi(2.3) < 0.2 * hi(1.3), `GMS filter envelope falls in Decay after the release (${(hi(2.3) / hi(1.3)).toFixed(3)})`);
-  ok(D.INSTRUMENTS[31].params[52].items.join(',') === '8 Bars,4 Bars,2 Bars,1 Bar,1/2 Bar,1/4 Bar', 'GMS FX LFO Rate: 1/4 bar .. 8 bars (manual)');
-  ok(D.INSTRUMENTS[31].params[15].items[2] === 'RM' && D.INSTRUMENTS[31].params[20].items.includes('LFO'), 'GMS Mod Kind RM, MW Dest Filter / LFO / Osc. Mod');
+  ok(hi(0.02) > 5 * hi(1.2) && hi(0.02) > 0.01, `GMS filter envelope opens the filter at the note start and decays while the key is held (10th harmonic ${hi(0.02).toFixed(3)} -> ${hi(1.2).toFixed(4)})`);
+  ok(D.INSTRUMENTS[31].params[52].items.join(',') === '1/4,3/8,1/2,3/4,1/1,2/1,4/1,8/1,16/1,32/1' && D.INSTRUMENTS[31].params[7].items.length === 29, 'GMS menus are FLM\'s: 29 shapes, tempo steps 1/4 .. 32/1 beats (Honeydew GMSYNTH_RATE_BEATS)');
+  ok(D.INSTRUMENTS[31].params[15].items.join() === 'Ring,FM,Sync,Filter' && D.INSTRUMENTS[31].params[20].items.join() === 'Filter,LFO,Osc. Mod', 'GMS Mod Kind Ring / FM / Sync / Filter, MW Dest Filter / LFO / Osc. Mod');
+  // osc mod: FM and Ring change the tone, Sync raises A's rate; the mod wheel adds to the amount (MW Dest Osc. Mod)
+  const tone = (p, w = 0) => { const y = synth(31, { 7: 18, 8: 18, 12: 0, ...p }); y.setMod(w); return play(y, [[0, 1, 57]], 0.4); }, dif = (a, b) => { let d = 0; for (let i = 0; i < a.length; i++) d = Math.max(d, Math.abs(a[i] - b[i])); return d; };
+  const plain = tone({ 14: 0 });
+  ok(dif(plain, tone({ 14: 60, 15: 1 })) > 0.02 && dif(plain, tone({ 14: 60, 15: 0 })) > 0.02 && dif(plain, tone({ 14: 60, 15: 2 })) > 0.02, 'GMS osc mod: FM, Ring and Sync each change the tone');
+  ok(dif(plain, tone({ 14: 0, 15: 1, 21: 100, 20: 2 }, 1)) > 0.02 && dif(plain, tone({ 14: 0, 15: 1, 21: 100, 20: 2 }, 0)) < 1e-9, 'GMS mod wheel -> Osc. Mod adds MW Amount x wheel to the amount');
+  const def = play(synth(31, {}), [[0, 1, 57], [0.2, 0, 57]], 1.2);
+  ok(db(rms(def, 2400, 9000)) > -30 && db(rms(def, Math.round(1.0 * SR), Math.round(1.2 * SR))) < -80, `GMS default patch (Beast) sounds and its release ends (${db(rms(def, Math.round(1.0 * SR), Math.round(1.2 * SR))).toFixed(0)} dB after 0.8 s)`);
 }
 
 // ---------------------------------------------------------------- MiniSynth (Honeydew's model of FLM's module, js/engine/hdmini.js)
@@ -85,9 +90,9 @@ const hz = (m) => 440 * Math.pow(2, (m - 69) / 12);
   ok(m(32, { 0: 5, 1: 30 })[1] === 30, 'migrate MiniSynth SuperSaw kind: Modifier unchanged');
   ok(m(33, {})[3] === 100 && m(33, { 3: 30 })[3] === 60 && m(33, { 3: 85 })[3] === 30 && m(33, { 42: 5 })[42] === 7, 'migrate SuperSaw Pulse Width (2 x min(x, 100 - x)) and ModWheel Dest');
   const g = m(31, { 2: 0.01, 3: 0.4, 4: 60 });
-  ok(g[4] === 0 && g[28] === 60 && g[29] === 0.01 && g[30] === 0.4 && g[31] === 0 && g[32] === 0.4 && g[34] === 0 && g[52] === 5, 'migrate GMS filter envelope -> Envelope Generator (dest Filter), FX LFO Rate -> 1/4 bar');
+  ok(g[4] === 0 && g[28] === 60 && g[29] === D.gmAtkKnob(0.01) && g[30] === D.gmDecKnob(0.4) && g[31] === 0 && g[34] === 0 && g[52] === 4 && g[7] === 0, 'migrate GMS filter envelope -> Envelope Generator (dest Filter), seconds -> FLM sliders, FX LFO Rate 1/4 bar -> 1/1 beat');
   const busy = m(31, { 4: 60, 28: 30, 34: 1 });
-  ok(busy[4] === 60 && busy[28] === 30, 'migrate GMS: an Envelope Generator already in use is left alone');
+  ok(busy[4] > 60 && busy[28] === 30 && busy[34] === 1, 'migrate GMS: an Envelope Generator already in use is left alone (the filter amount rescaled to FLM\'s contour law)');
   // migrated parameters play the same as the format-1 engine did: GMS EG decay == old filter decay while held (exact formula check)
   const a = play(synth(31, { 0: 30, 4: 0, 28: 60, 29: 0.01, 30: 0.4, 31: 0, 32: 0.4, 33: 0, 34: 0 }), [[0, 1, 48], [0.8, 0, 48]], 1.2);
   ok(Number.isFinite(rms(a)) && rms(a) > 1e-3, 'migrated GMS renders');

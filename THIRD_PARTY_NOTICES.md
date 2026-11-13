@@ -14,7 +14,10 @@ but the program as distributed from this point on is GPL-3.0-or-later as a whole
 - Changes: ported from Rust to JavaScript (`js/engine/`) and C++ (`native/engine/`) so that the web engine and the native engine render
   identically (golden harness); the parameter conversion to MobileDAW's units and the integration into the engine are MobileDAW's.
   Every ported file keeps the copyright line of the original and names the Rust file it follows.
-- Ported so far: MiniSynth (`crates/audio/src/minisynth.rs` -> `js/engine/hdmini.js`, `native/engine/hdmini.h`, `native/engine/hdmini.cpp`;
+- Ported so far: GMSynth (`crates/audio/src/gmsynth.rs`, `gm_waveshapes.rs` -> `js/engine/hdgms.js`, `native/engine/hdgms.*`; its parameter and
+  `CSTM` layout -> `gmsFromFlm`) with the MultiFX processor bank (`multifx.rs`, `multifx_delay.rs`, `multifx_reverb.rs` -> `js/engine/hdmfx.js`,
+  `native/engine/hdmfx.*`). 25 of the 29 GMSynth shapes are Honeydew's own designs (not FL Studio Mobile's waveshapes); MobileDAW lowers their
+  common level by 8 dB (measured). MiniSynth (`crates/audio/src/minisynth.rs` -> `js/engine/hdmini.js`, `native/engine/hdmini.h`, `native/engine/hdmini.cpp`;
   its parameter layout -> `miniFromFlm` in `js/import/build.js`), SuperSaw (`crates/audio/src/supersaw.rs` -> `js/engine/hdsaw.js`, `native/engine/hdsaw.h`, `native/engine/hdsaw.cpp`),
   its FLM parameter layout and laws (`src/params/instruments.rs` -> `ssFromFlm` in `js/import/build.js`) and the FLM note-event layout
   (`src/flm/read.rs`: u8 velocity / u8 pan, repeat, slide, drum hit pitch, drum slot MAIN / PRMS fields, channel SEND -> `js/import/flm.js`),

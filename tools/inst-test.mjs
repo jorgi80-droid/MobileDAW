@@ -55,9 +55,9 @@ PRE[29] = { 2: { 0: 0 }, 7: { 0: 1, 2: 1 } };
   const flt = (amt, cut, extra = {}) => ({ [amt]: 60, [cut]: 40, ...extra });
   PRE[30] = { 3: { 4: 0.3 }, 6: { 11: 1 }, 10: { 11: 1 }, 13: { 12: 50 }, 14: { 12: 50 }, 15: { 12: 50 }, 16: { 12: 50 }, 17: flt(21, 12), 18: flt(21, 12, { 19: 0.3 }), 19: flt(21, 12), 20: flt(21, 12), 21: { 12: 40 },
     22: { 26: 50 }, 23: { 26: 50, 24: 0.3 }, 24: { 26: 50 }, 25: { 26: 50 }, 27: { 32: 50, 28: 5 }, 28: { 32: 50 }, 29: { 32: 50, 27: 2 }, 30: { 32: 50, 28: 5 }, 31: { 32: 50, 28: 5 }, 33: { 32: 50, 28: 5 } };
-  PRE[31] = { 2: { 4: 60, 0: 40 }, 3: { 4: 60, 0: 40 }, 4: { 0: 40 }, 12: { 9: 7 }, 15: { 14: 60 }, 16: { 18: 60 }, 17: { 18: 60 }, 25: { 26: 0.3 },
-    29: flt(28, 0), 30: flt(28, 0), 31: flt(28, 0), 32: flt(28, 0), 33: flt(28, 0), 34: flt(28, 0), 36: flt(35, 0), 37: flt(35, 0), 38: flt(35, 0),
-    40: { 43: 1 }, 41: { 45: 2 }, 42: { 45: 2, 41: 50 }, 46: { 45: 2 } }; PRE[31][32] = flt(28, 0, { 27: 0.8, 31: 0.7 });
+  PRE[31] = { 2: { 4: 60, 0: 40 }, 3: { 4: 60, 0: 40 }, 4: { 0: 40 }, 5: { 0: 40 }, 12: { 9: 7 }, 8: { 12: 50, 7: 16 }, 9: { 12: 50 }, 10: { 12: 50 }, 11: { 12: 50 }, 15: { 14: 60 }, 16: { 18: 60 }, 17: { 18: 60 }, 25: { 26: 0.3 },
+    29: flt(28, 0), 30: flt(28, 0, { 31: 0.3 }), 31: flt(28, 0), 32: flt(28, 0), 33: flt(28, 0), 34: flt(28, 0), 36: flt(35, 0), 37: flt(35, 0), 38: flt(35, 0),
+    40: { 43: 1 }, 41: { 45: 2 }, 42: { 45: 2, 41: 50 }, 46: { 45: 2 } }; PRE[31][32] = flt(28, 0, { 27: 80, 31: 0.7 });
   for (let s = 0; s < 3; s++) { const o = 47 + s * 7; for (let f = 1; f < 7; f++) PRE[31][o + f] = { [o]: 1 }; PRE[31][o + 5] = { [o]: 1, [o + 2]: 60 }; PRE[31][o + 6] = { [o]: 1, [o + 2]: 60 }; }
   PRE[32] = { 8: flt(12, 4), 9: flt(12, 4, { 10: 0.3 }), 10: flt(12, 4), 11: flt(12, 4, { 22: 60 }), 5: { 4: 40 }, 6: { 4: 40 }, 14: flt(13, 4), 15: flt(13, 4), 16: flt(13, 4), 20: { 21: 0.3 }, 24: { 23: 1 },
     25: { 26: 60 }, 26: { 25: 1 }, 27: { 25: 1 } };
@@ -107,8 +107,9 @@ for (const t of types) {
 // (SuperSaw: FLM Legato = "slide held mode": with a Slide time it glides only while the previous key is held; tested with the first key released)
 for (const [t, mono, leg, pb, sus] of [[30, 11, 10, 7, 4], [31, 43, 44, 19, 26], [33, 48, 46, 40, 38]]) {   // sustain 30 %: a retriggered envelope is heard
   if (!types.includes(t)) continue;
-  const run = (on, bend = 0, range = 2) => { const d = makeInstrument(t, SR, BANK); if (INSTRUMENTS[t].zones) { d.setParam(100, 0); d.setParam(101, 60); } INSTRUMENTS[t].params.forEach((p, k) => d.setParam(k, p.def)); d.setParam(mono, 1); d.setParam(leg, on); if (t === 33) d.setParam(45, 0.1); d.setParam(pb, range); d.setParam(sus, 0.3); if (bend) d.setBend(bend);
-    const L = new Float32Array(N), R = new Float32Array(N), o = []; d.noteOn(48, 0.9); for (let b = 0; b < 160; b++) { if (b === 50 && t === 33) d.noteOff(48); if (b === 60) d.noteOn(55, 0.9); L.fill(0); R.fill(0); d.render(L, R, 0, N); o.push(...L); } return { out: Float32Array.from(o), e: o.reduce((x, y) => x + y * y, 0) }; };
+  const run = (on, bend = 0, range = 2) => { const d = makeInstrument(t, SR, BANK); if (INSTRUMENTS[t].zones) { d.setParam(100, 0); d.setParam(101, 60); } INSTRUMENTS[t].params.forEach((p, k) => d.setParam(k, p.def)); d.setParam(mono, 1); d.setParam(leg, on); if (t === 33) d.setParam(45, 0.1); if (t === 31) d.setParam(40, 60);   // GMS AUTO: no glide unless another key is held (needs a Slide time, first key released)
+    d.setParam(pb, range); d.setParam(sus, 0.3); if (bend) d.setBend(bend);
+    const L = new Float32Array(N), R = new Float32Array(N), o = []; d.noteOn(48, 0.9); for (let b = 0; b < 160; b++) { if (b === 50 && (t === 33 || t === 31)) d.noteOff(48); if (b === 60) d.noteOn(55, 0.9); L.fill(0); R.fill(0); d.render(L, R, 0, N); o.push(...L); } return { out: Float32Array.from(o), e: o.reduce((x, y) => x + y * y, 0) }; };
   if (diff(run(0), run(1)) < 1e-6) { bad++; console.log(`FAIL ${t} ${INSTRUMENTS[t].name}: Legato`); } else console.log(`ok   ${t} ${INSTRUMENTS[t].name} legato`);
   if (diff(run(0, 2, 2), run(0, 2, 12)) < 1e-6) { bad++; console.log(`FAIL ${t} ${INSTRUMENTS[t].name}: PB Range`); } else console.log(`ok   ${t} ${INSTRUMENTS[t].name} pitch bend range`);
 }

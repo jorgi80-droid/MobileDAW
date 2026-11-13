@@ -8,8 +8,9 @@
 import { h } from './ui.js';
 import { lvTabs, lvPath, lvRing, lvEnvPts, DISPC } from './liveui.js';
 import { Biquad } from './engine/dsp.js';
-import { cutHz, gmsWaveTable, syncBeats, GMS_SCALE, FLM_SYNC } from './engine/flmsyn.js';
+import { cutHz, syncBeats, GMS_SCALE, FLM_SYNC } from './engine/flmsyn.js';
 import { SS_ARP_BEATS, SS_DELAY_BEATS } from './engine/hdsaw.js';
+import { gmShape, GM_RATE_BEATS } from './engine/hdgms.js';
 import { MS_RATE_BEATS, MS_RATES, MS_DELAY_BEATS, msRateIndex, msHarmonic, msAttackRate, msDecayRate, msAmpReleaseRate } from './engine/hdmini.js';
 import * as P from './project.js';
 
@@ -188,21 +189,24 @@ function lfo(k, o) {
   });
 }
 
-// ---- GMS oscillators: A (white, faint), B (cyan, faint) and the output (bright) with balance and the modulation kind as the engine
-// computes it: Mix, FM (B moves A's phase), Ring (A x B), Sync (B restarts with A, its rate raised by the amount)
+// ---- GMS oscillators (js/engine/hdgms.js): A (white, faint), B (cyan, faint) and the sum (bright) with the balance (A g (1 - |b|), B g b)
+// and the osc mod as the engine computes it: Ring (A x (1 + 3 m B)), FM (A read at its phase + (B + 1) m cycles), Sync (A runs 2^m faster
+// and restarts with B), Filter (B moves the cutoff: not a waveform change)
 function gmsOsc(k) {
   return disp(k, (g, w, hh) => {
-    const A = gmsWaveTable(k.get(7)), B = gmsWaveTable(k.get(8)), N = 2048, rd = (t, p) => t[Math.floor((p - Math.floor(p)) * N) % N];
-    const ratio = Math.pow(2, (k.get(9) + k.get(10) / 100) / 12), ph0 = k.get(11), bal = (k.get(12) + 100) / 200, kind = Math.round(k.get(15)), m = clamp(k.get(14) / 100, 0, 1);
-    const mid = hh / 2, amp = mid - 18, pa = [], pb = [], po = [];
+    const o = 63 * 1024, A = gmShape(k.get(7)), B = gmShape(k.get(8)), N = 1024, rd = (t, p) => t[o + Math.floor((p - Math.floor(p)) * N) % N];   // the 64-harmonic tables
+    const ratio = Math.pow(2, (Math.round(k.get(9)) + k.get(10) / 100) / 12), ph0 = k.get(11), bal = clamp(k.get(12) / 100, -1, 1), kind = Math.round(k.get(15)), m = clamp(k.get(14) / 100, 0, 1), act = m > 0.001;
+    const mid = hh / 2, pa = [], pb = [], po = [], va = [], vb = [], vo = [];
     vl(g, w / 2, 0, hh); hl(g, mid, 0, w, DISPC.grid2);
     for (let x = 0; x <= w; x++) {
-      const p = x / w * 2, fa = p - Math.floor(p), q = kind === 3 ? fa * ratio * Math.pow(2, m * 3) : ph0 + p * ratio;
-      const b = rd(B, q), a0 = rd(A, p);
-      let a = kind === 1 ? rd(A, p + b * m * 0.6) : a0;
-      if (kind === 2) a = a * (1 - m) + a * b * m;
-      pa.push([x, mid - a0 * amp]); pb.push([x, mid - b * amp]); po.push([x, mid - (a * (1 - bal) + b * bal) * amp]);
+      const p = x / w * 2, q = ph0 + p * ratio, b = rd(B, q), a0 = rd(A, p);
+      let a = a0;
+      if (act && kind === 1) a = rd(A, p + (b + 1) * m); else if (act && kind === 0) a = a0 * (1 + 3 * m * b);
+      else if (kind === 2) { const bp = p * ratio; a = rd(A, (bp - Math.floor(bp)) / ratio * Math.pow(2, m)); }
+      va.push(a0); vb.push(b); vo.push((1 - Math.abs(bal)) * a + bal * b);
     }
+    const pk = Math.max(0.05, ...va.map(Math.abs), ...vb.map(Math.abs), ...vo.map(Math.abs)), amp = (mid - 18) / pk;
+    for (let x = 0; x <= w; x++) { pa.push([x, mid - va[x] * amp]); pb.push([x, mid - vb[x] * amp]); po.push([x, mid - vo[x] * amp]); }
     lvPath(g, pa, 'rgba(242,242,242,.25)', null, 1.2); lvPath(g, pb, 'rgba(79,195,240,.4)', null, 1.2); lvPath(g, po, WH, null, 1.8);
     const ta = 'A ' + item(k, 7); txt(g, ta, 6, 13, WH); g.font = '600 9px system-ui,sans-serif'; txt(g, 'B ' + item(k, 8), 18 + g.measureText(ta).width, 13, CY);
     txt(g, item(k, 15) + ' ' + Math.round(m * 100), w - 6, 13, OR, 9, 'right');
@@ -278,7 +282,8 @@ function ssUnison(k) {
 }
 function gmsVoices(k) {
   return disp(k, (g, w, hh) => {
-    const nv = clamp(Math.round(k.get(45)) + 1, 1, 4), sc = GMS_SCALE[clamp(Math.round(k.get(46)), 0, 2)], det = k.get(41) / 100 * 0.3, wide = k.get(42) / 100, tr = Math.round(k.get(39));
+    const nv = clamp(Math.round(k.get(45)) + 1, 1, 4), sc = GMS_SCALE[clamp(Math.round(k.get(46)), 0, 2)].map((x, u) => (u % 2 ? x : 0)), det = k.get(41) / 100 * 0.5,   // odd copies x 1.5 (Chord, +7 st) or x 2 (Octave, +12 st); Detune = the spread in semitones
+      wide = k.get(42) / 100, tr = Math.round(k.get(39));
     const kb = clamp(Math.round(hh * 0.3), 18, 34), fh = hh - kb - 3, Y = (st) => 8 + (38 - st) / 44 * (fh - 16);
     vl(g, w / 2, 4, fh, DISPC.grid2);
     for (const [st, t] of [[36, '+36'], [24, '+24'], [12, '+12'], [0, '0']]) { hl(g, Y(st), 0, w, st ? DISPC.grid : DISPC.grid2); txt(g, t, 4, Y(st) - 2, DISPC.ink, 8); }
@@ -476,21 +481,25 @@ export function addFlmPanels(VI) {
       FS('LFO', [lfo(k, { shape: 30, amt: 32, mode: 27, rate: 28, sync: 29, att: 31 }), lfoRate(k, 27, 28, 29), SEL(k, 30, 'Shape', 76), KN(k, 31, 'Attack'), KN(k, 32, 'Amount')]),
       FS('Destination', [CHV(k, 33, ['Filter', 'Frequency', 'Level', 'Pan'])])],
   ]);
+  // GMS (js/engine/hdgms.js): envelope knobs are FLM's sliders (the curves show their time: attack 2.53 v^4 s, decay 3 x 22.7 v^7 s)
+  const gmA = (x) => 2.53 * Math.pow(clamp(x / 100, 0, 1), 4), gmD = (x) => 3 * 22.7 * Math.pow(clamp(x / 100, 0, 1), 7) + 0.0003;
+  const gmLaw = { a: gmA, d: gmD, r: (x) => 3 * (clamp(x / 100, 0, 1) + 0.001) / 8.82 }, gmLawEg = { a: gmA, d: gmD, r: (x) => 3 * (200 * Math.pow(clamp(x / 100, 0, 1), 4) + 0.001) / 8.82 }, gmLawAD = { a: gmA, d: gmD, r: gmD };
+  const gmHz = (x) => 32 * Math.pow(2, 9.27 * clamp(x / 100, 0, 1)), gmBeats = (i) => GM_RATE_BEATS[clamp(Math.round(i), 0, 9)];
   VI[31] = (k) => tabs(k, ['FILTER', 'OSC', 'MOD', 'LEVEL', 'EG', 'LFO', 'VOICES', 'FX'], [
-    () => [FS('Filter', [filt(k, 0, 1, () => [0, 0, 1][Math.round(k.get(6))] ?? 0, () => Math.round(k.get(6)) === 1), KN(k, 0, 'Cutoff', { big: true }), KN(k, 1, 'Res')]),
-      FS('Mode', [STACK(CHV(k, 6, ['LP 12', 'LP 24', 'HP']), TG(k, 5, 'Kbd', 72))]),
-      FS('Filter Envelope', [env(k, 2, 3, 'hold', null, OR, () => 'Amount ' + Math.round(k.get(4))), KN(k, 2, 'Attack'), KN(k, 3, 'Decay'), KN(k, 4, 'Amount', { big: true })])],
+    () => [FS('Filter', [filt(k, 0, 1, () => [0, 0, 1][Math.round(k.get(6))] ?? 0, () => Math.round(k.get(6)) === 1, gmHz), KN(k, 0, 'Cutoff', { big: true }), KN(k, 1, 'Res')]),
+      FS('Mode', [STACK(CHV(k, 6, ['LP 12', 'LP 24', 'HP']), KN(k, 5, 'Kbd'))]),
+      FS('Filter Envelope', [env(k, 2, 3, 'hold', null, OR, () => 'Amount ' + Math.round(k.get(4)), gmLawAD), KN(k, 2, 'Attack'), KN(k, 3, 'Decay'), KN(k, 4, 'Amount', { big: true })])],
     () => [FS('Oscillators', [SEL(k, 7, 'Osc A', 100), SEL(k, 8, 'Osc B', 100), gmsOsc(k)]),
       FS('Osc B', [KN(k, 9, 'Pitch B'), KN(k, 10, 'Fine B'), KN(k, 11, 'Phase B')]), FS('Mix', [KN(k, 12, 'Balance'), KN(k, 13, 'Noise')])],
-    () => [FS('Modulation', [CHV(k, 15, ['Mix', 'FM', 'RM', 'Sync']), KN(k, 14, 'Amount', { big: true }), gmsOsc(k)]),
-      FS('Mod Envelope', [env(k, 16, 17, null, null, OR, () => 'Contour ' + Math.round(k.get(18))), KN(k, 16, 'Attack'), KN(k, 17, 'Decay'), KN(k, 18, 'Contour')]),
-      FS('Wheels', [FC('PB Range', k.N(19, { w: 58 })), SEL(k, 20, 'MW Dest', 82), KN(k, 21, 'MW Amount')])],
+    () => [FS('Modulation', [CHV(k, 15, ['Ring', 'FM', 'Sync', 'Filter']), KN(k, 14, 'Amount', { big: true }), gmsOsc(k)]),
+      FS('Mod Envelope', [env(k, 16, 17, null, null, OR, () => 'Contour ' + Math.round(k.get(18)), gmLawAD), KN(k, 16, 'Attack'), KN(k, 17, 'Decay'), KN(k, 18, 'Contour')]),
+      FS('Wheels', [SEL(k, 19, 'PB Range', 70), SEL(k, 20, 'MW Dest', 82), KN(k, 21, 'MW Amount')])],
     () => [FS('Output', [KN(k, 22, 'Level', { big: true }), KN(k, 23, 'Pan')]),
-      FS('Amp Envelope', [env(k, 24, 25, 26, 27), ...ADSR(k, 24, 25, 26, 27)])],
-    () => [FS('Envelope Generator', [env(k, 29, 30, 31, 32, OR, () => 'Contour ' + Math.round(k.get(28)) + ' → ' + item(k, 34)), ...ADSR(k, 29, 30, 31, 32)]),
+      FS('Amp Envelope', [env(k, 24, 25, 26, 27, CY, null, gmLaw), ...ADSR(k, 24, 25, 26, 27)])],
+    () => [FS('Envelope Generator', [env(k, 29, 30, 31, 32, OR, () => 'Contour ' + Math.round(k.get(28)) + ' → ' + item(k, 34), gmLawEg), ...ADSR(k, 29, 30, 31, 32)]),
       FS('Routing', [KN(k, 28, 'Contour', { big: true }), FT(TG(k, 33, 'Vel', 72)), CHV(k, 34, ['Filter', 'Osc. Mod', 'Pitch'])])],
-    () => [FS('LFO', [lfo(k, { shape: 36, amt: 35, sync: 38 }), KN(k, 35, 'Contour', { big: true }), SEL(k, 38, 'Rate', 76), SEL(k, 36, 'Shape', 76)]),
-      FS('Destination', [CHV(k, 37, ['Filter', 'Osc', 'Pitch'])])],
+    () => [FS('LFO', [lfo(k, { shape: 36, amt: 35, sync: 38, beats: gmBeats }), KN(k, 35, 'Contour', { big: true }), SEL(k, 38, 'Rate', 76), SEL(k, 36, 'Shape', 76)]),
+      FS('Destination', [SEL(k, 37, 'Dest', 84)])],
     () => [FS('Voices', [SEL(k, 45, 'Voices', 76), SEL(k, 46, 'Scale', 76), gmsVoices(k)]), FS('Chorus', [KN(k, 41, 'Detune'), KN(k, 42, 'Stereo')]),
       FS('Glide', [KN(k, 39, 'Transpose'), KN(k, 40, 'Slide'), FT(TG(k, 43, 'Mono', 70), TG(k, 44, 'Auto', 70))])],
     () => [0, 1, 2].map((s) => { const o = 47 + s * 7, xy = (j) => k.swapN(o + 1, (m) => KN(k, o + 3 + j, (GMS_XY[m] || ['X', 'Y'])[j]));   // X / Y named by the kind

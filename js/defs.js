@@ -4,6 +4,7 @@ import { FLM_SYNC, GMS_FX, GMS_FX_RATE, GMS_WAVES, MINI_KINDS, SS_LFO_DEST, cutH
 import { TS_BEATS } from './engine/fx8.js';
 import { SS_ARP_RATES, SS_ARP_MODES, SS_DELAY_TIMES } from './engine/hdsaw.js';
 import { MS_RATES, MS_DELAY_TIMES, MS_RATE_BEATS, MS_DELAY_BEATS } from './engine/hdmini.js';
+import { GM_SHAPES, GM_RATES, GM_RATE_BEATS, GM_MOD_KINDS, GM_PB_RANGES } from './engine/hdgms.js';
 // Instrument + device definitions. Parameter ORDER must match the C++ side
 // (app/src/main/cpp/instruments.h and devices.h).
 export const INST = { FLM_DW: 30, FLM_GMS: 31, FLM_MINI: 32, FLM_SAW: 33, MINISYNTH: 1, SUPERSAW: 2, DRUM: 3, DIRECTWAVE: 4, GMS: 5, SOUNDFONT: 6, MOISTURE: 7, OSPHERE: 8, KEYSTONE: 9, SAMPLER: 10, WAVETABLE: 11, SIMPLER: 18, IMPULSE: 28, GRANULATOR: 29 };
@@ -961,6 +962,29 @@ export function miniToFlmKnobs(o) {
   p[43] = Math.max(-60, Math.min(12, r1(g(43) + MS_LEVEL_DB[kind])));
   return p;
 }
+// ---- GMS: a parameter set of the old engine (format <= 4, missing values = its defaults) -> the knobs of the Honeydew model.
+// Envelope seconds -> FLM's sliders (attack 2.53 v^4 s, decay time constant 22.7 v^7 s, release (v + 0.001) / 8.82 s; 3 time constants
+// per segment), cutoff Hz -> 32 x 2^(9.27 c), sustain -> its square root (FLM squares it), waveforms / mod kinds / tempo lists -> FLM's menus.
+const GM_OLD = [100, 0, 0.001, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0.001, 1, 0, 2, 0, 0, 0, 0, 0.001, 1, 1, 0.1, 0, 0.001, 0.5, 0, 0.3, 0, 0, 0, 0, 0, 0, 0, 0.1, 0, 0, 0, 0, 0, 0,
+  0, 1, 0, 50, 50, 5, 0, 0, 2, 0, 50, 50, 5, 0, 0, 5, 0, 50, 50, 5, 0];
+const GM_WAVE_MAP = [0, 18, 26, 16, 22, 1, 5, 13, 10, 25, 21, 14, 28, 3];   // Beast, Sine, Triangle, Saw, Square, Pulse 25 / 12 %, Organ, Bell, Formant, Hollow, Brass, Voice, Digital
+const GM_LEVEL_DB = [-4.4, -1.9, -9.4, -12.9, -7, -8, -9.3, -4.3, -2.3, -7, -0.7, -9, -4.5, -9.6];   // per old Osc A waveform: the old engine's level against the new model (measured on a chord)
+export const gmAtkKnob = (t) => (t <= 0.0015 ? 0 : r1(100 * c01(Math.pow(t / 2.53, 0.25))));
+export const gmDecKnob = (t) => r1(100 * c01(Math.pow(Math.max(0, t) / 68.1, 1 / 7)));
+export const gmCutKnob = (hz) => r1(100 * c01(Math.log2(Math.max(32, hz) / 32) / 9.27));
+export function gmsToFlmKnobs(o) {
+  const g = (k) => (o[k] != null && Number.isFinite(+o[k]) ? +o[k] : GM_OLD[k]), p = {}, I = (k, hi) => Math.min(hi, Math.max(0, Math.round(g(k)))), cb = (x) => r1(Math.sign(x) * 100 * Math.cbrt(c01(Math.abs(x) / 100 * 0.6)));
+  const mk = I(15, 3);
+  p[0] = gmCutKnob(cutHz(g(0))); p[1] = g(1); p[2] = gmAtkKnob(g(2)); p[3] = gmDecKnob(g(3)); p[4] = cb(g(4)); p[5] = g(5) > 0.5 ? 100 : 0; p[6] = I(6, 2);
+  p[7] = GM_WAVE_MAP[I(7, 13)]; p[8] = GM_WAVE_MAP[I(8, 13)]; p[9] = g(9); p[10] = Math.max(-50, Math.min(50, g(10))); p[11] = g(11); p[12] = r1((Math.max(-100, Math.min(100, g(12))) + 100) / 2); p[13] = g(13);
+  p[14] = mk === 0 ? 0 : g(14); p[15] = [0, 1, 0, 2][mk]; p[16] = gmAtkKnob(g(16)); p[17] = gmDecKnob(g(17)); p[18] = g(18); p[19] = near(GM_PB_RANGES, Math.max(1, g(19))); p[20] = [2, 0, 1][I(20, 2)]; p[21] = g(21);
+  p[22] = Math.max(-60, Math.min(18, r1(g(22) + GM_LEVEL_DB[I(7, 13)]))); p[23] = g(23); p[24] = gmAtkKnob(g(24)); p[25] = gmDecKnob(g(25)); p[26] = r1(Math.sqrt(c01(g(26))) * 100) / 100; p[27] = r1(100 * c01(2.94 * g(27)));
+  p[28] = g(28); p[29] = gmAtkKnob(g(29)); p[30] = gmDecKnob(g(30)); p[31] = r1(Math.sqrt(c01(g(31))) * 100) / 100; p[32] = r1(100 * c01(Math.pow(g(32) / 3 * 8.82 / 200, 0.25))); p[33] = g(33); p[34] = I(34, 2);
+  p[35] = g(35); p[36] = I(36, 2); p[37] = I(37, 2); p[38] = near(GM_RATE_BEATS, syncBeats(g(38)));
+  p[39] = g(39); p[40] = g(40) <= 0.1001 ? 0 : r1(100 * c01(g(40) / 0.3)); p[41] = g(41); p[42] = g(42); p[43] = g(43); p[44] = g(44); p[45] = I(45, 3); p[46] = I(46, 2);
+  for (let s = 0; s < 3; s++) { const b = 47 + 7 * s; p[b] = g(b); p[b + 1] = I(b + 1, 9); p[b + 2] = g(b + 2); p[b + 3] = g(b + 3); p[b + 4] = g(b + 4); p[b + 5] = near(GM_RATE_BEATS, [32, 16, 8, 4, 2, 1][I(b + 5, 5)]); p[b + 6] = I(b + 6, 2); }
+  return p;
+}
 // ---- FL Studio Mobile instruments (engine js/engine/flmsyn.js; layout = the FLM module tabs, drawn as Live 12 panels in fxkit.js VI)
 // Values in FLM's own units: 0..100 knobs, semitones, cents, tempo values in beats ('1/4' = a quarter beat); envelope times in seconds.
 {
@@ -975,15 +999,17 @@ export function miniToFlmKnobs(o) {
     ...adsr('Flt ', 0.001, 1, 1, 0.3), bip('Flt Amount'), ...adsr('Frq ', 0.001, 1, 1, 0.3), bip('Frq Amount'),
     list('LFO Mode', LFO3, 0), q('LFO Rate', 0.03, 30, 0.03, { curve: 'log', unit: 'Hz' }), list('LFO Sync', SYNC, 9), list('LFO Shape', ['Sine', 'Saw', 'Square'], 0),
     q('LFO Attack', 0, 5, 0, { unit: 's' }), bip('LFO Amount'), list('LFO Destination', ['Filter', 'Frequency', 'Level', 'Pan'], 0), lvl('Level')] };
-  const FXP = (s) => [onoff(`FX${s} On`), list(`FX${s} Kind`, GMS_FX, [1, 2, 5][s - 1]), bip(`FX${s} Amount`), k100(`FX${s} X`, 50), k100(`FX${s} Y`, 50), list(`FX${s} LFO Rate`, GMS_FX_RATE, 5), list(`FX${s} LFO Shape`, ['Sine', 'Saw', 'Square'], 0)];
+  // GMS: engine js/engine/hdgms.js (Honeydew's GMSynth model). Every knob is FLM's own (0..100 = its stored 0..1; envelope knobs are FLM's
+  // sliders); the 29 shapes, the osc mod kinds, PB Range and the tempo lists as FLM's menus; defaults = a fresh FLM GMSynth.
+  const FXP = (s) => [onoff(`FX${s} On`), list(`FX${s} Kind`, GMS_FX, [1, 5, 3][s - 1]), bip(`FX${s} Amount`), k100(`FX${s} X`, 50), k100(`FX${s} Y`, 50), list(`FX${s} LFO Rate`, GM_RATES, 0), list(`FX${s} LFO Shape`, ['Sine', 'Saw', 'Square'], 0)];
   INSTRUMENTS[31] = { name: 'GMS', view: 'kit', full: true, flm: true, params: [
-    k100('Cutoff', 100), k100('Res'), tm('Flt Attack', 0.001), tm('Flt Decay', 1), bip('Flt Amount'), onoff('Kbd'), list('Kind', ['LP 12', 'LP 24', 'HP'], 0),
-    list('Osc A', GMS_WAVES, 0), list('Osc B', GMS_WAVES, 0), st('Pitch B', -24, 24), q('Fine B', -100, 100, 0, { unit: 'ct' }), q('Phase B', 0, 1, 0, { unit: '%' }), bip('Balance'), k100('Noise'),
-    k100('Mod Amount'), list('Mod Kind', ['Mix', 'FM', 'RM', 'Sync'], 2), tm('Mod Attack', 0.001), tm('Mod Decay', 1), bip('EG Amount'), st('PB Range', 0, 24, 2), list('MW Dest', ['Osc. Mod', 'Filter', 'LFO'], 0), k100('MW Amount'),
-    lvl('Level'), bip('Pan'), tm('Atk', 0.001), tm('Dec', 1), sus('Sus'), tm('Rel', 0.1),
-    bip('EG Contour'), tm('EG Attack', 0.001), tm('EG Decay', 0.5), sus('EG Sustain', 0), tm('EG Release', 0.3), onoff('EG Vel'), list('EG Dest', ['Filter', 'Osc. Mod', 'Pitch'], 0),
-    bip('LFO Amount'), list('LFO Shape', ['Sine', 'Saw', 'Square'], 0), list('LFO Dest', ['Filter', 'Osc', 'Pitch'], 0), list('LFO Rate', SYNC, 0),
-    st('Transpose', -24, 24), tm('Slide', 0.1, 2), k100('Chorus Detune'), k100('Chorus Stereo'), onoff('Mono'), onoff('Auto'), list('Voices', ['Solo', '2', '3', '4'], 0), list('Scale', ['Flat', 'Chord', 'Octave'], 0),
+    k100('Cutoff', 100), k100('Res'), k100('Flt Attack'), k100('Flt Decay', 100), bip('Flt Amount'), k100('Kbd'), list('Kind', ['LP 12', 'LP 24', 'HP'], 0),
+    list('Osc A', GM_SHAPES, 0), list('Osc B', GM_SHAPES, 0), st('Pitch B', -24, 24), q('Fine B', -50, 50, 0, { unit: 'ct' }), q('Phase B', 0, 1, 0, { unit: '%' }), bip('Balance'), k100('Noise'),
+    k100('Mod Amount'), list('Mod Kind', GM_MOD_KINDS, 0), k100('Mod Attack'), k100('Mod Decay', 100), bip('EG Amount'), list('PB Range', ['1 smt', '2 smt', '7 smt', 'Oct'], 1), list('MW Dest', ['Filter', 'LFO', 'Osc. Mod'], 2), k100('MW Amount', 50),
+    q('Level', -60, 18, 0, { fmt: 'dbinf' }), bip('Pan'), k100('Atk'), k100('Dec', 100), sus('Sus'), k100('Rel', 20),
+    bip('EG Contour'), k100('EG Attack'), k100('EG Decay', 100), sus('EG Sustain', 1), k100('EG Release', 100), onoff('EG Vel'), list('EG Dest', ['Filter', 'Osc. Mod', 'Pitch'], 0),
+    bip('LFO Amount'), list('LFO Shape', ['Sine', 'Saw', 'Square'], 0), list('LFO Dest', ['Filter', 'Osc. Mod', 'Pitch', 'Level', 'Pan'], 0), list('LFO Rate', GM_RATES, 9),
+    st('Transpose', -24, 24), k100('Slide'), k100('Chorus Detune'), k100('Chorus Stereo'), onoff('Mono'), onoff('Auto'), list('Voices', ['Solo', '2', '3', '4'], 0), list('Scale', ['Flat', 'Chord', 'Octave'], 0),
     ...FXP(1), ...FXP(2), ...FXP(3)] };
   // MiniSynth: engine js/engine/hdmini.js (Honeydew's MiniSynth model). Every knob is FLM's own (0..100 = its stored 0..1; the envelope
   // knobs are FLM's sliders, not seconds); menus as the DSP plays them; defaults = a fresh FLM MiniSynth. Level is MobileDAW's output gain.
@@ -1021,7 +1047,7 @@ export function miniToFlmKnobs(o) {
   PRESETS[31] = [pre(31, 'Dasar', 'Default', {}), pre(31, 'Bell', 'FM Bell', { 'Osc A': 1, 'Osc B': 1, 'Pitch B': 12, 'Mod Kind': 1, 'Mod Amount': 30, 'EG Amount': 60, 'Mod Decay': 0.4, Dec: 1.8, Sus: 0, Rel: 1.2 }),
     pre(31, 'Bass', 'Growl Bass', { 'Osc A': 3, 'Osc B': 0, 'Mod Kind': 2, 'Mod Amount': 45, Mono: 1, Cutoff: 45, Res: 35, 'EG Contour': 50, 'EG Decay': 0.3, 'EG Release': 0.3, 'FX1 On': 1, 'FX1 Kind': 0, 'FX1 X': 40 }),
     pre(31, 'Pluck', 'Pluck', { Dec: 0.25, Sus: 0, Rel: 0.2, Cutoff: 50, 'EG Contour': 60, 'EG Decay': 0.2, 'EG Release': 0.2, 'FX3 On': 1, 'FX3 X': 35, 'FX3 Y': 40 }),
-    pre(31, 'Pad', 'Wide Chord', { Voices: 2, Scale: 1, 'Chorus Detune': 40, 'Chorus Stereo': 70, Atk: 0.4, Rel: 1.2, Cutoff: 70, 'FX3 On': 1, 'FX3 Kind': 6, 'FX3 X': 60, 'FX3 Y': 35 })];
+    pre(31, 'Pad', 'Wide Chord', { Voices: 2, Scale: 1, 'Chorus Detune': 40, 'Chorus Stereo': 70, Atk: 0.4, Rel: 1.2, Cutoff: 70, 'FX3 On': 1, 'FX3 Kind': 6, 'FX3 X': 60, 'FX3 Y': 35 })].map((x, k) => (k ? { ...x, p: gmsToFlmKnobs(x.p) } : x));   // written in the old engine's units, converted to FLM's knobs
   PRESETS[32] = [pre(32, 'Dasar', 'Default', {}), pre(32, 'Pluck', 'Pluck', { Modifier: 50, Cutoff: 45, 'Flt Amount': 55, 'Flt Decay': 0.25, 'Flt Sustain': 0, Decay: 0.3, Sustain: 0, Release: 0.15 }),
     pre(32, 'Bass', 'Retro Bass', { 'Oscillator Kind': 2, Modifier: 65, 'Voices Mode': 1, Cutoff: 38, Res: 40, 'Flt Amount': 40, 'Flt Decay': 0.2, 'Flt Sustain': 0.2, Release: 0.08 }),
     pre(32, 'Bell', 'Bell', { 'Oscillator Kind': 6, Modifier: 60, Decay: 1.2, Sustain: 0, Release: 0.8, 'Delay On': 1, 'Delay Mix': 20 }),
@@ -1060,7 +1086,8 @@ export function miniToFlmKnobs(o) {
 //   that plays closest (miniToFlmKnobs): envelope / slide seconds -> FLM's sliders (inverse of their rate laws at 44.1 kHz), cutoff Hz ->
 //   FLM's cutoff law, LFO Rate / Delay Time / Phaser Speed -> the nearest step of FLM's lists, LFO and envelope amounts, mixes and the
 //   Level rescaled to the new laws. A conversion, not an identity: FLM's MiniSynth has other oscillators and another filter.
-export const FLM_FMT = 4;
+//   Format 5 (GMS on Honeydew's GMSynth model, js/engine/hdgms.js): gmsToFlmKnobs, the same kind of conversion as format 4.
+export const FLM_FMT = 5;
 export function migrateFlmParams(type, p, from = 1) {
   if (!p || typeof p !== 'object') return p;
   const g = (k, d) => (p[k] != null && Number.isFinite(+p[k]) ? +p[k] : d), r3 = (x) => Math.round(x * 1000) / 1000;
@@ -1081,6 +1108,7 @@ export function migrateFlmParams(type, p, from = 1) {
     else if (kind >= 1 && kind <= 4) p[1] = r3(50 + 50 * m);
   }
   if (type === 32 && from < 4) { const n = miniToFlmKnobs(p); for (const k of Object.keys(p)) if (+k >= 0 && +k < 44) delete p[k]; Object.assign(p, n); }
+  if (type === 31 && from >= 2 && from < 5) { const n = gmsToFlmKnobs(p); for (const k of Object.keys(p)) if (+k >= 0 && +k < 68) delete p[k]; Object.assign(p, n); }
   if (from >= 2) return p;
   if (type === 33) {
     const d = Math.min(0.98, Math.max(0.02, g(3, 50) / 100));
@@ -1091,6 +1119,7 @@ export function migrateFlmParams(type, p, from = 1) {
     if (amt !== 0 && g(28, 0) === 0) { const d = g(3, 1); p[28] = amt; p[29] = g(2, 0.001); p[30] = d; p[31] = 0; p[32] = d; p[33] = 0; p[34] = 0; p[4] = 0; }
     for (let s = 0; s < 3; s++) { const k = 47 + s * 7 + 5; p[k] = Math.min(5, Math.max(0, Math.round(g(k, 9)))); }
   }
+  if (type === 31) { const n = gmsToFlmKnobs(p); for (const k of Object.keys(p)) if (+k >= 0 && +k < 68) delete p[k]; Object.assign(p, n); }
   return p;
 }
 // an instrument object (track inst, Instrument Rack chains, Drum Rack pad chains) in format 1 -> format 2, in place
@@ -1151,7 +1180,7 @@ export function migrateClassicInst(inst) {
       return { Level: cl(dB(g(0) / 0.8), -60, 6), Attack: r3(cl(g(1), 0.001, 10)), Decay: 1, Sustain: 1, Release: g(6) > 0.5 ? 10 : r3(cl(g(2), 0.001, 10)), Cutoff: g(3) >= 17999 ? 100 : cutK(g(3)), Filter: 1, Pitch: cl(Math.round(g(4)), -24, 24) };
     },
   });
-  CLASSIC_IDX.fn = (to, vals) => { const p = {}; for (const [n, v] of Object.entries(vals)) { const k = idx(to, n); if (k < 0) throw new Error('preset conv ' + n); const q = INSTRUMENTS[to].params[k]; p[k] = Math.max(q.min, Math.min(q.max, q.step ? Math.round(v / q.step) * q.step : v)); } return to === 32 ? miniToFlmKnobs(p) : p; };   // MiniSynth: the conversions are written in the old engine's units
+  CLASSIC_IDX.fn = (to, vals) => { const p = {}; for (const [n, v] of Object.entries(vals)) { const k = idx(to, n); if (k < 0) throw new Error('preset conv ' + n); const q = INSTRUMENTS[to].params[k]; p[k] = Math.max(q.min, Math.min(q.max, q.step ? Math.round(v / q.step) * q.step : v)); } return to === 32 ? miniToFlmKnobs(p) : to === 31 ? gmsToFlmKnobs(p) : p; };   // MiniSynth: the conversions are written in the old engine's units
   for (const [to, from] of [[32, 1], [33, 2], [31, 5], [30, 4]]) {
     const dF = INSTRUMENTS[from].params, out = PRESETS[to] || [], names = new Set(out.map((x) => x.name));
     for (const pr of PRESETS[from] || []) {

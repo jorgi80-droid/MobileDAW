@@ -31,6 +31,7 @@ for (const t of json.tracks.filter((x) => x.inst && x.inst.type >= 31 && x.inst.
   const ls = db(s, on, on + 6000), lm = db(m, on, on + 6000), ts = db(s, on + 7200, on + 9600), tm = db(m, on + 7200, on + 9600);
   ok(t.clips[0].notes.map((n) => n.p).slice(0, 3).join() === '57,60,64' && gz(m, on + 500, 4800, 220) > gz(m, on + 500, 4800, 110) + 20, `${t.name}: notes 57/60/64 play A3 220 Hz like the stem (no octave shift)`);
   ok(Math.abs(lm - ls) < 1, `${t.name}: level of the first 125 ms within 1 dB of FLM (FLM ${ls.toFixed(1)} dB, MobileDAW ${lm.toFixed(1)} dB)`);
+  if (process.env.FLM_DIAG) console.log('     harmonics of A3 1..14, FLM - MobileDAW (dB): ' + Array.from({ length: 14 }, (_, h) => (gz(s, on + 500, 4800, 220 * (h + 1)) - gz(m, on + 500, 4800, 220 * (h + 1))).toFixed(1)).join(' ') + ' | FLM abs: ' + Array.from({ length: 14 }, (_, h) => gz(s, on + 500, 4800, 220 * (h + 1)).toFixed(0)).join(' '));
   ok(Math.abs(tm - ts) < 15 || (tm < -60 && ts < -60), `${t.name}: after note-off the same tail (FLM ${ts.toFixed(0)} dB, MobileDAW ${tm.toFixed(0)} dB)`);
 }
 const mini = json.tracks.find((x) => x.name === 'MiniSynth 4');
