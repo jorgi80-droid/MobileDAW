@@ -46,4 +46,6 @@ export class WasmEngine {
   fillLoad(out) { const v = new Int32Array(this.x.memory.buffer, this.x.mdaw_load(), 128); for (let i = 0; i < out.length && i < 128; i++) out[i] = v[i]; }
   devOut(t, d, out) { const n = Math.min(out.length, this.x.mdaw_devout(t, d)); if (n > 0) out.set(new Float32Array(this.x.memory.buffer, this.x.mdaw_dev(), n)); return n > 0 ? n : 0; }
   panic() { this.x.mdaw_panic(); }
+  pdcLatency() { return this.x.mdaw_pdc_latency(); }
+  settle() { this.run('settle'); }
 }

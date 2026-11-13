@@ -261,6 +261,7 @@ void HdSuperSaw::voice(HdVoice& o, int n) {
     const double e = envAdvance(o.amp, attack, c.aD, c.aS, c.aR), e2 = e * e;
     o.gL += GAIN_SMOOTH * (o.tL - o.gL); o.gR += GAIN_SMOOTH * (o.tR - o.gR);
     mixL[i] += yl * e2 * o.gL; mixR[i] += yr * e2 * o.gR;
+    if (o.amp.st == IDLE) break;   // hdsaw.js: the voice ended, nothing of it runs on
   }
 }
 void HdSuperSaw::effects(float* Lo, float* Ro, int at, int n) {

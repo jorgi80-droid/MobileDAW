@@ -313,7 +313,8 @@ export class HdSuperSaw {
       const e = envAdvance(v.amp, attack, c.aD, c.aS, c.aR), e2 = e * e;
       v.gL += GAIN_SMOOTH * (v.tL - v.gL); v.gR += GAIN_SMOOTH * (v.tR - v.gR);
       ML[i] += yl * e2 * v.gL; MR[i] += yr * e2 * v.gR;
-    }
+      if (v.amp.st === IDLE) break;                                           // the voice ended: nothing of it runs on (its phases / dither / ladder would
+    }                                                                            // otherwise advance by however much of the call is left: output would depend on how the song is cut into calls)
   }
   // Distortion -> Gain -> Delay on the voices' sum, added into the output
   effects(Lo, Ro, at, n) {

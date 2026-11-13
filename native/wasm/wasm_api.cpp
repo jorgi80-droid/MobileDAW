@@ -61,6 +61,7 @@ EXPORT(mdaw_devout) int mdaw_devout(int t, int d) { return eng ? eng->devOut(t, 
 EXPORT(mdaw_dev) float* mdaw_dev() { return dev; }
 EXPORT(mdaw_load) int32_t* mdaw_load() { if (eng) eng->fillLoad(load); return load; }
 EXPORT(mdaw_panic) void mdaw_panic() { if (eng) eng->panic(); }
+EXPORT(mdaw_pdc_latency) int mdaw_pdc_latency() { return eng ? eng->pdcLatency() : 0; }
 EXPORT(mdaw_supported) int mdaw_supported(int textLen) { std::string name; std::vector<Arg> args; if (!parseLine(std::string(text.data(), textLen), name, args, nullptr, 0)) return 0; return supported(name, args) ? 1 : 0; }
 }
 

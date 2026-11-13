@@ -27,8 +27,10 @@ async function run(engine) {
     P.syncAll(); P.play();
     let peak = 0, pos = 0; const t0 = performance.now();
     while (performance.now() - t0 < 2500) { await new Promise((r2) => setTimeout(r2, 50)); const q = eng.poll(); pos = q.pos; const m = q.m || []; peak = Math.max(peak, (m[64 * 2] || 0), (m[64 * 2 + 1] || 0)); }
-    P.stop();
-    return { info: eng.info(), peak, pos, errs: window.__engErr };
+    P.stop(); await new Promise((r2) => setTimeout(r2, 200));
+    // offline render (Track Freeze path) of the GMS track: on the engine that plays
+    const fr = await eng.renderTrack(1, 2, null); let e2 = 0; for (let i = 0; i < fr.l.length; i++) e2 += fr.l[i] * fr.l[i] + fr.r[i] * fr.r[i];
+    return { info: eng.info(), peak, pos, errs: window.__engErr, frozen: Math.sqrt(e2 / (2 * fr.l.length)) };
   });
   await page.close();
   return { ...r, page: errs };
@@ -38,6 +40,7 @@ ok(w.info.engine === 'wasm', 'the app starts on the WebAssembly engine (' + w.in
 ok(w.pos > 960 && w.peak > 50, `MiniSynth + GMS + drums play on it: transport at tick ${Math.round(w.pos)}, master peak ${(w.peak / 1000).toFixed(3)}`);
 ok(!w.errs.length && !w.page.length, 'no engine or page errors' + (w.errs.length ? ': ' + w.errs[0] : w.page.length ? ': ' + w.page[0] : ''));
 ok(j.info.engine === 'js' && j.peak > 50, `prefs.webEngine 'js' keeps the JS engine as the fallback (peak ${(j.peak / 1000).toFixed(3)})`);
+ok(w.frozen > 1e-3 && Math.abs(20 * Math.log10(w.frozen / j.frozen)) < 0.5, `offline render (freeze / export) runs on the same engine: GMS track ${(20 * Math.log10(w.frozen)).toFixed(1)} dB on WASM, ${(20 * Math.log10(j.frozen)).toFixed(1)} dB on JS`);
 ok(Math.abs(20 * Math.log10(w.peak / j.peak)) < 1, `both engines reach the same master level (${(20 * Math.log10(w.peak / j.peak)).toFixed(2)} dB apart)`);
 await b.close(); server.close();
 console.log(bad ? `WASM WEB: ${bad} failed` : 'WASM WEB: all passed'); process.exit(bad ? 1 : 0);

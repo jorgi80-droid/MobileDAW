@@ -13,7 +13,7 @@ const TAIL_SECONDS = 2;
 function newStrip() {
   return {
     inst: null, ev: null, clips: [], dev: [], vol: 0.85, pan: 0, gl: 0, gr: 0, send: [0, 0], out: -1, mute: false, solo: false, mg: 1, sg0: 0, sg1: 0,   // mg: mute / solo fade, sg0/sg1: smoothed send levels
-    silent: 0, wasAudible: true, pitch: 0, bend: 0, mod: 0, plaw: 0, ccl: null, ccG: 1, ccP: 0, tpMap: Uint8Array.from({ length: 128 }, (_, i) => i), active: false, pre: [], bufL: new Float32Array(BLOCK), bufR: new Float32Array(BLOCK), peakL: 0, peakR: 0,
+    silent: 0, blk: 0, wasAudible: true, pitch: 0, bend: 0, mod: 0, plaw: 0, ccl: null, ccG: 1, ccP: 0, tpMap: Uint8Array.from({ length: 128 }, (_, i) => i), active: false, pre: [], bufL: new Float32Array(BLOCK), bufR: new Float32Array(BLOCK), peakL: 0, peakR: 0,
     sevT: new Int32Array(512), sevP: new Uint8Array(512), sevV: new Float32Array(512), sevOn: new Uint8Array(512), sevPn: new Float32Array(512), sevSt: new Float32Array(512), nPan: 0,
     lat: 0, pd: 0, pdl: new PdcLine(),   // PDC: latency of this strip's chain, compensation delay applied after it, its delay ring
     width: 1, sw: 1, inv: 0, pL: 1, pR: 1,   // stereo width (0 mono .. 1 .. 2 wide, smoothed sw) and phase invert (bit 0 L, bit 1 R; ramped polarity pL / pR)
@@ -32,7 +32,7 @@ export class Engine {
     this.cin = 0; this.cinBf = 0; this.cinNext = 0; this.cinPos = 0; this.cinBeat = 0;   // count-in: frames left, frames per beat, next click frame, position, beat counter
     this.mixL = new Float32Array(BLOCK); this.mixR = new Float32Array(BLOCK); this.zL = new Float32Array(BLOCK); this.zR = new Float32Array(BLOCK); this.scrL = new Float32Array(BLOCK); this.scrR = new Float32Array(BLOCK); this.noDirect = false;   // noDirect: ekspor stem Return (track hanya mengisi send/grup, tidak langsung ke master)
     this.retL = Array.from({ length: NFX }, () => new Float32Array(BLOCK)); this.retR = Array.from({ length: NFX }, () => new Float32Array(BLOCK)); this.retActive = new Array(NFX).fill(false);
-    this.lanes = []; this.tailFrames = TAIL_SECONDS * sr; this.onError = null;
+    this.lanes = []; this.rawOut = false; this.tailFrames = TAIL_SECONDS * sr; this.onError = null;
     this.tl = false; this.tlc = new Float64Array(MAX_TRACKS); this.tlp = new Float64Array(MAX_TRACKS);   // per-track load read-out (only measured while the mixer is open): ms spent in the window, smoothed share of the block budget
     for (let k = 0; k < NFX; k++) this.s[RET0 + k].vol = 0.85;
     // master safety limiter (output stage, after the master fader): the Limiter device (1.5 ms look-ahead brickwall, ceiling -0.3 dBFS,
@@ -299,7 +299,7 @@ export class Engine {
       }
       this.chunk(n, spt);
       if (this.limOn) { const mL = this.mixL, mR = this.mixR; for (let i = 0; i < n; i++) { if (!(mL[i] === mL[i])) mL[i] = 0; if (!(mR[i] === mR[i])) mR[i] = 0; } this.lim.process(mL, mR, n); }   // NaN never enters the limiter's state
-      for (let i = 0; i < n; i++) { let l = this.mixL[i], r = this.mixR[i]; if (!(l === l)) l = 0; if (!(r === r)) r = 0; oL[done + i] = l > 1 ? 1 : l < -1 ? -1 : l; oR[done + i] = r > 1 ? 1 : r < -1 ? -1 : r; }
+      for (let i = 0; i < n; i++) { let l = this.mixL[i], r = this.mixR[i]; if (!(l === l)) l = 0; if (!(r === r)) r = 0; if (this.rawOut) { oL[done + i] = l; oR[done + i] = r; } else { oL[done + i] = l > 1 ? 1 : l < -1 ? -1 : l; oR[done + i] = r > 1 ? 1 : r < -1 ? -1 : r; } }   // rawOut: offline freeze / stems (float files) keep peaks above 0 dBFS
       if (this.playing) {
         if (this.pos % 1) this.pos = Math.round(this.pos);
         const before = this.pos; this.pos += n;
@@ -424,7 +424,7 @@ export class Engine {
       }
     }
     if (active) s.silent = 0; else s.silent += n;
-    if (!active && s.silent > this.tailFrames) { this.sc[idx] = 0; s.peakL *= 0.99; s.peakR *= 0.99; s.pdl.clear(); this.runMods(s, n); return; }
+    if (!active && s.silent > this.tailFrames && !(s.blk > 1e-6)) { this.sc[idx] = 0; s.peakL *= 0.99; s.peakR *= 0.99; s.pdl.clear(); this.runMods(s, n); return; }
     this.runChain(s, idx, L, R, n);
     if (s.pd > 0) s.pdl.run(L, R, n, s.pd); else s.pdl.clear();   // PDC: line up with the slowest track (the sidechain level below is the aligned signal)
     this.stereo(s, L, R, n);
@@ -448,13 +448,13 @@ export class Engine {
     }
     if (s0 === 0 && s.sg0 < 1e-7) s.sg0 = 0; if (s1 === 0 && s.sg1 < 1e-7) s.sg1 = 0;
     this.sc[idx] = sc; s.active = true;
-    s.peakL = Math.max(pl, s.peakL * 0.995); s.peakR = Math.max(pr, s.peakR * 0.995);
+    s.peakL = Math.max(pl, s.peakL * 0.995); s.peakR = Math.max(pr, s.peakR * 0.995); s.blk = pl > pr ? pl : pr;   // blk: this block's peak, the effect tail runs on until it is below -120 dB
   }
 
   ret(k, n) {
     const s = this.s[RET0 + k], L = this.retL[k], R = this.retR[k];
     if (this.retActive[k]) s.silent = 0; else s.silent += n;
-    if (s.silent > this.tailFrames) { s.peakL *= 0.995; s.peakR *= 0.995; this.sc[RET0 + k] = 0; s.pdl.clear(); this.runMods(s, n); return; }
+    if (s.silent > this.tailFrames && !(s.blk > 1e-6)) { s.peakL *= 0.995; s.peakR *= 0.995; this.sc[RET0 + k] = 0; s.pdl.clear(); this.runMods(s, n); return; }
     this.runChain(s, RET0 + k, L, R, n);
     if (s.pd > 0) s.pdl.run(L, R, n, s.pd); else s.pdl.clear();   // PDC: line up with the slowest return
     this.stereo(s, L, R, n);
@@ -466,7 +466,7 @@ export class Engine {
       if (Math.abs(l) > pl) pl = Math.abs(l); if (Math.abs(r) > pr) pr = Math.abs(r);
       this.mixL[i] += l; this.mixR[i] += r;
     }
-    s.peakL = Math.max(pl, s.peakL * 0.995); s.peakR = Math.max(pr, s.peakR * 0.995);
+    s.peakL = Math.max(pl, s.peakL * 0.995); s.peakR = Math.max(pr, s.peakR * 0.995); s.blk = pl > pr ? pl : pr;   // blk: this block's peak, the effect tail runs on until it is below -120 dB
   }
 
   click(n, pos, spt) {

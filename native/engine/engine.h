@@ -61,7 +61,7 @@ struct Strip {
   uint8_t tpMap[128]; bool active = false;
   PreEv pre[64]; int npre = 0;
   float bufL[BLOCK], bufR[BLOCK];
-  double peakL = 0, peakR = 0;
+  double peakL = 0, peakR = 0, blk = 0;   // blk: the last block's output peak (core.js: effect tails run until it is below -120 dB)
   int32_t sevT[512]; uint8_t sevP[512]; float sevV[512]; uint8_t sevOn[512]; float sevPn[512]; float sevSt[512];
   double nPan = 0;
   int lat = 0, pd = 0; PdcLine pdl;
@@ -82,7 +82,7 @@ class Engine {
   TempoMap* tm; bool tmOn = false; double curBpm = 120, beatT = PPQ, barBeats = 4; MeterMap* mm; double cinN = 4;
   bool metro = false; double metroVol = 1, clickIdx = 1e9, clickOff = 0, clickF = 1000;
   double cin = 0, cinBf = 0, cinNext = 0, cinPos = 0, cinBeat = 0;
-  float mixL[BLOCK], mixR[BLOCK], scrL[BLOCK], scrR[BLOCK], zL[BLOCK], zR[BLOCK]; bool noDirect = false;
+  float mixL[BLOCK], mixR[BLOCK], scrL[BLOCK], scrR[BLOCK], zL[BLOCK], zR[BLOCK]; bool noDirect = false, rawOut = false;   // rawOut: no +-1 clip at the output (offline freeze / stems)
   float retL[NFX][BLOCK], retR[NFX][BLOCK]; bool retActive[NFX] = {};
   LaneData* lanes = nullptr;
   double tailFrames;
@@ -109,6 +109,10 @@ class Engine {
   void setPdc(bool on) { pdcOn = on; }
   void pdcPlan();
   int pdcLatency() { pdcPlan(); return pdcOut; }
+  // offline renders (export, freeze) start with every smoothed mixer value at its target (core.js settle)
+  void settle();
+  // offline render configurations (web.js OfflineTarget): 1 stem of track t, 2 stem of effect track t, 3 freeze render of track t
+  void offline(int op, int t);
   void trackLoad(bool on) { tl = on; }
   void trackVol(int t, double v) { if (ok(t)) s[t].vol = jsMax(0, v); }
   void trackPan(int t, double v) { if (ok(t)) s[t].pan = clamp(v, -1, 1); }

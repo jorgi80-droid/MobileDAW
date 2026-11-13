@@ -1,6 +1,7 @@
 // Web backend of the `eng` interface: AudioWorklet engine + offline file library (IndexedDB) + recording + MIDI + WAV export.
 import { Engine, NSTRIPS, MASTER, RET0, NFX } from './core.js';
 import { sabAvailable, makeShared, RingWriter, PollReader } from './sabio.js';
+import { WasmEngine } from './wasmengine.js';
 import { parseSf2 } from './sf2.js';
 import { encodeWav, finishRender, postRender } from './wav.js';
 import { Mp3Encoder, mp3Rate, MP3_RATES, concatBytes } from './mp3.js';
@@ -156,6 +157,23 @@ const lib = {
 const folderFor = (name) => (/\.sf2$/i.test(name) ? '/SoundFonts' : /\.mdaw$/i.test(name) ? '/Projects' : '/Samples');
 const safeName = (n) => n.replace(/[\\/:*?"<>|]+/g, '_').trim() || 'file';
 
+// ------------------------------------------------------------------ offline target on the C++ engine (WebAssembly), used for export and freeze
+// Same methods as OfflineTarget below (the JS engine, kept as the fallback); `e` offers render / pdcLatency / settle as the JS Engine does.
+const OFF_CMD = { sig: 'setSig', meter: 'setMeter', metro: 'setMetro', metroVol: 'setMetroVol', pdc: 'setPdc', send: 'trackSend' };
+class WasmOfflineTarget {
+  constructor(mod, sr, bank, sfs) {
+    this.e = new WasmEngine(mod, sr); this.errs = '';
+    for (let i = 0; i < bank.length; i++) if (bank[i]) this.note(this.e.loadSample(i, bank[i].l, bank[i].r));
+    for (let i = 0; i < sfs.length; i++) if (sfs[i]) this.note(this.e.loadSoundFont(i, sfs[i]));
+    return new Proxy(this, { get: (t, k) => (k in t ? t[k] : typeof k === 'string' && k !== 'then' ? (...a) => t.note(t.e.call(OFF_CMD[k] || k, a)) : undefined) });
+  }
+  note(er) { if (er) this.errs += er; }
+  playCountIn() { this.note(this.e.call('play', [])); }
+  stemTrack(t) { this.note(this.e.call('offline', [1, t])); }
+  stemReturn(k) { this.note(this.e.call('offline', [2, k])); }
+  freezeTrack(t) { this.note(this.e.call('offline', [3, t])); }
+  preview() {} devOut() { return []; } poll() { return null; } start() { return this.e.sr; }
+}
 // ------------------------------------------------------------------ offline target used for WAV export
 // Same method names as the live backend, applied directly to an Engine in this thread.
 class OfflineTarget {
@@ -177,7 +195,7 @@ class OfflineTarget {
     const a = Math.PI * 0.25; s.gl = Math.cos(a) * 1.41421356; s.gr = Math.sin(a) * 1.41421356;   // fader already at its target: no ramp in the first milliseconds
     e.lanes = e.lanes.filter((l) => !(l.track === t && [0, 1, 2, 3, 7].includes(l.kind)));
   }
-  rawMaster() { const e = this.e, m = e.s[MASTER]; for (const d of m.dev) d.bypass = true; m.vol = 1; m.gl = 1; e.lanes = e.lanes.filter((l) => l.track !== MASTER); }
+  rawMaster() { const e = this.e, m = e.s[MASTER]; e.rawOut = true; for (const d of m.dev) d.bypass = true; m.vol = 1; m.gl = 1; e.lanes = e.lanes.filter((l) => l.track !== MASTER); }
   preview() {} bend(t, st) { this.e.bend(t, st); } modWheel(t, v) { this.e.modWheel(t, v); } devOut() { return []; } poll() { return null; } start() { return this.e.sr; }
 }
 
@@ -295,7 +313,7 @@ export function createWebBackend() {
     // processor; the JS engine (worklet.js) stays as the fallback when the module cannot be loaded or started, or with prefs.webEngine 'js'.
     let wasm = null;
     if (prefs.webEngine !== 'js' && globalThis.WebAssembly) {
-      try { const r = await fetch(new URL('./mdaw.wasm', import.meta.url)); if (!r.ok) throw new Error('HTTP ' + r.status); wasm = await r.arrayBuffer(); await st.ctx.audioWorklet.addModule(new URL('./worklet-wasm.js', import.meta.url)); }
+      try { const r = await fetch(new URL('./mdaw.wasm', import.meta.url)); if (!r.ok) throw new Error('HTTP ' + r.status); wasm = await r.arrayBuffer(); st.wasmMod = await WebAssembly.compile(wasm); await st.ctx.audioWorklet.addModule(new URL('./worklet-wasm.js', import.meta.url)); }
       catch (e) { wasm = null; log('warn', 'engine WebAssembly tidak bisa dimuat, memakai engine JS', e); }
     }
     const mkNode = (useWasm) => {
@@ -633,6 +651,8 @@ export function createWebBackend() {
   // ---- WAV export: render the project in this thread, as fast as the CPU allows
   // PDC: the output trails the song by off.e.pdcLatency() frames (compensation + master chain + output limiter when on). Render that much and
   // drop it, so frame 0 of every file is the start position: the mix and the stems (which run without the output limiter) line up exactly.
+  // the offline target of the engine that plays: C++ (WebAssembly) when the app runs on it, else the JS engine
+  const offTarget = (sr) => (st.wasm && st.wasmMod ? new WasmOfflineTarget(st.wasmMod, sr, st.bank, st.sfs) : new OfflineTarget(sr, st.bank, st.sfs));
   function preroll(off) {
     let k = off.e.pdcLatency(); const l = new Float32Array(4096), r = new Float32Array(4096);
     while (k > 0) { const n = Math.min(4096, k); off.e.render(l, r, n); k -= n; }
@@ -640,7 +660,7 @@ export function createWebBackend() {
   // Track Freeze render (project.js freezeTrack): the track's instrument + devices + automation offline, frame 0 = song start (PDC pre-roll)
   me.renderTrack = async (strip, secs, replay, onProgress) => {
     await me.start();
-    const sr = st.ctx.sampleRate, off = new OfflineTarget(sr, st.bank, st.sfs);
+    const sr = st.ctx.sampleRate, off = offTarget(sr);
     replay(off); off.masterLimit(false); off.pdc(st.pdcOn !== false); off.freezeTrack(strip);
     off.loop(false, 0, 0); off.metro(false); off.seek(0); off.e.settle(); off.play(); preroll(off);
     const total = Math.max(1, Math.floor(secs * sr)), L = new Float32Array(total), R = new Float32Array(total); let done = 0, t0 = Date.now();
@@ -654,7 +674,7 @@ export function createWebBackend() {
       let result = { ok: false, cancelled: false, path, error: '' };
       try {
         await me.start();
-        const sr = st.ctx.sampleRate, off = new OfflineTarget(sr, st.bank, st.sfs);
+        const sr = st.ctx.sampleRate, off = offTarget(sr);
         replay(off); off.masterLimit(st.limOn !== false); off.pdc(st.pdcOn !== false);   // the export sounds like playback
         off.loop(false, 0, 0); off.metro(false); off.seek(0); off.e.settle(); off.play(); preroll(off);
         const total = Math.floor(((globalThis.__exportSecs > 0 ? globalThis.__exportSecs : endTick / 960 * 60 / bpm) + 3) * sr), chunk = 4096, L = [], R = [];
@@ -694,7 +714,7 @@ export function createWebBackend() {
         const used = new Set(), uniq = (n) => { let b = (n || 'Track').replace(/[\\/:*?"<>|]+/g, '_').trim() || 'Track', k = b, i = 2; while (used.has(k.toLowerCase())) k = b + ' ' + i++; used.add(k.toLowerCase()); return k; };
         for (let n = 0; n < items.length && !st.cancel; n++) {
           const it = items[n], base = n / items.length, span = 1 / items.length, label = items.length > 1 ? `${it.name} (${n + 1}/${items.length})` : it.name;
-          const off = new OfflineTarget(sr, st.bank, st.sfs);
+          const off = offTarget(sr);
           replay(off); off.masterLimit(it.kind === 'mix' && st.limOn !== false); off.pdc(st.pdcOn !== false);   // stems stay raw (no master limiter), the mix sounds like playback
           if (it.kind === 'track') off.stemTrack(it.idx); else if (it.kind === 'return') off.stemReturn(it.idx);
           off.loop(false, 0, 0); off.metro(false); off.seek(job.startTick); off.e.settle(); off.play(); preroll(off);

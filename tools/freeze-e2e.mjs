@@ -11,7 +11,7 @@ await new Promise((ok) => server.once('listening', ok));
 const browser = await chromium.launch({ args: ['--autoplay-policy=no-user-gesture-required'] });
 const page = await (await browser.newContext({ viewport: { width: 1180, height: 560 } })).newPage();
 const errs = []; page.on('pageerror', (e) => errs.push(e.message));
-await page.addInitScript(() => { try { localStorage.setItem('mobiledaw.prefs.v1', JSON.stringify({ folderAsked: true })); } catch (_) { /* no storage */ } });
+await page.addInitScript((js) => { try { localStorage.setItem('mobiledaw.prefs.v1', JSON.stringify({ folderAsked: true, ...(js ? { webEngine: 'js' } : {}) })); } catch (_) { /* no storage */ } }, process.env.ENGINE === 'js');   // ENGINE=js: the JS fallback engine
 await page.goto(`http://127.0.0.1:${server.address().port}/index.html`);
 await page.waitForFunction(() => window.__dawBooted, null, { timeout: 20000 }); await page.waitForTimeout(800);
 let bad = 0; const ok = (c, msg) => { if (!c) bad++; console.log((c ? 'ok   ' : 'FAIL ') + msg); };
@@ -30,11 +30,11 @@ const r = await page.evaluate(async () => {
   const frozen = P.isFrozen(i), saved = P.serialize();
   await P.deserialize(saved); const afterLoad = P.isFrozen(0);
   P.setInstParam(0, 0, 0.5); const afterEdit = P.isFrozen(0);
-  return { fr, frozen, d, pk, la: a.length, lb: b.length, afterLoad, afterEdit, json: saved.includes('"frozen"') };
+  return { at, fr, frozen, d, pk, la: a.length, lb: b.length, afterLoad, afterEdit, json: saved.includes('"frozen"') };
 });
 ok(r.fr && r.fr.ok && r.frozen, `track frozen: ${r.fr && r.fr.secs ? r.fr.secs.toFixed(2) + ' s of audio' : JSON.stringify(r.fr)}`);
 const db = 20 * Math.log10(r.d / r.pk);
-ok(r.la === r.lb && db < -90, `exported mix with the frozen track = the live mix: max difference ${db.toFixed(1)} dB under the peak (${r.la} frames)`);
+ok(r.la === r.lb && db < -90, `exported mix with the frozen track = the live mix: max difference ${db.toFixed(1)} dB under the peak (${r.la} frames, worst at frame ${r.at})`);
 ok(r.json && r.afterLoad, 'frozen state + audio survive save / reload');
 ok(r.afterEdit === false, 'changing an instrument parameter unfreezes the track');
 ok(!errs.length, 'no page errors' + (errs.length ? ': ' + errs.join(' | ') : ''));

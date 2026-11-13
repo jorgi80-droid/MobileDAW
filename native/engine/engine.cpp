@@ -2,6 +2,7 @@
 #include "engine.h"
 #include "dsp.h"
 #include "inst_classic.h"
+#include <algorithm>
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
@@ -278,7 +279,7 @@ void Engine::render(float* oL, float* oR, int frames) {
     if (limOn && lim) { for (int i = 0; i < n; i++) { if (!(mixL[i] == mixL[i])) mixL[i] = 0; if (!(mixR[i] == mixR[i])) mixR[i] = 0; } lim->process(mixL, mixR, n); }
     for (int i = 0; i < n; i++) {
       float l = mixL[i], r = mixR[i]; if (!(l == l)) l = 0; if (!(r == r)) r = 0;
-      oL[done + i] = l > 1 ? 1 : l < -1 ? -1 : l; oR[done + i] = r > 1 ? 1 : r < -1 ? -1 : r;
+      if (rawOut) { oL[done + i] = (float)l; oR[done + i] = (float)r; } else { oL[done + i] = l > 1 ? 1 : l < -1 ? -1 : l; oR[done + i] = r > 1 ? 1 : r < -1 ? -1 : r; }
     }
     if (playing) {
       if (std::fmod(pos, 1) != 0) pos = jsRound(pos);
@@ -419,7 +420,7 @@ void Engine::track(Strip& st, int idx, double p0, int n, double sp, bool anySolo
     }
   }
   if (active) st.silent = 0; else st.silent += n;
-  if (!active && st.silent > tailFrames) { sc[idx] = 0; st.peakL *= 0.99; st.peakR *= 0.99; st.pdl.clear(); runMods(st, n); return; }
+  if (!active && st.silent > tailFrames && !(st.blk > 1e-6)) { sc[idx] = 0; st.peakL *= 0.99; st.peakR *= 0.99; st.pdl.clear(); runMods(st, n); return; }
   runChain(st, idx, L, R, n);
   if (st.pd > 0) st.pdl.run(L, R, n, st.pd); else st.pdl.clear();
   stereo(st, L, R, n);
@@ -445,13 +446,13 @@ void Engine::track(Strip& st, int idx, double p0, int n, double sp, bool anySolo
   }
   if (s0 == 0 && st.sg0 < 1e-7) st.sg0 = 0; if (s1 == 0 && st.sg1 < 1e-7) st.sg1 = 0;
   sc[idx] = (float)scv; st.active = true;
-  st.peakL = jsMax(pl, st.peakL * 0.995); st.peakR = jsMax(pr, st.peakR * 0.995);
+  st.peakL = jsMax(pl, st.peakL * 0.995); st.peakR = jsMax(pr, st.peakR * 0.995); st.blk = pl > pr ? pl : pr;
 }
 
 void Engine::ret(int k, int n) {
   Strip& st = s[RET0 + k]; float* L = retL[k]; float* R = retR[k];
   if (retActive[k]) st.silent = 0; else st.silent += n;
-  if (st.silent > tailFrames) { st.peakL *= 0.995; st.peakR *= 0.995; sc[RET0 + k] = 0; st.pdl.clear(); runMods(st, n); return; }
+  if (st.silent > tailFrames && !(st.blk > 1e-6)) { st.peakL *= 0.995; st.peakR *= 0.995; sc[RET0 + k] = 0; st.pdl.clear(); runMods(st, n); return; }
   runChain(st, RET0 + k, L, R, n);
   if (st.pd > 0) st.pdl.run(L, R, n, st.pd); else st.pdl.clear();
   stereo(st, L, R, n);
@@ -463,7 +464,7 @@ void Engine::ret(int k, int n) {
     if (std::fabs(l) > pl) pl = std::fabs(l); if (std::fabs(r) > pr) pr = std::fabs(r);
     mixL[i] = (float)(mixL[i] + l); mixR[i] = (float)(mixR[i] + r);
   }
-  st.peakL = jsMax(pl, st.peakL * 0.995); st.peakR = jsMax(pr, st.peakR * 0.995);
+  st.peakL = jsMax(pl, st.peakL * 0.995); st.peakR = jsMax(pr, st.peakR * 0.995); st.blk = pl > pr ? pl : pr;
 }
 
 void Engine::click(int n, double p0, double sp) {
@@ -481,6 +482,27 @@ void Engine::click(int n, double p0, double sp) {
   clickOff = 0;
   if (pdcClk > 0) ckl.run(ck, n, pdcClk); else ckl.clear();
   for (int i = 0; i < n; i++) { mixL[i] = (float)(mixL[i] + ck[i]); mixR[i] = (float)(mixR[i] + ck[i]); }
+}
+
+void Engine::settle() {
+  for (int t = 0; t < NSTRIPS; t++) {
+    Strip& x = s[t]; const bool ret = t >= RET0; const double vol = ret && x.mute ? 0 : x.vol, pn = t == MASTER ? 0 : x.pan, a = (pn + 1) * PI * 0.25;
+    if (t == MASTER) { x.gl = x.vol; x.gr = x.vol; } else if (x.plaw) { x.gl = vol * jsMin(1 - pn, 1); x.gr = vol * jsMin(1 + pn, 1); } else { x.gl = vol * std::cos(a) * 1.41421356; x.gr = vol * std::sin(a) * 1.41421356; }
+    if (t < MASTER) { x.sg0 = x.send[0]; x.sg1 = x.send[1]; }
+    x.sw = x.width; x.pL = x.inv & 1 ? -1 : 1; x.pR = x.inv & 2 ? -1 : 1;
+  }
+}
+// web.js OfflineTarget stemTrack / stemReturn / freezeTrack / rawMaster, on the C++ engine (offline only: lanes are edited in place)
+void Engine::offline(int op, int t) {
+  auto dropLanes = [&](auto pred) { if (!lanes) return; auto& v = lanes->lanes; v.erase(std::remove_if(v.begin(), v.end(), pred), v.end()); };
+  auto rawMaster = [&]() { rawOut = true; Strip& m = s[MASTER]; for (int i = 0; i < m.ndev; i++) if (m.dev[i]) m.dev[i]->bypass = true; m.vol = 1; m.gl = 1; dropLanes([](const Lane& l) { return l.track == MASTER; }); };
+  if (op == 1 && t >= 0 && t < MASTER) { rawMaster(); s[t].solo = true; s[t].send[0] = 0; s[t].send[1] = 0; dropLanes([t](const Lane& l) { return (l.kind == 2 || l.kind == 3) && l.track == t; }); }
+  else if (op == 2 && t >= 0 && t < NFX) { rawMaster(); noDirect = true; for (int j = 0; j < NFX; j++) if (j != t) s[RET0 + j].mute = true; }
+  else if (op == 3 && t >= 0 && t < MASTER) {
+    Strip& x = s[t]; rawMaster(); x.solo = true; x.send[0] = x.send[1] = 0; x.vol = 1; x.pan = 0; x.width = 1; x.inv = 0; x.out = -1;
+    const double a = PI * 0.25; x.gl = std::cos(a) * 1.41421356; x.gr = std::sin(a) * 1.41421356;
+    dropLanes([t](const Lane& l) { return l.track == t && (l.kind == 0 || l.kind == 1 || l.kind == 2 || l.kind == 3 || l.kind == 7); });
+  }
 }
 
 }  // namespace mdaw
