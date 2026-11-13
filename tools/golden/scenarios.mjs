@@ -184,7 +184,7 @@ export const SCENARIOS = [
       e.instParam(0, 6, 1); e.instParam(1, 90, 7); play(e, 1); e.instParam(0, 6, 0); e.instParam(1, 90, -5); e.instParam(0, 0, 1.2); play(e, 1);
       e.preview(0, 64, 0.8, true); play(e, 0.3); e.preview(0, 64, 0, false); e.stop(); play(e, 1);
     } },
-  { name: 'inst-flmdw', info: 'FL Studio Mobile DirectWave (30): key / vel zones (gain / pan), loop, reverse, root / tune, filter + filter envelope, frequency (pitch) envelope, LFO (Hertz / One Shot / Tempo) to filter / frequency / level / pan, slide / legato / mono, PB range + bend',
+  { name: 'inst-flmdw', native: true, info: 'C++ only (native/engine/hddw.cpp, Honeydew DW Sampler): FL Studio Mobile DirectWave (30): key / vel zones (gain / pan), loop, reverse, root / tune, filter + filter envelope, frequency (pitch) envelope, LFO (Hertz / One Shot / Tempo) to filter / frequency / level / pan, slide / legato / mono, PB range + bend',
     run(e) {
       samples(e); testSample(e); e.tempo(124); e.trackInst(0, 30);
       const Z = (z, k, v) => e.instParam(0, 100 + z * 8 + k, v), G = (z, g, pn) => { e.instParam(0, 300 + z * 2, g); e.instParam(0, 300 + z * 2 + 1, pn); };
@@ -194,9 +194,9 @@ export const SCENARIOS = [
       e.play(); play(e, 2, [128, 77, 256]);
       const P = (i, v) => e.instParam(0, i, v);
       P(16, 1); P(12, 45); P(13, 60); P(14, 40); P(15, 30); play(e, 0.8);
-      P(21, 60); P(17, 0.005); P(18, 0.3); P(19, 0.2); play(e, 0.8);
+      P(21, 60); P(17, 20); P(18, 40); P(19, 0.2); play(e, 0.8);
       P(16, 2); play(e, 0.4); P(16, 3); play(e, 0.4);
-      P(26, 50); P(22, 0.01); P(23, 0.25); play(e, 0.8);
+      P(26, 50); P(22, 10); P(23, 35); play(e, 0.8);
       P(32, 60); P(33, 0); P(28, 5); play(e, 0.6); P(33, 1); play(e, 0.4); P(33, 2); play(e, 0.4); P(33, 3); play(e, 0.4);
       P(27, 1); play(e, 0.4); P(27, 2); P(29, 7); play(e, 0.5);
       P(8, 1); play(e, 0.6);

@@ -991,13 +991,16 @@ export function gmsToFlmKnobs(o) {
   const k100 = (n, d = 0) => q(n, 0, 100, d, { fmt: 'num' }), bip = (n, d = 0) => q(n, -100, 100, d, { fmt: 'int' }), tm = (n, d, max = 10) => q(n, 0.001, max, d, { curve: 'log', unit: 's' });
   const st = (n, lo, hi, d = 0) => q(n, lo, hi, d, { step: 1, fmt: 'st' }), sus = (n, d = 1) => q(n, 0, 1, d, { unit: '%' }), lvl = (n, d = 0) => q(n, -60, 12, d, { fmt: 'dbinf' });   // up to +12 dB: room for the FLM default level (stem calibration)
   const adsr = (pre, a, d, s, r) => [tm(pre + 'Attack', a), tm(pre + 'Decay', d), sus(pre + 'Sustain', s), tm(pre + 'Release', r)];
-  const SYNC = FLM_SYNC, LFO3 = ['Hertz', 'One Shot', 'Tmp Sync'];
-  INSTRUMENTS[30] = { name: 'DirectWave', view: 'kit', full: true, flm: true, zones: true, params: [
-    st('Pitch', -24, 24), q('Fine Tune', -100, 100, 0, { unit: 'ct' }), ...adsr('', 0.001, 1, 1, 0.3), tm('Slide Time', 0.1, 2), st('PB Range', 0, 24, 2),
-    onoff('Reverse'), onoff('Loop'), onoff('Legato'), onoff('Mono'),
-    k100('Cutoff', 100), k100('Resonance'), k100('Kbd Trk'), k100('Vel Trk'), list('Filter', ['Off', 'Lowpass', 'Highpass', 'Bandpass'], 1),
-    ...adsr('Flt ', 0.001, 1, 1, 0.3), bip('Flt Amount'), ...adsr('Frq ', 0.001, 1, 1, 0.3), bip('Frq Amount'),
-    list('LFO Mode', LFO3, 0), q('LFO Rate', 0.03, 30, 0.03, { curve: 'log', unit: 'Hz' }), list('LFO Sync', SYNC, 9), list('LFO Shape', ['Sine', 'Saw', 'Square'], 0),
+  const SYNC = FLM_SYNC, LFO3 = ['Hertz', 'One Shot', 'Tmp Sync'], DW_SYNC = ['1/8', '1/4', '1/2', '3/4', '1/1', '2/1', '4/1', '8/1', '16/1', '32/1'];
+  // DirectWave: engine native/engine/hddw.cpp (Honeydew's DW Sampler model, C++ only: the JS fallback engine has none). Amp envelope in seconds
+  // (FLM's law 0.001 + 10 v^4), filter / frequency envelopes as FLM's sliders (0..100), LFO menus as FLM's; defaults = a fresh FLM DirectWave.
+  const dwEnv = (pre) => [k100(pre + 'Attack', 0), k100(pre + 'Decay', 100), sus(pre + 'Sustain', 1), k100(pre + 'Release', 100)];
+  INSTRUMENTS[30] = { name: 'DirectWave', view: 'kit', full: true, flm: true, zones: true, native: true, params: [
+    st('Pitch', -24, 24), q('Fine Tune', -100, 100, 0, { unit: 'ct' }), ...adsr('', 0.001, 10.001, 1, 0.002), q('Slide Time', 0, 2, 0, { unit: 's' }), st('PB Range', 0, 24, 2),
+    onoff('Reverse'), onoff('Loop', 1), onoff('Legato'), onoff('Mono'),
+    k100('Cutoff', 100), k100('Resonance'), k100('Kbd Trk'), k100('Vel Trk'), list('Filter', ['Off', 'Lowpass', 'Highpass', 'Bandpass'], 0),
+    ...dwEnv('Flt '), bip('Flt Amount'), ...dwEnv('Frq '), bip('Frq Amount'),
+    list('LFO Mode', LFO3, 0), q('LFO Rate', 0.0333, 30, 0.0333, { curve: 'log', unit: 'Hz' }), list('LFO Sync', DW_SYNC, 0), list('LFO Shape', ['Sine', 'Saw', 'Square', 'Random'], 0),
     q('LFO Attack', 0, 5, 0, { unit: 's' }), bip('LFO Amount'), list('LFO Destination', ['Filter', 'Frequency', 'Level', 'Pan'], 0), lvl('Level')] };
   // GMS: engine js/engine/hdgms.js (Honeydew's GMSynth model). Every knob is FLM's own (0..100 = its stored 0..1; envelope knobs are FLM's
   // sliders); the 29 shapes, the osc mod kinds, PB Range and the tempo lists as FLM's menus; defaults = a fresh FLM GMSynth.
@@ -1087,7 +1090,19 @@ export function gmsToFlmKnobs(o) {
 //   FLM's cutoff law, LFO Rate / Delay Time / Phaser Speed -> the nearest step of FLM's lists, LFO and envelope amounts, mixes and the
 //   Level rescaled to the new laws. A conversion, not an identity: FLM's MiniSynth has other oscillators and another filter.
 //   Format 5 (GMS on Honeydew's GMSynth model, js/engine/hdgms.js): gmsToFlmKnobs, the same kind of conversion as format 4.
-export const FLM_FMT = 5;
+//   Format 6 (DirectWave on Honeydew's DW Sampler model, native/engine/hddw.cpp): dwToFlmKnobs (filter / frequency envelopes seconds -> FLM's
+//   sliders, LFO Sync -> FLM's 10 steps, Slide time -> its time constant).
+export const FLM_FMT = 6;
+// an old DirectWave parameter set (format <= 5) -> the Honeydew model's (attack 0.29 / c, decay / release 3 time constants; at 44.1 kHz)
+export function dwToFlmKnobs(o) {
+  const OLD = [0, 0, 0.001, 1, 1, 0.3, 0.1, 2, 0, 0, 0, 0, 100, 0, 0, 0, 1, 0.001, 1, 1, 0.3, 0, 0.001, 1, 1, 0.3, 0, 0, 0.03, 9, 0, 0, 0, 0, 0];
+  const g = (k) => (o[k] != null && Number.isFinite(+o[k]) ? +o[k] : OLD[k]), p = {}, r2 = (x) => Math.round(x * 100) / 100;
+  const atk = (t) => (t <= 0.0015 ? 0 : r2(100 * Math.min(1, Math.pow(0.0002 * t * 44100 / (500 * 0.28768), 0.25)))), dec = (t) => r2(100 * Math.min(1, Math.pow(0.0002 * t * 44100 / (50 * 3), 0.25)));
+  for (let k = 0; k < 35; k++) p[k] = g(k);
+  for (const b of [17, 22]) { p[b] = atk(g(b)); p[b + 1] = dec(g(b + 1)); p[b + 3] = dec(g(b + 3)); }
+  p[6] = Math.round(g(6) / 3 * 1000) / 1000; p[29] = near([0.125, 0.25, 0.5, 0.75, 1, 2, 4, 8, 16, 32], syncBeats(g(29)));
+  return p;
+}
 export function migrateFlmParams(type, p, from = 1) {
   if (!p || typeof p !== 'object') return p;
   const g = (k, d) => (p[k] != null && Number.isFinite(+p[k]) ? +p[k] : d), r3 = (x) => Math.round(x * 1000) / 1000;
@@ -1108,6 +1123,7 @@ export function migrateFlmParams(type, p, from = 1) {
     else if (kind >= 1 && kind <= 4) p[1] = r3(50 + 50 * m);
   }
   if (type === 32 && from < 4) { const n = miniToFlmKnobs(p); for (const k of Object.keys(p)) if (+k >= 0 && +k < 44) delete p[k]; Object.assign(p, n); }
+  if (type === 30 && from < 6) { const n = dwToFlmKnobs(p); for (const k of Object.keys(p)) if (+k >= 0 && +k < 35) delete p[k]; Object.assign(p, n); }
   if (type === 31 && from >= 2 && from < 5) { const n = gmsToFlmKnobs(p); for (const k of Object.keys(p)) if (+k >= 0 && +k < 68) delete p[k]; Object.assign(p, n); }
   if (from >= 2) return p;
   if (type === 33) {
@@ -1125,7 +1141,7 @@ export function migrateFlmParams(type, p, from = 1) {
 // an instrument object (track inst, Instrument Rack chains, Drum Rack pad chains) in format 1 -> format 2, in place
 export function migrateFlmInst(inst, from = 1) {
   if (!inst || typeof inst !== 'object') return;
-  if (inst.type === 31 || inst.type === 32 || inst.type === 33) inst.params = migrateFlmParams(inst.type, inst.params || {}, from);
+  if (inst.type === 30 || inst.type === 31 || inst.type === 32 || inst.type === 33) inst.params = migrateFlmParams(inst.type, inst.params || {}, from);
   for (const ch of inst.chains || []) if (ch && ch.inst) migrateFlmInst(ch.inst, from);
   for (const q of inst.pads || []) if (q && q.chain && q.chain.inst) migrateFlmInst(q.chain.inst, from);
 }

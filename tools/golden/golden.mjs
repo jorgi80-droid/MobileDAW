@@ -5,6 +5,7 @@
 // Usage: node tools/golden/golden.mjs [scenario ...] [--list] [--keep]       (builds build/native/golden_host with cmake when needed)
 import fs from 'node:fs'; import path from 'node:path'; import { spawnSync } from 'node:child_process'; import { fileURLToPath } from 'node:url';
 import { SCENARIOS } from './scenarios.mjs';
+import { loadWasmEngine } from '../wasm-engine.mjs';
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const { Engine } = await import(path.join(root, 'js/engine/core.js'));
@@ -71,6 +72,14 @@ for (const sc of list) {
   if (r.status === 3) { skip++; console.log(`SKIP ${sc.name.padEnd(22)} ${sec.padStart(7)}  ${(r.stdout || '').trim()}`); continue; }
   if (r.status !== 0) { bad++; console.log(`FAIL ${sc.name.padEnd(22)} host error: ${(r.stderr || r.stdout).trim()}`); continue; }
   const ob = fs.readFileSync(path.join(dir, 'out.f32')), out = new Float32Array(ob.buffer, ob.byteOffset, ob.length / 4);
+  if (sc.native) {   // C++ only (no JS engine version): the desktop host against the WebAssembly build of the same code, and a sound check
+    const w = await loadWasmEngine(SR); w.setBlob(blob); const wo = new Float32Array(out.length); let o = 0, errs = '';
+    for (const line of cmds.split('\n').slice(1)) { if (!line) continue; if (line.startsWith('render ')) { const n = +line.slice(7), L = new Float32Array(n), R = new Float32Array(n); w.render(L, R, n); for (let i = 0; i < n; i++) { wo[o++] = L[i]; wo[o++] = R[i]; } } else errs += w.cmd(line); }
+    const c = compare(out, wo), finite = out.every(Number.isFinite), pass = !c.err && !errs && finite && c.refDb > -60 && c.diffDb < LIMIT_DB && c.maxDb < MAX_DB;
+    if (!pass) bad++;
+    console.log(`${pass ? 'ok  ' : 'FAIL'} ${sc.name.padEnd(22)} ${sec.padStart(7)}  C++ only: level ${c.refDb.toFixed(1)} dBFS, WASM vs desktop ${c.diffDb === -Infinity ? 'identical' : c.diffDb.toFixed(1) + ' dBFS'}${errs ? '  errors: ' + errs.slice(0, 100) : ''}`);
+    continue;
+  }
   const c = compare(ref, out);
   if (c.err) { bad++; console.log(`FAIL ${sc.name.padEnd(22)} ${c.err}`); continue; }
   const pass = c.diffDb < LIMIT_DB && c.maxDb < MAX_DB && c.refDb > -200;   // a silent reference proves nothing

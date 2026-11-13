@@ -467,18 +467,22 @@ function ssArp(k) {
 // ================================================================================================ panels
 export function addFlmPanels(VI) {
   // DirectWave: zones (sample / root / key and velocity range / level / pan) are edited in the zone list next to this panel
+  // DirectWave (native/engine/hddw.cpp): filter / frequency envelopes are FLM's sliders (time shown by their law at 44.1 kHz), cutoff
+  // 2^(4 + 10.4 x) Hz, LFO depth a |a|, frequency envelope 4 a^3 octaves
+  const dwA = (x) => { const v = clamp(x / 100, 0, 1); return v <= 0 ? 0 : 0.28768 * 500 * Math.pow(v, 4) / 0.0002 / 44100; }, dwD = (x) => 3 * 50 * Math.pow(clamp(x / 100, 0, 1), 4) / 0.0002 / 44100;
+  const dwLaw = { a: dwA, d: dwD, r: dwD }, dwHz = (x) => Math.min(22000, Math.pow(2, 4 + 10.4 * clamp(x / 100, 0, 1))), dwBeats = (i) => [0.125, 0.25, 0.5, 0.75, 1, 2, 4, 8, 16, 32][clamp(Math.round(i), 0, 9)];
   VI[30] = (k) => tabs(k, ['SAMPLE', 'FILTER', 'FLT ENV', 'FRQ ENV', 'LFO'], [
     () => [FS('Sample', [dwSample(k)], { w: 2 }),
       FS('Pitch', [KN(k, 0, 'Pitch'), KN(k, 1, 'Fine Tune'), FC('PB Range', k.N(7, { w: 58 })), KN(k, 6, 'Slide Time')]),
       FS('Amp Envelope', [env(k, 2, 3, 4, 5), ...ADSR(k, 2, 3, 4, 5)]),
       FS('Playback', [FT(TG(k, 8, 'Reverse', 70), TG(k, 9, 'Loop', 70)), FT(TG(k, 10, 'Legato', 70), TG(k, 11, 'Mono', 70))]),
       FS('Output', [KN(k, 34, 'Level', { big: true })])],
-    () => [FS('Filter', [filt(k, 12, 13, () => Math.round(k.get(16)) - 1), KN(k, 12, 'Cutoff', { big: true }), KN(k, 13, 'Resonance'), KN(k, 14, 'Kbd Trk'), KN(k, 15, 'Vel Trk')]),
+    () => [FS('Filter', [filt(k, 12, 13, () => Math.round(k.get(16)) - 1, null, dwHz), KN(k, 12, 'Cutoff', { big: true }), KN(k, 13, 'Resonance'), KN(k, 14, 'Kbd Trk'), KN(k, 15, 'Vel Trk')]),
       FS('Type', [CHV(k, 16, ['Off', 'Lowpass', 'Highpass', 'Bandpass'])])],
-    () => [FS('Filter Envelope', [env(k, 17, 18, 19, 20, OR, () => 'Amount ' + Math.round(k.get(21))), ...ADSR(k, 17, 18, 19, 20), KN(k, 21, 'Amount', { big: true })])],
-    () => [FS('Frequency Envelope', [env(k, 22, 23, 24, 25, OR, () => 'Amount ' + Math.round(k.get(26)) + '  =  ' + (k.get(26) / 100 * 12).toFixed(1) + ' st'), ...ADSR(k, 22, 23, 24, 25), KN(k, 26, 'Amount', { big: true })])],
+    () => [FS('Filter Envelope', [env(k, 17, 18, 19, 20, OR, () => 'Amount ' + Math.round(k.get(21)), dwLaw), ...ADSR(k, 17, 18, 19, 20), KN(k, 21, 'Amount', { big: true })])],
+    () => [FS('Frequency Envelope', [env(k, 22, 23, 24, 25, OR, () => 'Amount ' + Math.round(k.get(26)) + '  =  ' + (48 * Math.pow(k.get(26) / 100, 3)).toFixed(1) + ' st', dwLaw), ...ADSR(k, 22, 23, 24, 25), KN(k, 26, 'Amount', { big: true })])],
     () => [FS('Mode', [CHV(k, 27, ['Hertz', 'One Shot', 'Tmp Sync'])]),
-      FS('LFO', [lfo(k, { shape: 30, amt: 32, mode: 27, rate: 28, sync: 29, att: 31 }), lfoRate(k, 27, 28, 29), SEL(k, 30, 'Shape', 76), KN(k, 31, 'Attack'), KN(k, 32, 'Amount')]),
+      FS('LFO', [lfo(k, { shape: 30, amt: 32, mode: 27, rate: 28, sync: 29, att: 31, beats: dwBeats, depth: (x) => Math.sign(x) * (x / 100) ** 2 }), lfoRate(k, 27, 28, 29), SEL(k, 30, 'Shape', 76), KN(k, 31, 'Attack'), KN(k, 32, 'Amount')]),
       FS('Destination', [CHV(k, 33, ['Filter', 'Frequency', 'Level', 'Pan'])])],
   ]);
   // GMS (js/engine/hdgms.js): envelope knobs are FLM's sliders (the curves show their time: attack 2.53 v^4 s, decay 3 x 22.7 v^7 s)

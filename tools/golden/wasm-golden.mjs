@@ -8,7 +8,7 @@ import { loadWasmEngine } from '../wasm-engine.mjs';
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const { Engine } = await import(path.join(root, 'js/engine/core.js'));
 const { encode, sfArgs } = await import(path.join(root, 'js/engine/cmdtext.js'));
-const SR = 48000, names = process.argv.slice(2), list = names.length ? SCENARIOS.filter((s) => names.includes(s.name)) : SCENARIOS;
+const SR = 48000, names = process.argv.slice(2), list = (names.length ? SCENARIOS.filter((s) => names.includes(s.name)) : SCENARIOS).filter((s) => !s.native);   // C++-only scenarios: tools/golden/golden.mjs compares them with the desktop build
 const db = (x) => (x > 0 ? 20 * Math.log10(x) : -Infinity);
 let bad = 0, same = 0;
 for (const sc of list) {

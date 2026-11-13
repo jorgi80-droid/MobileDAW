@@ -87,17 +87,25 @@ const byName = (type, o) => { const out = {}; for (const [n, v] of Object.entrie
 const fT = (v) => Math.min(10, Math.round((0.001 + 10 * Math.pow(clamp(v, 0, 1), 3)) * 1e6) / 1e6);   // FLM 0..1 envelope slider -> seconds (1 ms .. 10 s, cubic)
 export const dwPitchSt = (r) => (r && r.length > 3 ? clamp(Math.trunc((r[3] - 0.5) * 48 + 1e-9 * Math.sign(r[3] - 0.5)), -24, 24) : 0);
 export const dwFineCt = (r) => (r && r.length > 4 ? clamp((r[4] - 0.5) * 200, -100, 100) : 0);
+// Honeydew dw_sampler.rs: [1] Attack [2] Release [3] Pitch [4] Fine [5] Decay [6] Sustain [7] Slide [8] Reverse [9] Loop [10] Legato [11] Mono
+// [12] Cutoff [13] Resonance [14] Kbd Trk [15] Vel Trk [16] Filter Off / Lowpass / Bandpass / Highpass [17..21] filter envelope A D S R Amount
+// [22..26] frequency envelope [27] LFO Shape [28] Rate [29] Mode [30] Sync [31] Amount [32] Destination [33] LFO Attack, with its laws
+// (amp T = 0.001 + 10 v^4 s, slide time constant (v / 2)^3 s, LFO rate 1 / (30 (1 - v)^3 + 0.0333) Hz, menus trunc(n v)).
 export function dwParamsFromFlm(raw) {
   const r = raw || [], out = {};
   if (r.length < 17) return out;
-  const amt = (v) => (clamp(v, 0, 1) - 0.5) * 200, idx = (v, n) => clamp(Math.round(v > 1 ? v : v * (n - 1)), 0, n - 1), on = (v) => (v > 0.5 ? 1 : 0);
+  const v = (k, d) => (Number.isFinite(r[k]) ? clamp(r[k], 0, 1) : d), amp = (x) => Math.round((0.001 + 10 * x * x * x * x) * 1e6) / 1e6, pc = (x) => x * 100, bp = (x) => (2 * x - 1) * 100;
+  const st = (x, n) => Math.min(n, Math.trunc(Math.fround(x) * n)), set = (x) => (x !== 0 ? 1 : 0);
   out[0] = 0; out[1] = 0;                                                         // pitch / fine are per layer (zone root / tune)
-  out[2] = fT(r[1]); out[3] = fT(r[5]); out[4] = clamp(r[6], 0, 1); out[5] = fT(r[2]); out[6] = clamp(fT(r[7]), 0.001, 2);
-  out[8] = on(r[8]); out[9] = on(r[9]); out[10] = on(r[10]); out[11] = on(r[11]);
-  out[12] = clamp(r[12], 0, 1) * 100; out[13] = clamp(r[13], 0, 1) * 100; out[14] = clamp(r[14], 0, 1) * 100; out[15] = clamp(r[15], 0, 1) * 100; out[16] = idx(r[16], 4);
+  out[2] = v(1, 0) <= 0 ? 0.001 : amp(v(1, 0)); out[3] = amp(v(5, 1)); out[4] = v(6, 1); out[5] = amp(v(2, 0.1)); out[6] = Math.round(Math.pow(v(7, 0) / 2, 3) * 1e6) / 1e6;
+  out[8] = set(v(8, 0)); out[9] = set(v(9, 1)); out[10] = set(v(10, 0)); out[11] = set(v(11, 0));
+  out[12] = pc(v(12, 1)); out[13] = pc(v(13, 0)); out[14] = pc(v(14, 0)); out[15] = pc(v(15, 0)); out[16] = [0, 1, 3, 2][st(v(16, 0), 3)];   // MobileDAW's menu: Off, LP, HP, BP
+  if (r.length < 27) return out;
+  for (const b of [17, 22]) { out[b] = pc(v(b, 0)); out[b + 1] = pc(v(b + 1, 1)); out[b + 2] = v(b + 2, 1); out[b + 3] = pc(v(b + 3, 1)); out[b + 4] = bp(v(b + 4, 0.5)); }
   if (r.length < 33) return out;
-  [[17, 17], [22, 22]].forEach(([src, dst]) => { out[dst] = fT(r[src]); out[dst + 1] = fT(r[src + 1]); out[dst + 2] = clamp(r[src + 2], 0, 1); out[dst + 3] = fT(r[src + 3]); out[dst + 4] = amt(r[src + 4]); });
-  out[27] = idx(r[27], 3); out[28] = 0.03 * Math.pow(1000, clamp(r[28], 0, 1)); out[30] = idx(r[29], 3); out[31] = clamp(r[30], 0, 1) * 5; out[32] = amt(r[31]); out[33] = idx(r[32], 4);
+  out[30] = Math.min(3, Math.trunc(Math.fround(v(27, 0)) * 3 + 0.5)); out[28] = Math.round(1 / (30 * Math.pow(1 - v(28, 0), 3) + 0.033333) * 1e5) / 1e5; out[27] = st(v(29, 0), 2);
+  out[29] = Math.min(9, Math.trunc(v(30, 0) * 9)); out[32] = bp(v(31, 0.5)); out[33] = st(v(32, 0), 3);
+  const la = v(33, 0); out[31] = la < 0.001 ? 0 : Math.round(500 * Math.pow(0.95 * la + 0.05, 4) / 0.0002 / 44100 * 1e4) / 1e4;
   return out;
 }
 function presetFor(type, name) {

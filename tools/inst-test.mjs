@@ -71,7 +71,7 @@ PRE[29] = { 2: { 0: 0 }, 7: { 0: 1, 2: 1 } };
 const PEAK_OK = { 33: { 19: 24 } };   // SuperSaw Resonance 100 %: FLM's ladder self-oscillates (Honeydew's model), the master limiter catches it
 const NO_AUDIO = { 30: [7, 10], 31: [19, 20, 21, 44], 32: [17, 18], 33: [40, 41, 42, 46],   // FLM: PB Range / mod wheel need a controller, Legato / Auto overlapping notes (tested below)
   18: [5, 38], 13: [58, 53], 14: [82], 15: [88, 84, 73, 78], 16: [13, 61, 62], 17: [75, 29, 37, 120, 128] };    // PB Range: only heard with the pitch wheel, Legato: only with overlapping notes (both tested below)
-const want = process.argv.slice(2).map(Number), types = Object.keys(INSTRUMENTS).map(Number).filter((t) => INSTRUMENTS[t].full && (!want.length || want.includes(t)));
+const want = process.argv.slice(2).map(Number), types = Object.keys(INSTRUMENTS).map(Number).filter((t) => INSTRUMENTS[t].full && !INSTRUMENTS[t].native && (!want.length || want.includes(t)));   // native: C++ only (DirectWave: tools/dw-test.mjs)
 let bad = 0;
 // sample-based instruments (defs sampler: true) get a test sample in bank slot 0: four hits (saw tone + noise burst) over one second
 const TEST = (() => { const n = SR, l = new Float32Array(n), r = new Float32Array(n); let ph = 0, seed = 9; for (let i = 0; i < n; i++) { const t = (i % (n / 4)) / SR, a = [0.5, 0.13, 0.5, 0.08][Math.floor(i / (n / 4))], e = Math.exp(-t * 6) * a; /* hits of different strength (Sensitivity) */ ph += 220 / SR; seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;

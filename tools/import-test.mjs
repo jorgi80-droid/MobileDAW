@@ -91,15 +91,15 @@ ok(lead.kind === 'midi' && lead.inst.type === 30 && lead.inst.zones[0].sample.pa
   const same = (inst, type, name) => { const p = PRESETS[type].find((x) => x.name === name); return p && Object.keys(p.p).every((k) => inst.params[k] === p.p[k]); };
   ok(g.type === 31 && same(g, 31, 'Growl Bass') && m.type === 32 && same(m, 32, 'Retro Bass') && s.type === 33 && same(s, 33, 'EDM Lead'), 'GMS / MiniSynth / SuperSaw -> the MobileDAW FL Studio Mobile instrument (31 / 32 / 33) with the preset of the same name');
   { const { dwParamsFromFlm } = await import('../js/import/build.js'); const q = lead.inst.params, r = dwParamsFromFlm([1, 0, 0.1, 0.5, 0.5, 1, 1, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0.5, 0.3, 0.25, 0.8, 0, 1, 1, 1, 0.5, 2, 0.5, 1, 0, 0.75, 3, 0]);
-    ok(Math.abs(q[21] - 60) < 1e-4 && Math.abs(q[18] - 1.251) < 1e-6 && Math.abs(q[19] - 0.3) < 1e-6 && Math.abs(q[20] - 0.1573) < 1e-4 && q[26] === 0 && q[27] === 2 && q[30] === 2 && q[32] === 50 && q[33] === 3 && Math.abs(r[21] - 60) < 1e-9,
-      'FLM DirectWave filter / frequency envelope and LFO values -> MDAW DirectWave (amount 0.8 -> +60, decay 0.5 -> 1.25 s, LFO Tmp Sync / Square / +50 / Pan)'); }
+    ok(Math.abs(q[21] - 60) < 1e-4 && Math.abs(q[18] - 50) < 1e-4 && Math.abs(q[19] - 0.3) < 1e-6 && Math.abs(q[20] - 25) < 1e-4 && q[26] === 0 && q[27] === 2 && q[30] === 3 && Math.abs(q[32] - 50) < 1e-4 && q[33] === 3 && Math.abs(r[21] - 60) < 1e-9,
+      'FLM DirectWave filter / frequency envelope and LFO values -> MDAW DirectWave in Honeydew\'s layout (envelope sliders kept: decay 50, release 25; amount 0.8 -> +60; [29] Mode Tmp Sync, [27] Shape -> Random, [31] Amount +50, [32] Dest Pan)'); }
   { // Sample / Filter tab: values of real projects (a layer an octave down, fine tune, piano envelope, legato + slide, a library program's filter 40 / 0 / 50 / 100)
     const { dwParamsFromFlm, dwPitchSt, dwFineCt } = await import('../js/import/build.js'), f = Math.fround;
     const raw = [1, f(0.0969045), f(0.425303), f(0.235820934), f(0.466865659), 1, f(0.0202), f(0.607143), 0, 1, 1, 0, f(0.4075), 0, f(0.5075), 1, f(1 / 3), 0, 1, 1, 1, 0.5, 0, 1, 1, 1, 0.5, 0, 0, 0, 0, 0.5, 0, 0];
-    const q = dwParamsFromFlm(raw), fT = (v) => 0.001 + 10 * v * v * v;
+    const q = dwParamsFromFlm(raw), fT = (v) => Math.round((0.001 + 10 * v * v * v * v) * 1e6) / 1e6;   // FLM's amp time law (Honeydew amp_seconds)
     ok(dwPitchSt(raw) === -12 && Math.abs(dwFineCt(raw) + 6.6268682) < 1e-4 && dwPitchSt([1, 0, 0, f(0.182342395)]) === -15 && dwPitchSt([1, 0, 0, f(0.428000093)]) === -3 && dwPitchSt([1, 0, 0, f(0.699701369)]) === 9 && dwPitchSt([1, 0, 0, 0.5]) === 0,
       'DirectWave Pitch: whole semitones toward zero (-12.68 -> -12, -15.25 -> -15, -3.46 -> -3, +9.59 -> +9), Fine Tune in cents (-6.63 ct)');
-    ok(Math.abs(q[2] - fT(f(0.0969045))) < 1e-6 && Math.abs(q[5] - fT(f(0.425303))) < 1e-6 && Math.abs(q[3] - 10) < 1e-6 && Math.abs(q[4] - f(0.0202)) < 1e-9 && q[6] === 2 && q[8] === 0 && q[9] === 1 && q[10] === 1 && q[11] === 0
+    ok(Math.abs(q[2] - fT(f(0.0969045))) < 1e-6 && Math.abs(q[5] - fT(f(0.425303))) < 1e-6 && Math.abs(q[3] - 10.001) < 1e-6 && Math.abs(q[4] - f(0.0202)) < 1e-9 && Math.abs(q[6] - Math.pow(f(0.607143) / 2, 3)) < 1e-6 && q[8] === 0 && q[9] === 1 && q[10] === 1 && q[11] === 0
       && Math.abs(q[12] - 40.75) < 1e-4 && q[13] === 0 && Math.abs(q[14] - 50.75) < 1e-4 && q[15] === 100 && q[16] === 1 && q[0] === 0 && q[1] === 0,
       'DirectWave Sample / Filter tab: attack / release / decay / sustain / slide, reverse / loop / legato / mono, cutoff 40.75 / kbd 50.75 / vel 100 / Lowpass');
   }
@@ -261,8 +261,8 @@ if (process.env.FLM_ZIP && fs.existsSync(process.env.FLM_ZIP)) {
   const SR = 48000, n = SR / 2, l = new Float32Array(n); for (let i = 0; i < n; i++) l[i] = Math.sin(i * 0.05) * 0.5;
   const peak = (t, vel) => { const d = makeInstrument(t, SR, [{ l, r: l, frames: n, rate: SR }]); if (INSTRUMENTS[t].zones) { d.setParam(100, 0); d.setParam(101, 60); } INSTRUMENTS[t].params.forEach((q, k) => d.setParam(k, q.def)); d.setTempo && d.setTempo(120);
     d.noteOn(60, vel); const L = new Float32Array(4096), R = new Float32Array(4096); d.render(L, R, 0, 4096); let pk = 0; for (let i = 0; i < 4096; i++) pk = Math.max(pk, Math.abs(L[i])); return pk; };
-  const r = [30, 31, 32, 33].map((t) => peak(t, 0.4) / peak(t, 1));
-  ok(r.every((x) => x > 0.05 && x < 0.9), 'FLM velocity 40 % vs 100 % in DirectWave / GMS / MiniSynth / SuperSaw: quieter, level x' + r.map((x) => x.toFixed(3)).join(' / '));
+  const r = [31, 32, 33].map((t) => peak(t, 0.4) / peak(t, 1));
+  ok(r.every((x) => x > 0.05 && x < 0.9), 'FLM velocity 40 % vs 100 % in GMS / MiniSynth / SuperSaw (DirectWave, C++ only: dw-test): quieter, level x' + r.map((x) => x.toFixed(3)).join(' / '));
 }
 // FLM sends (Honeydew read.rs SEND): master send level -> Utility trim, bus-only send -> Output to that effect track, an extra bus send ->
 // Send A / B relative to the main path, all sends off -> silent; the fader keeps FLM's channel level
