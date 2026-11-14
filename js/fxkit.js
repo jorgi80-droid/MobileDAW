@@ -1722,68 +1722,91 @@ const flmPanel = (k, only = null, short = null) => {
     notes.length ? h('div', { class: 'lk-row lk-flmnotes' }, ...notes) : null, h('div', { class: 'lk-row lk-flmk' }, ...knobs));
   return disp ? h('div', { class: 'lk-row lk-flm' }, h('div', { class: 'lk-col lk-flmd' }, disp), body) : body;
 };
-// Live-style card of an FLM module (js/flmlayout.js), built from equal cells on a two-row grid like Live's device columns: a knob fills a
-// cell (label, dial, value); menus and switches are half cells, two stacked in one; short menus (up to 4 short items) are Live's segmented
-// buttons. The display stands on the left at full height; Sync pairs show only the rate control that plays; note toggles form a piano
-// (two rows high). A section title appears only where the same control name repeats in another section (Band 1 / Band 2, Low / Mid / High).
+// Live-style card of an FLM module (js/flmlayout.js), three parts like a Live device:
+//  1. the display column: the module's display (or its keyboard) with every selector of the module - menus, switches, mode buttons - in one
+//     tidy bar under it (Live's Chorus-Ensemble / Auto Filter mode rows);
+//  2. a grid of knobs only, all the same size, rows fitted to the card's height (2..4);
+//  3. the Output column on the right (Mix / Gain / Pan ...) behind one hairline, like Live's Dry/Wet.
+// Modules made of identical groups (EQ bands, Multiband Low / Mid / High, Arp 1 / 2, Wow / Flutter / Random) keep one titled column per group.
 const BLACK = [1, 3, 6, 8, 10];
 const flmLayout = (k, L) => {
   const ps = k.def.params, when = [];
   const esc = (t) => t.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
-  const tidy = (j, title = '') => {   // the name without what its section title already says ("LFO Rate" in LFO -> "Rate"), first letter capital
+  const tidy = (j, title = '') => {   // the name without what its group title already says ("LFO Rate" in LFO -> "Rate"), first letter capital
     if (L.names && L.names[j]) return L.names[j];
     let n = flmName(ps[j].n); if (title) n = n.replace(new RegExp('^' + esc(title) + ' ', 'i'), ''); if (L.strip) n = n.replace(L.strip, ''); n = n.replace(/ ?\((sync|Sync)\)$/, '').trim() || flmName(ps[j].n);
     return n[0].toUpperCase() + n.slice(1);
   };
   const vis = (j) => ps[j] && !ps[j].hidden;
+  const isSel = (j) => ps[j].fmt === 'onoff' || ps[j].fmt === 'flmlist';
   const watch = (el, j) => { if (L.when && L.when[j]) when.push([el, L.when[j]]); return el; };
-  const knob = (j, title) => { const nm = tidy(j, title), el = k.K(j, { n: flmShort(nm), p: { lawCtx: () => ({ p: k.d.params }) } }); el.title = nm; return watch(h('div', { class: 'fc fk' }, el), j); };
-  const small = (j, title) => {   // a half cell: a switch, a segmented choice or a labelled menu
+  const knob = (j, title) => { const nm = tidy(j, title), el = k.K(j, { n: flmShort(nm), p: { lawCtx: () => ({ p: k.d.params }) } }); el.title = nm; return watch(h('div', { class: 'fc' }, el), j); };
+  // a selector: a switch button, a row of mode buttons, or a label + menu
+  const selector = (j, title, block, row) => {
     const p = ps[j], nm = tidy(j, title);
-    if (p.fmt === 'onoff') { const cap = flmSwitch(nm), b = k.T(j, cap, { cls: 'fsw' + (cap.length > 6 ? ' sm' : '') }); b.title = nm; return watch(h('div', { class: 'fh' }, b), j); }
+    if (row && p.fmt === 'flmlist') { const n = p.items.length, cur = () => (p.br ? menuItem(p.br, k.get(j)) : Math.round(k.get(j) * (n - 1))), put = (q) => k.set(j, n > 1 ? q / (n - 1) : 0);
+      const c = k.reg(lvSel(() => p.items.map((l, q) => ({ label: l, value: q })), cur, put, { cls: 'fsel' }), j); c.update && c.update();
+      return watch(h('div', { class: 'fbi frow' }, h('span', { class: 'fl' }, flmShort(nm)), c), j); }
+    if (p.fmt === 'onoff') { const b = k.T(j, flmSwitch(nm), { cls: 'fsw' }); b.title = nm; return watch(h('div', { class: 'fbi' }, b), j); }
     const n = p.items.length, cur = () => (p.br ? menuItem(p.br, k.get(j)) : Math.round(k.get(j) * (n - 1))), put = (q) => k.set(j, n > 1 ? q / (n - 1) : 0);
-    const seg = n >= 2 && n <= 4 && p.items.every((x) => String(x).length <= 6);   // Live's stacked choice buttons (Compressor Peak / RMS / Expand)
-    if (seg) { const ctl = k.reg(lvChoice(p.items.map((l) => ({ label: l, title: nm + ': ' + l })), cur, put, { cls: 'fseg n' + n }), j); ctl.update && ctl.update(); ctl.title = nm; return watch(h('div', { class: 'fc fsg' }, ctl), j); }
-    const ctl = k.reg(lvSel(() => p.items.map((l, q) => ({ label: l, value: q })), cur, put, { cls: 'fsel' }), j);
-    if (ctl.update) ctl.update();
-    return watch(h('div', { class: 'fh' }, h('span', { class: 'fl' }, flmShort(nm)), ctl), j);
-  };
-  const cells = (idx, title) => {   // knobs = cells; consecutive half cells pair up
-    const out = []; let half = null;
-    for (const j of idx.filter(vis)) {
-      if (ps[j].fmt === 'onoff' || ps[j].fmt === 'flmlist') { const e = small(j, title); if (e.classList.contains('fc')) { half = null; out.push(e); continue; }   // a segmented choice is a whole cell
-        if (half) { half.append(e); half = null; } else { half = h('div', { class: 'fc fp' }, e); out.push(half); } }
-      else { half = null; out.push(knob(j, title)); }
+    if (!block && n >= 2 && n <= 4 && p.items.every((x) => String(x).length <= 6)) {
+      const c = k.reg(lvChoice(p.items.map((l) => ({ label: l, title: nm + ': ' + l })), cur, put, { cls: 'fseg' }), j); c.update && c.update(); c.title = nm; return watch(h('div', { class: 'fbi' }, c), j);
     }
-    return out;
+    const c = k.reg(lvSel(() => p.items.map((l, q) => ({ label: l, value: q })), cur, put, { cls: 'fsel' }), j); c.update && c.update();
+    return watch(h('div', { class: 'fbi' + (block ? ' blk' : '') }, h('span', { class: 'fl' }, flmShort(nm)), c), j);
   };
-  const piano = (idx, title) => {   // a one-octave keyboard: white keys along the bottom, black keys above the gaps
-    const box = h('div', { class: 'fc fkeys' }), wi = [0, 2, 4, 5, 7, 9, 11];
-    idx.forEach((j, q) => { const blk = BLACK.includes(q), x = blk ? wi.indexOf(q - 1) + 1 : wi.indexOf(q);
-      const b = k.T(j, blk ? '' : ps[j].n.replace(new RegExp('^' + L.keys[2], 'i'), ''), { cls: 'fkey' + (blk ? ' blk' : '') }); b.title = ps[j].n.replace(new RegExp('^' + L.keys[2], 'i'), '');
-      b.style.setProperty('--x', x); box.append(b); });
-    return h('div', { class: 'fsec' }, h('div', { class: 'fgrid' }, box, ...(L.after ? cells(L.after, '') : [])));
-  };
-  // which sections need their title: a control name of theirs also appears in another section
+  const grid = (cells) => h('div', { class: 'fgrid' }, ...cells);
+  // groups: a repeated group (a name of it also appears in another group) keeps its own titled column; the Output group is the right column
   const named = L.s.map(([t, idx]) => new Set(idx.filter(vis).map((j) => tidy(j, t))));
-  const needTitle = (i) => named.some((o, q) => q !== i && [...named[i]].some((n) => o.has(n)));
-  const section = ([title, idx], i) => h('div', { class: 'fsec' }, needTitle(i) ? h('div', { class: 'fst' }, title) : null, h('div', { class: 'fgrid' }, ...cells(idx, title)));
+  const rep = (i) => named.some((o, q) => q !== i && [...named[i]].some((n) => o.has(n)));
+  const isOut = (t) => /^(Output|Mix)$/i.test(t);
+  const bar = [], mainK = [], outK = [], cols = [];
+  L.s.forEach(([t, idx], i) => {
+    const v = idx.filter(vis);
+    if (rep(i)) {
+      const kn = v.filter((j) => !isSel(j)), menus = v.filter((j) => ps[j].fmt === 'flmlist'), sws = v.filter((j) => ps[j].fmt === 'onoff');
+      const swRow = sws.length ? h('div', { class: 'fgsw' }, ...sws.map((j) => selector(j, t))) : null;
+      if (menus.length <= 2) { cols.push(h('div', { class: 'fgrp' }, h('div', { class: 'fst' }, t), swRow, ...menus.map((j) => selector(j, t, true)), grid(kn.map((j) => knob(j, t))))); return; }
+      // many menus (Arpeggiator): the switches, then label + menu rows in two columns, the knobs beside them
+      cols.push(h('div', { class: 'fgrp wide' }, h('div', { class: 'fst' }, t), swRow, h('div', { class: 'fgw' }, h('div', { class: 'fsels' }, ...menus.map((j) => selector(j, t, false, true))), kn.length ? grid(kn.map((j) => knob(j, t))) : null)));
+      return;
+    }
+    for (const j of v) if (isSel(j)) bar.push(selector(j, t)); else (isOut(t) ? outK : mainK).push(knob(j, t));
+  });
+  if (L.after) for (const j of L.after.filter(vis)) bar.push(selector(j, ''));
   const tap = L.tap ? { onDown: (x, y, e) => {   // flmviz.js keys(): white keys across, black keys on the upper 60 %
-    const c = e.currentTarget, w = c._w, hh = c._h, kw = (w - 8) / 7, top = 16, h2 = hh - top - 4, j = Math.floor((x - 4) / kw);
-    let note = [0, 2, 4, 5, 7, 9, 11][Math.max(0, Math.min(6, j))];
+    const c = e.currentTarget, w = c._w, hh = c._h, kw = (w - 8) / 7, top = 16, h2 = hh - top - 4, jj = Math.floor((x - 4) / kw);
+    let note = [0, 2, 4, 5, 7, 9, 11][Math.max(0, Math.min(6, jj))];
     if (y < top + h2 * 0.6) for (const [bk, bj] of [[1, 0], [3, 1], [6, 3], [8, 4], [10, 5]]) { const cx = 4 + (bj + 1) * kw; if (Math.abs(x - cx) <= kw * 0.3) note = bk; }
     const pi = L.tap(note); k.set(pi, k.get(pi) > 0.5 ? 0 : 1); return false; } } : null;
-  const gr = FLM_GRAPH[k.def.flm], disp = gr ? h('div', { class: 'fdisp' + (tap ? ' tap' : '') }, k.DF(140, 96, (g, w, hh) => gr(g, w, hh, (j) => k.get(j)), tap)) : null;
+  const gr = FLM_GRAPH[k.def.flm];
+  const piano = () => { const box = h('div', { class: 'fkeys' }), wi = [0, 2, 4, 5, 7, 9, 11];
+    L.keys[1].forEach((j, q) => { const blk = BLACK.includes(q), x = blk ? wi.indexOf(q - 1) + 1 : wi.indexOf(q), nm = ps[j].n.replace(new RegExp('^' + L.keys[2], 'i'), '');
+      const b = k.T(j, blk ? '' : nm, { cls: 'fkey' + (blk ? ' blk' : '') }); b.title = nm; b.style.setProperty('--x', x); box.append(b); });
+    return box; };
+  // the display column: the display (the keyboard when the module has no display but notes), then a second keyboard if both, then the bar
+  const shows = [];
+  if (gr) shows.push(h('div', { class: 'fdisp' + (tap ? ' tap' : '') }, k.DF(140, 80, (g, w, hh) => gr(g, w, hh, (j) => k.get(j)), tap)));
+  if (L.keys) shows.push(h('div', { class: 'fpiano' + (gr ? ' sub' : '') }, piano()));
+  const parts = [mainK.length ? h('div', { class: 'fmain' }, grid(mainK)) : null, ...cols, outK.length ? h('div', { class: 'fout' }, grid(outK)) : null];
+  // with a display: the display column on the left (selectors under it); without one: the selectors as one row on top, the knobs below
+  const root = shows.length
+    ? h('div', { class: 'lk-row lk-notab flc hasd' }, h('div', { class: 'fcol' }, ...shows, bar.length ? h('div', { class: 'fbar' }, ...bar) : null), ...parts)
+    : h('div', { class: 'lk-col lk-notab flc bare' }, bar.length ? h('div', { class: 'fbar ftop' }, ...bar) : null, h('div', { class: 'frow' }, ...parts));
+  // rows per grid: as many cells as its column's free height holds (2..4); the cells keep their size, so nothing stretches
+  const fit = () => {
+    for (const g of root.querySelectorAll('.fgrid')) {
+      const col = g.parentElement.classList.contains('fgw') ? g.parentElement.parentElement : g.parentElement, cs = getComputedStyle(root), cell = parseFloat(cs.getPropertyValue('--fc-h')) || 66;
+      let free = col.clientHeight; for (const c of col.children) if (c !== g && !c.contains(g)) free -= c.getBoundingClientRect().height + 4;
+      const n = g.children.length, rows = Math.max(1, Math.min(4, n, Math.floor((free + 2) / (cell + 2))));
+      if (g._rows !== rows) { g._rows = rows; g.style.setProperty('--rows', rows); }
+    }
+  };
+  new ResizeObserver(fit).observe(root);
   const sync = () => {
     for (const [el, [t, on]] of when) { const show = (k.get(t) > 0.5) === on; if (el._shown !== show) { el._shown = show; el.style.display = show ? '' : 'none'; } }
-    for (const [el] of when) { const cell = el.parentElement; if (cell && cell.classList.contains('fp')) cell.style.display = [...cell.children].every((c) => c.style.display === 'none') ? 'none' : ''; }   // a cell whose halves are both hidden leaves no gap
   };
-  const root = h('div', { class: 'lk-row flc' + (disp ? ' hasd' : '') }, disp, L.keys ? piano(L.keys[1], L.keys[0]) : null, ...L.s.map(section));
-  // rows of cells: as many as the card's height holds (2..4), the cells keep their size - Live's columns of stacked controls, no stretched gaps
-  const fit = () => { const hh = root.clientHeight, cs = getComputedStyle(root), cell = parseFloat(cs.getPropertyValue('--fc-h')) || 64, gap = 2, tt = root.querySelector('.fst') ? 16 : 0;
-    const rows = Math.max(2, Math.min(4, Math.floor((hh - tt + gap) / (cell + gap)))); if (rows !== root._rows) { root._rows = rows; root.style.setProperty('--rows', rows); } };
-  new ResizeObserver(fit).observe(root);
-  sync(); if (when.length) k.every(120, sync);   // after the sections exist: their controls are in `when`
+  sync(); if (when.length) k.every(120, () => { sync(); });
   return root;
 };
 const flmCard = (k) => { const L = FLM_LAYOUT[k.def.flm != null && !k.def.native ? k.def.flm : 'i' + k.d.type]; return L ? flmLayout(k, L) : flmPanel(k); };

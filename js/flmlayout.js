@@ -50,7 +50,7 @@ export const FLM_LAYOUT = {
   48: { s: [['Transpose', [1, 2]]] },
   49: { s: [['Random', R(1, 6)]] },
   50: { s: [['Scale', [1, 2, 3]]], keys: ['Notes', R(4, 15), 'Note '] },
-  51: { names: { 7: 'Vel 1', 8: 'Vel 2', 12: 'Oct Shift', 23: 'Oct Shift', 13: 'Start', 24: 'Start' }, s: [['Rate', [3, 1, 2, 4, 5, 6]], ['Velocity', [7, 8]], arp(1, 0), arp(2, 11)], when: { 1: [3, true], 2: [3, false] }, strip: / \(Arp \d\)$/ },
+  51: { names: { 7: 'Vel 1', 8: 'Vel 2', 12: 'Octave', 23: 'Octave', 13: 'Start', 24: 'Start', 5: 'Sw Rate' }, s: [['Rate', [3, 1, 2, 4, 5, 6]], ['Velocity', [7, 8]], arp(1, 0), arp(2, 11)], when: { 1: [3, true], 2: [3, false] }, strip: / \(Arp \d\)$/ },
   // instruments (defs.js INSTRUMENTS[34] / [35])
   i34: { names: { 1: 'Wave', 11: 'PW', 12: 'LFO Rate', 13: 'LFO>PW' }, s: [['Oscillator', [1, 11, 12, 13]], ['Filter', [2, 3, 4, 5, 6]], ['Distortion', [7, 8, 9, 10]]] },
   i35: { s: [['Slices', [7, 8]], ['Voice', [1, 3, 4, 5, 6]]] },

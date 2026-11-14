@@ -1590,46 +1590,51 @@ html.reduce-motion .lk-tabpg, html.reduce-motion .flm-pg > *, html.reduce-motion
 @media (prefers-reduced-motion: reduce) { .lk-tabpg, .flm-pg > *, .lk-page > * { animation: none; } }
 /* switches and choice buttons: the lit state fades instead of snapping */
 .lk .lv-btn, .flm-card .lv-btn { transition: background-color .16s ease, color .16s ease, border-color .16s ease, transform .14s cubic-bezier(.3, 1.6, .5, 1); }
-/* FLM module cards (fxkit.js flmLayout, js/flmlayout.js) - Live's device anatomy: the dark display takes the card's free width at full height,
-   the controls stand in columns of equal cells (rows = what the height holds, fxkit fit()); knob = cell, menu / switch = half cell (two per cell),
-   short choices = a stacked button column in one cell; one label style everywhere; hairlines between groups; tokens + theme colours only. */
-.flc { --fc-w: 70px; --fc-h: 76px; --key-w: #e2e2e6; --key-b: #1e1e21; --rows: 2; align-items: stretch; gap: 0; flex-wrap: nowrap; padding: var(--sp-1) 0; min-height: 0; }
-.flc .fdisp { display: flex; flex: 1 1 auto; min-width: 140px; max-width: 360px; margin-right: var(--sp-4); }
+/* FLM module cards (fxkit.js flmLayout, js/flmlayout.js) - a Live device in three parts: the display column (display + one bar of selectors under
+   it), a grid of equal knob cells, the Output column behind a hairline. Rows fit the card height (fxkit fit()); tokens + theme colours only. */
+.flc { --fc-w: 68px; --fc-h: 72px; --rows: 2; --key-w: #e2e2e6; --key-b: #1e1e21; align-items: stretch; gap: var(--sp-5); flex-wrap: nowrap; padding: var(--sp-1) 0; min-height: 0; }
+.flc .fcol { display: flex; flex-direction: column; gap: var(--sp-2); flex: 1 1 auto; min-width: 156px; max-width: 340px; }
+.flc.bare { flex-direction: column; gap: var(--sp-3); }
+.flc.bare .fbar.ftop { flex: 0 0 auto; padding-bottom: var(--sp-2); border-bottom: 1px solid var(--lv-edge); }
+.flc .frow { display: flex; flex: 1 1 auto; gap: var(--sp-5); align-items: stretch; min-height: 0; }
+.flc .fgsw { display: flex; gap: var(--sp-2); justify-content: center; }
+.flc .fdisp { display: flex; flex: 1 1 auto; min-height: 64px; }
 .flc .fdisp > .lk-dfill { flex: 1 1 auto; min-height: 0; min-width: 0 !important; }
 .flc .fdisp.tap .lk-dfc { cursor: pointer; }
-.flc .fsec { display: flex; flex-direction: column; justify-content: center; align-self: stretch; flex: 0 0 auto; padding: 0 var(--sp-3); border-left: 1px solid var(--lv-edge); }
-.flc .fdisp + .fsec, .flc > .fsec:first-child { border-left: 0; padding-left: 0; }
-.flc > .fsec:last-child { padding-right: 0; }
-.flc .fst { height: 12px; margin-bottom: var(--sp-2); font: var(--fw-sb) var(--fs-1)/12px var(--font); color: var(--lv-dim); text-align: center; white-space: nowrap; }
-.flc .fgrid { display: grid; grid-template-rows: repeat(var(--rows), var(--fc-h)); grid-auto-flow: column; grid-auto-columns: var(--fc-w); gap: 2px; align-content: center; align-items: center; justify-items: stretch; }
-.flc .fc { width: var(--fc-w); height: var(--fc-h); display: flex; flex-direction: column; align-items: center; justify-content: center; }
-.flc .fk > .knob.lk-k { width: var(--fc-w); min-width: var(--fc-w); }
-.flc .fk > .knob.lk-k svg { width: 36px; height: 36px; }
-.flc .fk > .knob.lk-k .k-n { max-width: var(--fc-w); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.flc .fk > .knob.lk-k .k-v { white-space: nowrap; }
-.flc .fp { gap: 2px; justify-content: center; }
-.flc .fh { width: 100%; display: flex; flex-direction: column; align-items: stretch; gap: 1px; }
-.flc .fh .fl { font: var(--fw-r) var(--fs-2)/13px var(--font); color: var(--lv-ink); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.flc .fh .lv-btn.fsw, .flc .fh .fsel { width: 100%; min-width: 0 !important; max-width: none; height: var(--ctl-xs); padding: 0 var(--sp-1); font-size: var(--fs-2); overflow: hidden; text-overflow: ellipsis; }
-.flc .fsg .fseg { display: flex; flex-direction: column; width: 100%; }
-.flc .fsg .fseg .lv-btn { width: 100%; min-width: 0 !important; height: calc((var(--fc-h) - 4px) / 3) !important; padding: 0; font-size: var(--fs-2); line-height: 1; }
-.flc .fsg .fseg.n2 .lv-btn { height: calc((var(--fc-h) - 4px) / 2.4) !important; }
-.flc .fsg .fseg.n4 { display: grid; grid-template-columns: 1fr 1fr; } .flc .fsg .fseg.n4 .lv-btn { font-size: var(--fs-1); } .flc .fsg .fseg.n4 .lv-btn { height: calc((var(--fc-h) - 4px) / 2) !important; }
-.flc .fsg .fseg .lv-btn + .lv-btn { margin-top: -1px; } .flc .fsg .fseg.n4 .lv-btn:nth-child(2n) { margin-left: -1px; } .flc .fsg .fseg.n4 .lv-btn:nth-child(2) { margin-top: 0; }
-.flc .fkeys { width: calc(7 * 22px + 1px) !important; grid-row: span var(--rows); position: relative; height: calc(var(--rows) * var(--fc-h) + (var(--rows) - 1) * 2px); }
-.flc .fgrid:has(> .fkeys) { grid-auto-columns: auto; }
-.flc .fkeys .lv-btn.fkey { position: absolute; left: calc(var(--x) * 22px); bottom: 0; width: 23px; min-width: 0; height: 100% !important; margin: 0; padding: 0 0 var(--sp-2); display: flex; align-items: flex-end; justify-content: center;
+.flc .fpiano { flex: 1 1 auto; display: flex; min-height: 64px; } .flc .fpiano.sub { flex: 0 0 auto; height: 56px; min-height: 0; }
+.flc .fbar { display: flex; flex-wrap: wrap; gap: var(--sp-2); align-items: center; }
+.flc .fbi { display: inline-flex; align-items: center; gap: var(--sp-2); flex: 0 0 auto; }
+.flc .fbi .fl, .flc .fgrp .fbi .fl { font: var(--fw-r) var(--fs-2)/1 var(--font); color: var(--lv-dim); white-space: nowrap; }
+.flc .fbi .fsel { height: var(--ctl-xs); min-width: 58px !important; max-width: 120px; display: flex; align-items: center; font-size: var(--fs-2); }
+.flc .fbi .fsel .v { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; text-align: left; } .flc .fbi .fsel .tri { flex: 0 0 auto; }
+.flc .fbi .lv-btn.fsw { height: var(--ctl-xs); min-width: 44px !important; padding: 0 var(--sp-3); font-size: var(--fs-2); white-space: nowrap; }
+.flc .fbi .fseg { display: flex; } .flc .fbi .fseg .lv-btn { height: var(--ctl-xs); min-width: 34px !important; padding: 0 var(--sp-2); font-size: var(--fs-2); }
+.flc .fbi .fseg .lv-btn + .lv-btn { margin-left: -1px; }
+.flc .fmain, .flc .fout, .flc .fgrp { display: flex; flex-direction: column; justify-content: center; flex: 0 0 auto; gap: var(--sp-2); }
+.flc .fout { padding-left: var(--sp-5); border-left: 1px solid var(--lv-edge); }
+.flc .fgrp + .fgrp { padding-left: var(--sp-5); border-left: 1px solid var(--lv-edge); }
+.flc .fgrp .fst { font: var(--fw-sb) var(--fs-2)/14px var(--font); color: var(--lv-ink); text-align: center; white-space: nowrap; }
+.flc .fgrp .fbi.blk { display: flex; flex-direction: column; align-items: stretch; gap: 1px; } .flc .fgrp .fbi.blk .fl { text-align: center; }
+.flc .fgrp .fbi.blk { align-self: center; } .flc .fgrp .fbi.blk .fsel { width: 120px; max-width: 120px; } .flc .fgrp .fbi .lv-btn.fsw { width: 100%; }
+.flc .fgw { display: flex; gap: var(--sp-4); align-items: center; flex: 1 1 auto; }
+.flc .fsels { display: grid; grid-template-columns: repeat(2, auto); gap: var(--sp-2) var(--sp-4); align-content: center; }
+.flc .fbi.frow { display: grid; grid-template-columns: 62px auto; align-items: center; gap: var(--sp-2); } .flc .fbi.frow .fl { text-align: right; overflow: hidden; text-overflow: ellipsis; }
+.flc .fbi.frow .fsel { width: 84px; min-width: 84px !important; }
+.flc .fgrid { display: grid; grid-template-rows: repeat(var(--rows), var(--fc-h)); grid-auto-flow: column; grid-auto-columns: var(--fc-w); gap: 2px 0; align-content: center; }
+.flc .fc { width: var(--fc-w); height: var(--fc-h); display: flex; align-items: center; justify-content: center; }
+.flc .fc > .knob.lk-k { width: var(--fc-w); min-width: var(--fc-w); }
+.flc .fc > .knob.lk-k svg { width: 36px; height: 36px; }
+.flc .fc > .knob.lk-k .k-n { max-width: var(--fc-w); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.flc .fc > .knob.lk-k .k-v { white-space: nowrap; }
+.flc .fkeys { position: relative; flex: 1 1 auto; min-width: 154px; }
+.flc .fkeys .lv-btn.fkey { position: absolute; left: calc(var(--x) * 100% / 7); bottom: 0; width: calc(100% / 7 + 1px); min-width: 0; height: 100% !important; margin: 0; padding: 0 0 var(--sp-2); display: flex; align-items: flex-end; justify-content: center;
   background: var(--key-w) !important; color: var(--key-b) !important; border: 1px solid var(--lv-edge); border-radius: 0 0 var(--r-1) var(--r-1); font-size: var(--fs-1); }
-.flc .fkeys .lv-btn.fkey.blk { left: calc(var(--x) * 22px - 8px); top: 0; bottom: auto; width: 16px; height: 58% !important; z-index: 1; background: var(--key-b) !important; padding: 0; }
-.flc .fkeys .lv-btn.fkey.on { background: var(--lv-or) !important; color: var(--accent-ink) !important; }
-.flc .fkeys .lv-btn.fkey.blk.on { background: var(--lv-or) !important; }
+.flc .fkeys .lv-btn.fkey.blk { left: calc(var(--x) * 100% / 7 - 100% / 7 * 0.32); top: 0; bottom: auto; width: calc(100% / 7 * 0.64); height: 60% !important; z-index: 1; background: var(--key-b) !important; padding: 0; }
+.flc .fkeys .lv-btn.fkey.on, .flc .fkeys .lv-btn.fkey.blk.on { background: var(--lv-or) !important; color: var(--accent-ink) !important; }
 /* FLM cards built by flmLayout (Transistor Bass, Slicer, 3x Osc and the effect modules): as wide as their columns, the grid fills the height */
 #dbody .dev-scroll > .card.flm-card.flm-t34, #dbody .dev-scroll > .card.flm-card.flm-t35, #dbody .dev-scroll > .card.flm-card.flm-t36 { width: max-content; min-width: 0; }
 .fw-fit > .card.flm-card.flm-t34, .fw-fit > .card.flm-card.flm-t35, .fw-fit > .card.flm-card.flm-t36 { width: max-content; }
 .card > .flc, .card > .lk > .flc, .card .lk-o3p > .flc { flex: 1 1 auto; margin: 0; }
-#dbody .dev-scroll > .card:has(> .flc.hasd) { min-width: 420px; }
+#dbody .dev-scroll > .card:has(> .flc.hasd) { min-width: 400px; }
 .card > .lk.lk-col:has(> .lk-o3p) { flex: 1 1 auto; } .card .lk-o3p { flex: 1 1 auto; align-items: stretch; }
 .card > .lk.lk-col:has(> .flc) { flex: 1 1 auto; } .card > .lk.lk-col > .flc { flex: 1 1 auto; }
-.flc .fsel { display: flex; align-items: center; } .flc .fsel .v { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; text-align: left; } .flc .fsel .tri { flex: 0 0 auto; }
-.flc .fh .lv-btn.fsw { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: center; line-height: calc(var(--ctl-xs) - 2px); }
-.flc .fh .lv-btn.fsw.sm { font-size: var(--fs-1); }
