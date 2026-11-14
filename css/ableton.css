@@ -1590,3 +1590,21 @@ html.reduce-motion .lk-tabpg, html.reduce-motion .flm-pg > *, html.reduce-motion
 @media (prefers-reduced-motion: reduce) { .lk-tabpg, .flm-pg > *, .lk-page > * { animation: none; } }
 /* switches and choice buttons: the lit state fades instead of snapping */
 .lk .lv-btn, .flm-card .lv-btn { transition: background-color .16s ease, color .16s ease, border-color .16s ease, transform .14s cubic-bezier(.3, 1.6, .5, 1); }
+/* FLM module cards (fxkit.js flmLayout, js/flmlayout.js): display left, titled sections, knob grid of two rows - Live's device layout */
+.lk-fl { align-items: stretch; gap: 0; flex-wrap: nowrap; }
+.lk-fdisp { display: flex; flex: 0 0 auto; width: 190px; padding-right: 8px; margin-right: 2px; }
+.lk-fdisp > .lk-dfill { flex: 1 1 auto; }
+.lk-fs { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; align-self: stretch; padding: 0 8px; border-left: 1px solid var(--sep, rgba(0,0,0,.2)); min-width: 0; }
+.lk-fdisp + .lk-fs, .lk-fl > .lk-fs:first-child { border-left: 0; padding-left: 0; }
+.lk-fsh { font-size: 10px; line-height: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; opacity: .62; white-space: nowrap; }
+.lk-fst { display: flex; flex-wrap: wrap; gap: 3px 5px; align-items: flex-end; max-width: 260px; }
+.lk-fg { display: grid; grid-auto-flow: column; gap: 2px 2px; align-items: center; justify-items: center; flex: 1 1 auto; align-content: space-evenly; }
+.lk-fkeys { display: flex; gap: 1px; padding: 2px 0; }
+.lk .lk-fkeys .lk-key { width: 27px; min-width: 27px; height: 40px; padding: 0 0 3px; font-size: 10px; display: inline-flex; align-items: flex-end; justify-content: center; }
+.lk .lk-fkeys .lk-key.blk { height: 30px; align-self: flex-start; background: #3a3a3e; color: #ddd; }
+.lk .lk-fkeys .lk-key.blk.on { background: var(--accent, #f5a623); color: #111; }
+.lk .lk-fg > .knob.lk-k { width: 70px; min-width: 70px; }
+.lk .lk-fg > .knob.lk-k svg { width: 40px; height: 40px; }
+.lk .lk-fg > .knob.lk-k .k-n { max-width: 70px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lk .lk-fg > .knob.lk-k .k-v { white-space: nowrap; }
+.lk-fst .lk-tl .lk-lb { font-size: 11px; }

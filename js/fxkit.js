@@ -7,6 +7,7 @@ import { C } from './theme.js';
 import { fmtParam, normOf, valOf, MOD_MAP, DEVICES, INSTRUMENTS, FX_GROUPS, IRACK_DEF } from './defs.js';
 import { buildSynth } from './devviz.js';
 import { menuItem } from './fxlaw.js';
+import { FLM_LAYOUT, flmName, flmShort } from './flmlayout.js';
 import { FLM_GRAPH } from './flmviz.js';
 import { OP_ALGOS } from './engine/operator.js';
 import { POLI_TGT, POLI_GRID, POLI_MIDI } from './engine/poli.js';
@@ -1721,8 +1722,45 @@ const flmPanel = (k, only = null, short = null) => {
     notes.length ? h('div', { class: 'lk-row lk-flmnotes' }, ...notes) : null, h('div', { class: 'lk-row lk-flmk' }, ...knobs));
   return disp ? h('div', { class: 'lk-row lk-flm' }, h('div', { class: 'lk-col lk-flmd' }, disp), body) : body;
 };
-for (const t of Object.keys(DEVICES)) if (DEVICES[t].view === 'flmfx') V[t] = flmPanel;
-VI[34] = flmPanel;   // Transistor Bass: the same compact FLM layout (its Distortion is a switch)
+// Live-style card of an FLM module (js/flmlayout.js): its display left, then titled sections; in a section the menus / switches on top and
+// the knobs in a grid (two rows from four knobs on), Sync pairs show only the rate control that plays, note toggles as a one-octave keyboard.
+const BLACK = [1, 3, 6, 8, 10];
+const flmLayout = (k, L) => {
+  const ps = k.def.params, when = [];
+  const esc = (t) => t.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
+  const tidy = (j, title = '') => {   // the name without what its section title already says ("LFO Rate" in LFO -> "Rate"), first letter capital
+    if (L.names && L.names[j]) return L.names[j];
+    let n = flmName(ps[j].n); if (title) n = n.replace(new RegExp('^' + esc(title) + ' ', 'i'), ''); if (L.strip) n = n.replace(L.strip, ''); n = n.trim() || flmName(ps[j].n);
+    return n[0].toUpperCase() + n.slice(1);
+  };
+  const ctl = (j, title = '') => {
+    const p = ps[j]; let el; const nm = tidy(j, title);
+    if (p.fmt === 'flmlist') { const n = p.items.length; el = k.TL(nm, k.reg(lvSel(() => p.items.map((l, q) => ({ label: l, value: q })), () => (p.br ? menuItem(p.br, k.get(j)) : Math.round(k.get(j) * (n - 1))), (q) => k.set(j, n > 1 ? q / (n - 1) : 0), { w: 84, cls: 'lk-s' }), j)); el.dataset.kind = 'm'; }
+    else if (p.fmt === 'onoff') { el = k.T(j, nm, { w: Math.max(40, Math.min(110, 10 + nm.length * 7)) }); el.dataset.kind = 't'; }
+    else { el = k.K(j, { n: flmShort(nm), p: { lawCtx: () => ({ p: k.d.params }) } }); el.title = nm; el.dataset.kind = 'k'; }
+    if (L.when && L.when[j]) when.push([el, L.when[j]]);
+    return el;
+  };
+  const section = ([title, idx]) => {
+    const els = idx.filter((j) => ps[j] && !ps[j].hidden).map((j) => ctl(j, title)), top = els.filter((e) => e.dataset.kind !== 'k'), kn = els.filter((e) => e.dataset.kind === 'k');
+    const grid = kn.length ? h('div', { class: 'lk-fg', style: `grid-template-rows:repeat(${kn.length >= 4 ? 2 : 1},auto)` }, ...kn) : null;
+    return h('div', { class: 'lk-fs' }, h('div', { class: 'lk-fsh' }, title), top.length ? h('div', { class: 'lk-fst' }, ...top) : null, grid);
+  };
+  const keys = L.keys ? h('div', { class: 'lk-fs' }, h('div', { class: 'lk-fsh' }, L.keys[0]), h('div', { class: 'lk-fkeys' }, ...L.keys[1].map((j, q) =>
+    k.T(j, ps[j].n.replace(new RegExp('^' + L.keys[2], 'i'), '').replace(/^(.)b$/, (_, a) => 'CDEFGAB'['CDEFGAB'.indexOf(a) - 1] + '#'), { w: 26, cls: 'lk-key' + (BLACK.includes(q) ? ' blk' : '') }))), L.after ? h('div', { class: 'lk-fst' }, ...L.after.map(ctl)) : null) : null;
+  const tap = L.tap ? { onDown: (x, y, e) => {   // flmviz.js keys(): white keys across, black keys on the upper 60 %
+    const c = e.currentTarget, w = c._w, hh = c._h, kw = (w - 8) / 7, top = 16, h2 = hh - top - 4, j = Math.floor((x - 4) / kw);
+    let note = [0, 2, 4, 5, 7, 9, 11][Math.max(0, Math.min(6, j))];
+    if (y < top + h2 * 0.6) for (const [bk, bj] of [[1, 0], [3, 1], [6, 3], [8, 4], [10, 5]]) { const cx = 4 + (bj + 1) * kw; if (Math.abs(x - cx) <= kw * 0.3) note = bk; }
+    const pi = L.tap(note); k.set(pi, k.get(pi) > 0.5 ? 0 : 1); return false; } } : null;
+  const gr = FLM_GRAPH[k.def.flm], disp = gr ? h('div', { class: 'lk-fdisp' + (tap ? ' tap' : '') }, k.DF(190, 96, (g, w, hh) => gr(g, w, hh, (j) => k.get(j)), tap)) : null;
+  const sync = () => { for (const [el, [t, on]] of when) { const show = (k.get(t) > 0.5) === on; if (el._shown !== show) { el._shown = show; el.style.display = show ? '' : 'none'; } } };
+  sync(); if (when.length) k.every(120, sync);
+  return h('div', { class: 'lk-row lk-fl' }, disp, ...(keys ? [keys] : []), ...L.s.map(section));
+};
+const flmCard = (k) => { const L = FLM_LAYOUT[k.def.flm != null && !k.def.native ? k.def.flm : 'i' + k.d.type]; return L ? flmLayout(k, L) : flmPanel(k); };
+for (const t of Object.keys(DEVICES)) if (DEVICES[t].view === 'flmfx') V[t] = flmCard;
+VI[34] = flmCard;   // Transistor Bass: the same compact FLM layout (its Distortion is a switch)
 // 3x Osc: FLM's eight pages (Honeydew instruments.rs) as tabs; within a page the controls drop the page's own prefix ("Volume Envelope Attack"
 // -> "Attack"). The tab is remembered per track.
 const OSC3_PAGES = (() => {
@@ -1736,8 +1774,9 @@ const OSC3_PAGES = (() => {
 const osc3Tab = new Map();
 VI[36] = (k) => {
   const key = k.ctx.d && k.ctx.d.id, page = h('div', { class: 'lk-row lk-o3p' });
-  const short = (n) => n.replace(/^Osc 3 = amplitude modulation$/, 'AM').replace(/^Osc [123] /, '').replace(/^Stereo Phase Randomness$/, 'Phase Rand').replace(/^(Pan|Volume|ModX|ModY|Pitch) (LFO|Envelope) /, '').replace(/^Delay /, '').replace(/^Arpeggio /, '').replace(/^Filter /, '').replace(/^Key Tracking /, 'Key ').replace(/^Velocity Tracking /, 'Vel ');
-  const show = (j) => { osc3Tab.set(key, j); page.replaceChildren(...OSC3_PAGES[j][1].map(([title, idx]) => h('div', { class: 'lk-col lk-o3g' }, h('div', { class: 'lk-o3h' }, title), flmPanel(k, idx, short)))); };
+  const short = (n) => n.replace(/^Osc 3 = amplitude modulation$/, 'AM').replace(/^Osc [123] /, '').replace(/^Stereo Phase Randomness$/, 'Phase Rand').replace(/^(Pan|Volume|ModX|ModY|Pitch) (LFO|Envelope) /, '').replace(/^Delay /, '').replace(/^Arpeggio /, '').replace(/^Filter /, '').replace(/^Key Tracking /, 'Key ').replace(/^Velocity Tracking /, 'Vel ').replace(/^(Attack|Decay|Release) Tension$/, (_, a) => a[0] + ' Curve').replace(/^Volume Multiplier$/, 'Vol Mult').replace(/^Portamento /, 'Porta ').replace(/^Maximum Polyphony$/, 'Voices').replace(/^Monophonic Mode$/, 'Mono');
+  const names = {}; for (const [, groups] of OSC3_PAGES) for (const [, idx] of groups) for (const j of idx) names[j] = short(k.def.params[j].n);
+  const show = (j) => { osc3Tab.set(key, j); page.replaceChildren(flmLayout(k, { s: OSC3_PAGES[j][1], names })); };
   const j0 = osc3Tab.get(key) || 0;
   const tb = lvTabs(OSC3_PAGES.map(([label]) => ({ label })), j0, show, { cls: 'lk-tabs' });
   show(j0);
@@ -1748,7 +1787,7 @@ VI[35] = (k) => {
   const { i } = k.ctx, t = P.state.tracks[i], z = () => (t.inst.zones && t.inst.zones[0]) || {};
   const name = h('span', { class: 'lk-lb' }), upd = () => { name.textContent = z().sample ? (z().sample.name || String(z().sample.path || '').split('/').pop()) : 'Belum ada loop'; };
   upd(); k.every(500, upd);
-  return k.col(h('div', { class: 'lk-row lk-flmtop' }, h('button', { class: 'lv-btn', onclick: () => BR.openBrowser('file', { track: i, zone: 0 }) }, 'Loop\u2026'), name), flmPanel(k));
+  return k.col(h('div', { class: 'lk-row lk-flmtop' }, h('button', { class: 'lv-btn', onclick: () => BR.openBrowser('file', { track: i, zone: 0 }) }, 'Loop\u2026'), name), flmCard(k));
 };
 
 export const KIT = V;
