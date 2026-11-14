@@ -74,6 +74,8 @@ export function parseFlm(buf, onProgress) {
       else if (cstm) for (const z of kids(cstm)) {                 // DirectWave: the sample of its zone (user folder) or a library program (built-in content)
         if (z.tag === 'ZONE') { mod.sample = clean(raw(z.a, Math.min(z.n, 1024))); if (z.n > 1028) mod.root = Math.min(127, u[z.a + 1024] + NOTE_OFS); }   // path[1024], then the zone's root key (MIDI)
         if (z.tag === 'PATh') mod.library = clean(raw(z.a + 4, Math.min(z.n - 4, u32(z.a))));
+        if (type === 33 && z.tag === 'PATH' && z.n >= 4) mod.loop = clean(raw(z.a + 4, Math.min(z.n - 4, u32(z.a))));   // Slicer (Honeydew cstm.rs): the loop, a u32-length path
+        if (type === 33 && z.tag === 'SENS' && z.n >= 4) { const v = f32(z.a); mod.sens = Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 0; }
       }
       if (type === 1 && !mod.sample && !mod.library && names.length > 1 && /\.(wav|mp3|ogg|flac|m4a|aif+)$/i.test(names[names.length - 1])) mod.sample = names[names.length - 1];
       out.modules.push(mod);
@@ -181,7 +183,7 @@ export function flmToModel(P) {
       c.instrument = { kind: 'directwave', name: 'DirectWave', layers: dw.filter((m) => m.enabled && m.sample).map((m) => ({ sample: m.sample, root: m.root ?? DW_ROOT0, params: m.params, level: m.level ?? 1, pan: m.pan || 0 })), library: lib ? lib.library : '', preset: dw[0].preset, enabled: dw.some((m) => m.enabled) };
       if (!c.instrument.layers.length && !c.instrument.library && dw[0].sample) c.instrument.layers.push({ sample: dw[0].sample, root: dw[0].root ?? DW_ROOT0, params: dw[0].params, level: dw[0].level ?? 1, pan: dw[0].pan || 0 });
     } else if (unk) { c.instrument = { kind: 'unknown', name: 'Instrumen FLM #' + unk.type, preset: unk.preset && unk.preset !== 'Default' ? unk.preset : '', params: unk.params, enabled: unk.enabled, flmType: unk.type };
-    } else if (syn) { const k = synthOf(syn); c.instrument = { kind: k.kind, name: k.name, preset: syn.preset && syn.preset !== 'Default' ? syn.preset : '', params: syn.params, enabled: syn.enabled, flmType: syn.type, ...(syn.gms ? { gms: syn.gms } : {}), ...(k.kind === 'soundfont' ? { library: syn.presetPath } : {}) }; }
+    } else if (syn) { const k = synthOf(syn); c.instrument = { kind: k.kind, name: k.name, preset: syn.preset && syn.preset !== 'Default' ? syn.preset : '', params: syn.params, enabled: syn.enabled, flmType: syn.type, ...(syn.gms ? { gms: syn.gms } : {}), ...(k.kind === 'soundfont' ? { library: syn.presetPath } : {}), ...(syn.loop ? { loop: syn.loop } : {}), ...(syn.sens != null ? { sens: syn.sens } : {}) }; }
     c.pads = ch.pads.map((q, k) => ({ path: q.path, name: (q.path.split('/').pop() || 'Pad ' + (k + 1)).replace(/\.[^.]+$/, ''), gain: flmGain(q.vol), pan: q.pan * 2 - 1, pitch: Math.trunc(Math.fround(q.pitch * 48 - 24)), env: q.params.length >= 10 ? { a: q.params[6], d: q.params[7], s: q.params[8], r: q.params[9] } : null, reverse: !!q.reverse, cut: q.cut | 0, poly: q.poly !== false, mute: !!q.mute, solo: !!q.solo, offset: Number.isFinite(q.offset) ? q.offset : 0,
       startSec: q.params.length >= 11 ? Math.sign(2 * q.params[10] - 1) * 0.5 * (2 * q.params[10] - 1) ** 2 : 0, length: q.params[5] > 0 ? q.params[5] : 0, send: q.link ? q.link.send : -1 }));
     // Honeydew drums.rs: Speed = trunc(48 v - 24) whole semitones (f32); Sample Start = +-0.5 u^2 s, u = 2 v - 1 (later start, or silence

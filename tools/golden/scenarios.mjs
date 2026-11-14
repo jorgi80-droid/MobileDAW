@@ -224,6 +224,14 @@ export const SCENARIOS = [
       set([[50, 15, [1, 0, 0, 1, 1, 0, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1]], [47, 12, E]]); play(e, 2);
       e.stop(); play(e, 1);
     } },
+  { name: 'inst-flmslicer', native: true, info: 'C++ only (native/engine/hdslicer.cpp, Honeydew slicer.rs): FL Studio Mobile Slicer (35): a loop sliced at its transients (Sensitivity), slices on keys from 48 / a set first key, Pitch, Attack / Decay, Sustain Off / Hold / To End, Mono',
+    run(e) {
+      samples(e); e.tempo(118); e.trackInst(0, 35); e.instParam(0, 100, 2); e.instParam(0, 7, 0.6);
+      const f = []; for (let k = 0; k < 24; k++) f.push(k * PPQ / 2, PPQ * (k % 3 === 0 ? 1.2 : 0.4), 48 + ((k * 3) % 9), 0.4 + (k % 4) * 0.15, 0); e.trackNotes(0, f, f.length / 5);
+      const P = (i, v) => e.instParam(0, i, v);
+      e.play(); play(e, 2, [128, 77, 256]); P(5, 0.5); P(3, 0.3); P(4, 0.5); play(e, 1.5); P(5, 1); P(6, 1); P(1, 0.6); play(e, 1.5);
+      P(7, 0.15); play(e, 1); P(8, 55); play(e, 1); e.stop(); play(e, 0.6);
+    } },
   { name: 'inst-flmdw', native: true, info: 'C++ only (native/engine/hddw.cpp, Honeydew DW Sampler): FL Studio Mobile DirectWave (30): key / vel zones (gain / pan), loop, reverse, root / tune, filter + filter envelope, frequency (pitch) envelope, LFO (Hertz / One Shot / Tempo) to filter / frequency / level / pan, slide / legato / mono, PB range + bend',
     run(e) {
       samples(e); testSample(e); e.tempo(124); e.trackInst(0, 30);

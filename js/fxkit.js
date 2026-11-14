@@ -1723,6 +1723,13 @@ const flmPanel = (k) => {
 };
 for (const t of Object.keys(DEVICES)) if (DEVICES[t].view === 'flmfx') V[t] = flmPanel;
 VI[34] = flmPanel;   // Transistor Bass: the same compact FLM layout (its Distortion is a switch)
+// Slicer: the loop (zone 0, picked from the browser) above the compact FLM controls
+VI[35] = (k) => {
+  const { i } = k.ctx, t = P.state.tracks[i], z = () => (t.inst.zones && t.inst.zones[0]) || {};
+  const name = h('span', { class: 'lk-lb' }), upd = () => { name.textContent = z().sample ? (z().sample.name || String(z().sample.path || '').split('/').pop()) : 'Belum ada loop'; };
+  upd(); k.every(500, upd);
+  return k.col(h('div', { class: 'lk-row lk-flmtop' }, h('button', { class: 'lv-btn', onclick: () => BR.openBrowser('file', { track: i, zone: 0 }) }, 'Loop\u2026'), name), flmPanel(k));
+};
 
 export const KIT = V;
 export function kitView(ctx) { if (!V[ctx.d.type]) return null;   // no Live 12 panel yet: the card falls back to the automatic knob layout

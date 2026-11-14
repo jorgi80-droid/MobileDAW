@@ -14,7 +14,7 @@ import { ssEnvTime, ssLfoHz, SS_LFO_BEATS } from '../engine/hdsaw.js';
 
 // the channel's instrument -> MDAW: DirectWave layers -> zones of MDAW's DirectWave; a library program that is not in the archive -> the
 // closest General MIDI program of the bundled SoundFont; GMS / MiniSynth / SuperSaw -> MDAW's instrument of the same name (preset by name)
-const SYNTH_TYPE = { gms: 31, minisynth: 32, supersaw: 33, transistorbass: 34 };   // the FL Studio Mobile instruments of MobileDAW (js/engine/flmsyn.js)
+const SYNTH_TYPE = { gms: 31, minisynth: 32, supersaw: 33, transistorbass: 34, slicer: 35 };   // the FL Studio Mobile instruments of MobileDAW (js/engine/flmsyn.js)
 // FL Studio Mobile's DEFAULT patch of each synth, calibrated against the owner's stems ("New Song": the untouched instruments playing an A minor
 // chord, rendered by FLM): level of the first 125 ms, octave-band spectrum and the tail after note-off, measured on MobileDAW's render of the same notes.
 //   SuperSaw: spectrum already matched (band distance 1.1 dB), FLM is 9.2 dB louder and gates at note-off -> Gain +9.5 dB, Release 3 ms
@@ -154,6 +154,14 @@ export function buildMdaw(M, opts) {
       const type = SYNTH_TYPE[I.kind], pr = presetFor(type, I.preset);
       const dflt = !pr && !(I.preset && I.preset !== 'Default');                  // FLM's own default patch: the stem-calibrated equivalent
       note(INSTRUMENTS[type].name + (pr ? ' (preset ' + pr.name + ')' : dflt ? ' (setelan awal FLM, dikalibrasi dari stem)' : ' (preset FLM "' + String(I.preset).replace(/\.\w+$/, '').replace(/^.*\//, '') + '" belum ada di MobileDAW: setelan awal)'), pr ? 'preset' : 'default');
+      if (type === 35) {   // Slicer: FLM's values, its loop (CSTM PATH) as zone 0 and its Sensitivity (SENS; 0.33 before any CSTM, as Honeydew)
+        const n = report.instruments[report.instruments.length - 1], f = I.loop ? sample(I.loop) : null;
+        n.to = 'Slicer (nilai knob + loop dari file FLM)' + (f && f.missing ? ', loop hilang' : !f ? ', tanpa loop' : ''); n.how = f && !f.missing ? 'exact' : 'missing';
+        const q = INSTRUMENTS[35].params.map((x) => x.def); (I.params || []).slice(0, 7).forEach((v, k) => { if (Number.isFinite(v) && k > 0) q[k] = Math.min(1, Math.max(0, v)); });
+        q[7] = I.sens != null ? I.sens : 0.33;
+        const z = zoneOf(f ? { path: f.path, name: f.path.split('/').pop() } : null, 60); if (f && f.missing) z.missing = I.loop;
+        return { type, params: q, pitch: 0, zones: [z], from: { app: M.app, name: I.name, preset: I.preset || '', params: I.params || [], loop: I.loop || '' } };
+      }
       if (type === 34) {   // Transistor Bass: FLM's own values (the engine reads them as stored, Honeydew transistor_bass.rs)
         const n = report.instruments[report.instruments.length - 1]; n.to = 'Transistor Bass (semua nilai knob dari file FLM)'; n.how = 'exact';
         const q = INSTRUMENTS[34].params.map((x) => x.def); (I.params || []).slice(0, q.length).forEach((v, k) => { if (Number.isFinite(v) && k > 0) q[k] = Math.min(1, Math.max(0, v)); });

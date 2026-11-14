@@ -76,6 +76,7 @@ const CUSTOM = {
   '47.5': (v) => step(48, -24, v), '47.8': (v) => step(24, -12, v), '48.1': (v) => step(8, -4, v), '48.2': (v) => step(24, -12, v),
   '47.3': (v) => { const b = fma(8 - 1 / 32, f(v * v), 1 / 32); let k = 0; for (let i = 1; i < ECHO.length; i++) if (Math.abs(f(b - ECHO[i][0])) < Math.abs(f(b - ECHO[k][0]))) k = i; return ECHO[k][1]; },   // Note Echo Delay (sync): the nearest item
   '51.15': (v, c) => arpRotate(v, c, 14), '51.26': (v, c) => arpRotate(v, c, 25),   // Arpeggiator Rotate: -(n-1) .. +(n-1), n = the steps of its Rhythm
+  'i35.1': (v) => String(Math.trunc(v * 48 - 24)),   // Slicer PITCH: the audio's f64 step (slicer.rs pitch_steps)
   '44.4': (v) => { const s = fma(200, v, -100), a = Math.abs(s); return a < 0.1 ? 'Original' : (s < 0 ? '-' : '') + fixedAbs(s, a < 10 ? 1 : 0) + ' %'; },   // Spreader Separation
 };
 

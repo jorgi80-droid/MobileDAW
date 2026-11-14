@@ -46,6 +46,12 @@ const nfx = await ev(async () => {
 ok(nfx.n >= 3 && nfx.first[0] === 51 && nfx.first[2] === 33 && Math.abs(nfx.mode - 2 / 23) < 1e-9 && nfx.byp === 0, `Arpeggiator on a track: its chain reaches the engine (${nfx.n} sends: added, Mode changed, bypass -> Enable 0)`);
 await page.waitForTimeout(500);
 await page.screenshot({ path: path.join(out, 'arpeggiator.png') });
+// the Slicer instrument (35) panel: its loop picker and controls
+await ev(async () => { const P = await import('./js/project.js'); while (P.state.tracks[0].devices.length) P.removeDevice(0, 0); P.setInstrument(0, 35); P.selectTrack(0); P.emit('all'); });
+await page.waitForTimeout(700);
+const sl = await ev(() => ({ knobs: document.querySelectorAll('.card .lk-k').length, loop: [...document.querySelectorAll('.card button')].some((b) => /Loop/.test(b.textContent)) }));
+ok(sl.knobs >= 4 && sl.loop, `Slicer panel: loop picker and ${sl.knobs} knobs`);
+await page.screenshot({ path: path.join(out, 'slicer.png') });
 // an old FLM import (Reverb kept as a placeholder): the offer switches it to the FLM module
 const up = await ev(async () => {
   const P = await import('./js/project.js'), PM = await import('./js/projects.js'), { FLMFX } = await import('./js/flmfx.js');

@@ -110,6 +110,21 @@ ok(dryR > 0.01, `the test signal plays (${dryR.toFixed(3)} rms)`);
   ok(a.every((x, k) => Math.abs(x / want[k] - 1) < 0.03), `Arpeggiator Up 1/8 over A-C#-E: ${a.map((x) => x.toFixed(1)).join(' / ')} Hz in turn (${want.map((x) => x.toFixed(1)).join(' / ')})`);
   const none = await play('insertDevice 0 0 151\ntrackNoteFx 0 [0] 8', [[0, 2, 45, 0.6]]);
   ok(Math.abs(zc(none, SR * 0.1, SR * 0.9) / hz(45) - 1) < 0.02, 'no note effect: the notes play as they are'); }
+// FL Studio Mobile Slicer (instrument 35, C++ only; slices and audio checked against Honeydew's Rust code when ported): a loop of four
+// tones cut at their attacks; key 48 + k plays slice k
+{ const seg = [220, 330, 440, 550], len = Math.round(SR * 0.5), loop = new Float32Array(len * 4);
+  seg.forEach((hz, k) => { for (let i = 0; i < len; i++) loop[k * len + i] = 0.7 * Math.exp(-i / (SR * 0.15)) * Math.sin(2 * Math.PI * hz * i / SR); });
+  const play = async (key, extra = []) => {
+    const w = await loadWasmEngine(SR); w.setBlob(loop);
+    w.cmd(`masterLimit 0\ntempo 120\ntrackVol 0 1\nsample 0 @0:${loop.length}\ntrackInst 0 35\ninstParam 0 100 0\n${extra.join('\n')}\ntrackNotes 0 [5 0 960 ${key} 0.8 0] 1\nsettle\nplay\n`);
+    const n = Math.round(0.45 * SR), L = new Float32Array(n), R = new Float32Array(n); w.render(L, R, n); return L; };
+  const zc = (x, a, b) => { let n = 0, f = -1, l = -1; for (let i = Math.round(a) + 1; i < Math.round(b); i++) if (x[i - 1] < 0 && x[i] >= 0) { const t = i - 1 + x[i - 1] / (x[i - 1] - x[i]); if (f < 0) f = t; else n++; l = t; } return n > 0 ? n * SR / (l - f) : 0; };
+  const got = []; for (let k = 0; k < 4; k++) got.push(zc(await play(48 + k), SR * 0.02, SR * 0.3));
+  ok(got.every((x, k) => Math.abs(x / seg[k] - 1) < 0.01), `Slicer: keys 48..51 play the loop's four slices (${got.map((x) => x.toFixed(0)).join(' / ')} Hz)`);
+  const up = zc(await play(49, ['instParam 0 1 0.75']), SR * 0.02, SR * 0.3);
+  ok(Math.abs(up / (330 * 2) - 1) < 0.01, `Slicer Pitch +12 (FLM law trunc(48 v - 24)): slice 2 plays ${up.toFixed(0)} Hz`);
+  const first = zc(await play(60, ['instParam 0 8 60']), SR * 0.02, SR * 0.3), past = rms(await play(52), 0, SR * 0.3);
+  ok(Math.abs(first / 220 - 1) < 0.01 && past < 1e-6, `Slicer First Key 60 plays slice 1 there (${first.toFixed(0)} Hz); a key past the last slice plays nothing`); }
 // JS fallback engine: no FLM modules, but their place in the chain is kept
 { const d = makeDevice(FLMFX_BASE + 32, SR), L = Float32Array.from([0.5, -0.25]), R = Float32Array.from([0.1, 0.2]);
   d.setParam(3, 0.9); d.process(L, R, 2); ok(L[0] === 0.5 && R[1] === Math.fround(0.2) && makeDevice(299, SR) === null, 'JS fallback: an FLM module is a pass-through placeholder (later devices keep their index)'); }

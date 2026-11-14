@@ -9,9 +9,9 @@ import { FLMFX } from './flmfx.js';
 import { flmText, menuItem } from './fxlaw.js';
 // Instrument + device definitions. Parameter ORDER must match the C++ side
 // (app/src/main/cpp/instruments.h and devices.h).
-export const INST = { FLM_DW: 30, FLM_GMS: 31, FLM_MINI: 32, FLM_SAW: 33, MINISYNTH: 1, SUPERSAW: 2, DRUM: 3, DIRECTWAVE: 4, GMS: 5, SOUNDFONT: 6, MOISTURE: 7, OSPHERE: 8, KEYSTONE: 9, SAMPLER: 10, WAVETABLE: 11, SIMPLER: 18, IMPULSE: 28, GRANULATOR: 29 };
+export const INST = { FLM_SLICER: 35, FLM_DW: 30, FLM_GMS: 31, FLM_MINI: 32, FLM_SAW: 33, MINISYNTH: 1, SUPERSAW: 2, DRUM: 3, DIRECTWAVE: 4, GMS: 5, SOUNDFONT: 6, MOISTURE: 7, OSPHERE: 8, KEYSTONE: 9, SAMPLER: 10, WAVETABLE: 11, SIMPLER: 18, IMPULSE: 28, GRANULATOR: 29 };
 // Instruments a synth/sampler track can switch between (drums have their own track type).
-export const INST_LIST = [30, 31, 32, 33, 34, 18, 17, 16, 15, 14, 13, 11, 10, 28, 29, 25, 26, 27, 19, 20, 21, 22, 23, 24, 6, 7, 8, 9, 12];   // FLM instruments first; the classic Mini Synth / SuperSaw / DirectWave / GMS are replaced by them
+export const INST_LIST = [30, 31, 32, 33, 34, 35, 18, 17, 16, 15, 14, 13, 11, 10, 28, 29, 25, 26, 27, 19, 20, 21, 22, 23, 24, 6, 7, 8, 9, 12];   // FLM instruments first; the classic Mini Synth / SuperSaw / DirectWave / GMS are replaced by them
 
 export const INSTRUMENTS = {
   1: { name: 'Mini Synth', params: [
@@ -943,6 +943,7 @@ export function fmtParam(p, v) {
     case 'deg': return Math.round(v) + '\u00B0';
     case 'flmlist': return (p.items || [])[p.br ? menuItem(p.br, v) : Math.round(v * ((p.items || []).length - 1))] ?? '';
     case 'flm': return flmText(p, v);
+    case 'slfirst': return v < 1 ? 'Auto (C3)' : noteName(Math.round(v));
     case 'pct1': return (v * 100).toFixed(1) + ' %';
     case 'pan': return Math.abs(v) < 0.01 ? 'C' : (v < 0 ? Math.round(-v * 50) + 'L' : Math.round(v * 50) + 'R');
   }
@@ -1072,7 +1073,13 @@ export function gmsToFlmKnobs(o) {
   { const G = { fmt: 'flm', law: { t: 'generic' } }, k = (n, d) => q(n, 0, 1, d, G);
     INSTRUMENTS[34] = { name: 'Transistor Bass', view: 'kit', flm: true, native: true, params: [onoff('Enable', 1), k('Waveform', 0), k('Cutoff', 1), k('Reso', 1), k('Env Mod', 0.1), k('Decay', 1), k('Accent', 0.1),
       onoff('Distortion', 0), k('Drive HP', 0), k('Drive', 0.3), k('Drive Vol', 0.5), k('PW', 0), k('LFO Speed', 0), k('LFO to PW', 0)] };
-    INSTRUMENTS[34].params[0].hidden = true; }
+    INSTRUMENTS[34].params[0].hidden = true;
+    // FL Studio Mobile Slicer (FLM module 33; C++ only: native/engine/hdslicer.cpp, Honeydew slicer.rs): the loop (zone 0) cut at its
+    // transients, slice k on key First + k. 0..6 FLM's values; 7 Sensitivity (FLM's SENS); 8 First key (0 = FLM's 48).
+    INSTRUMENTS[35] = { name: 'Slicer', view: 'kit', flm: true, native: true, slicer: true, params: [onoff('Enable', 1), q('Pitch', 0, 1, 0.5, { fmt: 'flm', law: { t: 'custom' }, lawKey: 'i35.1' }), q('(unused)', 0, 1, 0, { hidden: true }),
+      k('Attack', 0), k('Decay', 1), q('Sustain', 0, 1, 0, { step: 0.5, fmt: 'flmlist', items: ['Off', 'Hold', 'To End'], br: [[0.5, 1], [1, 2]] }), onoff('Mono', 0),
+      q('Sensitivity', 0, 1, 0.25, { fmt: 'flm', law: { t: 'gunit', u: ' %' } }), q('First Key', 0, 127, 0, { step: 1, fmt: 'slfirst' })] };
+    INSTRUMENTS[35].params[0].hidden = true; }
   // factory presets (by parameter name), after the sound-design examples of the FLM instrument guide
   const pre = (type, cat, name, vals) => { const ps = INSTRUMENTS[type].params, p = {}; for (const [n, v] of Object.entries(vals)) { const k = ps.findIndex((x) => x.n === n); if (k < 0) throw new Error('preset ' + name + ': ' + n); p[k] = v; } return { cat, name, p }; };
   PRESETS[30] = [pre(30, 'Dasar', 'Default', {}), pre(30, 'Dasar', 'Mono Bass', { Mono: 1, 'Slide Time': 0.06, Release: 0.12, Cutoff: 62, 'Vel Trk': 40 }),
