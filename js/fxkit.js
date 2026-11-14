@@ -7,7 +7,7 @@ import { C } from './theme.js';
 import { fmtParam, normOf, valOf, MOD_MAP, DEVICES, INSTRUMENTS, FX_GROUPS, IRACK_DEF } from './defs.js';
 import { buildSynth } from './devviz.js';
 import { menuItem } from './fxlaw.js';
-import { FLM_LAYOUT, flmName, flmShort } from './flmlayout.js';
+import { FLM_LAYOUT, flmName, flmShort, flmSwitch } from './flmlayout.js';
 import { FLM_GRAPH } from './flmviz.js';
 import { OP_ALGOS } from './engine/operator.js';
 import { POLI_TGT, POLI_GRID, POLI_MIDI } from './engine/poli.js';
@@ -1722,41 +1722,69 @@ const flmPanel = (k, only = null, short = null) => {
     notes.length ? h('div', { class: 'lk-row lk-flmnotes' }, ...notes) : null, h('div', { class: 'lk-row lk-flmk' }, ...knobs));
   return disp ? h('div', { class: 'lk-row lk-flm' }, h('div', { class: 'lk-col lk-flmd' }, disp), body) : body;
 };
-// Live-style card of an FLM module (js/flmlayout.js): its display left, then titled sections; in a section the menus / switches on top and
-// the knobs in a grid (two rows from four knobs on), Sync pairs show only the rate control that plays, note toggles as a one-octave keyboard.
+// Live-style card of an FLM module (js/flmlayout.js), built from equal cells on a two-row grid like Live's device columns: a knob fills a
+// cell (label, dial, value); menus and switches are half cells, two stacked in one; short menus (up to 4 short items) are Live's segmented
+// buttons. The display stands on the left at full height; Sync pairs show only the rate control that plays; note toggles form a piano
+// (two rows high). A section title appears only where the same control name repeats in another section (Band 1 / Band 2, Low / Mid / High).
 const BLACK = [1, 3, 6, 8, 10];
 const flmLayout = (k, L) => {
   const ps = k.def.params, when = [];
   const esc = (t) => t.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
   const tidy = (j, title = '') => {   // the name without what its section title already says ("LFO Rate" in LFO -> "Rate"), first letter capital
     if (L.names && L.names[j]) return L.names[j];
-    let n = flmName(ps[j].n); if (title) n = n.replace(new RegExp('^' + esc(title) + ' ', 'i'), ''); if (L.strip) n = n.replace(L.strip, ''); n = n.trim() || flmName(ps[j].n);
+    let n = flmName(ps[j].n); if (title) n = n.replace(new RegExp('^' + esc(title) + ' ', 'i'), ''); if (L.strip) n = n.replace(L.strip, ''); n = n.replace(/ ?\((sync|Sync)\)$/, '').trim() || flmName(ps[j].n);
     return n[0].toUpperCase() + n.slice(1);
   };
-  const ctl = (j, title = '') => {
-    const p = ps[j]; let el; const nm = tidy(j, title);
-    if (p.fmt === 'flmlist') { const n = p.items.length; el = k.TL(nm, k.reg(lvSel(() => p.items.map((l, q) => ({ label: l, value: q })), () => (p.br ? menuItem(p.br, k.get(j)) : Math.round(k.get(j) * (n - 1))), (q) => k.set(j, n > 1 ? q / (n - 1) : 0), { w: 84, cls: 'lk-s' }), j)); el.dataset.kind = 'm'; }
-    else if (p.fmt === 'onoff') { el = k.T(j, nm, { w: Math.max(40, Math.min(110, 10 + nm.length * 7)) }); el.dataset.kind = 't'; }
-    else { el = k.K(j, { n: flmShort(nm), p: { lawCtx: () => ({ p: k.d.params }) } }); el.title = nm; el.dataset.kind = 'k'; }
-    if (L.when && L.when[j]) when.push([el, L.when[j]]);
-    return el;
+  const vis = (j) => ps[j] && !ps[j].hidden;
+  const watch = (el, j) => { if (L.when && L.when[j]) when.push([el, L.when[j]]); return el; };
+  const knob = (j, title) => { const nm = tidy(j, title), el = k.K(j, { n: flmShort(nm), p: { lawCtx: () => ({ p: k.d.params }) } }); el.title = nm; return watch(h('div', { class: 'fc fk' }, el), j); };
+  const small = (j, title) => {   // a half cell: a switch, a segmented choice or a labelled menu
+    const p = ps[j], nm = tidy(j, title);
+    if (p.fmt === 'onoff') { const cap = flmSwitch(nm), b = k.T(j, cap, { cls: 'fsw' + (cap.length > 6 ? ' sm' : '') }); b.title = nm; return watch(h('div', { class: 'fh' }, b), j); }
+    const n = p.items.length, cur = () => (p.br ? menuItem(p.br, k.get(j)) : Math.round(k.get(j) * (n - 1))), put = (q) => k.set(j, n > 1 ? q / (n - 1) : 0);
+    const seg = n >= 2 && n <= 4 && p.items.every((x) => String(x).length <= 6);   // Live's stacked choice buttons (Compressor Peak / RMS / Expand)
+    if (seg) { const ctl = k.reg(lvChoice(p.items.map((l) => ({ label: l, title: nm + ': ' + l })), cur, put, { cls: 'fseg n' + n }), j); ctl.update && ctl.update(); ctl.title = nm; return watch(h('div', { class: 'fc fsg' }, ctl), j); }
+    const ctl = k.reg(lvSel(() => p.items.map((l, q) => ({ label: l, value: q })), cur, put, { cls: 'fsel' }), j);
+    if (ctl.update) ctl.update();
+    return watch(h('div', { class: 'fh' }, h('span', { class: 'fl' }, flmShort(nm)), ctl), j);
   };
-  const section = ([title, idx]) => {
-    const els = idx.filter((j) => ps[j] && !ps[j].hidden).map((j) => ctl(j, title)), top = els.filter((e) => e.dataset.kind !== 'k'), kn = els.filter((e) => e.dataset.kind === 'k');
-    const grid = kn.length ? h('div', { class: 'lk-fg', style: `grid-template-rows:repeat(${kn.length >= 4 ? 2 : 1},auto)` }, ...kn) : null;
-    return h('div', { class: 'lk-fs' }, h('div', { class: 'lk-fsh' }, title), top.length ? h('div', { class: 'lk-fst' }, ...top) : null, grid);
+  const cells = (idx, title) => {   // knobs = cells; consecutive half cells pair up
+    const out = []; let half = null;
+    for (const j of idx.filter(vis)) {
+      if (ps[j].fmt === 'onoff' || ps[j].fmt === 'flmlist') { const e = small(j, title); if (e.classList.contains('fc')) { half = null; out.push(e); continue; }   // a segmented choice is a whole cell
+        if (half) { half.append(e); half = null; } else { half = h('div', { class: 'fc fp' }, e); out.push(half); } }
+      else { half = null; out.push(knob(j, title)); }
+    }
+    return out;
   };
-  const keys = L.keys ? h('div', { class: 'lk-fs' }, h('div', { class: 'lk-fsh' }, L.keys[0]), h('div', { class: 'lk-fkeys' }, ...L.keys[1].map((j, q) =>
-    k.T(j, ps[j].n.replace(new RegExp('^' + L.keys[2], 'i'), '').replace(/^(.)b$/, (_, a) => 'CDEFGAB'['CDEFGAB'.indexOf(a) - 1] + '#'), { w: 26, cls: 'lk-key' + (BLACK.includes(q) ? ' blk' : '') }))), L.after ? h('div', { class: 'lk-fst' }, ...L.after.map(ctl)) : null) : null;
+  const piano = (idx, title) => {   // a one-octave keyboard: white keys along the bottom, black keys above the gaps
+    const box = h('div', { class: 'fc fkeys' }), wi = [0, 2, 4, 5, 7, 9, 11];
+    idx.forEach((j, q) => { const blk = BLACK.includes(q), x = blk ? wi.indexOf(q - 1) + 1 : wi.indexOf(q);
+      const b = k.T(j, blk ? '' : ps[j].n.replace(new RegExp('^' + L.keys[2], 'i'), ''), { cls: 'fkey' + (blk ? ' blk' : '') }); b.title = ps[j].n.replace(new RegExp('^' + L.keys[2], 'i'), '');
+      b.style.setProperty('--x', x); box.append(b); });
+    return h('div', { class: 'fsec' }, h('div', { class: 'fgrid' }, box, ...(L.after ? cells(L.after, '') : [])));
+  };
+  // which sections need their title: a control name of theirs also appears in another section
+  const named = L.s.map(([t, idx]) => new Set(idx.filter(vis).map((j) => tidy(j, t))));
+  const needTitle = (i) => named.some((o, q) => q !== i && [...named[i]].some((n) => o.has(n)));
+  const section = ([title, idx], i) => h('div', { class: 'fsec' }, needTitle(i) ? h('div', { class: 'fst' }, title) : null, h('div', { class: 'fgrid' }, ...cells(idx, title)));
   const tap = L.tap ? { onDown: (x, y, e) => {   // flmviz.js keys(): white keys across, black keys on the upper 60 %
     const c = e.currentTarget, w = c._w, hh = c._h, kw = (w - 8) / 7, top = 16, h2 = hh - top - 4, j = Math.floor((x - 4) / kw);
     let note = [0, 2, 4, 5, 7, 9, 11][Math.max(0, Math.min(6, j))];
     if (y < top + h2 * 0.6) for (const [bk, bj] of [[1, 0], [3, 1], [6, 3], [8, 4], [10, 5]]) { const cx = 4 + (bj + 1) * kw; if (Math.abs(x - cx) <= kw * 0.3) note = bk; }
     const pi = L.tap(note); k.set(pi, k.get(pi) > 0.5 ? 0 : 1); return false; } } : null;
-  const gr = FLM_GRAPH[k.def.flm], disp = gr ? h('div', { class: 'lk-fdisp' + (tap ? ' tap' : '') }, k.DF(190, 96, (g, w, hh) => gr(g, w, hh, (j) => k.get(j)), tap)) : null;
-  const sync = () => { for (const [el, [t, on]] of when) { const show = (k.get(t) > 0.5) === on; if (el._shown !== show) { el._shown = show; el.style.display = show ? '' : 'none'; } } };
-  sync(); if (when.length) k.every(120, sync);
-  return h('div', { class: 'lk-row lk-fl' }, disp, ...(keys ? [keys] : []), ...L.s.map(section));
+  const gr = FLM_GRAPH[k.def.flm], disp = gr ? h('div', { class: 'fdisp' + (tap ? ' tap' : '') }, k.DF(140, 96, (g, w, hh) => gr(g, w, hh, (j) => k.get(j)), tap)) : null;
+  const sync = () => {
+    for (const [el, [t, on]] of when) { const show = (k.get(t) > 0.5) === on; if (el._shown !== show) { el._shown = show; el.style.display = show ? '' : 'none'; } }
+    for (const [el] of when) { const cell = el.parentElement; if (cell && cell.classList.contains('fp')) cell.style.display = [...cell.children].every((c) => c.style.display === 'none') ? 'none' : ''; }   // a cell whose halves are both hidden leaves no gap
+  };
+  const root = h('div', { class: 'lk-row flc' + (disp ? ' hasd' : '') }, disp, L.keys ? piano(L.keys[1], L.keys[0]) : null, ...L.s.map(section));
+  // rows of cells: as many as the card's height holds (2..4), the cells keep their size - Live's columns of stacked controls, no stretched gaps
+  const fit = () => { const hh = root.clientHeight, cs = getComputedStyle(root), cell = parseFloat(cs.getPropertyValue('--fc-h')) || 64, gap = 2, tt = root.querySelector('.fst') ? 16 : 0;
+    const rows = Math.max(2, Math.min(4, Math.floor((hh - tt + gap) / (cell + gap)))); if (rows !== root._rows) { root._rows = rows; root.style.setProperty('--rows', rows); } };
+  new ResizeObserver(fit).observe(root);
+  sync(); if (when.length) k.every(120, sync);   // after the sections exist: their controls are in `when`
+  return root;
 };
 const flmCard = (k) => { const L = FLM_LAYOUT[k.def.flm != null && !k.def.native ? k.def.flm : 'i' + k.d.type]; return L ? flmLayout(k, L) : flmPanel(k); };
 for (const t of Object.keys(DEVICES)) if (DEVICES[t].view === 'flmfx') V[t] = flmCard;
@@ -1774,7 +1802,7 @@ const OSC3_PAGES = (() => {
 const osc3Tab = new Map();
 VI[36] = (k) => {
   const key = k.ctx.d && k.ctx.d.id, page = h('div', { class: 'lk-row lk-o3p' });
-  const short = (n) => n.replace(/^Osc 3 = amplitude modulation$/, 'AM').replace(/^Osc [123] /, '').replace(/^Stereo Phase Randomness$/, 'Phase Rand').replace(/^(Pan|Volume|ModX|ModY|Pitch) (LFO|Envelope) /, '').replace(/^Delay /, '').replace(/^Arpeggio /, '').replace(/^Filter /, '').replace(/^Key Tracking /, 'Key ').replace(/^Velocity Tracking /, 'Vel ').replace(/^(Attack|Decay|Release) Tension$/, (_, a) => a[0] + ' Curve').replace(/^Volume Multiplier$/, 'Vol Mult').replace(/^Portamento /, 'Porta ').replace(/^Maximum Polyphony$/, 'Voices').replace(/^Monophonic Mode$/, 'Mono');
+  const short = (n) => n.replace(/^Osc 3 = amplitude modulation$/, 'AM').replace(/^Osc [123] /, '').replace(/^Stereo Phase Randomness$/, 'Ph Rand').replace(/^(Coarse|Fine) Pitch$/, '$1').replace(/^(Pan|Volume|ModX|ModY|Pitch) (LFO|Envelope) /, '').replace(/^Delay /, '').replace(/^Arpeggio /, '').replace(/^Filter /, '').replace(/^Key Tracking /, 'Key ').replace(/^Velocity Tracking /, 'Vel ').replace(/^(Attack|Decay|Release) Tension$/, (_, a) => a[0] + ' Curve').replace(/^Volume Multiplier$/, 'Vol Mult').replace(/^Portamento /, 'Porta ').replace(/^Maximum Polyphony$/, 'Voices').replace(/^Monophonic Mode$/, 'Mono');
   const names = {}; for (const [, groups] of OSC3_PAGES) for (const [, idx] of groups) for (const j of idx) names[j] = short(k.def.params[j].n);
   const show = (j) => { osc3Tab.set(key, j); page.replaceChildren(flmLayout(k, { s: OSC3_PAGES[j][1], names })); };
   const j0 = osc3Tab.get(key) || 0;

@@ -1590,21 +1590,46 @@ html.reduce-motion .lk-tabpg, html.reduce-motion .flm-pg > *, html.reduce-motion
 @media (prefers-reduced-motion: reduce) { .lk-tabpg, .flm-pg > *, .lk-page > * { animation: none; } }
 /* switches and choice buttons: the lit state fades instead of snapping */
 .lk .lv-btn, .flm-card .lv-btn { transition: background-color .16s ease, color .16s ease, border-color .16s ease, transform .14s cubic-bezier(.3, 1.6, .5, 1); }
-/* FLM module cards (fxkit.js flmLayout, js/flmlayout.js): display left, titled sections, knob grid of two rows - Live's device layout */
-.lk-fl { align-items: stretch; gap: 0; flex-wrap: nowrap; }
-.lk-fdisp { display: flex; flex: 0 0 auto; width: 190px; padding-right: 8px; margin-right: 2px; }
-.lk-fdisp > .lk-dfill { flex: 1 1 auto; }
-.lk-fs { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; align-self: stretch; padding: 0 8px; border-left: 1px solid var(--sep, rgba(0,0,0,.2)); min-width: 0; }
-.lk-fdisp + .lk-fs, .lk-fl > .lk-fs:first-child { border-left: 0; padding-left: 0; }
-.lk-fsh { font-size: 10px; line-height: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; opacity: .62; white-space: nowrap; }
-.lk-fst { display: flex; flex-wrap: wrap; gap: 3px 5px; align-items: flex-end; max-width: 260px; }
-.lk-fg { display: grid; grid-auto-flow: column; gap: 2px 2px; align-items: center; justify-items: center; flex: 1 1 auto; align-content: space-evenly; }
-.lk-fkeys { display: flex; gap: 1px; padding: 2px 0; }
-.lk .lk-fkeys .lk-key { width: 27px; min-width: 27px; height: 40px; padding: 0 0 3px; font-size: 10px; display: inline-flex; align-items: flex-end; justify-content: center; }
-.lk .lk-fkeys .lk-key.blk { height: 30px; align-self: flex-start; background: #3a3a3e; color: #ddd; }
-.lk .lk-fkeys .lk-key.blk.on { background: var(--accent, #f5a623); color: #111; }
-.lk .lk-fg > .knob.lk-k { width: 70px; min-width: 70px; }
-.lk .lk-fg > .knob.lk-k svg { width: 40px; height: 40px; }
-.lk .lk-fg > .knob.lk-k .k-n { max-width: 70px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.lk .lk-fg > .knob.lk-k .k-v { white-space: nowrap; }
-.lk-fst .lk-tl .lk-lb { font-size: 11px; }
+/* FLM module cards (fxkit.js flmLayout, js/flmlayout.js) - Live's device anatomy: the dark display takes the card's free width at full height,
+   the controls stand in columns of equal cells (rows = what the height holds, fxkit fit()); knob = cell, menu / switch = half cell (two per cell),
+   short choices = a stacked button column in one cell; one label style everywhere; hairlines between groups; tokens + theme colours only. */
+.flc { --fc-w: 70px; --fc-h: 76px; --key-w: #e2e2e6; --key-b: #1e1e21; --rows: 2; align-items: stretch; gap: 0; flex-wrap: nowrap; padding: var(--sp-1) 0; min-height: 0; }
+.flc .fdisp { display: flex; flex: 1 1 auto; min-width: 140px; max-width: 360px; margin-right: var(--sp-4); }
+.flc .fdisp > .lk-dfill { flex: 1 1 auto; min-height: 0; min-width: 0 !important; }
+.flc .fdisp.tap .lk-dfc { cursor: pointer; }
+.flc .fsec { display: flex; flex-direction: column; justify-content: center; align-self: stretch; flex: 0 0 auto; padding: 0 var(--sp-3); border-left: 1px solid var(--lv-edge); }
+.flc .fdisp + .fsec, .flc > .fsec:first-child { border-left: 0; padding-left: 0; }
+.flc > .fsec:last-child { padding-right: 0; }
+.flc .fst { height: 12px; margin-bottom: var(--sp-2); font: var(--fw-sb) var(--fs-1)/12px var(--font); color: var(--lv-dim); text-align: center; white-space: nowrap; }
+.flc .fgrid { display: grid; grid-template-rows: repeat(var(--rows), var(--fc-h)); grid-auto-flow: column; grid-auto-columns: var(--fc-w); gap: 2px; align-content: center; align-items: center; justify-items: stretch; }
+.flc .fc { width: var(--fc-w); height: var(--fc-h); display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.flc .fk > .knob.lk-k { width: var(--fc-w); min-width: var(--fc-w); }
+.flc .fk > .knob.lk-k svg { width: 36px; height: 36px; }
+.flc .fk > .knob.lk-k .k-n { max-width: var(--fc-w); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.flc .fk > .knob.lk-k .k-v { white-space: nowrap; }
+.flc .fp { gap: 2px; justify-content: center; }
+.flc .fh { width: 100%; display: flex; flex-direction: column; align-items: stretch; gap: 1px; }
+.flc .fh .fl { font: var(--fw-r) var(--fs-2)/13px var(--font); color: var(--lv-ink); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.flc .fh .lv-btn.fsw, .flc .fh .fsel { width: 100%; min-width: 0 !important; max-width: none; height: var(--ctl-xs); padding: 0 var(--sp-1); font-size: var(--fs-2); overflow: hidden; text-overflow: ellipsis; }
+.flc .fsg .fseg { display: flex; flex-direction: column; width: 100%; }
+.flc .fsg .fseg .lv-btn { width: 100%; min-width: 0 !important; height: calc((var(--fc-h) - 4px) / 3) !important; padding: 0; font-size: var(--fs-2); line-height: 1; }
+.flc .fsg .fseg.n2 .lv-btn { height: calc((var(--fc-h) - 4px) / 2.4) !important; }
+.flc .fsg .fseg.n4 { display: grid; grid-template-columns: 1fr 1fr; } .flc .fsg .fseg.n4 .lv-btn { font-size: var(--fs-1); } .flc .fsg .fseg.n4 .lv-btn { height: calc((var(--fc-h) - 4px) / 2) !important; }
+.flc .fsg .fseg .lv-btn + .lv-btn { margin-top: -1px; } .flc .fsg .fseg.n4 .lv-btn:nth-child(2n) { margin-left: -1px; } .flc .fsg .fseg.n4 .lv-btn:nth-child(2) { margin-top: 0; }
+.flc .fkeys { width: calc(7 * 22px + 1px) !important; grid-row: span var(--rows); position: relative; height: calc(var(--rows) * var(--fc-h) + (var(--rows) - 1) * 2px); }
+.flc .fgrid:has(> .fkeys) { grid-auto-columns: auto; }
+.flc .fkeys .lv-btn.fkey { position: absolute; left: calc(var(--x) * 22px); bottom: 0; width: 23px; min-width: 0; height: 100% !important; margin: 0; padding: 0 0 var(--sp-2); display: flex; align-items: flex-end; justify-content: center;
+  background: var(--key-w) !important; color: var(--key-b) !important; border: 1px solid var(--lv-edge); border-radius: 0 0 var(--r-1) var(--r-1); font-size: var(--fs-1); }
+.flc .fkeys .lv-btn.fkey.blk { left: calc(var(--x) * 22px - 8px); top: 0; bottom: auto; width: 16px; height: 58% !important; z-index: 1; background: var(--key-b) !important; padding: 0; }
+.flc .fkeys .lv-btn.fkey.on { background: var(--lv-or) !important; color: var(--accent-ink) !important; }
+.flc .fkeys .lv-btn.fkey.blk.on { background: var(--lv-or) !important; }
+/* FLM cards built by flmLayout (Transistor Bass, Slicer, 3x Osc and the effect modules): as wide as their columns, the grid fills the height */
+#dbody .dev-scroll > .card.flm-card.flm-t34, #dbody .dev-scroll > .card.flm-card.flm-t35, #dbody .dev-scroll > .card.flm-card.flm-t36 { width: max-content; min-width: 0; }
+.fw-fit > .card.flm-card.flm-t34, .fw-fit > .card.flm-card.flm-t35, .fw-fit > .card.flm-card.flm-t36 { width: max-content; }
+.card > .flc, .card > .lk > .flc, .card .lk-o3p > .flc { flex: 1 1 auto; margin: 0; }
+#dbody .dev-scroll > .card:has(> .flc.hasd) { min-width: 420px; }
+.card > .lk.lk-col:has(> .lk-o3p) { flex: 1 1 auto; } .card .lk-o3p { flex: 1 1 auto; align-items: stretch; }
+.card > .lk.lk-col:has(> .flc) { flex: 1 1 auto; } .card > .lk.lk-col > .flc { flex: 1 1 auto; }
+.flc .fsel { display: flex; align-items: center; } .flc .fsel .v { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; text-align: left; } .flc .fsel .tri { flex: 0 0 auto; }
+.flc .fh .lv-btn.fsw { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: center; line-height: calc(var(--ctl-xs) - 2px); }
+.flc .fh .lv-btn.fsw.sm { font-size: var(--fs-1); }

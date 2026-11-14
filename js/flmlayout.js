@@ -8,7 +8,7 @@
 //   tap: (note 0..11) => param - the display is a keyboard (flmviz keys) and a tap toggles that note; tapKeys: those params (no buttons)
 //   strip: a regexp of name parts the section titles already say ("Low ", " (Arp 1)")
 const R = (a, b) => Array.from({ length: b - a + 1 }, (_, q) => a + q);
-const band = (n) => ['Band ' + n, [4 * n, 4 * n - 3, 4 * n - 2, 4 * n - 1, 16 + n]];
+const band = (n) => ['Band ' + n, [4 * n, 16 + n, 4 * n - 3, 4 * n - 2, 4 * n - 1]];   // Kind + Channel stacked in one cell, then Gain, Freq, Width
 const arp = (n, o) => ['Arp ' + n, [o + 19, o + 10, o + 11, o + 12, o + 13, o + 14, o + 17, o + 18, o + 9, o + 15, 30 + n]];
 const mb = (name, o, w) => [name, [o + 6, o, o + 1, o + 2, o + 3, o + 4, o + 5, w]];
 
@@ -35,24 +35,24 @@ export const FLM_LAYOUT = {
   29: { s: [['Shape', [7, 4, 5]], ['Duck', [1, 2, 3, 6]]] },
   30: { s: [['Bands', R(1, 8)], ['Tuning', [9, 10]]] },
   32: { s: [['Reverb', [1, 7, 8, 9, 6, 5]], ['Tone', [2, 10, 11]], ['Modulation', [12, 13]], ['Output', [3, 4, 14, 15]]] },
-  34: { s: [['L/R', [4, 1, 2]], ['M/S', [6, 5, 3]], ['Mode', [7]]] },
+  34: { names: { 7: 'Stereo' }, s: [['L/R', [4, 1, 2]], ['M/S', [6, 5, 3]], ['Mode', [7]]] },
   35: { s: [['Space', [3, 4, 5, 6, 15]], ['Pre-Delay', [12, 11, 10]], ['Tone', [1, 2, 14, 17]], ['Modulation', [13, 16]], ['Output', [7, 8, 9, 18]]] },
-  36: { s: [['Bands', [4, 30, 2, 3, 1, 5]], mb('Low', 6, 27), mb('Mid', 13, 28), mb('High', 20, 29)], names: { 2: 'Low/Mid', 3: 'Mid/High', 1: 'Output', 30: 'Width', 12: 'Mode', 19: 'Mode', 26: 'Mode' } },
-  40: { s: [['Comb', [1, 7, 2, 10, 11, 3]], ['Shape', [5, 8, 9, 6]], ['Output', [4]]] },
-  41: { names: { 18: 'Rate', 7: 'Spread' }, s: [['Shape', [1, 2, 3, 4, 5]], ['Tone', R(9, 14)], ['LFO', [15, 16, 17, 18, 19, 20]], ['Output', [6, 7, 8]]], when: { 17: [16, true], 18: [16, false] } },
-  42: { s: [['Transport', [5, 7]], ['Stop', [1, 3]], ['Start', [2, 4]], ['Warp', [6]]], when: { 1: [7, false], 3: [7, true], 2: [7, false], 4: [7, true] } },
+  36: { s: [['Bands', [4, 30, 2, 3, 1, 5]], mb('Low', 6, 27), mb('Mid', 13, 28), mb('High', 20, 29)], names: { 2: 'Lo/Mid', 3: 'Mid/Hi', 1: 'Output', 30: 'Width', 12: 'Mode', 19: 'Mode', 26: 'Mode' } },
+  40: { names: { 10: 'Octave', 11: 'Note' }, s: [['Comb', [1, 7, 2, 10, 11, 3]], ['Shape', [5, 8, 9, 6]], ['Output', [4]]] },
+  41: { names: { 18: 'Rate', 7: 'Spread', 6: 'Output' }, s: [['Shape', [1, 2, 3, 4, 5]], ['Tone', R(9, 14)], ['LFO', [15, 16, 17, 18, 19, 20]], ['Output', [6, 7, 8]]], when: { 17: [16, true], 18: [16, false] } },
+  42: { names: { 1: 'Stop', 3: 'Stop', 2: 'Start', 4: 'Start' }, s: [['Transport', [5, 7]], ['Time', [1, 3, 2, 4]], ['Warp', [6]]], when: { 1: [7, false], 3: [7, true], 2: [7, false], 4: [7, true] } },
   43: { s: [['Sync', [7]], ['Wow', [1, 2, 3]], ['Flutter', [4, 5, 6]], ['Random', [8, 9, 10]]],
     when: { 1: [7, false], 2: [7, true], 4: [7, false], 5: [7, true], 8: [7, false], 9: [7, true] }, strip: /^(Wow|Flutter|Random) / },
   44: { names: { 2: 'Low Byp', 3: 'Mono Lo' }, s: [['Spread', [1, 4, 2, 3]]] },
-  45: { s: [['Pitch', [21, 13, 19, 20, 23, 24]], ['Formant', [16, 17, 18]], ['Output', [22, 25, 26]]], tap: (k) => 1 + k, tapKeys: R(1, 12) },
+  45: { names: { 18: 'Ref Ch' }, s: [['Pitch', [21, 13, 19, 20, 23, 24]], ['Formant', [16, 17, 18]], ['Output', [22, 25, 26]]], tap: (k) => 1 + k, tapKeys: R(1, 12) },
   46: { names: { 1: 'Rate', 2: 'Rate', 5: 'Phase', 6: 'Stereo', 3: 'Max', 4: 'Min' }, s: [['Rate', [7, 1, 2, 5, 6]], ['Depth', [3, 4]], ['Shape', [8, 9, 10, 11]]], when: { 1: [7, false], 2: [7, true] } },
   47: { names: { 1: 'Repeats', 2: 'Delay', 3: 'Delay', 5: 'Pitch', 6: 'Velocity', 12: 'Pan', 9: 'Time', 10: 'Length', 11: 'Delay', 13: 'Pan' }, s: [['Echo', [4, 2, 3, 1, 15]], ['Offsets', [5, 6, 12, 14]], ['Drift', [9, 10, 11, 13]], ['Start', [7, 8]]], when: { 2: [4, false], 3: [4, true] } },
   48: { s: [['Transpose', [1, 2]]] },
   49: { s: [['Random', R(1, 6)]] },
   50: { s: [['Scale', [1, 2, 3]]], keys: ['Notes', R(4, 15), 'Note '] },
-  51: { s: [['Rate', [3, 1, 2, 4, 5, 6]], ['Velocity', [7, 8]], arp(1, 0), arp(2, 11)], when: { 1: [3, true], 2: [3, false] }, strip: / \(Arp \d\)$/ },
+  51: { names: { 7: 'Vel 1', 8: 'Vel 2', 12: 'Oct Shift', 23: 'Oct Shift', 13: 'Start', 24: 'Start' }, s: [['Rate', [3, 1, 2, 4, 5, 6]], ['Velocity', [7, 8]], arp(1, 0), arp(2, 11)], when: { 1: [3, true], 2: [3, false] }, strip: / \(Arp \d\)$/ },
   // instruments (defs.js INSTRUMENTS[34] / [35])
-  i34: { names: { 11: 'PW', 12: 'LFO Rate', 13: 'LFO > PW' }, s: [['Oscillator', [1, 11, 12, 13]], ['Filter', [2, 3, 4, 5, 6]], ['Distortion', [7, 8, 9, 10]]] },
+  i34: { names: { 1: 'Wave', 11: 'PW', 12: 'LFO Rate', 13: 'LFO>PW' }, s: [['Oscillator', [1, 11, 12, 13]], ['Filter', [2, 3, 4, 5, 6]], ['Distortion', [7, 8, 9, 10]]] },
   i35: { s: [['Slices', [7, 8]], ['Voice', [1, 3, 4, 5, 6]]] },
 };
 
@@ -67,4 +67,8 @@ export function flmName(n) {
 const SHORT = [[/\bFrequency\b/, 'Freq'], [/\bBandwidth\b/, 'Width'], [/\bResonance\b/, 'Reso'], [/\bThreshold\b/, 'Thresh'], [/\bOutput\b/, 'Out'], [/\bInput\b/i, 'In'], [/\bAmount\b/, 'Amt'],
   [/\bRelease\b/, 'Rel'], [/\bAttack\b/, 'Att'], [/\bFeedback\b/, 'Fdbk'], [/\bDiffusion\b/, 'Diffuse'], [/\bSeparation\b/, 'Sep'], [/\bModulation\b/, 'Mod'], [/ Time\b/, ''], [/\bLevel\b/, 'Lvl'],
   [/^Early Refl\.$/, 'Early'], [/^Room Size$/, 'Size'], [/^Bass Mult\.$/, 'Bass'], [/^High Damp$/, 'Damp'], [/\bSpeed\b/, 'Spd'], [/\bSemitone\b/, 'Semi'], [/\bRepetitions\b/, 'Repeats'], [/ Ratio$/, ''], [/^Humanization$/, 'Human'], [/\bSensitivity\b/, 'Sens'], [/\bSmoothing\b/, 'Smooth'], [/\bStability\b/, 'Stable'], [/\bAsymmetry\b/, 'Asym']];
+const SWITCH = [[/^Tempo Sync$/, 'Sync'], [/^Global Phase$/, 'Global'], [/^Process Sibilants$/, 'Sibil.'], [/^Bypass snapping$/i, 'NoSnap'], [/^Formant Mode$/, 'Formant'],
+  [/^Toggle Play$/, 'Play'], [/^Free Run$/, 'Free'], [/^Auto[- ]?gain$/i, 'Auto'], [/^Side Input$/i, 'Side In'], [/^Ping-Pong$/i, 'P-Pong'], [/^Snapping$/, 'Snap'], [/^Sibilants$|^Process Sibilants$/, 'Sibilant'], [/^Byp Snap$/, 'NoSnap']];
+// a switch's caption: at most ~8 characters fit its button (the text never leaves the border)
+export function flmSwitch(n) { for (const [re, w] of SWITCH) if (re.test(n)) return w; return flmShort(n); }
 export function flmShort(n) { if (n.length <= 7) return n; for (const [re, w] of SHORT) { n = n.replace(re, w).trim(); if (n.length <= 7) break; } return n; }
