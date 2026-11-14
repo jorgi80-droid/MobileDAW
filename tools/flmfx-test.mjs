@@ -46,6 +46,11 @@ const dryR = rms(dry.L, 0, dry.L.length);
 { const a = await render([`insertDevice 0 0 ${FLMFX_BASE + 6}`, 'devParam 0 0 0 0']);
   let d = 0; for (let i = 0; i < a.L.length; i++) d = Math.max(d, Math.abs(a.L[i] - dry.L[i])); ok(d === 0, `module On = 0 passes the dry signal (max diff ${d})`); }
 ok(dryR > 0.01, `the test signal plays (${dryR.toFixed(3)} rms)`);
+// Comb Filter "MIDI Note" mode tunes to the notes of its own track (without notes it would sit at 1 Hz, as Manual with Pitch 0 and Snap off)
+{ const C = FLMFX_BASE + 40, base = [`insertDevice 0 0 ${C}`, 'devParam 0 0 3 0.9', 'devParam 0 0 7 0'];
+  const midi = await render([...base, 'devParam 0 0 1 0.5']), man = await render([...base, 'devParam 0 0 1 0', 'devParam 0 0 2 0']);
+  let d = 0; for (let i = 0; i < midi.L.length; i++) d = Math.max(d, Math.abs(midi.L[i] - man.L[i]));
+  ok(d > 0.01, `Comb Filter MIDI Note mode follows the track's notes (differs from the untuned comb by ${d.toFixed(3)})`); }
 // JS fallback engine: no FLM modules, but their place in the chain is kept
 { const d = makeDevice(FLMFX_BASE + 32, SR), L = Float32Array.from([0.5, -0.25]), R = Float32Array.from([0.1, 0.2]);
   d.setParam(3, 0.9); d.process(L, R, 2); ok(L[0] === 0.5 && R[1] === Math.fround(0.2) && makeDevice(299, SR) === null, 'JS fallback: an FLM module is a pass-through placeholder (later devices keep their index)'); }
@@ -67,5 +72,20 @@ ok(FLM_TYPES[25].name === 'Pitcher' && FLM_TYPES[41].name === 'Waveshaper' && FL
   { id: 'a2', name: 'B • x', flmAuto: { param: 3, label: 'Mix' }, target: { strip: 't1', devId: 'd1' }, clips: [{ pts: [{ t: 0, v: 0.5 }] }] }] };
   resolveFlmAutomation(json, { skipped: [] }); const n = FLMFX[32].p.length, a1 = json.tracks.find((t) => t.id === 'a1'), a2 = json.tracks.find((t) => t.id === 'a2');
   ok(a1 && a1.target.param === n + 1 && a1.clips[0].pts[0].v === 0.25 && a2 && a2.target.param === 3 && a2.clips[0].pts[0].v === 0.5, 'FLM automation: rack Mix (0x7FC1) -> the module Mix, param 3 -> the module param 3, values unchanged'); }
+// value texts: FLM's own laws (js/fxlaw.js) against texts printed by Honeydew's Rust tables (tools/fixtures/flmfx-text.json: 13 values of every
+// param of every module, tempo 120, 44.1 kHz, the module's defaults); the full 401-value sweep matched too when the fixture was made
+{ const { lawText, menuItem } = await import(path.join(root, 'js/fxlaw.js')), fs = await import('node:fs');
+  const FX = JSON.parse(fs.readFileSync(path.join(root, 'tools/fixtures/flmfx-text.json'), 'utf8')); let n = 0; const diffs = [];
+  for (const [id, rows] of Object.entries(FX.t)) {
+    const m = FLMFX[id], ctx = { p: m.p.map((x) => x.d), bpm: 120, sr: 44100 };
+    rows.forEach((texts, i) => texts.forEach((want, j) => {
+      const v = Math.fround(FX.k[j] / FX.n), p = m.p[i];
+      const got = i === 0 || p.t === 'tog' ? (v >= 0.5 ? 'On' : 'Off') : p.t === 'list' ? p.items[menuItem(p.br, v)] : lawText(p.law, v, ctx, id + '.' + i);
+      n++; if (got !== want) diffs.push(`${m.name} ${p.n} @${v}: "${got}" != "${want}"`);
+    }));
+  }
+  ok(!diffs.length && n > 4000, `value texts as FL Studio Mobile prints them: ${n} texts equal to Honeydew's` + (diffs.length ? ': ' + diffs.slice(0, 4).join('; ') : '')); }
+{ const { fmtParam } = await import(path.join(root, 'js/defs.js')), P = (t, i, v) => fmtParam(DEVICES[t].params[i], v);
+  ok(P(135, 4, 0.068) === '1.5s' && P(120, 1, 0.738) === '0 dB' && P(106, 3, 1) === '0.0 dB' && P(129, 2, 0.1) === '25 ms', `knobs read FLM units (Reverb 2 Decay ${P(135, 4, 0.068)}, Leveller ${P(120, 1, 0.738)}, Distortion Gain ${P(106, 3, 1)}, Autoduck Attack at 120 BPM ${P(129, 2, 0.1)})`); }
 console.log(bad ? `\n${bad} FAILED` : '\nALL FLM FX TESTS PASSED');
 process.exit(bad ? 1 : 0);

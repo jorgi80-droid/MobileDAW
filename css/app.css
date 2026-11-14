@@ -667,3 +667,6 @@ html.emu body { width: calc(100% / var(--k, 1)); height: calc(100% / var(--k, 1)
 .lk-flmtop { flex-wrap: wrap; gap: 4px 6px; align-items: flex-end; }
 .lk-flmnotes { flex-wrap: wrap; gap: 2px; }
 .lk-flmk { flex-wrap: wrap; gap: 2px 4px; max-width: 760px; }
+.lk-flm { align-items: stretch; gap: 8px; }
+.lk-flmd { width: 200px; min-height: 86px; flex: 0 0 auto; display: flex; }
+.lk-flmd > .lk-dfill { flex: 1; }

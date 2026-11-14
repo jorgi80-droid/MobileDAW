@@ -741,6 +741,7 @@ class Module : public Device {
     if (!st) { ext = makeExt(id, sr, n, def); }
     p.assign(def, def + n);
     hasTr = true;
+    midiIn = id == 40;                                   // Comb Filter: MIDI Note mode follows the notes of its own track
     refresh(); doReset();
   }
   ~Module() override { delete st; delete ext; }
@@ -760,6 +761,9 @@ class Module : public Device {
     if (id == 46) { if (i == 3 && p[4] > x) p[4] = x; else if (i == 4 && p[3] < x) p[3] = x; }
     refresh();
   }
+  int midiFrom() override { return id == 40 ? 0 : -1; }
+  void noteOn(int pitch, double) override { if (id == 40) static_cast<CombState*>(st)->note(pitch); }
+  void noteOff(int pitch) override { if (id == 40) { auto* c = static_cast<CombState*>(st); if (c->active == pitch) c->note(-1); } }
   void setTempo(double b) override { bpm = (float)(b > 0 ? b : 120); if (ext) ext->tempo(bpm); }
   void tr(bool pl, double b) override { playing = pl; beat = b; }
   int lat() override { return ext ? ext->latency() : (id == 27 ? 255 : (id == 28 ? (int)std::trunc(sr * 0.002f) : 0)); }   // AudioEffect::latency_samples

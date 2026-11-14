@@ -6,6 +6,7 @@ import { SS_ARP_RATES, SS_ARP_MODES, SS_DELAY_TIMES } from './engine/hdsaw.js';
 import { MS_RATES, MS_DELAY_TIMES, MS_RATE_BEATS, MS_DELAY_BEATS } from './engine/hdmini.js';
 import { GM_SHAPES, GM_RATES, GM_RATE_BEATS, GM_MOD_KINDS, GM_PB_RANGES } from './engine/hdgms.js';
 import { FLMFX } from './flmfx.js';
+import { flmText, menuItem } from './fxlaw.js';
 // Instrument + device definitions. Parameter ORDER must match the C++ side
 // (app/src/main/cpp/instruments.h and devices.h).
 export const INST = { FLM_DW: 30, FLM_GMS: 31, FLM_MINI: 32, FLM_SAW: 33, MINISYNTH: 1, SUPERSAW: 2, DRUM: 3, DIRECTWAVE: 4, GMS: 5, SOUNDFONT: 6, MOISTURE: 7, OSPHERE: 8, KEYSTONE: 9, SAMPLER: 10, WAVETABLE: 11, SIMPLER: 18, IMPULSE: 28, GRANULATOR: 29 };
@@ -725,8 +726,8 @@ for (const [id, m] of Object.entries(FLMFX)) {
   const ps = m.p.map((x, k) => {
     if (k === 0) return q(x.n, 0, 1, 1, { step: 1, fmt: 'onoff', hidden: true });
     if (x.t === 'tog') return q(x.n, 0, 1, x.d >= 0.5 ? 1 : 0, { step: 1, fmt: 'onoff', ...(x.h ? { hidden: true } : {}) });
-    if (x.t === 'list') return q(x.n, 0, 1, x.d, { step: 1 / (x.items.length - 1), fmt: 'flmlist', items: x.items, ...(x.h ? { hidden: true } : {}) });
-    return q(x.n, 0, 1, x.d, { unit: '%', ...(x.h ? { hidden: true } : {}) });
+    if (x.t === 'list') return q(x.n, 0, 1, x.d, { step: 1 / (x.items.length - 1), fmt: 'flmlist', items: x.items, br: x.br, ...(x.h ? { hidden: true } : {}) });
+    return q(x.n, 0, 1, x.d, { fmt: 'flm', law: x.law, lawKey: id + '.' + k, ...(x.h ? { hidden: true } : {}) });   // FLM's own value text (fxlaw.js)
   });
   ps.push(q('Post Gain', 0, 1, 0.5, { hidden: true, flmCommon: 0 }), q('Rack Mix', 0, 1, 1, { hidden: true, flmCommon: 1 }), q('Wet Pan', 0, 1, 0.5, { hidden: true, flmCommon: 2 }));
   if (+id === 25) ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'].forEach((n, k) => ps.push(q('Note ' + n, 0, 1, [1, 0, 1, 1, 0, 1, 0, 1, 1, 0, 1, 0][k], { step: 1, fmt: 'onoff' })));
@@ -939,7 +940,8 @@ export function fmtParam(p, v) {
     case 'list': return (p.items || [])[Math.round(v - p.min)] ?? '';
     case 'dbinf': return v <= -60 ? '-inf dB' : v.toFixed(1) + ' dB';
     case 'deg': return Math.round(v) + '\u00B0';
-    case 'flmlist': { const n = (p.items || []).length; return n ? p.items[Math.min(n - 1, Math.max(0, Math.floor(v * (n - 1) + 1e-4)))] : ''; }
+    case 'flmlist': return (p.items || [])[p.br ? menuItem(p.br, v) : Math.round(v * ((p.items || []).length - 1))] ?? '';
+    case 'flm': return flmText(p, v);
     case 'pct1': return (v * 100).toFixed(1) + ' %';
     case 'pan': return Math.abs(v) < 0.01 ? 'C' : (v < 0 ? Math.round(-v * 50) + 'L' : Math.round(v * 50) + 'R');
   }

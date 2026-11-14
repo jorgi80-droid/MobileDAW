@@ -15,7 +15,7 @@ await page.addInitScript(() => localStorage.setItem('mobiledaw.prefs.v1', JSON.s
 await page.goto(`http://127.0.0.1:${server.address().port}/index.html`); await page.waitForFunction(() => window.__dawBooted, null, { timeout: 15000 }); await page.waitForTimeout(1000);
 const ev = (fn, a) => page.evaluate(fn, a);
 let bad = 0; const ok = (c, m) => { console.log((c ? 'ok   ' : 'FAIL ') + m); if (!c) bad++; };
-const SETS = [[132, 106, 125], [136, 141, 143], [104, 116, 145]];
+const SETS = [[132, 106, 125], [136, 141, 143], [104, 116, 145], [107, 108, 109], [141, 146, 129], [103, 135, 118]];
 await ev(async () => { const P = await import('./js/project.js'); P.newProject(true); P.addTrack('midi'); P.setInstrument(0, 1); P.emit('all'); });
 await page.waitForTimeout(500);
 await ev(() => document.querySelector('#dtabs .b[data-tab="dev"]').click()); await page.waitForTimeout(300);

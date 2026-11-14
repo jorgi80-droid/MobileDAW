@@ -6,6 +6,8 @@ import { h, knob, menu, ask, fromNorm, toNorm } from './ui.js';
 import { C } from './theme.js';
 import { fmtParam, normOf, valOf, MOD_MAP, DEVICES, INSTRUMENTS, FX_GROUPS, IRACK_DEF } from './defs.js';
 import { buildSynth } from './devviz.js';
+import { menuItem } from './fxlaw.js';
+import { FLM_GRAPH } from './flmviz.js';
 import { OP_ALGOS } from './engine/operator.js';
 import { POLI_TGT, POLI_GRID, POLI_MIDI } from './engine/poli.js';
 import { MELD_B, MELD_G, MELD_N, MO, MELD_TGT, MELD_SRC, MELD_OSC } from './engine/meld.js';
@@ -90,7 +92,7 @@ function kit(ctx) {
   const auto = (k) => (ctx.autoFn ? ctx.autoFn(k) : ctx.nested ? null : (rect) => offerAutomation(rect, { kind: 4, strip: P.stripOf(i), devId: d.id, param: k, def: def.params[k] }, `${def.name} ${def.params[k].n}`));   // devices inside a rack have no automation lanes (map them to a macro)
   const reg = (el, k) => { el._k = k; ctls.push(el); return el; };
   const lbl = (k, o) => (o && o.n != null ? o.n : def.params[k].n.replace(/^(L\+R|L|R) /, ''));
-  const K = (k, o = {}) => { const el = knob({ ...def.params[k], n: lbl(k, o) }, () => get(k), (v) => set(k, v), fmtParam, C('#7ac5ff'), auto(k)); el.classList.add('lk-k'); { const q = def.params[k], sv = el.querySelector('svg'); if (q.min < 0 && q.max > 0 && !q.curve && sv) sv.before(h('i', { class: 'lk-bipm' })); } if (o.big) el.classList.add('big'); if (o.col) el.style.setProperty('--lv-arc', o.col); return reg(el, k); };
+  const K = (k, o = {}) => { const el = knob({ ...def.params[k], ...(o.p || {}), n: lbl(k, o) }, () => get(k), (v) => set(k, v), fmtParam, C('#7ac5ff'), auto(k)); el.classList.add('lk-k'); { const q = def.params[k], sv = el.querySelector('svg'); if (q.min < 0 && q.max > 0 && !q.curve && sv) sv.before(h('i', { class: 'lk-bipm' })); } if (o.big) el.classList.add('big'); if (o.col) el.style.setProperty('--lv-arc', o.col); return reg(el, k); };
   const T = (k, text, o = {}) => reg(lvTog(text, () => (get(k) > 0.5) !== !!o.inv, (b) => set(k, b !== !!o.inv ? 1 : 0), { cls: 'lk-t ' + (o.cls || ''), w: o.w }), k);
   // one button that steps through a list and shows the current entry (Live: Resonators Mode A / B)
   const CY = (k, labels, o = {}) => { const p = def.params[k], b = lvBtn('', () => { const j = Math.round(get(k) - p.min) + 1; set(k, (j >= labels.length ? 0 : j) + p.min); b.update(); }, { cls: 'lk-t on ' + (o.cls || ''), w: o.w });
@@ -1706,16 +1708,18 @@ V[52] = (k) => {
 // top, the continuous controls as small knobs below (wrapping); Pitcher's note grid as 12 note buttons. Values are FLM's normalized ones.
 const flmPanel = (k) => {
   const ps = k.def.params, menus = [], togs = [], knobs = [], notes = [];
-  const sel = (j) => { const p = ps[j], n = p.items.length; return k.TL(p.n, k.reg(lvSel(() => p.items.map((l, q) => ({ label: l, value: q })), () => Math.min(n - 1, Math.max(0, Math.floor(k.get(j) * (n - 1) + 1e-4))), (q) => k.set(j, n > 1 ? q / (n - 1) : 0), { w: 84, cls: 'lk-s' }), j)); };
+  const sel = (j) => { const p = ps[j], n = p.items.length; return k.TL(p.n, k.reg(lvSel(() => p.items.map((l, q) => ({ label: l, value: q })), () => (p.br ? menuItem(p.br, k.get(j)) : Math.round(k.get(j) * (n - 1))), (q) => k.set(j, n > 1 ? q / (n - 1) : 0), { w: 84, cls: 'lk-s' }), j)); };
   ps.forEach((p, j) => {
     if (p.hidden) return;
     if (/^Note /.test(p.n) && p.fmt === 'onoff') notes.push(k.T(j, p.n.slice(5), { w: 30 }));
     else if (p.fmt === 'flmlist') menus.push(sel(j));
     else if (p.fmt === 'onoff') togs.push(k.T(j, p.n, { w: Math.max(44, Math.min(96, 8 + p.n.length * 7)) }));
-    else knobs.push(k.K(j));
+    else knobs.push(k.K(j, { p: { lawCtx: () => ({ p: k.d.params }) } }));   // a text that reads another param of this module (Autoduck Hold)
   });
-  return k.col(menus.length || togs.length ? h('div', { class: 'lk-row lk-flmtop' }, ...menus, ...togs) : null,
+  const gr = FLM_GRAPH[k.def.flm], disp = gr ? k.DF(200, 86, (g, w, hh) => gr(g, w, hh, (j) => k.get(j))) : null;   // the module's curve (flmviz.js)
+  const body = k.col(menus.length || togs.length ? h('div', { class: 'lk-row lk-flmtop' }, ...menus, ...togs) : null,
     notes.length ? h('div', { class: 'lk-row lk-flmnotes' }, ...notes) : null, h('div', { class: 'lk-row lk-flmk' }, ...knobs));
+  return disp ? h('div', { class: 'lk-row lk-flm' }, h('div', { class: 'lk-col lk-flmd' }, disp), body) : body;
 };
 for (const t of Object.keys(DEVICES)) if (DEVICES[t].view === 'flmfx') V[t] = flmPanel;
 
