@@ -6,7 +6,8 @@
 //   'all' (the "replace every missing module" option): additionally every other module that has a stock equivalent becomes that stock
 //          plugin BYPASSED (the sound stays exactly as it is now; the plugin is ready to switch on and adjust), keeping the original values.
 // Modules with no MDAW equivalent (Pitcher 2, Multi FX, Comb Filter) and unidentified types stay placeholders and are reported.
-import { DEVICES, normOf } from '../defs.js';
+import { DEVICES, normOf, FLMFX_BASE } from '../defs.js';
+import { FLMFX } from '../flmfx.js';
 
 // FL Studio Mobile module type ids -> module (guide names). sure: the identity is proven by data in real projects (preset folder, automation
 // label) or by an unambiguous parameter layout; the rest of the 30 guide modules are matched by name when a project names them.
@@ -32,9 +33,11 @@ export const FLM_TYPES = {
   18: { name: 'Tape Delay', sure: true },             // owner's screenshots of "New Song 1": rack slot 3 reads "Tape Delay" (on/off + 4 controls)
   16: { name: 'Trance Delay', sure: true },           // same screenshots: rack slot 4 reads "Trance Delay"
   // 11 (on/off + 4) was guessed as Tape Delay from its layout: the screenshots name 18 Tape Delay, so 11 is unknown again
-  25: { name: 'Waveshaper', sure: false },            // custom curve data + 22 controls (Shape / Amp / EQ / LFO pages): layout match only
   // 44 (on/off + 4) was guessed as Stereoizer: the 2nd project names 15 Stereoizer, so 44 is unknown again
 };
+// Honeydew (an FL Studio Mobile engine rewrite, GPL-3.0-or-later) names every FLM effect type id (crates/audio effect_info): those MobileDAW
+// runs on FLM's own DSP (FLMFX, C++) are known for sure; this also corrects the old layout guess 25 = Waveshaper (25 is Pitcher, 41 Waveshaper).
+for (const [id, m] of Object.entries(FLMFX)) if (!FLM_TYPES[id] || FLM_TYPES[id].sure === false) FLM_TYPES[id] = { name: m.name, sure: true };
 // guide module -> MDAW stock plugin with the same function (null = MobileDAW has nothing equivalent)
 export const STOCK = {
   'Analyzer': 32, 'Autoduck': 22, 'Pitcher 2': null, 'Chorus': 20, 'Comb Filter': null, 'Compressor': 4, 'Distortion': 3, 'Parametric EQ': 31,
@@ -52,7 +55,21 @@ const near = (a, b, e = 0.004) => Math.abs(a - b) <= e;
 
 // m = device.missing (name, app, params, flmType?) -> decision
 //   { apply: true, type, params, bypass, how: 'exact' | 'approx' | 'off' | 'later', note } | { apply: false, why: 'none' | 'unknown' | 'layout', stock }
-export function decide(m, mode = 'map') { return withMix(m, decide0(m, mode)); }
+export function decide(m, mode = 'map') { return flmExact(m) || (mode === 'none' ? { apply: false, why: 'none' } : withMix(m, decide0(m, mode))); }
+// An FL Studio Mobile module MobileDAW runs on FLM's own DSP (defs.js FLMFX, C++ native/engine/hdfx.cpp): the same module with the file's
+// exact values: its params (normalized, as stored), the rack's Post Gain / Mix / Wet Pan (SMPR) and Pitcher's notes (CSTM). Off in the file
+// = the device bypassed (FLM's On stays 1 inside: the bypass switches it).
+export function flmExact(m) {
+  const id = m.flmType, spec = id != null ? FLMFX[id] : null;
+  if (!spec || !DEVICES[FLMFX_BASE + id]) return null;
+  const type = FLMFX_BASE + id, n = spec.p.length, src = m.params || [], q = defaults(type), c01 = (x) => Math.min(1, Math.max(0, x));
+  for (let k = 1; k < n; k++) if (Number.isFinite(src[k])) q[k] = c01(src[k]);
+  q[0] = 1;
+  q[n] = Number.isFinite(m.postGain) ? c01(m.postGain) : 0.5; q[n + 1] = Number.isFinite(m.mix) ? c01(m.mix) : 1; q[n + 2] = Number.isFinite(m.wetPan) ? c01(m.wetPan) : 0.5;
+  if (id === 25 && Array.isArray(m.notes)) m.notes.slice(0, 12).forEach((b, k) => { q[n + 3 + k] = b ? 1 : 0; });
+  const on = !(src.length && src[0] < 0.5) && m.enabled !== false;
+  return { apply: true, type, params: q, bypass: !on, how: 'exact', note: 'modul FL Studio Mobile dengan DSP-nya sendiri (port C++ Honeydew): nilai persis dari file' + (on ? '' : '; off di proyek asli (bypass)') };
+}
 // FLM module level / mix (SMPR, < 1 = part dry): the stock plugin's Dry/Wet / Mix, or for Utility / EQ Eight the equivalent blend of dry and
 // processed level (1 - mix + mix * gain; exact for Utility, per band for the EQ)
 function withMix(m, r) {
@@ -140,7 +157,11 @@ export function resolveFlmAutomation(json, report) {
     let pi = -1, step = false, conv = (v) => v;                                   // conv: FLM 0..1 value -> the stock parameter's value
     if (d && !d.missing && DEVICES[d.type]) {
       const ps = DEVICES[d.type].params, nm = moduleName(d.from && d.from.name);
-      if (a.param === FLM_MIX_PARAM) pi = ps.findIndex((q) => /^(Dry\/Wet|Mix)$/.test(q.n));
+      if (d.type >= FLMFX_BASE && DEVICES[d.type].flm != null) {           // the FLM module itself: its own param index; 0x7FC0..2 = the rack's Post Gain / Mix / Wet Pan
+        const n = FLMFX[DEVICES[d.type].flm].p.length;
+        pi = a.param >= 32704 && a.param <= 32706 ? n + a.param - 32704 : a.param >= 0 && a.param < n ? a.param : -1;
+        step = pi >= 0 && pi < n && ps[pi].fmt === 'onoff';
+      } else if (a.param === FLM_MIX_PARAM) pi = ps.findIndex((q) => /^(Dry\/Wet|Mix)$/.test(q.n));
       else if (d.type === 52 && a.param === 5) { pi = 0; step = true; }
       else if (nm === 'Leveller' && d.type === 0 && (a.param === 1 || a.param === 2)) {   // same conversion as the module (0.7071 = 0 dB, pan 0.5 = centre)
         pi = a.param === 1 ? 0 : 1;

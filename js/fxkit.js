@@ -1702,6 +1702,23 @@ V[52] = (k) => {
   return k.row(rS, k.col(sync, play, k.K(6)), rE);
 };
 
+// FL Studio Mobile modules (defs.js FLMFX, C++ only, native/engine/hdfx.cpp): FLM's own controls, compact. Menus and switches in one strip on
+// top, the continuous controls as small knobs below (wrapping); Pitcher's note grid as 12 note buttons. Values are FLM's normalized ones.
+const flmPanel = (k) => {
+  const ps = k.def.params, menus = [], togs = [], knobs = [], notes = [];
+  const sel = (j) => { const p = ps[j], n = p.items.length; return k.TL(p.n, k.reg(lvSel(() => p.items.map((l, q) => ({ label: l, value: q })), () => Math.min(n - 1, Math.max(0, Math.floor(k.get(j) * (n - 1) + 1e-4))), (q) => k.set(j, n > 1 ? q / (n - 1) : 0), { w: 84, cls: 'lk-s' }), j)); };
+  ps.forEach((p, j) => {
+    if (p.hidden) return;
+    if (/^Note /.test(p.n) && p.fmt === 'onoff') notes.push(k.T(j, p.n.slice(5), { w: 30 }));
+    else if (p.fmt === 'flmlist') menus.push(sel(j));
+    else if (p.fmt === 'onoff') togs.push(k.T(j, p.n, { w: Math.max(44, Math.min(96, 8 + p.n.length * 7)) }));
+    else knobs.push(k.K(j));
+  });
+  return k.col(menus.length || togs.length ? h('div', { class: 'lk-row lk-flmtop' }, ...menus, ...togs) : null,
+    notes.length ? h('div', { class: 'lk-row lk-flmnotes' }, ...notes) : null, h('div', { class: 'lk-row lk-flmk' }, ...knobs));
+};
+for (const t of Object.keys(DEVICES)) if (DEVICES[t].view === 'flmfx') V[t] = flmPanel;
+
 export const KIT = V;
 export function kitView(ctx) { if (!V[ctx.d.type]) return null;   // no Live 12 panel yet: the card falls back to the automatic knob layout
   const k = kit(ctx); const el = V[ctx.d.type](k); el.classList.add('lk'); return { el, draw: k.redraw }; }

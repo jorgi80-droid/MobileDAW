@@ -24,6 +24,7 @@
 #include "hdgms.h"
 #include "hddw.h"
 #include "fx8.h"
+#include "hdfx.h"
 
 namespace mdaw {
 
@@ -42,6 +43,7 @@ Instrument* makeInstrument(int type, double sr, Bank* bank) {
   }
 }
 Device* makeDevice(int type, double sr, float* sidechain) {
+  if (type >= HDFX_BASE && type < HDFX_BASE + 100) return makeHdFx(type - HDFX_BASE, sr);   // FL Studio Mobile modules (hdfx.cpp)
   switch (type) {
     case 10: return new Autoduck(sr, sidechain); case 14: return new Stereolizer(sr); case 15: return new Spacer(sr);
     case 0: return new Utility(sr); case 1: return new AutoFilter(sr); case 6: return new Echo(sr); case 9: return new Roar(sr); case 2: return new Eq3(sr); case 3: return new Saturator(sr); case 4: return new Compressor(sr);
@@ -60,6 +62,6 @@ Device* makeDevice(int type, double sr, float* sidechain) {
   }
 }
 bool instPorted(int type) { return type == 1 || type == 2 || type == 3 || type == 4 || type == 5 || type == 6 || type == 7 || type == 8 || type == 9 || type == 10 || type == 11 || type == 12 || type == 13 || type == 14 || type == 15 || type == 17 || type == 18 || type == 16 || (type >= 19 && type <= 29) || type == 30 || type == 31 || type == 32 || type == 33; }
-bool devPorted(int type) { return (type >= 17 && type <= 45) || (type >= 46 && type <= 51) || type == 12 || type == 13 || type == 16 || type == 1 || type == 6 || type == 9 || type == 0 || type == 2 || type == 3 || type == 4 || type == 5 || type == 7 || type == 8 || type == 10 || type == 14 || type == 15 || type == 52; }
+bool devPorted(int type) { return (type >= 17 && type <= 45) || (type >= 46 && type <= 51) || type == 12 || type == 13 || type == 16 || type == 1 || type == 6 || type == 9 || type == 0 || type == 2 || type == 3 || type == 4 || type == 5 || type == 7 || type == 8 || type == 10 || type == 14 || type == 15 || type == 52 || (type >= HDFX_BASE && type < HDFX_BASE + 100 && hdfxParamCount(type - HDFX_BASE) > 0); }
 
 }  // namespace mdaw

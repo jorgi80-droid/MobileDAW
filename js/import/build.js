@@ -7,6 +7,7 @@
 //   - a drum pad whose sample is missing keeps its steps (the pad is muted until a sample is loaded).
 // Model units: beats, linear gain (1 = default level), pan -1..1.
 import { DEVICES, PRESETS, INSTRUMENTS, FLM_FMT } from '../defs.js';
+import { FLMFX } from '../flmfx.js';
 import { gmFor, GM_SF } from './gm.js';
 import { flmGain } from './flm.js';
 import { ssEnvTime, ssLfoHz, SS_LFO_BEATS } from '../engine/hdsaw.js';
@@ -217,7 +218,7 @@ export function buildMdaw(M, opts) {
   };
   const placeholder = (m) => {
     report.plugins.set(m.name, (report.plugins.get(m.name) || 0) + 1);
-    return { id: uid(), type: 0, params: util.slice(), bypass: m.enabled === false, missing: { name: m.name, app: m.app || M.app, preset: m.preset || '', enabled: m.enabled !== false, ...(m.flmType != null ? { flmType: m.flmType } : {}), ...(m.sure === false ? { sure: false } : {}), ...(m.mix != null ? { mix: m.mix } : {}), ...(m.id != null ? { flmId: m.id } : {}), params: (m.params || []).slice() } };
+    return { id: uid(), type: 0, params: util.slice(), bypass: m.enabled === false, missing: { name: m.name, app: m.app || M.app, preset: m.preset || '', enabled: m.enabled !== false, ...(m.flmType != null ? { flmType: m.flmType } : {}), ...(m.sure === false ? { sure: false } : {}), ...(m.mix != null ? { mix: m.mix } : {}), ...(m.postGain != null ? { postGain: m.postGain } : {}), ...(m.wetPan != null ? { wetPan: m.wetPan } : {}), ...(m.notes ? { notes: m.notes.slice() } : {}), ...(m.id != null ? { flmId: m.id } : {}), params: (m.params || []).slice() } };
   };
   const devices = (ch) => (ch.modules || []).slice(0, 16).map(placeholder);
   const prec = { offGrid: 0, boost: 0 };                                     // precision report: values kept that a rounding would have changed
@@ -362,7 +363,7 @@ export function buildMdaw(M, opts) {
   if (muted.length) P2.push(muted.length + ' track di-mute seperti di FLM: ' + muted.join(', '));
   const solo = M.channels.filter((c) => c.solo).map((c) => c.name);
   if (solo.length) P2.push(solo.length + ' track ditandai Solo di file FLM (RPRM): tidak diterapkan otomatis karena byte ini belum terbukti di proyek lain — ' + solo.join(', '));
-  const pg = []; for (const c of M.channels) for (const m of c.modules || []) { if (m.postGain != null) pg.push(c.name + ' / ' + m.name + ' Post Gain'); if (m.wetPan != null) pg.push(c.name + ' / ' + m.name + ' Wet Pan'); }
+  const pg = []; for (const c of M.channels) for (const m of c.modules || []) { if (m.flmType != null && FLMFX[m.flmType]) continue; if (m.postGain != null) pg.push(c.name + ' / ' + m.name + ' Post Gain'); if (m.wetPan != null) pg.push(c.name + ' / ' + m.name + ' Wet Pan'); }
   if (pg.length) P2.push(pg.length + ' modul punya Post Gain / Wet Pan non-default (SMPR): dilaporkan, belum ada padanan persisnya — ' + pg.slice(0, 6).join(', ') + (pg.length > 6 ? ', …' : ''));
   if (dwN) P2.push(dwN + ' DirectWave: pitch / fine tune per lapisan, envelope, filter, loop / reverse / legato / mono dan LFO dari nilai file');
   if (synN) P2.push(synN + ' GMS / MiniSynth / SuperSaw memakai preset bernama sama di MobileDAW: nilai parameter proyek tersimpan mentah (urutannya di file belum diketahui), bunyi bisa berbeda');

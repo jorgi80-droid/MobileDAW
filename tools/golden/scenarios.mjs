@@ -184,6 +184,27 @@ export const SCENARIOS = [
       e.instParam(0, 6, 1); e.instParam(1, 90, 7); play(e, 1); e.instParam(0, 6, 0); e.instParam(1, 90, -5); e.instParam(0, 0, 1.2); play(e, 1);
       e.preview(0, 64, 0.8, true); play(e, 0.3); e.preview(0, 64, 0, false); e.stop(); play(e, 1);
     } },
+  { name: 'fx-flm', native: true, info: 'C++ only (native/engine/hdfx.cpp + hdfx2.cpp, Honeydew DSP): FL Studio Mobile effect modules (device 100 + FLM id) on tracks, returns and the master: their FLM params, the rack Post Gain / Mix / Wet Pan, tempo-synced LFOs / delays (song beat), Pitcher notes, Tape Stop toggled while playing, bypass, PDC (Gate / Limiter / Pitcher latency)',
+    run(e) {
+      samples(e); e.tempo(122);
+      e.trackClips(0, clipsA, 3); e.trackClips(1, clipsB, 3); e.trackInst(2, 1); const f = []; for (let k = 0; k < 32; k++) f.push(k * PPQ / 2, PPQ * 0.4, 48 + ((k * 7) % 24), 0.8, 0); e.trackNotes(2, f, f.length / 5);
+      const D = (t, j, id, vals) => { e.insertDevice(t, j, 100 + id); Object.entries(vals || {}).forEach(([k, v]) => e.devParam(t, j, +k, v)); };
+      D(0, 0, 6, { 1: 0.6, 5: 0.4 }); D(0, 1, 46, { 7: 1, 3: 0.9, 4: 0.2 }); D(0, 2, 32, { 3: 0.5, 7: 0.6 });             // Distortion, Tremolo (synced), Reverb
+      D(1, 0, 8, { 1: 0.3, 2: 0.7 }); D(1, 1, 16, { 5: 0.5, 2: 0.6 }); D(1, 2, 27, { 1: 0.3 });                           // Compressor, Trance Delay ping-pong, Gate
+      D(2, 0, 41, { 1: 0.5, 5: 0.6 }); D(2, 1, 25, { 2: 0.7 }); D(2, 2, 14, { 6: 1 }); D(2, 3, 4, { 1: 0.15 });            // Waveshaper, Pitcher (+ notes), Phaser (synced), Multi FX
+      e.devParam(2, 1, 23 + 3 + 1, 1); e.devParam(2, 1, 23 + 3 + 2, 0);
+      e.trackSend(0, 0, 0.5); e.trackSend(2, 0, 0.4); D(65, 0, 35, { 4: 0.2 }); D(65, 1, 43, { 7: 1 });                  // Return A: Reverb 2, Wow & Flutter
+      D(66, 0, 18, { 1: 0.4 }); e.trackOut(1, 1);                                                                          // Return B: Tape Delay
+      D(64, 0, 36, { 30: 1 }); D(64, 1, 28, { 1: 0.7 }); D(64, 2, 42); D(64, 3, 44, { 1: 0.6 });                          // master: Multiband, Limiter, Tape Stop, Spreader
+      e.devParam(0, 2, 16, 0.6); e.devParam(0, 2, 17, 0.7); e.devParam(0, 2, 18, 0.3);                                     // Reverb: Post Gain / Mix / Wet Pan
+      e.play(); play(e, 2.4, [128, 96, 256]);
+      e.devParam(0, 0, 1, 0.9); e.devParam(1, 1, 1, 0.75); play(e, 0.6);
+      e.devParam(64, 2, 5, 0); play(e, 0.8, [128, 77]); e.devParam(64, 2, 5, 1); play(e, 0.8);                           // Tape Stop: stop, then start again
+      e.devBypass(2, 1, true); play(e, 0.4); e.devBypass(2, 1, false); play(e, 0.4);
+      e.devParam(2, 1, 0, 0); play(e, 0.3); e.devParam(2, 1, 0, 1); play(e, 0.3);                                         // module On off / on
+      e.loop(true, BAR, BAR * 2); e.seek(BAR); play(e, 3, [128, 333]); e.loop(false, 0, 0);
+      e.stop(); play(e, 1);
+    } },
   { name: 'inst-flmdw', native: true, info: 'C++ only (native/engine/hddw.cpp, Honeydew DW Sampler): FL Studio Mobile DirectWave (30): key / vel zones (gain / pan), loop, reverse, root / tune, filter + filter envelope, frequency (pitch) envelope, LFO (Hertz / One Shot / Tempo) to filter / frequency / level / pan, slide / legato / mono, PB range + bend',
     run(e) {
       samples(e); testSample(e); e.tempo(124); e.trackInst(0, 30);

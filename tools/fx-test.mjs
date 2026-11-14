@@ -9,7 +9,7 @@ import { InstrumentRack } from '../js/engine/fx7.js';
 import { makeInstrument } from '../js/engine/instruments.js';
 
 const SR = 48000, N = 128, BLOCKS = Math.round(SR * 1.2 / N);
-const want = process.argv.slice(2).map(Number), types = Object.keys(DEVICES).map(Number).filter((t) => !want.length || want.includes(t));
+const want = process.argv.slice(2).map(Number), types = Object.keys(DEVICES).map(Number).filter((t) => !DEVICES[t].nativeOnly && (!want.length || want.includes(t)));   // nativeOnly (FLM modules, C++): tools/flmfx-test.mjs + golden fx-flm
 // parameters that cannot change the audio by design: display / meter options, momentary triggers, the Tuner reference
 const NO_AUDIO = { 52: [2, 3], 51: 'all',   // 52 Tape Stop: start times only act when Play returns to 1 (tested below)
   48: 'all', 49: 'all', 50: 'all', 47: [1], 13: 'all', 12: 'all', 16: 'all', 30: 'all', 32: 'all', 19: [15], 10: 'all', 45: 'all' };   // 45 Looper: state-driven, has its own test below   // 10 Autoduck: listens to another track's sidechain only

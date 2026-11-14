@@ -631,4 +631,7 @@ class MiniMeters extends Fx {
 const TYPES = [Utility, AutoFilter, Eq3, Saturator, Compressor, Limiter, Echo, Reverb, ParametricEq, Roar, Autoduck, null, Levelness, Analyzer, Stereolizer, Spacer, MiniMeters,
   Delay, FilterDelay, BeatRepeat, ChorusEnsemble, PhaserFlanger, AutoPan, Gate, GlueComp, ChannelEq, Erosion, Redux, VinylDist, DrumBuss, Tuner, EqEight, Spectrum,
   Amp, Cabinet, Overdrive, Pedal, DynTube, MultibandDyn, Resonators, Corpus, Vocoder, Shifter, GrainDelay, HybridReverb, Looper, SpectralTime, SpectralResonator, LfoMod, ShaperMod, EnvFollower, AudioEffectRack, TapeStop];   // 52 Tape Stop (fx8.js)   // 17.. = Live 12 set (fx3.js)
-export function makeDevice(type, sr, sc) { const C = TYPES[type]; return C ? new C(sr, sc) : null; }
+// FL Studio Mobile modules (type 100 + FLM id) exist in the C++ engine only (native/engine/hdfx.cpp): this engine keeps their place in the chain
+// (so the devices after them keep their indices) and passes the audio through unchanged
+class NativeOnlyFx { setParam() {} process() {} }
+export function makeDevice(type, sr, sc) { const C = TYPES[type]; return C ? new C(sr, sc) : type >= 100 && type < 200 ? new NativeOnlyFx() : null; }

@@ -116,8 +116,8 @@ const auto = B.json.tracks.find((t) => t.kind === 'auto' && t.target.kind === 0)
 ok(auto && auto.target.strip === voc.id && auto.clips[0].pts.length === 2 && auto.clips[0].pts[1].t === 4 * 960, 'mixer Level automation -> MDAW volume automation on that track');
 { const FXa = await import('../js/import/fxmap.js'), J = structuredClone(B.json), R0 = { skipped: [], tracks: 0 }; await FXa.migrateJson(J, 'map'); FXa.resolveFlmAutomation(J, R0);
   const ln = J.tracks.find((t) => t.kind === 'auto' && t.target.kind === 4), dv = ln && J.tracks.find((t) => t.id === ln.target.strip).devices.find((x) => x.id === ln.target.devId);
-  ok(ln && dv && dv.type === 0 && ln.target.param === 0 && ln.clips[0].pts[0].v === 0, 'Leveller "Gain" automation -> Utility Gain lane, FLM slider converted like the module (near 0 -> -60 dB = bottom of the lane)');
-  const J2 = structuredClone(B.json); J2.tracks.forEach((t) => t.devices.forEach((x) => { if (x.missing && x.missing.name === 'Leveller') x.missing.name = 'Efek FLM #99'; })); await FXa.migrateJson(J2, 'map'); const R2 = { skipped: [], tracks: 9 }; FXa.resolveFlmAutomation(J2, R2);
+  ok(ln && dv && dv.type === 120 && ln.target.param === 1 && ln.clips[0].pts[0].v === ln.clips[0].pts[0].v && Math.abs(ln.clips[0].pts[0].v) < 0.01, 'Leveller "Gain" automation -> the FLM Leveller module (120) Gain lane, the FLM value unchanged');
+  const J2 = structuredClone(B.json); J2.tracks.forEach((t) => t.devices.forEach((x) => { if (x.missing && x.missing.name === 'Leveller') { x.missing.name = 'Efek FLM #99'; x.missing.flmType = 99; } })); await FXa.migrateJson(J2, 'map'); const R2 = { skipped: [], tracks: 9 }; FXa.resolveFlmAutomation(J2, R2);
   ok(!J2.tracks.some((t) => t.flmAuto) && R2.skipped.some((s) => /FX Leveller/.test(s)), 'automation of a plugin that stays a placeholder is removed and reported, not dropped silently'); }
 ok(B.report.samplesMissing.includes('My Tracks/tidakada.wav') && B.report.samplesMissing.includes('My Samples/hilang.wav') && B.report.samplesFound === 4, 'report: samples found / missing');
 
@@ -139,13 +139,13 @@ ok(B.report.samplesMissing.includes('My Tracks/tidakada.wav') && B.report.sample
     chnl('Pad', 1, notes, ck('TRKH', desc(1, 9, 5, 'Toggle Play : Tape Stop'), clip(8, clhd(4, 4), ck('ZOOM', new Uint8Array(32)), evn([{ t: 3, p: 6, v: 0 }])))), chnl('Bass', 2, notes), chnl('Rhythm', 3, notes));
   const M2 = flmToModel(parseFlm(f)), B2 = buildMdaw(M2, { root: '/FLM/T2', has: () => false });
   const S2 = await (await import('../js/import/fxmap.js')).migrateJson(B2.json, 'map'); (await import('../js/import/fxmap.js')).resolveFlmAutomation(B2.json, B2.report);
-  const tt = (n) => B2.json.tracks.find((t) => t.name === n), pad = tt('Pad'), ts = pad.devices.find((d) => d.type === 52), lane = B2.json.tracks.find((t) => t.kind === 'auto');
+  const tt = (n) => B2.json.tracks.find((t) => t.name === n), pad = tt('Pad'), ts = pad.devices.find((d) => d.type === 142), lane = B2.json.tracks.find((t) => t.kind === 'auto');
   ok(M2.channels.find((c) => c.name === 'Pad').instrument.kind === 'supersaw' && pad.inst.type === 33, 'FLM type 23 (SuperSaw) -> MobileDAW SuperSaw, not an effect');
   ok(tt('Bass').inst.type === 6 && tt('Bass').inst.sub && tt('Bass').inst.sub.gm === 'Synth Bass 1', 'FLM SoundFont Player (52) "BAS Pro6Solid.sf2" (FLM content) -> General MIDI Synth Bass 1 substitute');
   ok(tt('Rhythm').inst.missing && /Instrumen FLM #39/.test(tt('Rhythm').inst.missing.name), 'unidentified synth-sized module (39) on a notes channel = its instrument, reported by id');
-  ok(ts && ts.params[0] === 1 && !ts.bypass && S2.total >= 1, 'Tape Stop (42) -> MobileDAW Tape Stop (52), Play from the module');
-  ok(lane && lane.target.kind === 4 && lane.target.devId === ts.id && lane.target.param === 0 && lane.clips[0].start === 8 * 960 && lane.clips[0].pts.map((q) => q.t + ':' + q.v + ':' + q.s).join() === '0:1:1,2880:0:1',
-    '"Toggle Play : Tape Stop" automation -> Tape Stop Play lane, stepped: playing until beat 3 of the clip, then stop');
+  ok(ts && ts.params[0] === 1 && ts.params[5] === 1 && Math.abs(ts.params[1] - 0.073) < 1e-6 && !ts.bypass && S2.total >= 1, 'Tape Stop (42) -> the FLM Tape Stop module itself (142), its exact values (Toggle Play 1, Stop Time 0.073)');
+  ok(lane && lane.target.kind === 4 && lane.target.devId === ts.id && lane.target.param === 5 && lane.clips[0].start === 8 * 960 && lane.clips[0].pts.map((q) => q.t + ':' + q.v + ':' + q.s).join() === '0:1:1,2880:0:1',
+    '"Toggle Play : Tape Stop" automation -> the module Toggle Play (param 5) lane, stepped: playing until beat 3 of the clip, then stop');
 }
 // ---------- module migration to MDAW stock plugins (js/import/fxmap.js) and the sound it keeps
 const FX = await import('../js/import/fxmap.js');

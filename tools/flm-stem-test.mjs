@@ -44,7 +44,7 @@ if (fs.existsSync(ns1)) {
   ok(cub && v('Oscillator Kind') === 3 && Math.round(v('Modifier')) === 50 && Math.floor(v('Noise')) === 14 && Math.floor(v('Res')) === 49 && Math.abs(v('Flt Amount') - 30.7) < 0.1 && Math.floor(v('Cutoff')) === 64 && Object.keys(cub.inst.params).length === 44,
     'MiniSynth preset "Cubed": the knobs shown in FLM (Saw + Square, Modifier 50, Noise 14, Cutoff 64, Res 49, Flt Amount 30.7) come from the file, all 44 values (miniFromFlm)');
   const M1t = (await import(path.join(root, 'js/import/fxmap.js'))).FLM_TYPES;
-  ok(M1t[18] && M1t[18].name === 'Tape Delay' && M1t[16] && M1t[16].name === 'Trance Delay' && !M1t[11], 'rack screenshot: type 18 = Tape Delay, 16 = Trance Delay (11 no longer guessed)');
+  ok(M1t[18] && M1t[18].name === 'Tape Delay' && M1t[16] && M1t[16].name === 'Trance Delay' && M1t[11] && M1t[11].name === 'Chorus', 'rack screenshot: type 18 = Tape Delay, 16 = Trance Delay; 11 = Chorus (named by Honeydew, not a layout guess)');
 }
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log(bad ? `\n${bad} FAILED` : '\nFLM STEMS OK'); process.exit(bad ? 1 : 0);

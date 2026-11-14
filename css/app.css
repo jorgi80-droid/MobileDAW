@@ -663,3 +663,7 @@ html.emu body { width: calc(100% / var(--k, 1)); height: calc(100% / var(--k, 1)
   .pwa-card { top: calc(var(--top-h) * 2 + var(--sat) + 14px); }
 }
 .hit-flash { filter: brightness(1.25); }
+/* FL Studio Mobile modules (fxkit.js flmPanel): menus + switches in one strip, Pitcher notes, compact knobs that wrap */
+.lk-flmtop { flex-wrap: wrap; gap: 4px 6px; align-items: flex-end; }
+.lk-flmnotes { flex-wrap: wrap; gap: 2px; }
+.lk-flmk { flex-wrap: wrap; gap: 2px 4px; max-width: 760px; }

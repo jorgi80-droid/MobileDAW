@@ -63,8 +63,9 @@ export async function importProject(fileName, buf, io, onProgress = () => {}) {
   const relName = (e) => (projDir && e.startsWith(projDir + '/') ? e.slice(projDir.length + 1) : e);
   const { json, files, report } = buildMdaw(M, { root, resolve, relName });
   json.name = name;
-  // 3b. modules MDAW does not have -> stock plugins where the sound is kept (io.fxMode 'map' | 'all' | 'none')
-  const fx = io.fxMode === 'none' ? null : await migrateJson(json, io.fxMode || 'map', (f) => onProgress(0.3 + 0.05 * f, 'Menyesuaikan dan memproses parameter modul ke plugin bawaan\u2026'));
+  // 3b. FL Studio Mobile modules -> the same module on FLM's own DSP (C++, exact values, always); other modules MDAW does not have -> stock
+  //     plugins where the sound is kept (io.fxMode 'map' | 'all'; 'none' = only the exact FLM modules)
+  const fx = await migrateJson(json, io.fxMode || 'map', (f) => onProgress(0.3 + 0.05 * f, 'Menyesuaikan dan memproses parameter modul ke plugin bawaan\u2026'));
   resolveFlmAutomation(json, report);                                      // plugin automation lanes -> the converted device's parameter (or reported)
   // 4. samples (35 - 70 %)
   for (let k = 0; k < files.length; k++) {

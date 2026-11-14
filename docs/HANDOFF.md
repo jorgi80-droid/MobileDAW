@@ -48,6 +48,7 @@ Baca juga `README-ANDROID.md` (build, install, status fase 2).
 | Port C++: seluruh fx4.js (Amp .. Looper, 13 efek, `fx4.{h,cpp}`) | selesai, golden `fx-*` identik |
 | Port C++: Autoduck (sidechain lewat `eng.sc`), Stereolizer, Spacer (`native/engine/fxu.*`) | selesai, golden `fx-autoduck`, `fx-autoduck-sc`, `fx-stereolizer`, `fx-spacer` identik |
 | Port C++: Level/Analyzer/MiniMeters, fx5 (Spectral), fx6 (modulator + Map), Audio Effect Rack | selesai (golden `fx-*`, `fx-modulators`, `fx-rack`, `fx-spectral-midi`) — SEMUA instrumen dan efek kini punya port C++ |
+| Modul efek FL Studio Mobile (32 tipe, DSP Honeydew, C++ saja: `native/engine/hdfx.*`, `hdfx2.*`; device 100 + id FLM; tabel `js/flmfx.js`; panel `flmPanel` di fxkit.js; impor persis di `fxmap.js flmExact`) | selesai: sampel demi sampel identik dengan kode Rust Honeydew (Multi FX ≤ -90 dB), golden `fx-flm`, `tools/flmfx-test.mjs` |
 | Arrangement gaya gambar pemilik: klip warna penuh + isi gelap, fade klip audio + handle (seret), locator outline, garis track tebal, palet warna Live jenuh | selesai (`docs/redesign/40-*.jpg`) |
 | Drum Rack: chain per pad (instrumen + efek di pad, `pad.chain`; engine `DrumSynth.cmd/endBlock`, project `setPadChainInst / padChain*`, UI `padChainView` di fxkit.js, tes `tools/drumrack-test.mjs`) | selesai (`docs/redesign/39-drumrack-chain.png`) |
 | Ekspor WAV lewat engine native; angka CPU/underrun Web vs Native dari HP | belum |
@@ -705,3 +706,12 @@ Permintaan pemilik: SEMUA efek dan instrumen diganti dengan set stok Ableton Liv
   Panel synth lama (Keystone / Moisture / Osphere): display 104 px (dulu 42), isi 52 -> 82..84 %.
 - Belum: SoundFont (hanya tombol file + 2 knob, isi 23 %), Redux / Autoduck / Tape Stop / Looper / Overdrive masih 58..69 %; Echo, Filter Delay,
   Simpler, Operator, Sampler, Wavetable masih perlu 0,84..0,9x (sedikit lebih kecil dari panel lain).
+
+## Modul efek FL Studio Mobile (port Honeydew, sesi ini)
+- 32 modul efek FLM (semua efek di `effect_info` Honeydew kecuali Tuner/Analyzer dan modul tambahan Honeydew sendiri: Lemon, Dynamic EQ, Modulator, De-esser, Denoise, Half Time) diport tangan ke C++: `native/engine/hdfx.cpp` (lib.rs, biquad.rs, reverbs.rs, comb.rs) dan `hdfx2.cpp` (multiband, tape stop, spreader, waveshaper, pitcher, pitcher 2, Multi FX di atas bank `hdmfx`). Aritmetika f32 seperti Rust.
+- Device = `100 + id FLM` (`FLMFX_BASE`). Parameter = nilai ternormalisasi FLM (0..1, seperti tersimpan di .flm), indeks sama dengan PRMS; param 0 (On) tersembunyi dan tetap 1 (bypass device yang mematikan); setelahnya Post Gain / Rack Mix / Wet Pan (SMPR, tersembunyi), Pitcher: 12 not C..B (CSTM).
+- Verifikasi: harness di scratchpad merender sinyal yang sama lewat crate Rust Honeydew (`AudioEffect`) dan lewat C++: 56 + 14 kasus, selisih 0 (identik bit) kecuali Multi FX (bank double: -90..-120 dB). Desktop vs WASM: -97.8 dB (libm float berbeda di bit terakhir).
+- "Merge": modul FLM yang fungsinya sudah ada di MobileDAW (EQ, Compressor, Reverb, Chorus, Phaser, Filter, Gate, Limiter, dst.) tidak ditawarkan dua kali di browser; proyek FLM yang diimpor tetap memakai DSP FLM-nya dengan nama modulnya. Ditawarkan di browser (grup "FL Studio Mobile"): Multi FX, Trance Delay, Tape Delay, Wow & Flutter, Waveshaper, Pitcher, Pitcher 2, Comb Filter, Spreader.
+- Impor: setiap modul FLM bertipe yang dikenal -> modul itu sendiri dengan nilai persis (juga bila mode ganti = 'none'); otomasi FLM ke param modul / 0x7FC0..2 diteruskan apa adanya. Tipe 25 ternyata Pitcher (bukan Waveshaper seperti tebakan lama), 41 = Waveshaper, 11 = Chorus, 44 = Spreader.
+- Mesin JS cadangan: modul ini tidak ada (placeholder lewat-saja supaya indeks device berikutnya tetap).
+- Belum: Comb Filter mode "MIDI Note" belum menerima not (memakai not terakhir / 1 Hz); tampilan nilai di knob masih persen mentah (hukum tampilan FLM per parameter belum diport); grafik panel (kurva EQ, dsb.) belum.

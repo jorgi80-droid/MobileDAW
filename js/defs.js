@@ -5,6 +5,7 @@ import { TS_BEATS } from './engine/fx8.js';
 import { SS_ARP_RATES, SS_ARP_MODES, SS_DELAY_TIMES } from './engine/hdsaw.js';
 import { MS_RATES, MS_DELAY_TIMES, MS_RATE_BEATS, MS_DELAY_BEATS } from './engine/hdmini.js';
 import { GM_SHAPES, GM_RATES, GM_RATE_BEATS, GM_MOD_KINDS, GM_PB_RANGES } from './engine/hdgms.js';
+import { FLMFX } from './flmfx.js';
 // Instrument + device definitions. Parameter ORDER must match the C++ side
 // (app/src/main/cpp/instruments.h and devices.h).
 export const INST = { FLM_DW: 30, FLM_GMS: 31, FLM_MINI: 32, FLM_SAW: 33, MINISYNTH: 1, SUPERSAW: 2, DRUM: 3, DIRECTWAVE: 4, GMS: 5, SOUNDFONT: 6, MOISTURE: 7, OSPHERE: 8, KEYSTONE: 9, SAMPLER: 10, WAVETABLE: 11, SIMPLER: 18, IMPULSE: 28, GRANULATOR: 29 };
@@ -715,8 +716,28 @@ INSTRUMENTS[29] = { name: 'Granulator III', view: 'kit', full: true, sampler: tr
 }
 
 // Audio effect categories as in Live 12's browser. Older devices that have no Live 12 counterpart sit in the closest category; the ones that only repeat a newer device are in HIDDEN_FX.
+// FL Studio Mobile effect modules (C++ only, native/engine/hdfx.cpp + hdfx2.cpp, Honeydew's DSP): device type 100 + the FLM module id. Their
+// parameters are FLM's own normalized values (0..1, what an .flm stores), so an imported module runs with its exact settings. Param 0 (the
+// module's On) stays 1: the device's bypass switches it. After the FLM params: the rack's common Post Gain / Mix / Wet Pan (hidden, set by
+// the importer; 0.5 / 1 / 0.5 = neutral), and for Pitcher (25) its 12 note enables C..B (the module's CSTM).
+export const FLMFX_BASE = 100;
+for (const [id, m] of Object.entries(FLMFX)) {
+  const ps = m.p.map((x, k) => {
+    if (k === 0) return q(x.n, 0, 1, 1, { step: 1, fmt: 'onoff', hidden: true });
+    if (x.t === 'tog') return q(x.n, 0, 1, x.d >= 0.5 ? 1 : 0, { step: 1, fmt: 'onoff', ...(x.h ? { hidden: true } : {}) });
+    if (x.t === 'list') return q(x.n, 0, 1, x.d, { step: 1 / (x.items.length - 1), fmt: 'flmlist', items: x.items, ...(x.h ? { hidden: true } : {}) });
+    return q(x.n, 0, 1, x.d, { unit: '%', ...(x.h ? { hidden: true } : {}) });
+  });
+  ps.push(q('Post Gain', 0, 1, 0.5, { hidden: true, flmCommon: 0 }), q('Rack Mix', 0, 1, 1, { hidden: true, flmCommon: 1 }), q('Wet Pan', 0, 1, 0.5, { hidden: true, flmCommon: 2 }));
+  if (+id === 25) ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'].forEach((n, k) => ps.push(q('Note ' + n, 0, 1, [1, 0, 1, 1, 0, 1, 0, 1, 1, 0, 1, 0][k], { step: 1, fmt: 'onoff' })));
+  DEVICES[FLMFX_BASE + +id] = { name: m.name, kit: true, view: 'flmfx', flm: +id, nativeOnly: true, params: ps };
+}
+// "merged": an FLM module whose function a MobileDAW effect already covers (EQ, compressor, reverb, chorus, ...) is not offered a second time;
+// an imported project keeps running it on FLM's DSP under its own name. Offered in the pickers: the FLM modules MobileDAW has no counterpart for.
+const FLM_PICK = [104, 116, 118, 143, 141, 125, 145, 140, 144];   // Multi FX, Trance Delay, Tape Delay, Wow & Flutter, Waveshaper, Pitcher, Pitcher 2, Comb Filter, Spreader
 export const FX_GROUPS = [['loop', 'Delay & Loop', [19, 17, 6, 18, 43, 45, 46, 52]], ['drive', 'Drive & Color', [33, 34, 29, 37, 26, 27, 35, 36, 9, 3, 28]], ['dyn', 'Dynamics', [4, 23, 24, 5, 38, 10]],
-  ['eq', 'EQ & Filters', [1, 25, 31, 2]], ['mod', 'Pitch & Modulation', [22, 20, 21, 42]], ['rev', 'Reverb & Resonance', [40, 44, 39, 7, 47, 41]], ['modu', 'Modulators', [50, 48, 49]], ['util', 'Utilities', [51, 0, 32, 30, 16, 14, 15]]];
+  ['eq', 'EQ & Filters', [1, 25, 31, 2]], ['mod', 'Pitch & Modulation', [22, 20, 21, 42]], ['rev', 'Reverb & Resonance', [40, 44, 39, 7, 47, 41]], ['modu', 'Modulators', [50, 48, 49]], ['util', 'Utilities', [51, 0, 32, 30, 16, 14, 15]],
+  ['flm', 'FL Studio Mobile', FLM_PICK]];
 // Old devices that only repeat a newer one stay loadable in saved projects but are no longer offered in the pickers: 8 Parametric EQ (= EQ Eight), 12 Level (= Utility), 13 Analyzer (= Spectrum).
 export const HIDDEN_FX = [8, 12, 13];
 // Per-module Mix / Gain on every effect (engine dsp.js MIX_P / GAIN_P, devParam indices outside the effect's own list). Stored on the device
@@ -918,6 +939,7 @@ export function fmtParam(p, v) {
     case 'list': return (p.items || [])[Math.round(v - p.min)] ?? '';
     case 'dbinf': return v <= -60 ? '-inf dB' : v.toFixed(1) + ' dB';
     case 'deg': return Math.round(v) + '\u00B0';
+    case 'flmlist': { const n = (p.items || []).length; return n ? p.items[Math.min(n - 1, Math.max(0, Math.floor(v * (n - 1) + 1e-4)))] : ''; }
     case 'pct1': return (v * 100).toFixed(1) + ' %';
     case 'pan': return Math.abs(v) < 0.01 ? 'C' : (v < 0 ? Math.round(-v * 50) + 'L' : Math.round(v * 50) + 'R');
   }
