@@ -205,6 +205,13 @@ export const SCENARIOS = [
       e.loop(true, BAR, BAR * 2); e.seek(BAR); play(e, 3, [128, 333]); e.loop(false, 0, 0);
       e.stop(); play(e, 1);
     } },
+  { name: 'inst-flmtb', native: true, info: 'C++ only (native/engine/hdtb.cpp, Honeydew transistor_bass.rs): FL Studio Mobile Transistor Bass (34): saw / pulse, cutoff, reso, env mod, decay, accent, slides of held notes, distortion, PW LFO',
+    run(e) {
+      e.tempo(128); e.trackInst(0, 34); const f = []; for (let k = 0; k < 32; k++) f.push(k * PPQ / 4, PPQ * (k % 4 === 2 ? 0.45 : 0.2), 36 + [0, 12, 3, 0, 7, 10, 0, 15][k % 8], k % 3 === 0 ? 0.9 : 0.6, 0); e.trackNotes(0, f, f.length / 5);
+      const P = (i, v) => e.instParam(0, i, v);
+      e.play(); play(e, 2, [128, 77, 256]); P(1, 1); P(4, 0.7); P(6, 0.8); play(e, 1); P(7, 1); P(9, 0.6); P(8, 0.3); play(e, 1); P(11, 0.4); P(12, 0.6); P(13, 0.7); P(1, 0.5); play(e, 1);
+      e.stop(); play(e, 0.6);
+    } },
   { name: 'inst-flmdw', native: true, info: 'C++ only (native/engine/hddw.cpp, Honeydew DW Sampler): FL Studio Mobile DirectWave (30): key / vel zones (gain / pan), loop, reverse, root / tune, filter + filter envelope, frequency (pitch) envelope, LFO (Hertz / One Shot / Tempo) to filter / frequency / level / pan, slide / legato / mono, PB range + bend',
     run(e) {
       samples(e); testSample(e); e.tempo(124); e.trackInst(0, 30);

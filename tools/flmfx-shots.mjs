@@ -15,7 +15,7 @@ await page.addInitScript(() => localStorage.setItem('mobiledaw.prefs.v1', JSON.s
 await page.goto(`http://127.0.0.1:${server.address().port}/index.html`); await page.waitForFunction(() => window.__dawBooted, null, { timeout: 15000 }); await page.waitForTimeout(1000);
 const ev = (fn, a) => page.evaluate(fn, a);
 let bad = 0; const ok = (c, m) => { console.log((c ? 'ok   ' : 'FAIL ') + m); if (!c) bad++; };
-const SETS = [[132, 106, 125], [136, 141, 143], [104, 116, 145], [107, 108, 109], [141, 146, 129], [103, 135, 118]];
+const SETS = [[132, 106, 125], [136, 141, 143], [104, 116, 145], [107, 108, 109], [141, 146, 129], [103, 135, 118], [111, 113, 114], [115, 134, 127], [140, 144, 142]];
 await ev(async () => { const P = await import('./js/project.js'); P.newProject(true); P.addTrack('midi'); P.setInstrument(0, 1); P.emit('all'); });
 await page.waitForTimeout(500);
 await ev(() => document.querySelector('#dtabs .b[data-tab="dev"]').click()); await page.waitForTimeout(300);
@@ -29,6 +29,21 @@ for (const [s, set] of SETS.entries()) {
 }
 const moved = await ev(async () => { const P = await import('./js/project.js'); P.setDeviceParam(0, 0, 1, 0.37); return P.state.tracks[0].devices[0].params[1]; });
 ok(moved === 0.37, 'a module parameter set through the project API: ' + moved);
+// the Transistor Bass instrument (34) panel
+await ev(async () => { const P = await import('./js/project.js'); while (P.state.tracks[0].devices.length) P.removeDevice(0, 0); P.setInstrument(0, 34); P.selectTrack(0); P.emit('all'); });
+await page.waitForTimeout(700);
+const tbk = await ev(() => document.querySelectorAll('.card .knob, .card .lk-k, .card .kn').length);
+ok(tbk >= 10, 'Transistor Bass panel shows its knobs: ' + tbk);
+await page.screenshot({ path: path.join(out, 'transistor-bass.png') });
+// an old FLM import (Reverb kept as a placeholder): the offer switches it to the FLM module
+const up = await ev(async () => {
+  const P = await import('./js/project.js'), PM = await import('./js/projects.js'), { FLMFX } = await import('./js/flmfx.js');
+  const j = JSON.parse(P.serialize()); j.tracks[0].devices = [{ id: 'old1', type: 0, params: [], missing: { name: 'Reverb', flmType: 32, params: FLMFX[32].p.map((x) => x.d), enabled: true } }];
+  await P.deserialize(JSON.stringify(j)); await PM.offerFlmUpgrade();
+  const b = [...document.querySelectorAll('button')].find((x) => x.textContent === 'Pakai DSP FLM'); if (!b) return 'no offer'; b.click();
+  await new Promise((r) => setTimeout(r, 600)); return P.state.tracks[0].devices[0].type;
+});
+ok(up === 132, 'opening an old FLM import offers its modules on FLM DSP; accepted, the placeholder becomes Reverb (132): ' + up);
 ok(!errs.length, 'no page errors' + (errs.length ? ': ' + errs.slice(0, 3).join(' | ') : ''));
 await b.close(); server.close();
 console.log(bad ? `\n${bad} FAILED` : '\nALL FLM FX SHOTS OK');

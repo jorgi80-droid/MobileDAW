@@ -25,6 +25,7 @@
 #include "hddw.h"
 #include "fx8.h"
 #include "hdfx.h"
+#include "hdtb.h"
 
 namespace mdaw {
 
@@ -38,7 +39,7 @@ Instrument* makeInstrument(int type, double sr, Bank* bank) {
     case 22: return new DsHH(sr); case 23: return new DsClap(sr); case 24: return new DsFm(sr);
     case 25: return new Electric(sr); case 26: return new Tension(sr); case 27: return new Collision(sr);
     case 28: return new Impulse(sr, bank); case 29: return new Granulator(sr, bank);
-    case 30: return new HdDirectWave(sr, bank); case 31: return new HdGms(sr); case 32: return new HdMiniSynth(sr); case 33: return new HdSuperSaw(sr);
+    case 30: return new HdDirectWave(sr, bank); case 31: return new HdGms(sr); case 32: return new HdMiniSynth(sr); case 33: return new HdSuperSaw(sr); case 34: return makeTransistorBass(sr);
     default: return nullptr;
   }
 }
@@ -61,7 +62,7 @@ Device* makeDevice(int type, double sr, float* sidechain) {
     default: return nullptr;
   }
 }
-bool instPorted(int type) { return type == 1 || type == 2 || type == 3 || type == 4 || type == 5 || type == 6 || type == 7 || type == 8 || type == 9 || type == 10 || type == 11 || type == 12 || type == 13 || type == 14 || type == 15 || type == 17 || type == 18 || type == 16 || (type >= 19 && type <= 29) || type == 30 || type == 31 || type == 32 || type == 33; }
+bool instPorted(int type) { return type == 1 || type == 2 || type == 3 || type == 4 || type == 5 || type == 6 || type == 7 || type == 8 || type == 9 || type == 10 || type == 11 || type == 12 || type == 13 || type == 14 || type == 15 || type == 17 || type == 18 || type == 16 || (type >= 19 && type <= 29) || type == 30 || type == 31 || type == 32 || type == 33 || type == 34; }
 bool devPorted(int type) { return (type >= 17 && type <= 45) || (type >= 46 && type <= 51) || type == 12 || type == 13 || type == 16 || type == 1 || type == 6 || type == 9 || type == 0 || type == 2 || type == 3 || type == 4 || type == 5 || type == 7 || type == 8 || type == 10 || type == 14 || type == 15 || type == 52 || (type >= HDFX_BASE && type < HDFX_BASE + 100 && hdfxParamCount(type - HDFX_BASE) > 0); }
 
 }  // namespace mdaw

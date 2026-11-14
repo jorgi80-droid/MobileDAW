@@ -1722,6 +1722,7 @@ const flmPanel = (k) => {
   return disp ? h('div', { class: 'lk-row lk-flm' }, h('div', { class: 'lk-col lk-flmd' }, disp), body) : body;
 };
 for (const t of Object.keys(DEVICES)) if (DEVICES[t].view === 'flmfx') V[t] = flmPanel;
+VI[34] = flmPanel;   // Transistor Bass: the same compact FLM layout (its Distortion is a switch)
 
 export const KIT = V;
 export function kitView(ctx) { if (!V[ctx.d.type]) return null;   // no Live 12 panel yet: the card falls back to the automatic knob layout

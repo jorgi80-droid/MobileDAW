@@ -74,16 +74,33 @@ const wsShape = (idx, x, y, i) => {   // waveshaper.rs shape (the menu's 7 shape
   }
 };
 
+// the magnitude responses the displays draw, in dB at f Hz for the module's params p(i) (tools/flmfx-test.mjs measures the engine against them)
+const eqParam = (p) => (f, sr = SR) => { let d = 0; for (let b = 0; b < 4; b++) { const o = 1 + 4 * b, k = Math.trunc(p(o + 3) * 2); d += db(mag(param(k === 0 ? LS : k === 2 ? HS : PK, Math.pow(2, 5 + 9.25 * p(o + 1)), 0.25 + 7 * p(o + 2), -12 + 24 * p(o), sr * 2), f, sr)); } return d; };
+const GHZ = [80, 160, 375, 750, 1500, 3000, 6000, 12000];
+export const FLM_RESP = {
+  3: (p, f, sr = SR) => eqParam(p)(f, sr),
+  7: (p, f, sr = SR) => GHZ.reduce((d, hz, i) => d + db(mag(param(i === 0 ? LS : i === 7 ? HS : PK, hz, 1, -12 + 24 * p(i + 1), sr), f, sr)), 0),
+  30: (p, f, sr = SR) => { const key = Math.trunc(p(9) * 11 + 0.001), q = 0.1 + 10 * Math.pow(p(10), 3); let d = 0; for (let i = 0; i < 8; i++) d += db(mag(param(i === 0 ? LS : i === 7 ? HS : PK, 110 * Math.pow(2, key / 12 - 0.75 + i), q, -12 + 24 * p(i + 1), sr), f, sr)); return d; },
+  9: (p, f, sr = SR) => {
+    const k = Math.trunc(p(3) * 2), resp = k === 0 ? LP : k === 2 ? HP : BP, pk = Math.trunc(p(4) * 2), passes = pk === 0 ? 1 : pk === 2 ? 4 : 2;
+    const c = filt(resp, Math.pow(2, 4 + 10.3 * p(1)), 0.8 + 2 * sq(p(2)), sr), out = resp === LP ? Math.pow(0.8, passes) : 1;
+    return db(Math.pow(mag(c, f, sr), passes * 2) * out);
+  },
+  // Comb Filter (Manual / Snap): out = in + Mix * line, line = in + Feedback * line delayed by 2 + (sr - 2) / f0 frames (comb.rs)
+  40: (p, f, sr = SR) => {
+    const snap = p(7) !== 0, f0b = snap ? (Math.round(7 * p(10)) * 12 + Math.round(11 * p(11)) < 1 ? 0 : 440 * Math.pow(2, (Math.round(7 * p(10)) * 12 + Math.round(11 * p(11))) / 12 - 5.75)) : 1 + 2499 * Math.pow(p(2), 4);
+    const f0 = clamp(f0b * Math.pow(2, Math.round(4 * p(5) - 2)), 1, 20000) * (1 - (0.1 * p(9) - 0.05)), D = 2 + (sr - 2) / f0, w = TAU * f / sr * D, fb = p(3), mx = p(4);
+    const zr = Math.cos(w), zi = -Math.sin(w), dr = 1 - fb * zr, di = -fb * zi, den = dr * dr + di * di;   // z^-D / (1 - fb z^-D)
+    const hr = 1 + mx * (zr * dr + zi * di) / den, hi = mx * (zi * dr - zr * di) / den;
+    return db(Math.sqrt(hr * hr + hi * hi));
+  },
+};
 // id -> draw(g, w, hh, get) ; get(i) = the module's normalized param i
 export const FLM_GRAPH = {
-  3: (g, w, hh, p) => response(g, w, hh, (f) => { let d = 0; for (let b = 0; b < 4; b++) { const o = 1 + 4 * b, k = Math.trunc(p(o + 3) * 2); d += db(mag(param(k === 0 ? LS : k === 2 ? HS : PK, Math.pow(2, 5 + 9.25 * p(o + 1)), 0.25 + 7 * p(o + 2), -12 + 24 * p(o), SR * 2), f, SR)); } return d; }, 12),
-  7: (g, w, hh, p) => { const HZ = [80, 160, 375, 750, 1500, 3000, 6000, 12000]; response(g, w, hh, (f) => HZ.reduce((d, hz, i) => d + db(mag(param(i === 0 ? LS : i === 7 ? HS : PK, hz, 1, -12 + 24 * p(i + 1), SR), f, SR)), 0), 12); },
-  30: (g, w, hh, p) => { const key = Math.trunc(p(9) * 11 + 0.001), q = 0.1 + 10 * Math.pow(p(10), 3); response(g, w, hh, (f) => { let d = 0; for (let i = 0; i < 8; i++) d += db(mag(param(i === 0 ? LS : i === 7 ? HS : PK, 110 * Math.pow(2, key / 12 - 0.75 + i), q, -12 + 24 * p(i + 1), SR), f, SR)); return d; }, 12); },
-  9: (g, w, hh, p) => {
-    const k = Math.trunc(p(3) * 2), resp = k === 0 ? LP : k === 2 ? HP : BP, pk = Math.trunc(p(4) * 2), passes = pk === 0 ? 1 : pk === 2 ? 4 : 2;
-    const c = filt(resp, Math.pow(2, 4 + 10.3 * p(1)), 0.8 + 2 * sq(p(2)), SR), out = resp === LP ? Math.pow(0.8, passes) : 1;
-    response(g, w, hh, (f) => db(Math.pow(mag(c, f, SR), passes * 2) * out), 30);
-  },
+  3: (g, w, hh, p) => response(g, w, hh, (f) => FLM_RESP[3](p, f), 12),
+  7: (g, w, hh, p) => response(g, w, hh, (f) => FLM_RESP[7](p, f), 12),
+  30: (g, w, hh, p) => response(g, w, hh, (f) => FLM_RESP[30](p, f), 12),
+  9: (g, w, hh, p) => response(g, w, hh, (f) => FLM_RESP[9](p, f), 30),
   8: (g, w, hh, p) => {   // Compressor: the static curve (detector gain, threshold, ratio, makeup)
     const thr = -40 + 40 * p(1), ratio = 1 + 19 * sq(p(2)), det = -20 + 40 * p(8), T = amp(thr);
     const inv = ratio >= 20 ? 0 : T >= 1 ? 1 / ratio : (amp(thr * (1 - 1 / ratio)) - T) / Math.max(1 - T, 1e-30);
@@ -122,7 +139,64 @@ export const FLM_GRAPH = {
     response(g, w, hh, (f) => (f < lo ? gain(0) : f < hi ? gain(1) : gain(2)) + (-24 + 48 * p(1)), 24, DISPC.or);
     g.fillStyle = DISPC.bl; g.fillRect(Math.round(lx(lo, w)), 0, 1, hh); g.fillRect(Math.round(lx(hi, w)), 0, 1, hh);
   },
+  40: (g, w, hh, p) => { if (Math.trunc(2 * p(1)) !== 0) { fgrid(g, w, hh); txt(g, Math.trunc(2 * p(1)) === 1 ? 'MIDI Note' : 'Audio Pitch', w / 2, hh / 2 - 6, 'center'); return; } response(g, w, hh, (f) => FLM_RESP[40](p, f), 24); },
+  11: (g, w, hh, p) => {   // Chorus: the two taps' delay over two seconds (left / right LFO)
+    const rate = 0.2 + 4 * sq(p(1)), depth = 0.04 + 0.36 * p(2);
+    curve(g, w, hh, (t) => 0.5 + Math.sin(TAU * (0.62 + rate * 2 * t)) * depth, { time: true, col: DISPC.bl });
+    curve(g, w, hh, (t) => 0.5 + (Math.sin(TAU * (0.1 + (rate + 0.1) * 2 * t)) * depth), { time: true, col: DISPC.or });
+  },
+  13: (g, w, hh, p) => {   // Flanger: the delay over one LFO cycle, base +- depth
+    const shape = Math.min(Math.round(p(4) * 2), 2), base = 0.5 * sq(p(6)), depth = 0.5 * base * p(5);
+    curve(g, w, hh, (t) => clamp(base + depth * lfo(shape, t), 0, 1) * 2, { time: true, col: DISPC.bl });
+  },
+  14: (g, w, hh, p) => {   // Phaser: the allpass frequency over one LFO cycle (log axis 50 Hz .. 16 kHz)
+    const shape = Math.min(Math.round(p(8) * 2), 2), depth = 0.25 * Math.pow(p(2), 3), center = sq(p(4)), lo = 50 / SR, hi = Math.min(16000 / SR, 0.499);
+    curve(g, w, hh, (t) => { const fr = clamp(lo + (center + depth * lfo(shape, t)) * (hi - lo), lo, hi) * SR; return Math.log(fr / 50) / Math.log(16000 / 50); }, { time: true, col: DISPC.bl });
+  },
+  15: (g, w, hh, p) => {   // Stereoizer: the side component's tone (Focus one-pole low / high pass) at its Strength
+    const st = sq(p(1)), focus = 1 - 2 * p(3), hp = focus < 0, k = hp ? Math.pow(-0.99 * focus, 3) : Math.pow(1 - 0.8 * focus, 3);
+    response(g, w, hh, (f) => { const z = TAU * f / SR, re = 1 - (1 - k) * Math.cos(z), im = (1 - k) * Math.sin(z), lp = k / Math.sqrt(re * re + im * im); return db(st * (hp ? Math.abs(1 - lp) : lp)); }, 30);
+  },
+  34: (g, w, hh, p) => {   // Spacer: L/R and M/S shifts as bars around the centre, Pan and Separation
+    g.fillStyle = DISPC.grid; g.fillRect(Math.round(w / 2), 0, 1, hh);
+    const bar = (y, v, col, lab) => { const x0 = w / 2, x1 = w / 2 + (v - 0.5) * (w - 12); g.fillStyle = col; g.fillRect(Math.min(x0, x1), y, Math.max(2, Math.abs(x1 - x0)), 10); txt(g, lab, 4, y + 9); };
+    bar(10, p(1), DISPC.bl, 'L/R'); bar(30, p(5), DISPC.or, 'M/S'); bar(50, p(2), DISPC.ink, 'Pan'); bar(70, p(3), DISPC.bl, 'Sep');
+  },
+  27: (g, w, hh, p) => {   // Gate: output over input with the threshold, its asymmetry (close point) and the floor
+    const th = -60 + 66 * p(1), as = 66 * sq(p(2)), floorDb = db(Math.pow(10, -3 * Math.abs(2 * p(7) - 1))), inv = 2 * p(7) - 1 < 0;
+    dyn(g, w, hh, (i) => (inv ? (i > th ? i + floorDb : i) : (i > th ? i : i + floorDb)));
+    g.fillStyle = DISPC.bl; const x = (d) => Math.round((d + 60) / 66 * w); g.fillRect(x(th), 0, 1, hh); g.fillStyle = DISPC.grid2; g.fillRect(x(th - as), 0, 1, hh);
+  },
+  43: (g, w, hh, p) => {   // Wow & Flutter: the delay over one second (wow + flutter), free rates
+    const wr = 0.1 + 4.9 * p(1), wd = Math.expm1(5 * p(3)) * 0.006783655, fr = 5 + 15 * p(4), fd = p(6), wm = 0.142, fm = 0.003;
+    curve(g, w, hh, (t) => (clamp(0.5 * wm * (1 + Math.sin(TAU * wr * t)) * wd, 0, wm) + clamp(0.5 * fm * (1 + Math.sin(TAU * fr * t)) * fd, 0, fm)) / (wm + fm), { time: true, col: DISPC.bl });
+  },
+  25: (g, w, hh, p) => keys(g, w, hh, (k) => p(FLMFX_N25 + 3 + k) >= 0.5,   // the note enables follow Post Gain / Mix / Wet Pan
+    (k) => p(10 + k) > 0.5, `${Math.trunc(24 * p(2) - 12)} st`),
+  45: (g, w, hh, p) => keys(g, w, hh, (k) => p(1 + k) > 0.5, () => false, `Mix ${Math.round(p(22) * 100)} %`),
+  44: (g, w, hh, p) => {   // Spreader: Low Bypass on the frequency axis, Width / Separation
+    fgrid(g, w, hh); const lb = 10 * Math.pow(1000, p(2)); g.fillStyle = 'rgba(98,207,250,.25)'; g.fillRect(0, 0, Math.round(lx(Math.max(20, lb), w)), hh);
+    g.fillStyle = DISPC.or; const wd = clamp(2 * p(1), 0, 2) / 2 * (hh - 16); g.fillRect(Math.round(lx(Math.max(20, lb), w)), hh / 2 - wd / 2, w, Math.max(2, wd)); txt(g, 'Width', w - 4, 11, 'right');
+  },
+  4: (g, w, hh, p) => {   // Multi FX: the selected processor and the X / Y position
+    const K = ['Delay', 'Reverb', 'LP Filter', 'HP Filter', 'Flanger', 'Phaser', 'Panner', 'Vox'][Math.min(Math.trunc(clamp(p(1), 0, 1) * 7), 7)];
+    g.fillStyle = DISPC.grid; g.fillRect(Math.round(w / 2), 0, 1, hh); g.fillRect(0, Math.round(hh / 2), w, 1);
+    const x = 6 + p(2) * (w - 12), y = hh - 6 - p(3) * (hh - 12); g.fillStyle = DISPC.or; g.beginPath(); g.arc(x, y, 5, 0, TAU); g.fill(); txt(g, K, 4, 11);
+  },
+  42: (g, w, hh, p) => {   // Tape Stop: the speed over the ramp (Warp bends it)
+    const warp = 2 * p(6) - 1, c = Math.abs(warp) < 0.005 ? 0.005 : 1 - Math.pow(0.005, -warp);
+    curve(g, w, hh, (t) => clamp((Math.pow(1 - c, -(1 - t)) - 1) * (1 / c - 1), 0, 1), { time: true, col: DISPC.bl }); txt(g, p(5) > 0.5 ? 'Play' : 'Stop', w - 4, 11, 'right');
+  },
 };
+const lfo = (shape, t) => (shape === 1 ? 2 * t - 1 : shape === 2 ? (t <= 0.5 ? -1 : 1) : Math.sin(TAU * t));
+const FLMFX_N25 = 23;
+// a 12-key octave: on(k) lit, byp(k) marked, a caption
+function keys(g, w, hh, on, byp, cap) {
+  const white = [0, 2, 4, 5, 7, 9, 11], black = { 1: 0, 3: 1, 6: 3, 8: 4, 10: 5 }, kw = (w - 8) / 7, top = 16, h2 = hh - top - 4;
+  white.forEach((k, j) => { g.fillStyle = on(k) ? DISPC.bl : '#cfcfd4'; g.fillRect(4 + j * kw + 1, top, kw - 2, h2); if (byp(k)) { g.fillStyle = DISPC.or; g.fillRect(4 + j * kw + 1, top + h2 - 4, kw - 2, 4); } });
+  for (const [k, j] of Object.entries(black)) { g.fillStyle = on(+k) ? '#3c7e8d' : '#1e1e20'; g.fillRect(4 + (j + 1) * kw - kw * 0.3, top, kw * 0.6, h2 * 0.6); if (byp(+k)) { g.fillStyle = DISPC.or; g.fillRect(4 + (j + 1) * kw - kw * 0.3, top + h2 * 0.6 - 3, kw * 0.6, 3); } }
+  txt(g, cap, 4, 11);
+}
 function echoes(g, w, hh, step, fb, wet, unit) {
   g.fillStyle = DISPC.grid; g.fillRect(0, hh - 4, w, 1);
   const n = 12, span = step * n; g.fillStyle = DISPC.bl; let a = wet;

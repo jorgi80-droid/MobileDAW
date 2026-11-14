@@ -770,6 +770,7 @@ export function makeInstrument(type, sr, bank, sfs) {
     case 19: return new DsKick(sr); case 20: return new DsSnare(sr); case 21: return new DsTom(sr);
     case 28: return new Impulse(sr, bank); case 29: return new Granulator(sr, bank);
     case 25: return new Electric(sr); case 26: return new Tension(sr); case 27: return new Collision(sr);
+    case 34: return null;   // Transistor Bass is C++ only (native/engine/hdtb.cpp)
     case 30: return null;   // DirectWave is C++ only (native/engine/hddw.cpp): the JS fallback engine has none
     case 31: return new HdGms(sr); case 32: return new HdMiniSynth(sr); case 33: return new HdSuperSaw(sr);   // FL Studio Mobile instruments (flmsyn.js)
     case 22: return new DsHH(sr); case 23: return new DsClap(sr); case 24: return new DsFm(sr);

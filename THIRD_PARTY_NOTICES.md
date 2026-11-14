@@ -33,6 +33,7 @@ but the program as distributed from this point on is GPL-3.0-or-later as a whole
   `native/engine/hdfx2.*`; the effect type ids, names and parameter tables (`effect_info`, `src/params/effects.rs`, `effects_24_51.rs`) and
   the Pitcher note `CSTM` layout (`src/panels/cstm.rs`) -> `js/flmfx.js`, `js/import/fxmap.js`, `js/import/flm.js`; the value text laws
   (`src/params/display.rs` and the module formatters) -> `js/fxlaw.js`; the effect laws drawn in the panels -> `js/flmviz.js`.
+- Transistor Bass (`crates/audio/src/transistor_bass.rs` -> `native/engine/hdtb.*`, C++ only).
 - Honeydew states that it is a clean-room reimplementation of FL Studio Mobile written from a specification and contains no code,
   samples, presets or artwork of FL Studio Mobile. MobileDAW does not verify that claim; FL Studio is a trademark of Image-Line, and
   MobileDAW is not affiliated with or endorsed by Image-Line.

@@ -5,6 +5,7 @@ import { eng } from './engine.js';
 import * as P from './project.js';
 import * as QS from './quicksave.js';
 import { prefs, savePrefs } from './prefs.js';
+import { flmUpgradable, upgradeFlmJson } from './import/fxmap.js';
 
 const clean = (n) => String(n || '').trim().replace(/[^\w\- ]+/g, '').slice(0, 60);
 const dir = () => eng.home() + '/Projects';
@@ -19,10 +20,23 @@ export function noteRecent(name) {
 }
 export const recent = () => (Array.isArray(prefs.recent) ? prefs.recent : []).filter((n) => exists(n));
 
+// A project imported from FL Studio Mobile before its modules ran on their own DSP: offer to switch them (fxmap.js upgradeFlmJson). Only the
+// open project changes; the file on disk stays as it is until it is saved.
+export async function offerFlmUpgrade() {
+  let json; try { json = JSON.parse(P.serialize()); } catch (_) { return; }
+  const n = flmUpgradable(json); if (!n) return;
+  modal('Modul FL Studio Mobile', h('div', { class: 'xdlg' }, h('div', {}, `${n} modul FL Studio Mobile di proyek ini diimpor dengan versi lama (plugin pengganti atau placeholder).`),
+    h('div', { class: 'hint' }, 'Pakai DSP FL Studio Mobile aslinya dengan nilai dari file? Bunyi modul itu berubah mengikuti FLM; otomasinya ikut dipindah. File proyek tidak berubah sampai disimpan.')),
+    [{ label: 'Nanti' }, { label: 'Pakai DSP FLM', go: true, fn: async () => {
+      const r = upgradeFlmJson(json); await P.deserialize(JSON.stringify(json));
+      toast(`${r.devices} modul memakai DSP FL Studio Mobile` + (r.lanes ? `, ${r.lanes} lane otomasi dipindah` : '') + (r.dropped.length ? `; ${r.dropped.length} lane otomasi tidak bisa dipindah dan dihapus` : '') + '. Simpan untuk menyimpannya.', 5000);
+    } }]);
+}
 export async function openProject(name) {
   try {
     const miss = await P.deserialize(eng.readText(pathOf(name)));
     QS.markOpened(name); noteRecent(name);
+    setTimeout(offerFlmUpgrade, 500);
     return { ok: true, miss };
   } catch (e) { return { error: 'Proyek rusak atau tidak bisa dibaca' + (e && e.message ? ': ' + e.message : '.') }; }
 }

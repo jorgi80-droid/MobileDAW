@@ -51,6 +51,48 @@ ok(dryR > 0.01, `the test signal plays (${dryR.toFixed(3)} rms)`);
   const midi = await render([...base, 'devParam 0 0 1 0.5']), man = await render([...base, 'devParam 0 0 1 0', 'devParam 0 0 2 0']);
   let d = 0; for (let i = 0; i < midi.L.length; i++) d = Math.max(d, Math.abs(midi.L[i] - man.L[i]));
   ok(d > 0.01, `Comb Filter MIDI Note mode follows the track's notes (differs from the untuned comb by ${d.toFixed(3)})`); }
+// the panel curves (js/flmviz.js FLM_RESP) against the engine: a sine through the module, its measured gain vs the drawn dB
+{ const { FLM_RESP } = await import(path.join(root, 'js/flmviz.js'));
+  const sineGain = async (hz, lines) => {
+    const w = await loadWasmEngine(SR), n = SR * 2, x = Float32Array.from({ length: n }, (_, i) => 0.02 * Math.sin(2 * Math.PI * hz * i / SR)); w.setBlob(x);
+    const er = w.cmd(`masterLimit 0\ntempo 120\ntrackVol 0 1\nsample 0 @0:${n}\ntrackClips 0 [7 0 7680 0 1 0 0 0] 1\n` + lines.join('\n') + '\nsettle\nplay\n'); if (er) console.log('engine:', er.trim());
+    const L = new Float32Array(n), R = new Float32Array(n); w.render(L, R, n); return rms(L, SR, SR * 1.8);
+  };
+  const cases = [[103, { 1: 0.85, 2: 0.45, 3: 0.3, 4: 0.5, 5: 0.2, 6: 0.75, 7: 0.6, 8: 0.9 }], [107, { 1: 0.9, 3: 0.2, 5: 0.75, 8: 0.1 }], [130, { 2: 0.9, 4: 0.1, 6: 0.8, 9: 0.3 }],
+    [109, { 1: 0.45, 2: 0.6, 3: 0, 4: 0.5 }], [109, { 1: 0.5, 3: 1, 4: 0 }], [140, { 3: 0.6, 4: 0.5, 7: 0, 2: 0.55 }]];
+  const bads = []; let n = 0;
+  for (const [t, vals] of cases) {
+    const id = t - FLMFX_BASE, P = FLMFX[id].p.map((x) => x.d); for (const [k, v] of Object.entries(vals)) P[k] = v;
+    const lines = [`insertDevice 0 0 ${t}`, ...Object.entries(vals).map(([k, v]) => `devParam 0 0 ${k} ${v}`)];
+    for (const hz of [60, 150, 420, 1000, 2500, 7000]) {
+      const dry = await sineGain(hz, []), wet = await sineGain(hz, lines), got = 20 * Math.log10(wet / dry), want = FLM_RESP[id]((i) => P[i], hz, SR); n++;
+      if (Math.abs(got - want) > 0.5 && !(want < -40 && got < -40)) bads.push(`${FLMFX[id].name} ${hz} Hz: engine ${got.toFixed(2)} dB, panel ${want.toFixed(2)} dB`);
+    }
+  }
+  ok(!bads.length, `panel curves = what the engine plays: ${n} sine gains of Equalizer / Graphic EQ / Tuned EQ / Filter / Comb within 0.5 dB` + (bads.length ? ': ' + bads.slice(0, 5).join('; ') : '')); }
+// projects imported before: a placeholder and a stock replacement become the FLM modules, their automation moves to the module's params
+{ const FXm = await import(path.join(root, 'js/import/fxmap.js')), { normOf } = await import(path.join(root, 'js/defs.js'));
+  const lev = [1, 0.5, 0.3], gainDb = 20 * Math.log10(Math.pow(0.5 / 0.7071, 2)), ut = DEVICES[0].params[0];
+  const json = { master: { devices: [] }, returns: [], tracks: [
+    { id: 't1', kind: 'audio', devices: [{ id: 'd1', type: 0, params: [gainDb, -0.4], from: { name: 'FX Leveller', flmType: 20, params: lev, how: 'approx' } },
+      { id: 'd2', type: 0, params: [], missing: { name: 'Reverb', flmType: 32, params: FLMFX[32].p.map((x) => x.d), enabled: true } }] },
+    { id: 'a1', kind: 'auto', name: 'A \u2022 Gain', target: { kind: 4, strip: 't1', devId: 'd1', param: 0 }, clips: [{ pts: [{ t: 0, v: normOf(ut, gainDb) }] }] }] };
+  const n = FXm.flmUpgradable(json), r = FXm.upgradeFlmJson(json), d1 = json.tracks[0].devices[0], d2 = json.tracks[0].devices[1], a1 = json.tracks[1];
+  ok(n === 2 && r.devices === 2 && d1.id === 'd1' && d1.type === 120 && d1.params[1] === 0.5 && d1.params[2] === 0.3 && d2.type === 132 && !d2.missing,
+    'old FLM import: placeholder and stock replacement become the FLM modules with the stored values (same device id)');
+  ok(r.lanes === 1 && a1.target.param === 1 && Math.abs(a1.clips[0].pts[0].v - 0.5) < 1e-3 && FXm.flmUpgradable(json) === 0, `old FLM import: the Utility Gain lane moves back to Leveller Gain (${a1.clips[0].pts[0].v})`); }
+// FL Studio Mobile Transistor Bass (instrument 34, C++ only; checked sample for sample against Honeydew's Rust code when ported)
+{ const tb = async (notes, extra = []) => {
+    const w = await loadWasmEngine(SR), ev = []; for (const [b, l, k, v] of notes) ev.push(b * 960, l * 960, k, v, 0);
+    w.cmd(`masterLimit 0\ntempo 120\ntrackVol 0 1\ntrackInst 0 34\n${extra.join('\n')}\ntrackNotes 0 [${ev.length} ${ev.join(' ')}] ${notes.length}\nsettle\nplay\n`);
+    const n = Math.round(1.2 * SR), L = new Float32Array(n), R = new Float32Array(n); w.render(L, R, n); return L; };
+  const zc = (x, a, b) => { let n = 0, f = -1, l = -1; for (let i = a + 1; i < b; i++) if (x[i - 1] < 0 && x[i] >= 0) { const t = i - 1 + x[i - 1] / (x[i - 1] - x[i]); if (f < 0) f = t; else n++; l = t; } return n > 0 ? n * SR / (l - f) : 0; };   // first to last rising crossing
+  const soft = await tb([[0, 0.5, 45, 0.6]]), acc = await tb([[0, 0.5, 45, 0.9]]), open = await tb([[0, 2, 45, 0.6]], ['instParam 0 2 1', 'instParam 0 3 0', 'instParam 0 1 1']);
+  ok(rms(soft, 0, SR * 0.2) > 0.005 && rms(acc, 0, SR * 0.2) > rms(soft, 0, SR * 0.2) * 1.2, `Transistor Bass plays; an accent (velocity >= 99/127) is louder (${(20 * Math.log10(rms(acc, 0, SR * 0.2) / rms(soft, 0, SR * 0.2))).toFixed(1)} dB)`);
+  const f = zc(open, SR * 0.1, SR * 0.9), want = 440 * Math.pow(2, (45 - 81) / 12);
+  ok(Math.abs(f / want - 1) < 0.03, `Transistor Bass pitch: key 45 plays ${f.toFixed(1)} Hz (Honeydew: 440 Hz at key 81 -> ${want.toFixed(1)} Hz)`);
+  const { buildMdaw } = await import(path.join(root, 'js/import/build.js'));
+  ok(decide !== null && (await import(path.join(root, 'js/import/fxmap.js'))).FLM_TYPES[19].synth === 'transistorbass', 'FLM module 19 is the Transistor Bass instrument'); void buildMdaw; }
 // JS fallback engine: no FLM modules, but their place in the chain is kept
 { const d = makeDevice(FLMFX_BASE + 32, SR), L = Float32Array.from([0.5, -0.25]), R = Float32Array.from([0.1, 0.2]);
   d.setParam(3, 0.9); d.process(L, R, 2); ok(L[0] === 0.5 && R[1] === Math.fround(0.2) && makeDevice(299, SR) === null, 'JS fallback: an FLM module is a pass-through placeholder (later devices keep their index)'); }

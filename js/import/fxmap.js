@@ -6,7 +6,7 @@
 //   'all' (the "replace every missing module" option): additionally every other module that has a stock equivalent becomes that stock
 //          plugin BYPASSED (the sound stays exactly as it is now; the plugin is ready to switch on and adjust), keeping the original values.
 // Modules with no MDAW equivalent (Pitcher 2, Multi FX, Comb Filter) and unidentified types stay placeholders and are reported.
-import { DEVICES, normOf, FLMFX_BASE } from '../defs.js';
+import { DEVICES, normOf, valOf, FLMFX_BASE } from '../defs.js';
 import { FLMFX } from '../flmfx.js';
 
 // FL Studio Mobile module type ids -> module (guide names). sure: the identity is proven by data in real projects (preset folder, automation
@@ -28,7 +28,8 @@ export const FLM_TYPES = {
   46: { name: 'Tremolo', sure: true },                // preset folder Effect Presets/Tremolo; automation label "Mix : Tremolo"
   0: { name: 'MiniSynth', sure: true, synth: 'minisynth' },   // owner's "New Song" (FLM 4.x, app 10.19): channel "MiniSynth 4" = module type 0, 44 parameters, stem rendered
   2: { name: 'GMSynth', sure: true, synth: 'gms' },   // preset Synth Presets2/GMSynth/*.flgsynth
-  23: { name: 'SuperSaw', sure: true, synth: 'supersaw' },   // preset Synth Presets2/SuperSaw/*
+  23: { name: 'SuperSaw', sure: true, synth: 'supersaw' },
+  19: { name: 'Transistor Bass', sure: true, synth: 'transistorbass' },   // Honeydew effect_info / params: module 19 (14 params)   // preset Synth Presets2/SuperSaw/*
   52: { name: 'SoundFont Player', sure: true, synth: 'soundfont' },   // preset = Resources/SoundFonts/*.sf2 (FLM content, not in the project)
   18: { name: 'Tape Delay', sure: true },             // owner's screenshots of "New Song 1": rack slot 3 reads "Tape Delay" (on/off + 4 controls)
   16: { name: 'Trance Delay', sure: true },           // same screenshots: rack slot 4 reads "Trance Delay"
@@ -178,4 +179,39 @@ export function resolveFlmAutomation(json, report) {
     }
     delete t.flmAuto;
   }
+}
+
+// Projects imported before the FLM modules ran on their own DSP keep each FL Studio Mobile module as a placeholder (d.missing) or as a stock
+// plugin that replaced it (d.from: the module's original values). upgradeFlmJson turns those into the FLM module itself with the stored
+// values (same device id), and moves the automation lanes that pointed at the stock plugin back to the module's parameter (the inverse of
+// the import conversions above). Returns what it changed; flmUpgradable counts the candidates.
+const flmSource = (d) => { const m = d.missing || d.from; return m && m.flmType != null && FLMFX[m.flmType] && Array.isArray(m.params) ? m : null; };
+export function flmUpgradable(json) {
+  let n = 0; for (const c of [json.master, ...(json.returns || []), ...(json.tracks || [])].filter(Boolean)) for (const d of c.devices || []) if (!(d.type >= FLMFX_BASE) && flmSource(d)) n++;
+  return n;
+}
+export function upgradeFlmJson(json) {
+  const out = { devices: 0, lanes: 0, dropped: [] }, conv = new Map();
+  for (const c of [json.master, ...(json.returns || []), ...(json.tracks || [])].filter(Boolean)) for (const d of c.devices || []) {
+    const m = flmSource(d); if (!m || d.type >= FLMFX_BASE) continue;
+    const r = flmExact(m); if (!r) continue;
+    conv.set(d.id, { oldType: d.missing ? null : d.type, name: moduleName(m.name), flm: m.flmType, n: FLMFX[m.flmType].p.length });
+    d.type = r.type; d.params = fill(r.type, r.params); d.bypass = r.bypass; d.from = { ...m, how: 'exact', note: r.note }; delete d.missing;
+    out.devices++;
+  }
+  for (let k = (json.tracks || []).length - 1; k >= 0; k--) {
+    const t = json.tracks[k], tg = t && t.kind === 'auto' && t.target; if (!tg || tg.kind !== 4 || !conv.has(tg.devId)) continue;
+    const cv = conv.get(tg.devId), sp = cv.oldType != null && DEVICES[cv.oldType] ? DEVICES[cv.oldType].params[tg.param] : null;
+    let pi = -1, f = null;                                                            // f: the stock plugin's value -> FLM's normalized value
+    if (sp && /^(Dry\/Wet|Mix)$/.test(sp.n)) { pi = cv.n + 1; f = (v) => v; }
+    else if (cv.oldType === 52 && tg.param === 0) { pi = 5; f = (v) => (v > 0.5 ? 1 : 0); }
+    else if (cv.name === 'Leveller' && cv.oldType === 0 && tg.param === 0) { pi = 1; f = (dB) => Math.min(1, Math.max(0, 0.7071 * Math.pow(10, dB / 40))); }
+    else if (cv.name === 'Leveller' && cv.oldType === 0 && tg.param === 1) { pi = 2; f = (pan) => Math.min(1, Math.max(0, pan / 2 + 0.5)); }
+    else if (cv.name === 'Graphic EQ' && cv.oldType === 31 && (tg.param - 3) % 5 === 0) { pi = (tg.param - 3) / 5 + 1; f = (g) => Math.min(1, Math.max(0, g / (2 * GEQ_RANGE) + 0.5)); }
+    if (pi < 0) { json.tracks.splice(k, 1); out.dropped.push(t.name || 'otomasi'); continue; }
+    for (const c of t.clips || []) for (const q of c.pts || []) q.v = Math.round(f(sp ? valOf(sp, q.v) : q.v) * 1e5) / 1e5;
+    const def = DEVICES[FLMFX_BASE + cv.flm].params[pi]; tg.param = pi; tg.def = { ...def }; t.name = String(t.name || '').replace(/\u2022 .*$/, '\u2022 ' + def.n);
+    out.lanes++;
+  }
+  return out;
 }
