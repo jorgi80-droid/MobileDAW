@@ -5,7 +5,7 @@ import { RingReader, PollWriter, pollViews, POLL_WATCH, POLL_DEVMAX } from './sa
 
 const NSTRIPS = 73;
 const CMDS = new Set(['play', 'playCountIn', 'stop', 'seek', 'tempo', 'tempoMap', 'setSig', 'setMeter', 'loop', 'setMetro', 'setMetroVol', 'masterLimit', 'setPdc', 'trackVol', 'trackPan', 'trackWidth', 'trackInvert', 'trackMute', 'trackSolo', 'trackSend', 'trackOut', 'trackLoad', 'trackInst', 'instParam', 'resetTrack',
-  'insertDevice', 'removeDevice', 'devParam', 'devBypass', 'rackCmd', 'preview', 'bend', 'modWheel', 'trackPanLaw', 'trackNotes', 'trackClips', 'trackCC', 'automation']);
+  'insertDevice', 'removeDevice', 'devParam', 'devBypass', 'rackCmd', 'preview', 'bend', 'modWheel', 'trackPanLaw', 'trackNotes', 'trackNoteFx', 'trackClips', 'trackCC', 'automation']);
 
 class DawWasmProcessor extends AudioWorkletProcessor {
   constructor(options) {

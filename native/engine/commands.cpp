@@ -1,4 +1,5 @@
 #include "commands.h"
+#include "hdnfx.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
@@ -14,7 +15,7 @@ namespace mdaw {
 enum Op {
   PLAY, STOP, PLAYCOUNTIN, SEEK, TEMPO, TEMPOMAP, SETSIG, SETMETER, LOOP, SETMETRO, SETMETROVOL, MASTERLIMIT, SETPDC, TRACKLOAD,
   TRACKVOL, TRACKPAN, TRACKWIDTH, TRACKINVERT, TRACKMUTE, TRACKSOLO, TRACKSEND, TRACKOUT, TRACKINST, INSTPARAM, RESETTRACK,
-  INSERTDEVICE, REMOVEDEVICE, DEVPARAM, DEVBYPASS, RACKCMD, SOUNDFONT, PREVIEW, BEND, MODWHEEL, TRACKPANLAW, TRACKNOTES, TRACKCLIPS, TRACKCC, AUTOMATION, SAMPLE, PANIC, SETTLE, OFFLINE
+  INSERTDEVICE, REMOVEDEVICE, DEVPARAM, DEVBYPASS, RACKCMD, SOUNDFONT, PREVIEW, BEND, MODWHEEL, TRACKPANLAW, TRACKNOTES, TRACKCLIPS, TRACKCC, AUTOMATION, SAMPLE, PANIC, SETTLE, OFFLINE, TRACKNOTEFX
 };
 static const std::unordered_map<std::string, int> OPS = {
   { "play", PLAY }, { "stop", STOP }, { "playCountIn", PLAYCOUNTIN }, { "seek", SEEK }, { "tempo", TEMPO }, { "tempoMap", TEMPOMAP },
@@ -22,7 +23,7 @@ static const std::unordered_map<std::string, int> OPS = {
   { "trackVol", TRACKVOL }, { "trackPan", TRACKPAN }, { "trackWidth", TRACKWIDTH }, { "trackInvert", TRACKINVERT }, { "trackMute", TRACKMUTE }, { "trackSolo", TRACKSOLO }, { "trackSend", TRACKSEND },
   { "trackOut", TRACKOUT }, { "trackInst", TRACKINST }, { "instParam", INSTPARAM }, { "resetTrack", RESETTRACK }, { "insertDevice", INSERTDEVICE },
   { "removeDevice", REMOVEDEVICE }, { "devParam", DEVPARAM }, { "devBypass", DEVBYPASS }, { "rackCmd", RACKCMD }, { "sf", SOUNDFONT }, { "preview", PREVIEW }, { "bend", BEND }, { "modWheel", MODWHEEL }, { "trackPanLaw", TRACKPANLAW },
-  { "trackNotes", TRACKNOTES }, { "trackClips", TRACKCLIPS }, { "trackCC", TRACKCC }, { "automation", AUTOMATION }, { "sample", SAMPLE }, { "panic", PANIC }, { "settle", SETTLE }, { "offline", OFFLINE },
+  { "trackNotes", TRACKNOTES }, { "trackClips", TRACKCLIPS }, { "trackCC", TRACKCC }, { "automation", AUTOMATION }, { "sample", SAMPLE }, { "panic", PANIC }, { "settle", SETTLE }, { "offline", OFFLINE }, { "trackNoteFx", TRACKNOTEFX },
 };
 
 // ---------------------------------------------------------------- parsing
@@ -68,7 +69,38 @@ static int count(const Arg& a, const Arg& n, int stride) {   // n entries, never
   return (int)std::max(0.0, std::min(want == want ? want : 0, have));
 }
 
-static NoteData* prepNotes(const Arg& flat, const Arg& nArg, int stride) {
+// FL Studio Mobile note effects per track (hdnfx.cpp), set by trackNoteFx (it comes before the track's trackNotes): the notes of a track
+// with any are run through them here, off the audio thread, as they reach the engine. trackNoteFx t [type inst count p0 p1 ... ...] endBeat
+struct NoteFxCfg { std::vector<NfxModule> mods; double endBeat = 0; };
+static NoteFxCfg noteFx[NSTRIPS];
+static std::vector<double> applyNoteFx(int t, const Arg& flat, int n, int stride, const Engine& eng) {
+  std::vector<double> out;
+  const NoteFxCfg& cfg = noteFx[t];
+  std::vector<NfxNote> notes; notes.reserve(n);
+  double last = 0;
+  for (int i = 0; i < n; i++) {
+    size_t b = (size_t)i * stride; double st = arrAt(flat, b), ln = arrAt(flat, b + 1), p = arrAt(flat, b + 2), v = arrAt(flat, b + 3), pv = stride > 4 ? arrAt(flat, b + 4) : 0;
+    if (!(st == st) || !(p == p)) continue;
+    NfxNote q; q.start = st / PPQ; q.end = (st + jsMax(ln, 1)) / PPQ; q.pitch = (int)p;
+    q.velocity = (int)std::min(255.0, std::max(1.0, std::round((v == v ? v : 0.8) * 255)));                 // MobileDAW velocity 0..1 = FLM's byte / 255
+    double pan = pv == pv ? pv : 0; q.pan = (float)std::min(1.0, std::max(0.0, (pan * 128 + 127) / 255));    // MobileDAW pan -1..1 <- FLM's byte (127 = centre)
+    notes.push_back(q); last = std::max(last, q.end);
+  }
+  const double tempo = eng.bpm > 0 ? eng.bpm : 120, endBeat = std::max(cfg.endBeat, last + 1);
+  if (!nfxProcess(cfg.mods, 0, endBeat, tempo, eng.barBeats > 0 ? eng.barBeats : 4, eng.sr, 1024, notes)) return out;   // refused: the notes as they are
+  out.reserve(notes.size() * 6);
+  for (auto& q : notes) { out.push_back(q.start * PPQ); out.push_back((q.end - q.start) * PPQ); out.push_back(q.pitch); out.push_back(q.velocity / 255.0);
+    out.push_back(std::min(1.0, std::max(-1.0, ((double)q.pan * 255 - 127) / 128))); out.push_back(0); }
+  return out;
+}
+
+static NoteData* prepNotes(const Arg& flat0, const Arg& nArg0, int stride0, int track = -1, const Engine* eng = nullptr) {
+  Arg fxFlat, fxN; const Arg* flatP = &flat0; const Arg* nP = &nArg0; int stride = stride0;
+  if (eng && track >= 0 && track < NSTRIPS && !noteFx[track].mods.empty()) {
+    std::vector<double> o = applyNoteFx(track, flat0, count(flat0, nArg0, stride0), stride0, *eng);
+    if (!o.empty() || count(flat0, nArg0, stride0) == 0) { fxFlat.kind = Arg::Arr; fxFlat.arr = std::move(o); fxN.kind = Arg::Num; fxN.num = (double)(fxFlat.arr.size() / 6); flatP = &fxFlat; nP = &fxN; stride = 6; }
+  }
+  const Arg& flat = *flatP; const Arg& nArg = *nP;
   int n = count(flat, nArg, stride);
   struct Ev { double t, on, p, v, pan, st; };
   std::vector<Ev> ev; ev.reserve(n * 2);
@@ -219,7 +251,21 @@ bool prepare(const std::string& name, const std::vector<Arg>& a, const Engine& e
       else take(c, d);
       break;
     }
-    case TRACKNOTES: { c.a[0] = N(0); int stride = at(a, 3).kind == Arg::Num ? (int)at(a, 3).num : 5; take(c, prepNotes(at(a, 1), at(a, 2), stride)); break; }
+    case TRACKNOTES: { c.a[0] = N(0); int stride = at(a, 3).kind == Arg::Num ? (int)at(a, 3).num : 5; take(c, prepNotes(at(a, 1), at(a, 2), stride, toInt32(N(0)), &eng)); break; }
+    case TRACKNOTEFX: {        // the note effects of track t (FLM modules 47..51): kept here for its next trackNotes; nothing reaches the audio thread
+      int t = toInt32(N(0)); c.a[0] = -1;
+      if (t >= 0 && t < NSTRIPS) {
+        NoteFxCfg cfg; const Arg& f = at(a, 1); size_t i = 0;
+        while (i + 3 <= f.arr.size()) {
+          NfxModule m; m.type = (int)f.arr[i]; m.instance = (int32_t)toInt32(f.arr[i + 1]); size_t np = (size_t)std::max(0.0, f.arr[i + 2]); i += 3;
+          for (size_t k = 0; k < np && i < f.arr.size(); k++) m.p.push_back((float)f.arr[i++]);
+          if (nfxParamCount(m.type)) cfg.mods.push_back(std::move(m));
+        }
+        cfg.endBeat = at(a, 2).kind == Arg::Num ? at(a, 2).num : 0;
+        noteFx[t] = std::move(cfg);
+      }
+      break;
+    }
     case TRACKCLIPS: { c.a[0] = N(0); int stride = at(a, 3).kind == Arg::Num ? (int)at(a, 3).num : 7; take(c, prepClips(at(a, 1), at(a, 2), stride)); break; }
     case TRACKCC: { c.a[0] = N(0); CCData* d = prepCC(at(a, 1), at(a, 2)); if (d) take(c, d); break; }
     case AUTOMATION: take(c, prepLanes(at(a, 0), at(a, 1))); break;

@@ -23,7 +23,7 @@ async function render(devLines, sec = 1.5) {
   const n = Math.round(sec * SR), L = new Float32Array(n), R = new Float32Array(n); w.render(L, R, n); return { L, R, er };
 }
 const ids = Object.keys(FLMFX).map(Number);
-ok(ids.length === 32 && ids.every((id) => DEVICES[FLMFX_BASE + id] && DEVICES[FLMFX_BASE + id].params.length >= FLMFX[id].p.length + 3), `${ids.length} FLM modules defined as devices 100 + id (FLM params + Post Gain / Mix / Wet Pan)`);
+ok(ids.length === 37 && ids.every((id) => DEVICES[FLMFX_BASE + id] && DEVICES[FLMFX_BASE + id].params.length >= FLMFX[id].p.length + 3), `${ids.length} FLM modules (32 effects + 5 note effects) defined as devices 100 + id (FLM params + Post Gain / Mix / Wet Pan)`);
 const dry = await render([]);
 const dryR = rms(dry.L, 0, dry.L.length);
 { const bads = [];
@@ -93,6 +93,23 @@ ok(dryR > 0.01, `the test signal plays (${dryR.toFixed(3)} rms)`);
   ok(Math.abs(f / want - 1) < 0.03, `Transistor Bass pitch: key 45 plays ${f.toFixed(1)} Hz (Honeydew: 440 Hz at key 81 -> ${want.toFixed(1)} Hz)`);
   const { buildMdaw } = await import(path.join(root, 'js/import/build.js'));
   ok(decide !== null && (await import(path.join(root, 'js/import/fxmap.js'))).FLM_TYPES[19].synth === 'transistorbass', 'FLM module 19 is the Transistor Bass instrument'); void buildMdaw; }
+// FL Studio Mobile note effects (devices 147..151, C++ only: native/engine/hdnfx.cpp; checked note for note against Honeydew's Rust code
+// when ported): trackNoteFx before trackNotes reworks the track's notes. Played on the Transistor Bass (mono, known pitch law).
+{ const play = async (fx, notes, sec = 1) => {
+    const w = await loadWasmEngine(SR), ev = []; for (const [b, l, k, v] of notes) ev.push(b * 960, l * 960, k, v, 0);
+    const er = w.cmd(`masterLimit 0\ntempo 120\ntrackVol 0 1\ntrackInst 0 34\ninstParam 0 2 1\ninstParam 0 3 0\ninstParam 0 1 1\n${fx}\ntrackNotes 0 [${ev.length} ${ev.join(' ')}] ${notes.length}\nsettle\nplay\n`);
+    if (er) console.log('engine:', er.trim());
+    const n = Math.round(sec * SR), L = new Float32Array(n), R = new Float32Array(n); w.render(L, R, n); return L; };
+  const zc = (x, a, b) => { let n = 0, f = -1, l = -1; for (let i = Math.round(a) + 1; i < Math.round(b); i++) if (x[i - 1] < 0 && x[i] >= 0) { const t = i - 1 + x[i - 1] / (x[i - 1] - x[i]); if (f < 0) f = t; else n++; l = t; } return n > 0 ? n * SR / (l - f) : 0; };
+  const hz = (k) => 440 * Math.pow(2, (k - 81) / 12);
+  const tr = await play('insertDevice 0 0 148\ntrackNoteFx 0 [6 48 7 3 1 0.625 0.5] 8', [[0, 2, 45, 0.6]]);
+  const f1 = zc(tr, SR * 0.1, SR * 0.9); ok(Math.abs(f1 / hz(57) - 1) < 0.02, `Transpose +1 octave: key 45 plays ${f1.toFixed(1)} Hz (key 57 = ${hz(57).toFixed(1)} Hz)`);
+  const P = FLMFX[51].p.map((x) => x.d); P[10] = 2 / 23;                                           // Arp 1 mode Up, Rate 1/8 (0.5 beat = 0.25 s at 120 BPM)
+  const arp = await play(`insertDevice 0 0 151\ntrackNoteFx 0 [${P.length + 3} 51 9 ${P.length} ${P.join(' ')}] 8`, [[0, 2, 45, 0.6], [0, 2, 49, 0.6], [0, 2, 52, 0.6]], 0.8);
+  const a = [zc(arp, SR * 0.02, SR * 0.11), zc(arp, SR * 0.27, SR * 0.36), zc(arp, SR * 0.52, SR * 0.61)], want = [hz(45), hz(49), hz(52)];
+  ok(a.every((x, k) => Math.abs(x / want[k] - 1) < 0.03), `Arpeggiator Up 1/8 over A-C#-E: ${a.map((x) => x.toFixed(1)).join(' / ')} Hz in turn (${want.map((x) => x.toFixed(1)).join(' / ')})`);
+  const none = await play('insertDevice 0 0 151\ntrackNoteFx 0 [0] 8', [[0, 2, 45, 0.6]]);
+  ok(Math.abs(zc(none, SR * 0.1, SR * 0.9) / hz(45) - 1) < 0.02, 'no note effect: the notes play as they are'); }
 // JS fallback engine: no FLM modules, but their place in the chain is kept
 { const d = makeDevice(FLMFX_BASE + 32, SR), L = Float32Array.from([0.5, -0.25]), R = Float32Array.from([0.1, 0.2]);
   d.setParam(3, 0.9); d.process(L, R, 2); ok(L[0] === 0.5 && R[1] === Math.fround(0.2) && makeDevice(299, SR) === null, 'JS fallback: an FLM module is a pass-through placeholder (later devices keep their index)'); }

@@ -187,6 +187,7 @@ export class Engine {
   bendNew(s) { const n = s.inst.counter, r = Math.pow(2, s.bend / 12); for (const v of s.inst.v) if (v.on && v.age === n) s.inst.bendVoice(v, r); }
   preview(t, pitch, vel, on) { if (this.ok(t) && t < MASTER && this.s[t].inst && this.s[t].pre.length < 64) this.s[t].pre.push({ p: pitch | 0, v: vel, on: !!on }); }
   // flat = [start tick, length ticks, pitch, velocity, pan, (stride 6: pitch offset in semitones, drum pads)] * n   (pan -1..1; stride 4 is accepted for old callers)
+  trackNoteFx() {}   // FL Studio Mobile note effects: C++ engine only (native/engine/hdnfx.cpp); this engine plays the notes as they are
   trackNotes(t, flat, n, stride = 5) {
     if (!this.ok(t) || t >= MASTER) return;
     const ev = [];

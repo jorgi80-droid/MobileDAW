@@ -35,6 +35,17 @@ await page.waitForTimeout(700);
 const tbk = await ev(() => document.querySelectorAll('.card .knob, .card .lk-k, .card .kn').length);
 ok(tbk >= 10, 'Transistor Bass panel shows its knobs: ' + tbk);
 await page.screenshot({ path: path.join(out, 'transistor-bass.png') });
+// a note effect (Arpeggiator, 151) on the track: the project sends its chain to the engine (trackNoteFx) before the notes, again on a change
+const nfx = await ev(async () => {
+  const P = await import('./js/project.js'), { eng } = await import('./js/engine.js'); const sent = [];
+  const orig = eng.trackNoteFx; eng.trackNoteFx = (...a) => { sent.push(JSON.stringify(a[1])); return orig && orig.apply(eng, a); };
+  P.addDevice(0, 151); const di = P.state.tracks[0].devices.length - 1; P.setDeviceParam(0, di, 10, 2 / 23);
+  P.toggleBypass(0, di); P.toggleBypass(0, di); eng.trackNoteFx = orig;
+  return { n: sent.length, first: sent[0] ? JSON.parse(sent[0]).slice(0, 3) : null, mode: sent[1] ? JSON.parse(sent[1])[3 + 10] : null, byp: sent[2] ? JSON.parse(sent[2])[3] : null };
+});
+ok(nfx.n >= 3 && nfx.first[0] === 51 && nfx.first[2] === 33 && Math.abs(nfx.mode - 2 / 23) < 1e-9 && nfx.byp === 0, `Arpeggiator on a track: its chain reaches the engine (${nfx.n} sends: added, Mode changed, bypass -> Enable 0)`);
+await page.waitForTimeout(500);
+await page.screenshot({ path: path.join(out, 'arpeggiator.png') });
 // an old FLM import (Reverb kept as a placeholder): the offer switches it to the FLM module
 const up = await ev(async () => {
   const P = await import('./js/project.js'), PM = await import('./js/projects.js'), { FLMFX } = await import('./js/flmfx.js');

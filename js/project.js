@@ -32,7 +32,24 @@ let _id = 1;
 const uid = () => _id++;
 const listeners = new Set();
 export const onChange = (fn) => { listeners.add(fn); return () => listeners.delete(fn); };
-export const emit = (what) => { if (what === 'devices' || what === 'tracks' || what === 'all') fixMods(); if (what !== 'mix' && what !== 'transport' && state.tracks.some((t) => t.frozen)) state.tracks.forEach((t, i) => { if (t.frozen) checkFrozen(i); }); listeners.forEach((f) => f(what)); };
+export const emit = (what) => { if (what === 'devices' || what === 'tracks' || what === 'all') { fixMods(); state.tracks.forEach((_, i) => nfxCheck(i)); } if (what !== 'mix' && what !== 'transport' && state.tracks.some((t) => t.frozen)) state.tracks.forEach((t, i) => { if (t.frozen) checkFrozen(i); }); listeners.forEach((f) => f(what)); };
+// FL Studio Mobile note effects (FLM modules 47..51 as devices 147..151, defs.js noteFx): the C++ engine works a track's notes out through
+// them when the notes arrive (native/engine/hdnfx.cpp): trackNoteFx [type, instance, count, params...] per module, before trackNotes.
+// A change of the chain (add, remove, move, bypass, a param) sends the track's notes again (nfxCheck).
+const nfxSent = new Map();
+const nfxInstance = (id) => { let h = 0; for (const ch of String(id)) h = (Math.imul(h, 31) + ch.charCodeAt(0)) | 0; return h; };
+function nfxFlat(t) {
+  const f = [];
+  for (const d of t.devices || []) {
+    const def = DEVICES[d.type]; if (!def || !def.noteFx) continue;
+    const n = def.flmParams, p = (d.params || []).slice(0, n).map((v, k) => (Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : def.params[k].def));
+    p[0] = d.bypass ? 0 : 1;                                       // the device's bypass is the module's Enable
+    f.push(def.flm, nfxInstance(d.id), n, ...p);
+  }
+  return f;
+}
+const nfxEnd = () => { let e = 0; for (const t of state.tracks) for (const c of t.clips || []) e = Math.max(e, c.start + c.len); return e / PPQ + 4; };
+function nfxCheck(i) { const t = state.tracks[i]; if (!t || t.kind === 'audio' || t.kind === 'auto') return; const sig = JSON.stringify(nfxFlat(t)); if ((nfxSent.get(t) || '[]') !== sig) syncClips(i); }
 // Undo hook, filled in by js/history.js. hit(key) = true when this change belongs to the gesture already recorded (a knob being dragged); add(entry) stores
 // a small "before" entry. on is false while an undo / redo / project load runs, so replayed changes are not recorded again.
 export const HK = { on: true, hit: () => false, add: () => {}, group: (f) => f(), barrier: () => {}, checkpoint: () => {}, begin: () => {}, end: () => {} };
@@ -324,6 +341,7 @@ export function syncClips(i) {
       if (c.muted || subMuted(t, c)) continue;                     // a muted sub-track row: its clips are left out
       n += clipNoteEvents(c, t.kind, f, true);
     }
+    { const nf = nfxFlat(t), sig = JSON.stringify(nf); if (nf.length || (nfxSent.get(t) || '[]') !== sig) eng.trackNoteFx(i, nf, nfxEnd()); nfxSent.set(t, sig); }
     eng.trackNotes(i, f, n, 6);
     const cf = []; let cn = 0;                                   // controller lanes (pitch bend, CC7 / 10 / 11) of the clips
     const KIND = { bend: 0, 7: 1, 10: 2, 11: 3 };
@@ -1096,7 +1114,7 @@ export function resetDevice(i, di) { const d = tr(i).devices[di]; if (!d) return
 // replace the whole chain (Load Rack Preset / Paste All)
 export function replaceChain(i, list) { const t = tr(i); let r = null; HK.group(() => { while (t.devices.length) removeDevice(i, t.devices.length - 1); r = insertDeviceCopies(i, 0, list); }); return r; }
 export function removeDevice(i, di) { const d0 = tr(i).devices[di]; if (HK.on && d0) HK.add({ t: 'dpres', s: stripOf(i), d: d0, di, present: false }); tr(i).devices.splice(di, 1); eng.removeDevice(i, di); emit('devices'); }
-export function setDeviceParam(i, di, pi, v) { const ar = autoRec(i, 4, pi, di, v); if (i < MAX_TRACKS && state.tracks[i] && state.tracks[i].frozen) unfreezeTrack(i, true); const d = tr(i).devices[di]; if (!ar && HK.on && d.params[pi] !== v && !HK.hit('dp' + stripOf(i) + '.' + d.id + '.' + pi)) HK.add({ t: 'val', k: 'dev', s: stripOf(i), d: d.id, p: pi, v: d.params[pi] }); tr(i).devices[di].params[pi] = v; eng.devParam(i, di, pi, v);  if (modsMapped) fixMods(); }
+export function setDeviceParam(i, di, pi, v) { const ar = autoRec(i, 4, pi, di, v); if (i < MAX_TRACKS && state.tracks[i] && state.tracks[i].frozen) unfreezeTrack(i, true); const d = tr(i).devices[di]; if (!ar && HK.on && d.params[pi] !== v && !HK.hit('dp' + stripOf(i) + '.' + d.id + '.' + pi)) HK.add({ t: 'val', k: 'dev', s: stripOf(i), d: d.id, p: pi, v: d.params[pi] }); tr(i).devices[di].params[pi] = v; eng.devParam(i, di, pi, v);  if (modsMapped) fixMods(); if (DEVICES[d.type] && DEVICES[d.type].noteFx) nfxCheck(i); }
 // Per-module Mix (0..1) / Gain (dB) of a device in a track / Master / return chain. Values equal to the default are removed from the device
 // (old files and untouched devices stay exactly as they were).
 export const wetOf = (d) => ({ mix: d && Number.isFinite(d.mix) ? d.mix : 1, gain: d && Number.isFinite(d.gain) ? d.gain : 0 });

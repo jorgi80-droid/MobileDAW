@@ -2,6 +2,7 @@
 // Copyright (C) 2026 daijro and the Honeydew contributors (original Rust); port (C) MobileDAW contributors. GPL-3.0-or-later.
 #include "hdfx.h"
 #include "hdfx2.h"
+#include "hdnfx.h"
 #include <cmath>
 #include <cstring>
 #include <algorithm>
@@ -789,11 +790,15 @@ class Module : public Device {
 
 }  // namespace hdfx
 
+// FL Studio Mobile note effects (47..51): their notes are worked out when the track's notes arrive (hdnfx.cpp, commands.cpp trackNoteFx);
+// in the chain they hold their place and pass the audio through
+class NoteFxPlace : public Device { public: void setParam(int, double) override {} void process(float*, float*, int) override {} };
 int hdfxParamCount(int flmId) {
+  if (nfxParamCount(flmId)) return nfxParamCount(flmId);
   int n = 0; const float* def = nullptr; hdfx::State* s = hdfx::makeState(flmId, n, def);
   if (s) { delete s; return n; }
   return hdfx::extParamCount(flmId);
 }
-Device* makeHdFx(int flmId, double sr) { return hdfxParamCount(flmId) > 0 ? new hdfx::Module(flmId, sr) : nullptr; }
+Device* makeHdFx(int flmId, double sr) { if (nfxParamCount(flmId)) return new NoteFxPlace(); return hdfxParamCount(flmId) > 0 ? new hdfx::Module(flmId, sr) : nullptr; }
 
 }  // namespace mdaw

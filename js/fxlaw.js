@@ -42,6 +42,15 @@ const linear = (min, max, v) => fma(f(max - min), v, f(min));
 const expo = (min, max, v) => f(f(min) * f(Math.pow(f(max / min), v)));
 const NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 
+const rnd = (x) => Math.sign(x) * Math.round(Math.abs(x));   // Rust round(): halves away from zero
+const step = (n, lo, v) => { const x = rnd(f(f(n * v) + lo)); return (x >= 0 ? '+' : '') + x; };
+const ECHO = [[0.125, '1/8'], [0.25, '1/4'], [0.375, '3/8'], [0.5, '1/2'], [0.75, '3/4'], [1, '1'], [2, '2'], [3, '3'], [4, '4'], [8, '8']];
+const ARP_PATTERNS = ['x.', 'x.x', 'x..x', 'x.xx', 'x.x.x', 'x..x.x', 'x..xx.', 'x.x.xx', 'x..x.x.', 'x..x.xx', 'x..xx.x', 'x.x.x.x', 'x.xx.xx', 'x...x.xx', 'x...xx.x', 'x..x..x.', 'x..x.xx.', 'x..x.xxx', 'x..xx.x.', 'x.x.x.xx', 'x.x.xx.x'];
+const arpRotate = (v, c, ri) => {
+  const rv = c.p && c.p[ri] != null ? c.p[ri] : 0, k = Math.round(f(f(Math.min(1, Math.max(0, rv))) * 21)) - 1;
+  if (k < 0) return '0';
+  const n = ARP_PATTERNS[k].length; return String(rnd(f(f(f(2 * v) - 1) * (n - 1))) + 0);
+};
 // the module formatters (Display::Custom / CustomCx), by FLM module id . param index; ctx = { p: the module's params, bpm, sr }
 const CUSTOM = {
   '6.4': (v) => String(Math.trunc(fma(200, v, -100))),                                          // Distortion Stereo (AMOUNT_TRUNC)
@@ -61,8 +70,12 @@ const CUSTOM = {
   '35.4': (v) => fixedAbs(f(Math.floor(fma(199, v, 1.5)) / 10), 1) + 's',                       // Reverb 2 Decay
   '35.17': (v) => intText(Math.floor(fma(1975, v, 25.5))) + 'Hz',                               // Reverb 2 Cross
   '40.9': (v) => fmtApply({ d: 1, u: ' %', s: 'Minus' }, -5 + 10 * v),                         // Comb Filter Asym (f64)
-  '40.10': (v) => String(Math.round(fma(7, v, -1))),                                           // Comb Filter Pitch Oct
+  '40.10': (v) => String(rnd(fma(7, v, -1)) + 0),                                           // Comb Filter Pitch Oct
   '44.2': (v) => { const hz = f(10 * f(Math.pow(1000, v))); return hz < 1000 ? fixedAbs(hz, 0) + ' Hz' : Math.abs(hz - 10000) < 0.1 ? '10 kHz' : fixedAbs(f(hz / 1000), 1) + ' kHz'; },   // Spreader Low Bypass
+  // note effects (Honeydew effects_24_51.rs): signed whole steps round(f32(f32(n·v) + lo)) with a sign on 0 and up ("+0", "-24")
+  '47.5': (v) => step(48, -24, v), '47.8': (v) => step(24, -12, v), '48.1': (v) => step(8, -4, v), '48.2': (v) => step(24, -12, v),
+  '47.3': (v) => { const b = fma(8 - 1 / 32, f(v * v), 1 / 32); let k = 0; for (let i = 1; i < ECHO.length; i++) if (Math.abs(f(b - ECHO[i][0])) < Math.abs(f(b - ECHO[k][0]))) k = i; return ECHO[k][1]; },   // Note Echo Delay (sync): the nearest item
+  '51.15': (v, c) => arpRotate(v, c, 14), '51.26': (v, c) => arpRotate(v, c, 25),   // Arpeggiator Rotate: -(n-1) .. +(n-1), n = the steps of its Rhythm
   '44.4': (v) => { const s = fma(200, v, -100), a = Math.abs(s); return a < 0.1 ? 'Original' : (s < 0 ? '-' : '') + fixedAbs(s, a < 10 ? 1 : 0) + ' %'; },   // Spreader Separation
 };
 

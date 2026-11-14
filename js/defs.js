@@ -731,14 +731,15 @@ for (const [id, m] of Object.entries(FLMFX)) {
   });
   ps.push(q('Post Gain', 0, 1, 0.5, { hidden: true, flmCommon: 0 }), q('Rack Mix', 0, 1, 1, { hidden: true, flmCommon: 1 }), q('Wet Pan', 0, 1, 0.5, { hidden: true, flmCommon: 2 }));
   if (+id === 25) ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'].forEach((n, k) => ps.push(q('Note ' + n, 0, 1, [1, 0, 1, 1, 0, 1, 0, 1, 1, 0, 1, 0][k], { step: 1, fmt: 'onoff' })));
-  DEVICES[FLMFX_BASE + +id] = { name: m.name, kit: true, view: 'flmfx', flm: +id, nativeOnly: true, params: ps };
+  DEVICES[FLMFX_BASE + +id] = { name: m.name, kit: true, view: 'flmfx', flm: +id, nativeOnly: true, flmParams: m.p.length, ...(+id >= 47 && +id <= 51 ? { noteFx: true } : {}), params: ps };
 }
 // "merged": an FLM module whose function a MobileDAW effect already covers (EQ, compressor, reverb, chorus, ...) is not offered a second time;
 // an imported project keeps running it on FLM's DSP under its own name. Offered in the pickers: the FLM modules MobileDAW has no counterpart for.
 const FLM_PICK = [104, 116, 118, 143, 141, 125, 145, 140, 144];   // Multi FX, Trance Delay, Tape Delay, Wow & Flutter, Waveshaper, Pitcher, Pitcher 2, Comb Filter, Spreader
+const FLM_NOTE_PICK = [151, 147, 148, 149, 150];                  // note effects: Arpeggiator, Note Echo, Transpose, Randomizer, Scale
 export const FX_GROUPS = [['loop', 'Delay & Loop', [19, 17, 6, 18, 43, 45, 46, 52]], ['drive', 'Drive & Color', [33, 34, 29, 37, 26, 27, 35, 36, 9, 3, 28]], ['dyn', 'Dynamics', [4, 23, 24, 5, 38, 10]],
   ['eq', 'EQ & Filters', [1, 25, 31, 2]], ['mod', 'Pitch & Modulation', [22, 20, 21, 42]], ['rev', 'Reverb & Resonance', [40, 44, 39, 7, 47, 41]], ['modu', 'Modulators', [50, 48, 49]], ['util', 'Utilities', [51, 0, 32, 30, 16, 14, 15]],
-  ['flm', 'FL Studio Mobile', FLM_PICK]];
+  ['flm', 'FL Studio Mobile', FLM_PICK], ['flmnote', 'Note FX (FL Studio Mobile)', FLM_NOTE_PICK]];
 // Old devices that only repeat a newer one stay loadable in saved projects but are no longer offered in the pickers: 8 Parametric EQ (= EQ Eight), 12 Level (= Utility), 13 Analyzer (= Spectrum).
 export const HIDDEN_FX = [8, 12, 13];
 // Per-module Mix / Gain on every effect (engine dsp.js MIX_P / GAIN_P, devParam indices outside the effect's own list). Stored on the device

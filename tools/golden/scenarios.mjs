@@ -212,6 +212,18 @@ export const SCENARIOS = [
       e.play(); play(e, 2, [128, 77, 256]); P(1, 1); P(4, 0.7); P(6, 0.8); play(e, 1); P(7, 1); P(9, 0.6); P(8, 0.3); play(e, 1); P(11, 0.4); P(12, 0.6); P(13, 0.7); P(1, 0.5); play(e, 1);
       e.stop(); play(e, 0.6);
     } },
+  { name: 'nfx-flm', native: true, info: 'C++ only (native/engine/hdnfx.cpp, Honeydew note_effects.rs + sequencer.rs): FL Studio Mobile note effects worked out when the notes arrive: Arpeggiator (Up, Cascade, Random), Note Echo, Transpose, Randomizer, Scale, chained, changed while playing',
+    run(e) {
+      e.tempo(124); e.trackInst(0, 33); const f = []; for (let k = 0; k < 16; k++) f.push(k * PPQ, PPQ * 0.9, 48 + [0, 4, 7, 12][k % 4], 0.8, 0); f.push(0, PPQ * 8, 60, 0.7, 0, 0, PPQ * 8, PPQ * 8, 64, 0.7, 0, 0);
+      const A = [1, 0.285714, 0.2105, 1, 0, 0, 0, 0.5, 0.5, 0.5, 2 / 23, 0, 0.5, 0.5, 0, 0.5, 0, 0, 0, 1, 0.5, 3 / 23, 0, 0.5, 0.5, 0, 0.5, 0, 0, 0, 0, 0.428571, 0.428571];
+      const E = [1, 0.3, 0.4, 0.5, 0, 0.5, 0.5, 0.4, 0.55, 0.6, 0.5, 0.2, 0.5, 0.6, 1, 0];
+      const set = (mods) => { const flat = []; for (const [ty, id, p] of mods) flat.push(ty, id, p.length, ...p); e.trackNoteFx(0, flat, 20); e.trackNotes(0, f, f.length / 6, 6); };
+      e.insertDevice(0, 0, 151); e.insertDevice(0, 1, 147);
+      set([[51, 11, A], [47, 12, E]]); e.play(); play(e, 3, [128, 77, 256]);
+      const A2 = A.slice(); A2[10] = 17 / 23; A2[30] = 1; A2[21] = 20 / 23; set([[48, 13, [1, 0.625, 0.5]], [51, 11, A2], [49, 14, [1, 0.1, 0.3, 0.4, 0.85, 0.3, 0.5]]]); play(e, 3);
+      set([[50, 15, [1, 0, 0, 1, 1, 0, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1]], [47, 12, E]]); play(e, 2);
+      e.stop(); play(e, 1);
+    } },
   { name: 'inst-flmdw', native: true, info: 'C++ only (native/engine/hddw.cpp, Honeydew DW Sampler): FL Studio Mobile DirectWave (30): key / vel zones (gain / pan), loop, reverse, root / tune, filter + filter envelope, frequency (pitch) envelope, LFO (Hertz / One Shot / Tempo) to filter / frequency / level / pan, slide / legato / mono, PB range + bend',
     run(e) {
       samples(e); testSample(e); e.tempo(124); e.trackInst(0, 30);

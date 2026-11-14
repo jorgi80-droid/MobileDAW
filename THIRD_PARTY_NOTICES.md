@@ -34,6 +34,7 @@ but the program as distributed from this point on is GPL-3.0-or-later as a whole
   the Pitcher note `CSTM` layout (`src/panels/cstm.rs`) -> `js/flmfx.js`, `js/import/fxmap.js`, `js/import/flm.js`; the value text laws
   (`src/params/display.rs` and the module formatters) -> `js/fxlaw.js`; the effect laws drawn in the panels -> `js/flmviz.js`.
 - Transistor Bass (`crates/audio/src/transistor_bass.rs` -> `native/engine/hdtb.*`, C++ only).
+- Note effects (`crates/audio/src/note_effects.rs`, the Arpeggiator of `sequencer.rs` -> `native/engine/hdnfx.*`, C++ only) and their parameter tables / value texts (`src/params/effects_24_51.rs` -> `js/flmfx.js`, `js/fxlaw.js`).
 - Honeydew states that it is a clean-room reimplementation of FL Studio Mobile written from a specification and contains no code,
   samples, presets or artwork of FL Studio Mobile. MobileDAW does not verify that claim; FL Studio is a trademark of Image-Line, and
   MobileDAW is not affiliated with or endorsed by Image-Line.
