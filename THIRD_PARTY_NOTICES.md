@@ -35,6 +35,7 @@ but the program as distributed from this point on is GPL-3.0-or-later as a whole
   (`src/params/display.rs` and the module formatters) -> `js/fxlaw.js`; the effect laws drawn in the panels -> `js/flmviz.js`.
 - Transistor Bass (`crates/audio/src/transistor_bass.rs` -> `native/engine/hdtb.*`, C++ only).
 - Slicer (`crates/audio/src/slicer.rs` -> `native/engine/hdslicer.*`, C++ only; its CSTM `PATH` / `SENS` layout -> `js/import/flm.js`).
+- 3x Osc (`crates/audio/src/three_osc/*` -> `native/engine/hd3osc.*`, C++ only; parameter names, defaults and value texts from `src/params/instruments.rs` -> `js/flm3osc.js`, `js/fxlaw.js`).
 - Note effects (`crates/audio/src/note_effects.rs`, the Arpeggiator of `sequencer.rs` -> `native/engine/hdnfx.*`, C++ only) and their parameter tables / value texts (`src/params/effects_24_51.rs` -> `js/flmfx.js`, `js/fxlaw.js`).
 - Honeydew states that it is a clean-room reimplementation of FL Studio Mobile written from a specification and contains no code,
   samples, presets or artwork of FL Studio Mobile. MobileDAW does not verify that claim; FL Studio is a trademark of Image-Line, and

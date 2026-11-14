@@ -76,7 +76,13 @@ const CUSTOM = {
   '47.5': (v) => step(48, -24, v), '47.8': (v) => step(24, -12, v), '48.1': (v) => step(8, -4, v), '48.2': (v) => step(24, -12, v),
   '47.3': (v) => { const b = fma(8 - 1 / 32, f(v * v), 1 / 32); let k = 0; for (let i = 1; i < ECHO.length; i++) if (Math.abs(f(b - ECHO[i][0])) < Math.abs(f(b - ECHO[k][0]))) k = i; return ECHO[k][1]; },   // Note Echo Delay (sync): the nearest item
   '51.15': (v, c) => arpRotate(v, c, 14), '51.26': (v, c) => arpRotate(v, c, 25),   // Arpeggiator Rotate: -(n-1) .. +(n-1), n = the steps of its Rhythm
-  'i35.1': (v) => String(Math.trunc(v * 48 - 24)),   // Slicer PITCH: the audio's f64 step (slicer.rs pitch_steps)
+  'i35.1': (v) => String(Math.trunc(v * 48 - 24)),
+  // 3x Osc (instrument 36, Honeydew instruments.rs THREE_OSC): Coarse = the audio's step, round(fma32(v, 48, -24)); LFO amounts 200 v - 100 %;
+  // Maximum Polyphony round(f32(99 v)), "---" (unlimited) at 0
+  'i36.13': (v) => String(rnd(fma(v, 48, -24)) + 0), 'i36.14': (v) => String(rnd(fma(v, 48, -24)) + 0), 'i36.15': (v) => String(rnd(fma(v, 48, -24)) + 0),
+  'i36.52': (v) => (rnd(fma(200, v, -100)) + 0) + '%', 'i36.53': (v) => (rnd(fma(200, v, -100)) + 0) + '%', 'i36.54': (v) => (rnd(fma(200, v, -100)) + 0) + '%',
+  'i36.55': (v) => (rnd(fma(200, v, -100)) + 0) + '%', 'i36.56': (v) => (rnd(fma(200, v, -100)) + 0) + '%',
+  'i36.117': (v) => { const n = rnd(f(99 * v)); return n === 0 ? '---' : String(n); },   // Slicer PITCH: the audio's f64 step (slicer.rs pitch_steps)
   '44.4': (v) => { const s = fma(200, v, -100), a = Math.abs(s); return a < 0.1 ? 'Original' : (s < 0 ? '-' : '') + fixedAbs(s, a < 10 ? 1 : 0) + ' %'; },   // Spreader Separation
 };
 
@@ -130,7 +136,7 @@ export function lawText(L, v, ctx = {}, key = '') {
   return String(Math.round(v * 100));
 }
 // a menu's item at normalized v: its index law as breakpoints [v, item] (exported from Honeydew's index functions)
-export function menuItem(br, v) { v = f(clamp01(v)); let it = 0; for (const [b, k] of br) if (v >= b) it = k; return it; }
+export function menuItem(br, v) { v = f(clamp01(v)); let it = 0; for (const [b, k] of br) if (v >= f(b)) it = k; return it; }   // br holds f32 values printed shortest
 // the context a control's text reads: the song tempo (Autoduck Attack), the audio rate (Spacer M/S Delay; FLM's 44.1 kHz until set) and,
 // through p.lawCtx (fxkit.js flmPanel), the module's other params (Autoduck Hold reads Time)
 let tempo = () => 120;

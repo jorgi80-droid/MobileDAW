@@ -667,6 +667,12 @@ html.emu body { width: calc(100% / var(--k, 1)); height: calc(100% / var(--k, 1)
 .lk-flmtop { flex-wrap: wrap; gap: 4px 6px; align-items: flex-end; }
 .lk-flmnotes { flex-wrap: wrap; gap: 2px; }
 .lk-flmk { flex-wrap: wrap; gap: 2px 4px; max-width: 760px; }
+.lk-o3p { align-items: flex-start; gap: 10px; flex-wrap: wrap; }
+.lk-o3g { border-left: 1px solid var(--line, rgba(0,0,0,.18)); padding-left: 8px; min-width: 0; }
+.lk-o3g:first-child { border-left: 0; padding-left: 0; }
+.lk-o3h { font-size: 11px; font-weight: 600; opacity: .75; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 2px; }
+.lk-o3g .lk-flmk { max-width: 470px; }
+.lk-o3p > .lk-o3g { justify-content: flex-start; }
 .lk-flm { align-items: stretch; gap: 8px; }
 .lk-flmd { width: 200px; min-height: 86px; flex: 0 0 auto; display: flex; }
 .lk-flmd > .lk-dfill { flex: 1; }

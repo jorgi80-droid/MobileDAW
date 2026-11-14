@@ -6,12 +6,13 @@ import { SS_ARP_RATES, SS_ARP_MODES, SS_DELAY_TIMES } from './engine/hdsaw.js';
 import { MS_RATES, MS_DELAY_TIMES, MS_RATE_BEATS, MS_DELAY_BEATS } from './engine/hdmini.js';
 import { GM_SHAPES, GM_RATES, GM_RATE_BEATS, GM_MOD_KINDS, GM_PB_RANGES } from './engine/hdgms.js';
 import { FLMFX } from './flmfx.js';
+import { THREE_OSC } from './flm3osc.js';
 import { flmText, menuItem } from './fxlaw.js';
 // Instrument + device definitions. Parameter ORDER must match the C++ side
 // (app/src/main/cpp/instruments.h and devices.h).
-export const INST = { FLM_SLICER: 35, FLM_DW: 30, FLM_GMS: 31, FLM_MINI: 32, FLM_SAW: 33, MINISYNTH: 1, SUPERSAW: 2, DRUM: 3, DIRECTWAVE: 4, GMS: 5, SOUNDFONT: 6, MOISTURE: 7, OSPHERE: 8, KEYSTONE: 9, SAMPLER: 10, WAVETABLE: 11, SIMPLER: 18, IMPULSE: 28, GRANULATOR: 29 };
+export const INST = { FLM_3OSC: 36, FLM_SLICER: 35, FLM_DW: 30, FLM_GMS: 31, FLM_MINI: 32, FLM_SAW: 33, MINISYNTH: 1, SUPERSAW: 2, DRUM: 3, DIRECTWAVE: 4, GMS: 5, SOUNDFONT: 6, MOISTURE: 7, OSPHERE: 8, KEYSTONE: 9, SAMPLER: 10, WAVETABLE: 11, SIMPLER: 18, IMPULSE: 28, GRANULATOR: 29 };
 // Instruments a synth/sampler track can switch between (drums have their own track type).
-export const INST_LIST = [30, 31, 32, 33, 34, 35, 18, 17, 16, 15, 14, 13, 11, 10, 28, 29, 25, 26, 27, 19, 20, 21, 22, 23, 24, 6, 7, 8, 9, 12];   // FLM instruments first; the classic Mini Synth / SuperSaw / DirectWave / GMS are replaced by them
+export const INST_LIST = [30, 31, 32, 33, 34, 35, 36, 18, 17, 16, 15, 14, 13, 11, 10, 28, 29, 25, 26, 27, 19, 20, 21, 22, 23, 24, 6, 7, 8, 9, 12];   // FLM instruments first; the classic Mini Synth / SuperSaw / DirectWave / GMS are replaced by them
 
 export const INSTRUMENTS = {
   1: { name: 'Mini Synth', params: [
@@ -1080,6 +1081,14 @@ export function gmsToFlmKnobs(o) {
       k('Attack', 0), k('Decay', 1), q('Sustain', 0, 1, 0, { step: 0.5, fmt: 'flmlist', items: ['Off', 'Hold', 'To End'], br: [[0.5, 1], [1, 2]] }), onoff('Mono', 0),
       q('Sensitivity', 0, 1, 0.25, { fmt: 'flm', law: { t: 'gunit', u: ' %' } }), q('First Key', 0, 127, 0, { step: 1, fmt: 'slfirst' })] };
     INSTRUMENTS[35].params[0].hidden = true; }
+  // FL Studio Mobile 3x Osc (FLM module 39; C++ only: native/engine/hd3osc.cpp, Honeydew three_osc/*): FLM's 149 parameters (js/flm3osc.js) with
+  // FLM's value texts; 149 = D, the song's TDIV subdivision (hidden; 4 = FLM's default) for the control tick and the tempo laws.
+  INSTRUMENTS[36] = { name: '3x Osc', view: 'kit', flm: true, native: true, params: [...THREE_OSC.p.map((x, k) => {
+    if (k === 0) return q(x.n, 0, 1, 1, { step: 1, fmt: 'onoff', hidden: true });
+    if (x.t === 'tog') return q(x.n, 0, 1, x.d >= 0.5 ? 1 : 0, { step: 1, fmt: 'onoff' });
+    if (x.t === 'list') return q(x.n, 0, 1, x.d, { step: 1 / (x.items.length - 1), fmt: 'flmlist', items: x.items, br: x.br });
+    return q(x.n, 0, 1, x.d, { fmt: 'flm', law: x.law, lawKey: 'i36.' + k });
+  }), q('D', 1, 16, 4, { step: 1, fmt: 'num', hidden: true })] };
   // factory presets (by parameter name), after the sound-design examples of the FLM instrument guide
   const pre = (type, cat, name, vals) => { const ps = INSTRUMENTS[type].params, p = {}; for (const [n, v] of Object.entries(vals)) { const k = ps.findIndex((x) => x.n === n); if (k < 0) throw new Error('preset ' + name + ': ' + n); p[k] = v; } return { cat, name, p }; };
   PRESETS[30] = [pre(30, 'Dasar', 'Default', {}), pre(30, 'Dasar', 'Mono Bass', { Mono: 1, 'Slide Time': 0.06, Release: 0.12, Cutoff: 62, 'Vel Trk': 40 }),

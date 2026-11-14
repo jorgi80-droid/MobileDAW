@@ -52,6 +52,15 @@ await page.waitForTimeout(700);
 const sl = await ev(() => ({ knobs: document.querySelectorAll('.card .lk-k').length, loop: [...document.querySelectorAll('.card button')].some((b) => /Loop/.test(b.textContent)) }));
 ok(sl.knobs >= 4 && sl.loop, `Slicer panel: loop picker and ${sl.knobs} knobs`);
 await page.screenshot({ path: path.join(out, 'slicer.png') });
+// the 3x Osc instrument (36) panel: FLM's eight pages as tabs
+await ev(async () => { const P = await import('./js/project.js'); while (P.state.tracks[0].devices.length) P.removeDevice(0, 0); P.setInstrument(0, 36); P.selectTrack(0); P.emit('all'); });
+await page.waitForTimeout(700);
+const o3 = await ev(() => ({ tabs: [...document.querySelectorAll('.card .lk-tabs button, .card .lk-tabs .lv-tab, .card .lk-tabs > *')].map((b) => b.textContent.trim()).filter(Boolean), knobs: document.querySelectorAll('.card .lk-k').length }));
+ok(o3.tabs.includes('Osc') && o3.tabs.includes('Misc') && o3.knobs >= 10, `3x Osc panel: tabs ${o3.tabs.join('/')} and ${o3.knobs} controls on the Osc page`);
+await page.screenshot({ path: path.join(out, '3xosc.png') });
+await ev(() => { const t = [...document.querySelectorAll('.card .lk-tabs > *')].find((b) => b.textContent.trim() === 'Vol'); if (t) t.click(); });
+await page.waitForTimeout(400);
+await page.screenshot({ path: path.join(out, '3xosc-vol.png') });
 // an old FLM import (Reverb kept as a placeholder): the offer switches it to the FLM module
 const up = await ev(async () => {
   const P = await import('./js/project.js'), PM = await import('./js/projects.js'), { FLMFX } = await import('./js/flmfx.js');

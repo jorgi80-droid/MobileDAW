@@ -121,7 +121,7 @@ ok(auto && auto.target.strip === voc.id && auto.clips[0].pts.length === 2 && aut
   ok(!J2.tracks.some((t) => t.flmAuto) && R2.skipped.some((s) => /FX Leveller/.test(s)), 'automation of a plugin that stays a placeholder is removed and reported, not dropped silently'); }
 ok(B.report.samplesMissing.includes('My Tracks/tidakada.wav') && B.report.samplesMissing.includes('My Samples/hilang.wav') && B.report.samplesFound === 4, 'report: samples found / missing');
 
-// ---------- 2nd owner project layout: SuperSaw (23) / SoundFont (52) / unknown instrument (39), Tape Stop (42) with "Toggle Play" automation
+// ---------- 2nd owner project layout: SuperSaw (23) / SoundFont (52) / 3x Osc (39), Tape Stop (42) with "Toggle Play" automation
 {
   const mod = (type, id, params, preset = 'Default/Default') => ck('RMOd', i32(type), u32(id), ck('HEAD', new Uint8Array(9)), ck('DESC', fixed('Default', 256), fixed('Default', 256), new Uint8Array(4)), ck('PRST', u32(preset.length), asc(preset)), ck('ADD1', Uint8Array.of(0, 0, 127)), ck('PRMS', f32s(...params)), ck('SMPR', f32s(0.5, 1, 0.5)));
   const rack = (mods) => ck('RACK', u32(0x100), asc('10KR'), ck('RHED', new Uint8Array(16)), ck('RPRM', f32s(0.853, 0.5, 0, 0, 0.5, 0)), ...mods);
@@ -142,7 +142,8 @@ ok(B.report.samplesMissing.includes('My Tracks/tidakada.wav') && B.report.sample
   const tt = (n) => B2.json.tracks.find((t) => t.name === n), pad = tt('Pad'), ts = pad.devices.find((d) => d.type === 142), lane = B2.json.tracks.find((t) => t.kind === 'auto');
   ok(M2.channels.find((c) => c.name === 'Pad').instrument.kind === 'supersaw' && pad.inst.type === 33, 'FLM type 23 (SuperSaw) -> MobileDAW SuperSaw, not an effect');
   ok(tt('Bass').inst.type === 6 && tt('Bass').inst.sub && tt('Bass').inst.sub.gm === 'Synth Bass 1', 'FLM SoundFont Player (52) "BAS Pro6Solid.sf2" (FLM content) -> General MIDI Synth Bass 1 substitute');
-  ok(tt('Rhythm').inst.missing && /Instrumen FLM #39/.test(tt('Rhythm').inst.missing.name), 'unidentified synth-sized module (39) on a notes channel = its instrument, reported by id');
+  ok(tt('Rhythm').inst.type === 36 && !tt('Rhythm').inst.missing && tt('Rhythm').inst.params[1] === 0.5 && tt('Rhythm').inst.params[148] === 0.5 && tt('Rhythm').inst.params[149] === 4,
+    'FLM 3x Osc (39) on a notes channel -> the MobileDAW 3x Osc (36) with every one of its 149 values (+ D = the TDIV subdivision)');
   ok(ts && ts.params[0] === 1 && ts.params[5] === 1 && Math.abs(ts.params[1] - 0.073) < 1e-6 && !ts.bypass && S2.total >= 1, 'Tape Stop (42) -> the FLM Tape Stop module itself (142), its exact values (Toggle Play 1, Stop Time 0.073)');
   ok(lane && lane.target.kind === 4 && lane.target.devId === ts.id && lane.target.param === 5 && lane.clips[0].start === 8 * 960 && lane.clips[0].pts.map((q) => q.t + ':' + q.v + ':' + q.s).join() === '0:1:1,2880:0:1',
     '"Toggle Play : Tape Stop" automation -> the module Toggle Play (param 5) lane, stepped: playing until beat 3 of the clip, then stop');

@@ -3,7 +3,7 @@
 // keeps the chain's indices; FLM modules import with their exact values (Post Gain / Mix / Wet Pan, Pitcher notes, off = bypass) whatever the
 // replace mode, and FLM automation lanes reach the module's own parameter. The DSP itself was checked against Honeydew's Rust code sample
 // for sample (bit-identical for all but Multi FX, which reuses the double-precision GMSynth bank: within -90 dB). Usage: node tools/flmfx-test.mjs
-import path from 'node:path'; import { fileURLToPath } from 'node:url';
+import fs from 'node:fs'; import path from 'node:path'; import { fileURLToPath } from 'node:url';
 import { loadWasmEngine } from './wasm-engine.mjs';
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const { DEVICES, FLMFX_BASE, FX_GROUPS } = await import(path.join(root, 'js/defs.js'));
@@ -93,6 +93,27 @@ ok(dryR > 0.01, `the test signal plays (${dryR.toFixed(3)} rms)`);
   ok(Math.abs(f / want - 1) < 0.03, `Transistor Bass pitch: key 45 plays ${f.toFixed(1)} Hz (Honeydew: 440 Hz at key 81 -> ${want.toFixed(1)} Hz)`);
   const { buildMdaw } = await import(path.join(root, 'js/import/build.js'));
   ok(decide !== null && (await import(path.join(root, 'js/import/fxmap.js'))).FLM_TYPES[19].synth === 'transistorbass', 'FLM module 19 is the Transistor Bass instrument'); void buildMdaw; }
+// FL Studio Mobile 3x Osc (instrument 36, C++ only: native/engine/hd3osc.cpp; checked sample for sample against Honeydew's Rust code when ported, 35 cases)
+{ const osc = async (notes, extra = []) => {
+    const w = await loadWasmEngine(SR), ev = []; for (const [b, l, k, v] of notes) ev.push(b * 960, l * 960, k, v, 0);
+    w.cmd(`masterLimit 0\ntempo 120\ntrackVol 0 1\ntrackInst 0 36\n${extra.join('\n')}\ntrackNotes 0 [${ev.length} ${ev.join(' ')}] ${notes.length}\nsettle\nplay\n`);
+    const n = Math.round(1.2 * SR), L = new Float32Array(n), R = new Float32Array(n); w.render(L, R, n); return L; };
+  const zc = (x, a, b) => { let n = 0, f = -1, l = -1; for (let i = a + 1; i < b; i++) if (x[i - 1] < 0 && x[i] >= 0) { const t = i - 1 + x[i - 1] / (x[i - 1] - x[i]); if (f < 0) f = t; else n++; l = t; } return n > 0 ? n * SR / (l - f) : 0; };
+  const one = await osc([[0, 2, 69, 0.8]], ['instParam 0 22 0', 'instParam 0 23 0']), fq = zc(one, SR * 0.1, SR * 0.9);
+  ok(rms(one, 0, SR * 0.5) > 0.05 && Math.abs(fq / 440 - 1) < 0.002, `3x Osc plays: osc 1 alone, key 69 = ${fq.toFixed(2)} Hz (440)`);
+  const oct = await osc([[0, 2, 69, 0.8]], ['instParam 0 22 0', 'instParam 0 23 0', 'instParam 0 13 0.75']), f2 = zc(oct, SR * 0.1, SR * 0.9);
+  ok(Math.abs(f2 / 880 - 1) < 0.002, `3x Osc Coarse +12 (v = 0.75): ${f2.toFixed(2)} Hz (880)`);
+  const off = await osc([[0, 2, 69, 0.8]], ['instParam 0 0 0']); ok(rms(off, 0, SR) === 0, '3x Osc Enable off: silent (voices frozen)');
+  const arp = await osc([[0, 2, 60, 0.8]], ['instParam 0 139 0.2', 'instParam 0 145 0.0333333', 'instParam 0 140 0.7', 'instParam 0 22 0', 'instParam 0 23 0']);   // Time 0.7: 36 ticks = 3/8 beat a step
+  const seg = (a) => zc(arp, a, a + Math.round(SR * 0.1)); const fs3 = [seg(Math.round(SR * 0.03)), seg(Math.round(SR * 0.22)), seg(Math.round(SR * 0.41))].map((x) => Math.round(12 * Math.log2(x / 440) + 69));
+  ok(new Set(fs3).size >= 2 && fs3.join() === '60,64,67', `3x Osc Arpeggio Up on a major chord plays its notes (${fs3.join(', ')})`);
+  const X = await import(path.join(root, 'js/fxlaw.js')), { THREE_OSC } = await import(path.join(root, 'js/flm3osc.js'));
+  const FX3 = JSON.parse(fs.readFileSync(path.join(root, 'tools/fixtures/flm3osc-text.json'), 'utf8')).t; let n3 = 0, b3 = 0;
+  THREE_OSC.p.forEach((x, k) => (FX3[k] || []).forEach((want, j) => { if (x.t === 'on' || x.t === 'tog') return; const v = Math.fround(j / 50);
+    const got = x.t === 'list' ? x.items[X.menuItem(x.br, v)] : X.lawText(x.law, v, { bpm: 120, sr: 44100 }, 'i36.' + k); n3++; if (got !== want) { b3++; if (b3 < 5) console.log('  ', k, x.n, v, got, want); } }));
+  ok(n3 > 5000 && b3 === 0, `3x Osc value texts as FL Studio Mobile prints them: ${n3 - b3} / ${n3} equal to Honeydew's`);
+  const D = await import(path.join(root, 'js/defs.js')); ok(D.INSTRUMENTS[36].params.length === 150 && D.INSTRUMENTS[36].params[14].def === 0.25, '3x Osc: 149 FLM params (+ D), FLM defaults');
+  ok((await import(path.join(root, 'js/import/fxmap.js'))).FLM_TYPES[39].synth === 'threeosc', 'FLM module 39 is the 3x Osc instrument'); }
 // FL Studio Mobile note effects (devices 147..151, C++ only: native/engine/hdnfx.cpp; checked note for note against Honeydew's Rust code
 // when ported): trackNoteFx before trackNotes reworks the track's notes. Played on the Transistor Bass (mono, known pitch law).
 { const play = async (fx, notes, sec = 1) => {

@@ -240,6 +240,16 @@ export const SCENARIOS = [
       e.play(); play(e, 2, [128, 77, 256]); P(5, 0.5); P(3, 0.3); P(4, 0.5); play(e, 1.5); P(5, 1); P(6, 1); P(1, 0.6); play(e, 1.5);
       P(7, 0.15); play(e, 1); P(8, 55); play(e, 1); e.stop(); play(e, 0.6);
     } },
+  { name: 'inst-flm3osc', native: true, info: 'C++ only (native/engine/hd3osc.cpp, Honeydew three_osc/*): FL Studio Mobile 3x Osc (36): shapes, HQ mips, the 8 filters, envelopes / LFOs, tracking, Mono / Porta / Gate, Echo / Fat Mode, Arpeggio, the wheel, tempo change',
+    run(e) {
+      e.tempo(126); e.trackInst(0, 36);
+      const f = []; for (let k = 0; k < 28; k++) f.push(k * PPQ / 2, PPQ * (k % 3 === 0 ? 1.1 : 0.35), 48 + ((k * 5) % 19), 0.45 + (k % 4) * 0.15, 0); e.trackNotes(0, f, f.length / 5);
+      const P = (i, v) => e.instParam(0, i, v);
+      P(1, 0.5); P(2, 1 / 3); P(22, 0.4); P(62, 1); P(74, 0.1); P(86, 0.3); P(94, 0.5); P(98, 0.2);
+      e.play(); play(e, 1.5, [128, 77, 256]); P(110, 1 / 7); P(111, 0.4); P(112, 0.6); P(53, 0.8); P(58, 0.3); play(e, 1.2);
+      P(25, 1); P(3, 2 / 3); P(110, 5 / 7); P(63, 1); P(107, 0.9); play(e, 1.2); P(131, 0.4); P(132, 0.2); P(134, 0.6); play(e, 1.2);
+      P(131, 0); P(139, 0.2); P(145, 4 / 90); P(140, 0.3); e.bend(0, 1.5); play(e, 1.2); e.tempo(90); P(144, 1); P(120, 1); play(e, 1); e.stop(); play(e, 0.6);
+    } },
   { name: 'inst-flmdw', native: true, info: 'C++ only (native/engine/hddw.cpp, Honeydew DW Sampler): FL Studio Mobile DirectWave (30): key / vel zones (gain / pan), loop, reverse, root / tune, filter + filter envelope, frequency (pitch) envelope, LFO (Hertz / One Shot / Tempo) to filter / frequency / level / pan, slide / legato / mono, PB range + bend',
     run(e) {
       samples(e); testSample(e); e.tempo(124); e.trackInst(0, 30);

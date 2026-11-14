@@ -30,6 +30,7 @@ export const FLM_TYPES = {
   2: { name: 'GMSynth', sure: true, synth: 'gms' },   // preset Synth Presets2/GMSynth/*.flgsynth
   23: { name: 'SuperSaw', sure: true, synth: 'supersaw' },
   19: { name: 'Transistor Bass', sure: true, synth: 'transistorbass' },
+  39: { name: '3x Osc', sure: true, synth: 'threeosc' },   // Honeydew instruments.rs module 39 (149 params)
   33: { name: 'Slicer', sure: true, synth: 'slicer' },   // Honeydew: module 33 (7 params; CSTM PATH = the loop, SENS = Sensitivity)   // Honeydew effect_info / params: module 19 (14 params)   // preset Synth Presets2/SuperSaw/*
   52: { name: 'SoundFont Player', sure: true, synth: 'soundfont' },   // preset = Resources/SoundFonts/*.sf2 (FLM content, not in the project)
   18: { name: 'Tape Delay', sure: true },             // owner's screenshots of "New Song 1": rack slot 3 reads "Tape Delay" (on/off + 4 controls)

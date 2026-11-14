@@ -1706,23 +1706,43 @@ V[52] = (k) => {
 
 // FL Studio Mobile modules (defs.js FLMFX, C++ only, native/engine/hdfx.cpp): FLM's own controls, compact. Menus and switches in one strip on
 // top, the continuous controls as small knobs below (wrapping); Pitcher's note grid as 12 note buttons. Values are FLM's normalized ones.
-const flmPanel = (k) => {
-  const ps = k.def.params, menus = [], togs = [], knobs = [], notes = [];
-  const sel = (j) => { const p = ps[j], n = p.items.length; return k.TL(p.n, k.reg(lvSel(() => p.items.map((l, q) => ({ label: l, value: q })), () => (p.br ? menuItem(p.br, k.get(j)) : Math.round(k.get(j) * (n - 1))), (q) => k.set(j, n > 1 ? q / (n - 1) : 0), { w: 84, cls: 'lk-s' }), j)); };
-  ps.forEach((p, j) => {
-    if (p.hidden) return;
+const flmPanel = (k, only = null, short = null) => {
+  const ps = k.def.params, menus = [], togs = [], knobs = [], notes = [], nm = (j) => (short ? short(ps[j].n) : ps[j].n);
+  const sel = (j) => { const p = ps[j], n = p.items.length; return k.TL(nm(j), k.reg(lvSel(() => p.items.map((l, q) => ({ label: l, value: q })), () => (p.br ? menuItem(p.br, k.get(j)) : Math.round(k.get(j) * (n - 1))), (q) => k.set(j, n > 1 ? q / (n - 1) : 0), { w: 84, cls: 'lk-s' }), j)); };
+  (only || ps.map((_, j) => j)).forEach((j) => {
+    const p = ps[j]; if (!p || p.hidden) return;
     if (/^Note /.test(p.n) && p.fmt === 'onoff') notes.push(k.T(j, p.n.slice(5), { w: 30 }));
     else if (p.fmt === 'flmlist') menus.push(sel(j));
-    else if (p.fmt === 'onoff') togs.push(k.T(j, p.n, { w: Math.max(44, Math.min(96, 8 + p.n.length * 7)) }));
-    else knobs.push(k.K(j, { p: { lawCtx: () => ({ p: k.d.params }) } }));   // a text that reads another param of this module (Autoduck Hold)
+    else if (p.fmt === 'onoff') togs.push(k.T(j, nm(j), { w: Math.max(44, Math.min(96, 8 + nm(j).length * 7)) }));
+    else knobs.push(k.K(j, { n: nm(j), p: { lawCtx: () => ({ p: k.d.params }) } }));   // a text that reads another param of this module (Autoduck Hold)
   });
-  const gr = FLM_GRAPH[k.def.flm], disp = gr ? k.DF(200, 86, (g, w, hh) => gr(g, w, hh, (j) => k.get(j))) : null;   // the module's curve (flmviz.js)
+  const gr = !only && FLM_GRAPH[k.def.flm], disp = gr ? k.DF(200, 86, (g, w, hh) => gr(g, w, hh, (j) => k.get(j))) : null;   // the module's curve (flmviz.js)
   const body = k.col(menus.length || togs.length ? h('div', { class: 'lk-row lk-flmtop' }, ...menus, ...togs) : null,
     notes.length ? h('div', { class: 'lk-row lk-flmnotes' }, ...notes) : null, h('div', { class: 'lk-row lk-flmk' }, ...knobs));
   return disp ? h('div', { class: 'lk-row lk-flm' }, h('div', { class: 'lk-col lk-flmd' }, disp), body) : body;
 };
 for (const t of Object.keys(DEVICES)) if (DEVICES[t].view === 'flmfx') V[t] = flmPanel;
 VI[34] = flmPanel;   // Transistor Bass: the same compact FLM layout (its Distortion is a switch)
+// 3x Osc: FLM's eight pages (Honeydew instruments.rs) as tabs; within a page the controls drop the page's own prefix ("Volume Envelope Attack"
+// -> "Attack"). The tab is remembered per track.
+const OSC3_PAGES = (() => {
+  const r = (a, b) => Array.from({ length: b - a + 1 }, (_, q) => a + q), lfo = (t) => [27, 32, 37, 42, 47, 52, 57].map((x) => x + t), env = (t) => r(0, 11).map((q) => 62 + t + 4 * q);
+  const osc = (i) => [1, 4, 7, 10, 13, 16, 19].map((x) => x + i).concat(i ? [21 + i] : [], i === 2 ? [24] : [], [146 + i]);
+  return [['Osc', [['Osc 1', osc(0)], ['Osc 2', osc(1)], ['Osc 3', osc(2)], ['Global', [25, 26]]]], ['Pan', [['LFO', lfo(0)], ['Pan', [113, 122, 126]]]],
+    ['Vol', [['LFO', lfo(1)], ['Envelope', [...env(0), 114]]]], ['Cut', [['LFO', lfo(2)], ['Envelope', env(1)]]], ['Res', [['LFO', lfo(3)], ['Envelope', env(2)]]],
+    ['Pitch', [['LFO', lfo(4)], ['Envelope', env(3)]]], ['Filter', [['Filter', [110, 111, 112, 115, 116]], ['Tracking', [121, 123, 124, 125, 127, 128]]]],
+    ['Misc', [['Voices', [117, 118, 119, 120, 129]], ['Echo', r(130, 138)], ['Arpeggio', r(139, 145)]]]];
+})();
+const osc3Tab = new Map();
+VI[36] = (k) => {
+  const key = k.ctx.d && k.ctx.d.id, page = h('div', { class: 'lk-row lk-o3p' });
+  const short = (n) => n.replace(/^Osc 3 = amplitude modulation$/, 'AM').replace(/^Osc [123] /, '').replace(/^Stereo Phase Randomness$/, 'Phase Rand').replace(/^(Pan|Volume|ModX|ModY|Pitch) (LFO|Envelope) /, '').replace(/^Delay /, '').replace(/^Arpeggio /, '').replace(/^Filter /, '').replace(/^Key Tracking /, 'Key ').replace(/^Velocity Tracking /, 'Vel ');
+  const show = (j) => { osc3Tab.set(key, j); page.replaceChildren(...OSC3_PAGES[j][1].map(([title, idx]) => h('div', { class: 'lk-col lk-o3g' }, h('div', { class: 'lk-o3h' }, title), flmPanel(k, idx, short)))); };
+  const j0 = osc3Tab.get(key) || 0;
+  const tb = lvTabs(OSC3_PAGES.map(([label]) => ({ label })), j0, show, { cls: 'lk-tabs' });
+  show(j0);
+  return k.col(tb, page);
+};
 // Slicer: the loop (zone 0, picked from the browser) above the compact FLM controls
 VI[35] = (k) => {
   const { i } = k.ctx, t = P.state.tracks[i], z = () => (t.inst.zones && t.inst.zones[0]) || {};
