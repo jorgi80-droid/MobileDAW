@@ -319,6 +319,17 @@ export function setClipsMuted(list, m) {
   emit('clips');
 }
 
+// A clip's Level / Pan envelopes (c.genv [[source seconds, gain]], c.penv [[source seconds, pan -1..1]], from FLM) as the engine's
+// [seconds, gain, pan] points: both read at every point of either (linear, the clip's own gain / pan before an envelope's first point).
+const envAt = (e, t, d) => { if (!e || !e.length || t < e[0][0]) return d; let k = 0; while (k + 1 < e.length && e[k + 1][0] <= t) k++; const a = e[k], b = e[k + 1]; return b && b[0] > a[0] ? a[1] + (b[1] - a[1]) * (t - a[0]) / (b[0] - a[0]) : a[1]; };
+export function clipEnvFlat(c) {
+  const g = Array.isArray(c.genv) ? c.genv : null, p = Array.isArray(c.penv) ? c.penv : null;
+  if (!(g && g.length) && !(p && p.length)) return [];
+  const ts = [...new Set([...(g || []), ...(p || [])].map((q) => q[0]).filter(Number.isFinite))].sort((a, b) => a - b), o = [];
+  const k = c.genvRef > 0 ? c.gain / c.genvRef : 1;                         // the clip's Gain knob still scales the Level envelope (genvRef = the gain it was made with)
+  for (const t of ts) o.push(t, envAt(g, t, c.genvRef > 0 ? c.genvRef : c.gain) * k, envAt(p, t, c.pan || 0));
+  return o;
+}
 export function syncClips(i) {
   const t = state.tracks[i];
   if (!t) return;
@@ -327,15 +338,18 @@ export function syncClips(i) {
   const f = [];
   let n = 0;
   if (t.kind === 'audio') {
+    const env = [];
     for (const c of t.clips) {
       if (c.muted) continue;
+      const ce = clipEnvFlat(c), e0 = env.length / 3, en = ce.length / 3;
       const bk = bakeCurrent(c);       // grid-locked clip on a tempo map / with swing: one pre-warped buffer that starts at the clip start
-      if (bk) { f.push(c.start, c.len, bk.sample.id, c.gain, 0, c.fadeIn || 0, c.fadeOut || 0, c.pan || 0); n++; continue; }
+      if (bk) { const o = c.offset || 0; for (let q = 0; q < ce.length; q += 3) env.push(ce[q] - o, ce[q + 1], ce[q + 2]); f.push(c.start, c.len, bk.sample.id, c.gain, 0, c.fadeIn || 0, c.fadeOut || 0, c.pan || 0, e0, en); n++; continue; }
+      env.push(...ce);
       const es = c.dsample || c.sample;
       const segs = loopSegs(c);       // clip dragged longer than its audio: the audio repeats instead of leaving silence
-      segs.forEach((g, k) => { f.push(c.start + g.o, g.len, es.id, c.gain, (c.offset || 0) + g.s / PPQ * 60 / state.bpm, k === 0 ? c.fadeIn || 0 : 0, k === segs.length - 1 ? c.fadeOut || 0 : 0, c.pan || 0); n++; });
+      segs.forEach((g, k) => { f.push(c.start + g.o, g.len, es.id, c.gain, (c.offset || 0) + g.s / PPQ * 60 / state.bpm, k === 0 ? c.fadeIn || 0 : 0, k === segs.length - 1 ? c.fadeOut || 0 : 0, c.pan || 0, e0, en); n++; });
     }
-    eng.trackClips(i, f, n, 8);
+    eng.trackClips(i, f, n, 10, env);
   } else {
     for (const c of t.clips) {
       if (c.muted || subMuted(t, c)) continue;                     // a muted sub-track row: its clips are left out
@@ -1889,6 +1903,7 @@ export async function restretchClip(i, id, ratio, opts = {}) {
   c.offset = Math.max(0, f0 * D1);
   c.len = opts.len ? Math.max(PPQ / 32, Math.round(opts.len)) : Math.max(PPQ / 32, Math.round((f1 - f0) * D1 / sptNew));
   if (c.fadeIn) c.fadeIn *= k; if (c.fadeOut) c.fadeOut *= k;
+  for (const e of [c.genv, c.penv]) if (e) for (const q of e) q[0] *= k;   // the clip envelopes follow the audio
   syncClips(i); emit('clips');
   return { ok: true, ratio };
 }

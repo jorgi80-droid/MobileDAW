@@ -24,7 +24,7 @@ const pth = (p) => { const s = cat(asc('@L@'), new Uint8Array(1), asc(p)); retur
 function flmFile() {
   const head = ck('HEAD', u32(0), u32(2), fixed('Tes FLM', 256), new Uint8Array(0x108 - 264), f64(150), new Uint8Array(32), asc('4.6.0'));
   const chhd = (name, order, num) => ck('CHHD', fixed(name, 1024), new Uint8Array(8), f32s(order, 0.3), new Uint8Array(0x438 - 1040), u32(num));
-  const mod = (type, id, params, preset = 'Default/Default', extra = [], smpr = [0.5, 1, 0.5]) => ck('RMOd', i32(type), u32(id), ck('HEAD', new Uint8Array(9)), ck('DESC', fixed('Default', 256), fixed('Default', 256), new Uint8Array(4)), ck('PRST', u32(preset.length), asc(preset)), ck('ADD1', new Uint8Array(3)), ck('PRMS', f32s(...params)), ck('SMPR', f32s(...smpr)), ...extra);
+  const mod = (type, id, params, preset = 'Default/Default', extra = [], smpr = [0.5, 1, 0.5]) => ck('RMOd', i32(type), u32(id), ck('HEAD', new Uint8Array(9)), ck('DESC', fixed('Default', 256), fixed('Default', 256), new Uint8Array(4)), ck('PRST', u32(preset.length), asc(preset)), ck('ADD1', Uint8Array.of(0, 0, 127)), ck('PRMS', f32s(...params)), ck('SMPR', f32s(...smpr)), ...extra);
   const rack = (flag, vol, mods = [], rsmp = [], mute = 0) => ck('RACK', u32(flag), asc('10KR'), ck('RHED', new Uint8Array(16)), ck('RPRM', f32s(vol, 0.25, mute, 0, 0.5, 0)), ...mods, ...rsmp);
   const desc = (kind, mod = -1, prm = -1, label = '') => ck('DESc', i32(kind), i32(mod), i32(prm), new Uint8Array(16), fixed(label, 1024));
   const clhd = (len, cyc, off, src = 0, flags = 0) => ck('CLHd', f64(len), f64(cyc), f64(off), i32(1), f64(src), new Uint8Array([flags]));
@@ -123,7 +123,7 @@ ok(B.report.samplesMissing.includes('My Tracks/tidakada.wav') && B.report.sample
 
 // ---------- 2nd owner project layout: SuperSaw (23) / SoundFont (52) / unknown instrument (39), Tape Stop (42) with "Toggle Play" automation
 {
-  const mod = (type, id, params, preset = 'Default/Default') => ck('RMOd', i32(type), u32(id), ck('HEAD', new Uint8Array(9)), ck('DESC', fixed('Default', 256), fixed('Default', 256), new Uint8Array(4)), ck('PRST', u32(preset.length), asc(preset)), ck('ADD1', new Uint8Array(3)), ck('PRMS', f32s(...params)), ck('SMPR', f32s(0.5, 1, 0.5)));
+  const mod = (type, id, params, preset = 'Default/Default') => ck('RMOd', i32(type), u32(id), ck('HEAD', new Uint8Array(9)), ck('DESC', fixed('Default', 256), fixed('Default', 256), new Uint8Array(4)), ck('PRST', u32(preset.length), asc(preset)), ck('ADD1', Uint8Array.of(0, 0, 127)), ck('PRMS', f32s(...params)), ck('SMPR', f32s(0.5, 1, 0.5)));
   const rack = (mods) => ck('RACK', u32(0x100), asc('10KR'), ck('RHED', new Uint8Array(16)), ck('RPRM', f32s(0.853, 0.5, 0, 0, 0.5, 0)), ...mods);
   const desc = (kind, m = -1, prm = -1, label = '') => ck('DESc', i32(kind), i32(m), i32(prm), new Uint8Array(16), fixed(label, 1024));
   const clhd = (len, cyc) => ck('CLHd', f64(len), f64(cyc), f64(0), i32(1), f64(0), new Uint8Array([0]));

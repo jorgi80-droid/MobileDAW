@@ -26,8 +26,10 @@ struct NoteData {                     // trackNotes: events sorted (offs before 
   std::vector<double> tick; std::vector<uint8_t> p; std::vector<float> v; std::vector<uint8_t> on; std::vector<float> pan, st;
   std::vector<std::array<double, 6>> notes;   // [start, end, pitch, vel, pan, pitch offset]
 };
-struct Clip { double start, len; int sample; double gain, offset, fadeIn, fadeOut, pan; };
-struct ClipData { std::vector<Clip> c; };
+// e0 / en: the clip's envelope (FLM audio-clip Level / Pan envelope), points e0 .. e0 + en - 1 of ClipData::env as [source seconds, gain, pan]:
+// linear between points, the last point's value after it, the clip's own gain / pan before the first.
+struct Clip { double start, len; int sample; double gain, offset, fadeIn, fadeOut, pan; int e0 = 0, en = 0; };
+struct ClipData { std::vector<Clip> c; std::vector<double> env; };
 struct CCLane { std::vector<double> t, v; };
 struct CCData { CCLane* lane[8] = {}; ~CCData() { for (auto* l : lane) delete l; } };
 struct Lane { int kind, track, dev, param; std::vector<std::pair<double, double>> pts; double last; };

@@ -50,7 +50,8 @@ export function parseFlm(buf, onProgress) {
 
   const P = { app: 'FL Studio Mobile', name: '', bpm: 120, sig: [4, 4], channels: [], warnings: [] };
   const head = one(top, 'HEAD');
-  if (head) { P.legacy = head.n < 358; P.version = i32(head.a + 4); P.name = str(head.a + 8, 256); if (head.n >= 0x110) { const b = f64(head.a + 0x108); if (b >= 20 && b <= 999) P.bpm = b; } P.appVersion = str(head.a + head.n - 5, 5); }
+  if (head) { P.legacy = head.n < 358; P.version = i32(head.a + 4); P.name = str(head.a + 8, 256); if (head.n >= 0x110) { const b = f64(head.a + 0x108); if (b >= 20 && b <= 999) P.bpm = b; } P.appVersion = str(head.a + head.n - 5, 5);
+    if (head.n >= 288) { const a = f64(head.a + 272), b = f64(head.a + 280), lo = Math.min(a, b), hi = Math.max(a, b); if (lo >= 0 && hi > lo && hi < 1e6) P.loop = [lo, hi]; } }   // HEAD @272 / @280: the play loop in beats (start = end: none)
   const td = one(top, 'TDIV'); if (td && td.n >= 2 && u[td.a] > 0 && u[td.a + 1] > 0) P.sig = [u[td.a], u[td.a + 1]];
   const racks = top.filter((x) => x.tag === 'RACK'), chans = top.filter((x) => x.tag === 'CHNL');
   const presetName = {};                                     // type -> plugin name learned from preset folders in this file
@@ -68,6 +69,8 @@ export function parseFlm(buf, onProgress) {
       const names = desc ? [str(desc.a, 256), str(desc.a + 0x100, 256)].filter(Boolean) : [];
       const folder = /Effect Presets\/([^/]+)\//.exec(pr); if (folder && !KNOWN[type]) presetName[type] = folder[1].replace(/(\S)\d+$/, '$1').trim();   // "Autoduck2" -> Autoduck, "Reverb 2" stays
       const mod = { type, id, params, enabled: !(params.length && params[0] < 0.5), preset: pr.replace(/^.*\//, '').replace(/\.(flmpst|dwp)$/i, ''), presetPath: pr, names };
+      const a1 = one(mk, 'ADD1');                         // ADD1 (Honeydew read.rs): u8 minimized, i8 key low, i8 key high: the keys the instrument hears
+      if (a1 && a1.n >= 3) { let lo = dv.getInt8(a1.a + 1), hi = dv.getInt8(a1.a + 2); if (lo > hi) [lo, hi] = [hi, lo]; lo = Math.max(0, lo); hi = Math.max(lo, hi); if (lo > 0 || hi < 127) mod.keys = [lo, hi]; }
       if (smpr && smpr.n >= 12) { mod.wetPan = f32(smpr.a); mod.level = f32(smpr.a + 4); mod.postGain = f32(smpr.a + 8); mod.pan = 0; }   // SMPR = Wet Pan, Mix, Post Gain (FLM Rack "Mix options"); Mix -> module level, Wet Pan / Post Gain default 0.5 in known projects
       if (cstm && type === 25 && cstm.n >= 12) mod.notes = Array.from({ length: 12 }, (_, k) => u[cstm.a + k] !== 0);   // Pitcher CSTM (Honeydew cstm.rs): u8 note enables C..B
       if (cstm && type === 2 && cstm.n >= 8) mod.gms = { waveA: u32(cstm.a), waveB: u32(cstm.a + 4), pb: cstm.n >= 12 ? f32(cstm.a + 8) : 1 / 3, mwAmount: cstm.n >= 16 ? f32(cstm.a + 12) : 0.5, mwDest: cstm.n >= 20 ? f32(cstm.a + 16) : 1 };   // GMSynth CSTM (Honeydew cstm.rs): u32 shape A / B, f32 PB RANGE, MW AMOUNT, MW DEST
@@ -106,16 +109,17 @@ export function parseFlm(buf, onProgress) {
       const sk = kids(sm), stc = one(sk, 'STRC'), pm = one(sk, 'PRMS'), main = one(sk, 'MAIN');
       clip.sample = path1(one(sk, 'PTH1'));
       clip.name = main ? str(main.a + 12, 256) : '';
+      if (main && main.n >= 1037 && u[main.a + 1036] !== 0) clip.reverse = true;   // slot MAIN as a pad's (Honeydew read.rs slot()): u8 reverse @1036
       const s1 = one(sk, 'STR1');
       if (stc && stc.n >= 9) { clip.stretchOn = u[stc.a] === 1; clip.stretch = f64(stc.a + 1); if (stc.n >= 17 && clip.stretchOn) clip.pitch = 12 * Math.log2(Math.max(1e-6, f64(stc.a + 9))); }
       if (s1 && s1.n >= 17 && u[s1.a] === 1) clip.pitch = f64(s1.a + 9);              // semitones while stretching (time and pitch independent)
-      if (pm && pm.n >= 8) { clip.gain = f32(pm.a); clip.pan = f32(pm.a + 4); clip.params = []; for (let k = 0; k + 4 <= pm.n; k += 4) clip.params.push(f32(pm.a + k)); if (!clip.stretchOn && pm.n >= 12) clip.repitch = (f32(pm.a + 8) - 0.5) * 48; }   // stretch off: the pitch knob resamples
+      if (pm && pm.n >= 8) { clip.gain = f32(pm.a); clip.pan = f32(pm.a + 4); clip.params = []; for (let k = 0; k + 4 <= pm.n; k += 4) clip.params.push(f32(pm.a + k)); if (!clip.stretchOn && pm.n >= 12) clip.repitch = Math.trunc(Math.fround(48 * f32(pm.a + 8) - 24)); }   // FLM: whole semitones, trunc(fma32(48, v, -24)) (48 v - 24 is exact in f64)   // stretch off: the pitch knob resamples
     }
     return clip;
   };
   for (let k = 0; k < chans.length; k++) {
     const c = chans[k], ks = kids(c), hd = one(ks, 'CHHD'), flag = u32(c.a);
-    const ch = { kind: flag === 0 ? 'master' : flag === 0x80 ? 'bus' : 'track', name: hd ? str(hd.a, 1024) : 'Channel ' + k, order: hd && hd.n > 0x40c ? f32(hd.a + 0x408) : k, hue: hd && hd.n > 0x410 ? f32(hd.a + 0x40c) : 0, number: hd && hd.n >= 0x43c ? u32(hd.a + 0x438) : k, tracks: [] };
+    const ch = { kind: flag === 0 ? 'master' : flag === 0x80 ? 'bus' : 'track', name: hd ? str(hd.a, 1024) : 'Channel ' + k, order: hd && hd.n >= 0x40c ? f64(hd.a + 0x404) : k, zipped: !!(hd && hd.n >= 0x404 && u32(hd.a + 0x400)), hue: hd && hd.n > 0x410 ? f32(hd.a + 0x40c) : 0, number: hd && hd.n >= 0x43c ? u32(hd.a + 0x438) : k, tracks: [] };
     Object.assign(ch, racks[k] ? readRack(racks[k]) : { vol: LVL0, pan: 0.5, modules: [], pads: [] });
     // SEND (Honeydew read.rs send()): i32 target channel number (0 = master), f32 enabled (> 0.5), f32 linear gain, f32 / f32 initial
     // values, f32 level (the Level law, 0.8531 = 0 dB). A channel plays only through its sends (post fader and pan); a repeated target is ignored.
@@ -165,8 +169,21 @@ export const LVL0 = 0.85312408208847046;
 // FLM's Level law (Honeydew mixer.rs level_gain): dB = 66 v^0.6 - 60, so 0.8531 is 0 dB, 1 is +6 dB, 0 is silence. Channel, master, effect
 // bus, send, drum pad and audio clip levels all follow it (before: the ratio v / 0.8531, e.g. 0.25 played -10.6 dB instead of FLM's -31.2 dB).
 export function flmGain(v) { if (!(v > 0)) return 0; const db = 66 * Math.pow(v, 0.6) - 60; return Math.abs(db) < 1e-5 ? 1 : Math.pow(10, db / 20); }
+// Audio-clip envelopes (Honeydew audio_clips.rs): key +-1 / +-2 / +-3 = the slot's Level / Pan / Speed (key > 0 a control point, < 0 the step FLM
+// stored between them), value u16 / 65535 as the slot param, position = beats into the clip's content (offset included, repeating with its loop).
+// Level -> gain (flmGain), Pan -> -1..1; Speed is counted only (MobileDAW pitches a clip by rendering it once).
+export function clipEnvs(events) {
+  const o = {}, lv = [], pn = []; let sp = 0;
+  for (const e of events || []) {
+    const k = e.pitch > 32767 ? e.pitch - 65536 : e.pitch, p = Math.abs(k) - 1, v = e.value / 65535;
+    if (p === 0) lv.push([e.t, flmGain(v)]); else if (p === 1) pn.push([e.t, v * 2 - 1]); else if (p === 2) sp++;
+  }
+  const srt = (a) => a.sort((x, y) => x[0] - y[0]);
+  if (lv.length) o.lvlEnv = srt(lv); if (pn.length) o.panEnv = srt(pn); if (sp) o.spdEnv = sp;
+  return o;
+}
 export function flmToModel(P) {
-  const M = { app: P.app, name: P.name || 'FLM Project', bpm: P.bpm, sig: P.sig, channels: [], warnings: P.warnings.slice() };
+  const M = { app: P.app, name: P.name || 'FLM Project', bpm: P.bpm, sig: P.sig, ...(P.loop ? { loop: P.loop } : {}), channels: [], warnings: P.warnings.slice() };
   const hue = (h) => (Number.isFinite(h) && h >= 0 && h <= 1 ? h : null);
   const ordered = P.channels.slice().sort((a, b) => (a.kind === b.kind ? (a.kind === 'track' ? a.order - b.order : 0) : 0));
   for (const ch of ordered) {
@@ -176,19 +193,20 @@ export function flmToModel(P) {
     // an unidentified module with a synth-sized parameter set on a notes channel is its instrument (not an effect): reported by id
     const unk = dw.length || syn || !ch.tracks.some((t) => t.kind === 'notes') ? null : ch.modules.find((m) => !FLM_TYPES[m.type] && m.params.length >= 40);
     const instMods = new Set(dw.length ? dw : syn ? [syn] : unk ? [unk] : []);
-    const c = { kind: ch.kind, name: ch.name, number: ch.number, hue: hue(ch.hue), gain: flmGain(ch.vol), pan: ch.pan * 2 - 1, sends: (ch.sends || []).map((q) => ({ target: q.target, on: q.enabled, gain: flmGain(q.level) })), ...(ch.mute ? { mute: true } : {}), ...(ch.solo ? { solo: true } : {}), tracks: [], pads: [],
+    const c = { kind: ch.kind, name: ch.name, number: ch.number, hue: hue(ch.hue), ...(ch.zipped ? { zipped: true } : {}), gain: flmGain(ch.vol), pan: ch.pan * 2 - 1, sends: (ch.sends || []).map((q) => ({ target: q.target, on: q.enabled, gain: flmGain(q.level) })), ...(ch.mute ? { mute: true } : {}), ...(ch.solo ? { solo: true } : {}), tracks: [], pads: [],
       modules: ch.modules.filter((m) => !instMods.has(m)).map((m) => ({ name: m.name, enabled: m.enabled, ...(m.level != null && m.level < 0.999 ? { mix: m.level } : {}), ...(m.postGain != null && Math.abs(m.postGain - 0.5) > 1e-4 ? { postGain: m.postGain } : {}), ...(m.wetPan != null && Math.abs(m.wetPan - 0.5) > 1e-4 ? { wetPan: m.wetPan } : {}), preset: m.preset && m.preset !== 'Default' ? m.preset : '', params: m.params, ...(m.notes ? { notes: m.notes } : {}), id: m.id, flmType: m.type, ...(FLM_TYPES[m.type] && FLM_TYPES[m.type].sure === false ? { sure: false } : {}), app: 'FL Studio Mobile' })) };
     if (dw.length) {
       const lib = dw.find((m) => m.library);
-      c.instrument = { kind: 'directwave', name: 'DirectWave', layers: dw.filter((m) => m.enabled && m.sample).map((m) => ({ sample: m.sample, root: m.root ?? DW_ROOT0, params: m.params, level: m.level ?? 1, pan: m.pan || 0 })), library: lib ? lib.library : '', preset: dw[0].preset, enabled: dw.some((m) => m.enabled) };
+      c.instrument = { kind: 'directwave', name: 'DirectWave', layers: dw.filter((m) => m.enabled && m.sample).map((m) => ({ sample: m.sample, root: m.root ?? DW_ROOT0, params: m.params, level: m.level ?? 1, pan: m.pan || 0, ...(m.keys ? { keys: m.keys } : {}) })), library: lib ? lib.library : '', preset: dw[0].preset, enabled: dw.some((m) => m.enabled) };
       if (!c.instrument.layers.length && !c.instrument.library && dw[0].sample) c.instrument.layers.push({ sample: dw[0].sample, root: dw[0].root ?? DW_ROOT0, params: dw[0].params, level: dw[0].level ?? 1, pan: dw[0].pan || 0 });
     } else if (unk) { c.instrument = { kind: 'unknown', name: 'Instrumen FLM #' + unk.type, preset: unk.preset && unk.preset !== 'Default' ? unk.preset : '', params: unk.params, enabled: unk.enabled, flmType: unk.type };
-    } else if (syn) { const k = synthOf(syn); c.instrument = { kind: k.kind, name: k.name, preset: syn.preset && syn.preset !== 'Default' ? syn.preset : '', params: syn.params, enabled: syn.enabled, flmType: syn.type, ...(syn.gms ? { gms: syn.gms } : {}), ...(k.kind === 'soundfont' ? { library: syn.presetPath } : {}), ...(syn.loop ? { loop: syn.loop } : {}), ...(syn.sens != null ? { sens: syn.sens } : {}) }; }
+    } else if (syn) { const k = synthOf(syn); c.instrument = { kind: k.kind, name: k.name, preset: syn.preset && syn.preset !== 'Default' ? syn.preset : '', params: syn.params, enabled: syn.enabled, flmType: syn.type, ...(syn.gms ? { gms: syn.gms } : {}), ...(k.kind === 'soundfont' ? { library: syn.presetPath } : {}), ...(syn.loop ? { loop: syn.loop } : {}), ...(syn.sens != null ? { sens: syn.sens } : {}), ...(syn.keys ? { keys: syn.keys } : {}) }; }
     c.pads = ch.pads.map((q, k) => ({ path: q.path, name: (q.path.split('/').pop() || 'Pad ' + (k + 1)).replace(/\.[^.]+$/, ''), gain: flmGain(q.vol), pan: q.pan * 2 - 1, pitch: Math.trunc(Math.fround(q.pitch * 48 - 24)), env: q.params.length >= 10 ? { a: q.params[6], d: q.params[7], s: q.params[8], r: q.params[9] } : null, reverse: !!q.reverse, cut: q.cut | 0, poly: q.poly !== false, mute: !!q.mute, solo: !!q.solo, offset: Number.isFinite(q.offset) ? q.offset : 0,
       startSec: q.params.length >= 11 ? Math.sign(2 * q.params[10] - 1) * 0.5 * (2 * q.params[10] - 1) ** 2 : 0, length: q.params[5] > 0 ? q.params[5] : 0, send: q.link ? q.link.send : -1 }));
     // Honeydew drums.rs: Speed = trunc(48 v - 24) whole semitones (f32); Sample Start = +-0.5 u^2 s, u = 2 v - 1 (later start, or silence
     // before the hit when negative); Length > 0 = the gate at that fraction of the sample, then the release; LINk send = the pad plays into
     // that effect channel instead of its own (past the channel's rack and fader)
+    const keyOut = ((syn || unk) && (syn || unk).keys) || null;       // ADD1 key range of the channel's instrument: notes outside it are never heard (Honeydew generators.rs)
     for (const t of ch.tracks) {
       if (!t.clips.length && t.kind === 'automation') continue;               // empty automation slots
       const tr = { kind: t.kind, label: t.label, clips: [] };
@@ -199,9 +217,12 @@ export function flmToModel(P) {
       for (const x of t.clips) {
         const cl = { pos: x.pos, len: x.len, cycle: x.cycle, offset: x.offset, srcLen: x.srcLen, muted: x.muted };
         if (t.kind === 'audio') Object.assign(cl, { sample: x.sample, name: x.name, pitch: x.pitch || 0, repitch: x.repitch || 0, stretch: x.stretchOn !== false && x.stretch > 0.01 ? x.stretch : 1, gain: flmGain(x.gain ?? LVL0), pan: x.pan != null ? x.pan * 2 - 1 : 0,
+          ...clipEnvs(x.events), ...(x.reverse ? { reverse: true } : {}),
+          ...(x.params && x.params.length >= 5 && x.params[3] > 0.5 ? { slotMute: true } : {}),
+          ...(x.params && x.params.length >= 11 && (x.params[5] > 0 || Math.abs(x.params[10] - 0.5) > 1e-6) ? { slotTrim: [x.params[5], x.params[10]] } : {}),
           ...(x.params && x.params.length >= 10 && (x.params[6] > 0 || x.params[7] < 1 || x.params[8] < 1 || x.params[9] < 1) ? { env: x.params.slice(6, 10) } : {}) });   // clip envelope A D S R (not applied yet: reported)
         else if (t.kind === 'automation') cl.points = x.events.map((e) => ({ t: e.t, v: e.vel / 65535 }));
-        else cl.notes = x.events.map((e) => ({ t: e.t, len: e.len > 0 ? e.len : 0.25, pitch: t.kind === 'notes' ? Math.min(127, e.pitch + NOTE_OFS) : e.pitch, vel: e.vel8 / 255, pan: Math.max(-1, Math.min(1, (e.pan8 - 127) / 128)), ...(e.slide && t.kind === 'notes' ? { slide: true } : {}),
+        else cl.notes = x.events.filter((e) => !(t.kind === 'notes' && keyOut && (e.pitch < keyOut[0] || e.pitch > keyOut[1]))).map((e) => ({ t: e.t, len: e.len > 0 ? e.len : 0.25, pitch: t.kind === 'notes' ? Math.min(127, e.pitch + NOTE_OFS) : e.pitch, vel: e.vel8 / 255, pan: Math.max(-1, Math.min(1, (e.pan8 - 127) / 128)), ...(e.slide && t.kind === 'notes' ? { slide: true } : {}),
           ...(t.kind !== 'notes' && e.repeat > 0 ? { repeat: e.repeat } : {}), ...(t.kind !== 'notes' && Math.abs(12 * (2 * e.value / 65535 - 1)) > 0.01 ? { pitchOfs: 12 * (2 * e.value / 65535 - 1) } : {}) }));   // drum hit: Repeat (extra hits in the sixteenth), Pitch (2^(2 v / 65535 - 1), +-12 st)
         tr.clips.push(cl);
       }

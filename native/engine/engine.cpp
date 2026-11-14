@@ -408,10 +408,22 @@ void Engine::track(Strip& st, int idx, double p0, int n, double sp, bool anySolo
       Sample* sm = c.sample >= 0 && c.sample < 256 ? bank.s[c.sample] : nullptr; if (!sm) continue;
       double from = jsMax(p0, cs), to = jsMin(p0 + n, ce), off = jsRound(c.offset * sr);
       const float* sl = sm->l; const float* sr2 = sm->r; double frames = sm->frames;
-      const double cp = c.pan, pl = cp > 0 ? 1 - cp : 1, pr = cp < 0 ? 1 + cp : 1;       // clip pan = balance (centre untouched), as core.js
+      const double cp = c.pan; double pl = cp > 0 ? 1 - cp : 1, pr = cp < 0 ? 1 + cp : 1;       // clip pan = balance (centre untouched), as core.js
+      const double* ev = c.en > 0 ? st.clips->env.data() + (size_t)c.e0 * 3 : nullptr; int ei = 0;
       for (double k = from; k < to; k++) {
         double ix = off + (k - cs); if (ix >= frames || ix < 0) { if (ix >= frames) break; continue; }
         double g = c.gain, fi = k - cs, fo = ce - 1 - k;
+        if (ev) {                 // the clip's envelope at this source position (seconds)
+          double ts = ix / sr;
+          if (ts < ev[0]) { g = c.gain; pl = cp > 0 ? 1 - cp : 1; pr = cp < 0 ? 1 + cp : 1; }
+          else {
+            while (ei > 0 && ev[ei * 3] > ts) ei--;
+            while (ei + 1 < c.en && ev[(ei + 1) * 3] <= ts) ei++;
+            double eg = ev[ei * 3 + 1], ep = ev[ei * 3 + 2];
+            if (ei + 1 < c.en) { double t0 = ev[ei * 3], t1 = ev[(ei + 1) * 3], u = t1 > t0 ? (ts - t0) / (t1 - t0) : 0; eg += (ev[(ei + 1) * 3 + 1] - eg) * u; ep += (ev[(ei + 1) * 3 + 2] - ep) * u; }
+            g = eg; pl = ep > 0 ? 1 - ep : 1; pr = ep < 0 ? 1 + ep : 1;
+          }
+        }
         if (fi < FI) g *= (fi + 1) / FI; if (fo < FO) g *= (fo + 1) / FO;
         int o = (int)(k - p0), j = (int)ix;
         L[o] = (float)(L[o] + sl[j] * g * pl); R[o] = (float)(R[o] + sr2[j] * g * pr);

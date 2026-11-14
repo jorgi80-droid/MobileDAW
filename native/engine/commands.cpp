@@ -119,13 +119,20 @@ static NoteData* prepNotes(const Arg& flat0, const Arg& nArg0, int stride0, int 
   return d;
 }
 
-static ClipData* prepClips(const Arg& flat, const Arg& nArg, int stride) {
+static ClipData* prepClips(const Arg& flat, const Arg& nArg, int stride, const Arg& env) {
   int n = count(flat, nArg, stride);
   auto* d = new ClipData();
+  int np = env.kind == Arg::Arr ? (int)(env.arr.size() / 3) : 0;
+  if (np > 0) d->env = env.arr;
   for (int i = 0; i < n; i++) {
     size_t b = (size_t)i * stride;
-    d->c.push_back({ arrAt(flat, b), arrAt(flat, b + 1), toInt32(arrAt(flat, b + 2)), arrAt(flat, b + 3),
-                     stride > 4 ? arrAt(flat, b + 4) : 0, stride > 5 ? arrAt(flat, b + 5) : 0, stride > 6 ? arrAt(flat, b + 6) : 0, stride > 7 ? arrAt(flat, b + 7) : 0 });
+    Clip c{ arrAt(flat, b), arrAt(flat, b + 1), toInt32(arrAt(flat, b + 2)), arrAt(flat, b + 3),
+            stride > 4 ? arrAt(flat, b + 4) : 0, stride > 5 ? arrAt(flat, b + 5) : 0, stride > 6 ? arrAt(flat, b + 6) : 0, stride > 7 ? arrAt(flat, b + 7) : 0 };
+    if (stride > 9) {             // [.., envelope first point, point count] into env (triples), checked against what env holds
+      double e0 = arrAt(flat, b + 8), en = arrAt(flat, b + 9);
+      if (e0 == e0 && en == en && e0 >= 0 && en > 0 && e0 + en <= np) { c.e0 = (int)e0; c.en = (int)en; }
+    }
+    d->c.push_back(c);
   }
   std::stable_sort(d->c.begin(), d->c.end(), [](const Clip& a, const Clip& b) { return a.start < b.start; });
   return d;
@@ -266,7 +273,7 @@ bool prepare(const std::string& name, const std::vector<Arg>& a, const Engine& e
       }
       break;
     }
-    case TRACKCLIPS: { c.a[0] = N(0); int stride = at(a, 3).kind == Arg::Num ? (int)at(a, 3).num : 7; take(c, prepClips(at(a, 1), at(a, 2), stride)); break; }
+    case TRACKCLIPS: { c.a[0] = N(0); int stride = at(a, 3).kind == Arg::Num ? (int)at(a, 3).num : 7; take(c, prepClips(at(a, 1), at(a, 2), stride, at(a, 4))); break; }
     case TRACKCC: { c.a[0] = N(0); CCData* d = prepCC(at(a, 1), at(a, 2)); if (d) take(c, d); break; }
     case AUTOMATION: take(c, prepLanes(at(a, 0), at(a, 1))); break;
     case SAMPLE: {               // sample id @l [@r]

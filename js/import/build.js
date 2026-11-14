@@ -159,6 +159,7 @@ export function buildMdaw(M, opts) {
         n.to = 'Slicer (nilai knob + loop dari file FLM)' + (f && f.missing ? ', loop hilang' : !f ? ', tanpa loop' : ''); n.how = f && !f.missing ? 'exact' : 'missing';
         const q = INSTRUMENTS[35].params.map((x) => x.def); (I.params || []).slice(0, 7).forEach((v, k) => { if (Number.isFinite(v) && k > 0) q[k] = Math.min(1, Math.max(0, v)); });
         q[7] = I.sens != null ? I.sens : 0.33;
+        if (I.keys && I.keys[0] > 0) q[8] = I.keys[0];                              // ADD1 low > 0: Set First Note (Honeydew slicer.rs first_note)
         const z = zoneOf(f ? { path: f.path, name: f.path.split('/').pop() } : null, 60); if (f && f.missing) z.missing = I.loop;
         return { type, params: q, pitch: 0, zones: [z], from: { app: M.app, name: I.name, preset: I.preset || '', params: I.params || [], loop: I.loop || '' } };
       }
@@ -187,7 +188,7 @@ export function buildMdaw(M, opts) {
     // every DirectWave layer becomes a zone with its own pitch / fine / level / pan, also when its sample is not in the archive (a silent
     // placeholder file keeps the zone and the instrument settings: put the sample in place and it plays exactly as set in FLM)
     const zones = [], lost = [];
-    for (const L of layers) { const f = sample(L.sample); const z = zoneOf({ path: f.path, name: f.path.split('/').pop() }, L.root, L); if (f.missing) { z.missing = L.sample; lost.push(L.sample); } zones.push(z); }
+    for (const L of layers) { const f = sample(L.sample); const z = zoneOf({ path: f.path, name: f.path.split('/').pop() }, L.root, L); if (L.keys) { z.lo = L.keys[0]; z.hi = Math.min(127, L.keys[1]); } if (f.missing) { z.missing = L.sample; lost.push(L.sample); } zones.push(z); }
     const dwParams = dwParamsFromFlm((layers.find((L) => (L.params || []).length >= 33) || layers.find((L) => (L.params || []).length >= 17) || {}).params);
     if (zones.length) {
       note('DirectWave (' + zones.length + ' zona' + (lost.length ? ', ' + lost.length + ' sample hilang' : '') + ')', lost.length === zones.length ? 'missing' : 'exact');
@@ -248,6 +249,7 @@ export function buildMdaw(M, opts) {
   const out = { v: 2, flm: FLM_FMT, name: M.name, bpm: clamp(M.bpm || 120, 20, 300), sig: { n: M.sig ? M.sig[0] : 4, d: M.sig ? M.sig[1] : 4 }, sigs: [], markers: [], groove: { amt: 0, grid: 240 }, countIn: 0,
     punch: { on: false, start: 0, end: 0 }, recLoop: false, loop: { on: false, start: 0, end: 7680 }, tracks: [], master: { vol: 1, devices: [] }, returns: [], cc: {}, imported: { app: M.app } };
   const spb = 60 / out.bpm;
+  if (Array.isArray(M.loop) && M.loop[1] > M.loop[0]) { out.loop = { on: true, start: Math.max(0, T(M.loop[0])), end: T(M.loop[1]) }; report.loop = true; }   // FLM's play loop (HEAD @272 / @280)
   const master = M.channels.find((c) => c.kind === 'master');
   if (master) { out.master.vol = vol(master.gain); out.master.devices = devices(master); over(out.master, master.gain); }
   for (const b of M.channels.filter((c) => c.kind === 'bus')) {
@@ -273,6 +275,7 @@ export function buildMdaw(M, opts) {
       if (out.tracks.length >= MAX_TRACKS) { report.skipped.push('Track "' + ch.name + '": jumlah track maksimum'); return; }
       const split = new Map();
       const t = { id: uid(), name: subs.length > 1 && k > 0 ? `${ch.name} (${k + 1})` : ch.name, color, kind: 'audio', inst: null, clips: [], devices: devices(ch), vol: vol(ch.gain), pan: clamp(ch.pan || 0, -1, 1), mute: !!ch.mute, solo: false, send: [0, 0], out: -1 };
+      if (ch.zipped) t.fold = true;                                              // FLM "zipped" channel (CHHD @1024): its lanes shown folded
       const rt = routeOf(ch, t.name); t.out = rt.out; t.send = rt.send; if (rt.mute) t.mute = true;
       over(t, ch.gain, rt.k); if (M.app === 'FL Studio Mobile') t.panLaw = 'flm';   // FLM's balance pan law (Honeydew mixer.rs), kept for this track
       if (st.kind === 'notes') {
@@ -299,14 +302,19 @@ export function buildMdaw(M, opts) {
           if (!cl.sample) continue;
           const f = sample(cl.sample, cl.name), ratio = cl.stretch > 0 ? cl.stretch : 1, nm = cl.name || (cl.sample.split('/').pop() || '').replace(/\.[^.]+$/, '');
           const c = { id: uid(), start: Math.max(0, T(cl.pos)), len: Math.max(1, T(cl.len)), sample: { path: f.path, name: f.path.split('/').pop() }, gain: clamp(cl.gain ?? 1, 0, 8), name: f.missing ? '⚠ ' + nm + ' (sample tidak ada)' : nm, offset: Math.max(0, (cl.offset || 0) * spb) };
-          const st = cl.pitch || 0, rp = cl.repitch || 0;                         // exact (FLM stores f64 semitones / an f32 knob)
-          if (!f.missing && rp) c.warp = { beats: 0, ratio: Math.pow(2, -rp / 12), rev: false, pitch: 0, mode: 'repitch', bpm: out.bpm };   // stretch off: pitch by resampling (speed follows)
-          else if (!f.missing && (Math.abs(ratio - 1) > 1e-12 || st)) c.warp = { beats: 0, ratio, rev: false, pitch: st, bpm: out.bpm };   // stretch on: time and pitch independent
+          const st = cl.pitch || 0, rp = cl.repitch || 0, rev = !!cl.reverse;     // exact (FLM stores f64 semitones / an f32 knob)
+          if (!f.missing && rp) c.warp = { beats: 0, ratio: Math.pow(2, -rp / 12), rev, pitch: 0, mode: 'repitch', bpm: out.bpm };   // stretch off: pitch by resampling (speed follows)
+          else if (!f.missing && (Math.abs(ratio - 1) > 1e-12 || st || rev)) c.warp = { beats: 0, ratio, rev, pitch: st, bpm: out.bpm };   // stretch on: time and pitch independent
+          if (rev) prec.clipRev = (prec.clipRev || 0) + 1;
           if (st || rp) report.pitched = (report.pitched || 0) + 1;
           const cyc = T(cl.cycle || 0); if (!f.missing && cyc > 0 && cyc < c.len - 1) c.ll = cyc;   // the loop repeats inside a longer clip
-          if (cl.muted) c.muted = true;
+          if (cl.muted || cl.slotMute) c.muted = true;                              // the clip's own mute, or its slot's Mute param
+          if (cl.slotTrim) prec.clipTrim = (prec.clipTrim || 0) + 1;
           if (Math.abs(cl.pan || 0) > 1e-6) { c.pan = clamp(cl.pan, -1, 1); prec.clipPan = (prec.clipPan || 0) + 1; }   // the clip's own pan, as in FL Studio Mobile (balance on top of the track pan)
           if (cl.env) prec.clipEnv = (prec.clipEnv || 0) + 1;
+          if (cl.lvlEnv) { c.genv = cl.lvlEnv.map(([b, g]) => [b * spb, clamp(g, 0, 8)]); c.genvRef = c.gain; prec.clipLvlEnv = (prec.clipLvlEnv || 0) + 1; }   // FLM clip Level envelope (fades), on the source time
+          if (cl.panEnv) { c.penv = cl.panEnv.map(([b, p]) => [b * spb, clamp(p, -1, 1)]); prec.clipPanEnv = (prec.clipPanEnv || 0) + 1; }
+          if (cl.spdEnv) prec.clipSpdEnv = (prec.clipSpdEnv || 0) + 1;
           if (f.missing) c.missing = { sample: cl.sample };
           t.clips.push(c); report.clips++;
         }
@@ -371,6 +379,11 @@ export function buildMdaw(M, opts) {
   if (report.padRoute) P2.push(report.padRoute + ' pad drum FLM dikirim ke bus efek (AUX): diputar dari salinan track kit yang Output-nya ke track efek itu, pad-nya dibisukan di track asal');
   if (report.sendTrim) P2.push(report.sendTrim + ' strip punya level send FLM ke output utama selain 0 dB: dipasang sebagai Utility di akhir rantainya');
   if (report.levelOver) P2.push(report.levelOver + ' strip punya level FLM di atas +2,9 dB (batas fader MobileDAW): sisa gain dipasang sebagai Utility di akhir rantainya');
+  if (prec.clipRev) P2.push(prec.clipRev + ' klip audio dibalik (Reverse) di file asli: dibalik juga');
+  if (prec.clipTrim) P2.push(prec.clipTrim + ' klip audio punya Length / Sample Start slot sendiri di file asli: belum diterapkan');
+  if (prec.clipLvlEnv) P2.push(prec.clipLvlEnv + ' klip audio punya envelope Level (fade) di dalam klip: dipakai persis (titik FLM, linear antar titik)');
+  if (prec.clipPanEnv) P2.push(prec.clipPanEnv + ' klip audio punya envelope Pan di dalam klip: dipakai');
+  if (prec.clipSpdEnv) P2.push(prec.clipSpdEnv + ' klip audio punya envelope Speed di dalam klip: belum diterapkan (pitch klip tetap)');
   if (prec.clipEnv) P2.push(prec.clipEnv + ' klip audio punya envelope (A / D / S / R) sendiri di file asli: belum diterapkan');
   const muted = M.channels.filter((c) => c.kind !== 'master' && c.mute).map((c) => c.name);
   if (muted.length) P2.push(muted.length + ' track di-mute seperti di FLM: ' + muted.join(', '));

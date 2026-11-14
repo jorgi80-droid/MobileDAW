@@ -283,6 +283,13 @@ function drawClip(t, c, y, hh) {
     // Live draws a fade as a curve (slow start, fast rise) with the cut-away part shaded above it
     if (fiw > 1) { const cv = () => { ctx.moveTo(x, bot); ctx.bezierCurveTo(x + fiw * 0.55, bot, x + fiw * 0.45, top, x + fiw, top); }; ctx.beginPath(); cv(); ctx.lineTo(x, top); ctx.closePath(); ctx.fill(); ctx.beginPath(); cv(); ctx.stroke(); }
     if (fow > 1) { const cv = () => { ctx.moveTo(x + w - fow, top); ctx.bezierCurveTo(x + w - fow * 0.45, top, x + w - fow * 0.55, bot, x + w, bot); }; ctx.beginPath(); cv(); ctx.lineTo(x + w, top); ctx.closePath(); ctx.fill(); ctx.beginPath(); cv(); ctx.stroke(); }
+    if (Array.isArray(c.genv) && c.genv.length && w > 6) {      // clip Level envelope (FLM): a line over the clip, 0 at the bottom, its loudest point at the top
+      const o = c.offset || 0, gm = Math.max(1e-6, c.gain, ...c.genv.map((q) => q[1])), Y = (g) => bot - (bot - top) * Math.min(1, g / gm), X = (ts) => x + (ts - o) / spt * view.ppt;
+      ctx.save(); ctx.beginPath(); ctx.rect(x, top, w, bot - top); ctx.clip(); ctx.strokeStyle = 'rgba(255,90,70,.9)'; ctx.lineWidth = 1.3; ctx.beginPath();
+      ctx.moveTo(x, Y(c.genv[0][0] > o ? c.gain : c.genv[0][1])); if (c.genv[0][0] > o) ctx.lineTo(X(c.genv[0][0]), Y(c.gain));
+      for (const [ts, g] of c.genv) ctx.lineTo(X(ts), Y(g));
+      ctx.lineTo(x + w, Y(c.genv[c.genv.length - 1][1])); ctx.stroke(); ctx.restore();
+    }
     if (isSel && w > 30) {
       const sq = (hx, hy, on) => { ctx.fillStyle = on ? C('#bfe3f5') : tint(t.color, 0.6); ctx.fillRect(Math.round(hx) - 4, Math.round(hy) - 4, 8, 8); ctx.strokeStyle = shade(t.color, 0.7); ctx.lineWidth = 1; ctx.strokeRect(Math.round(hx) - 3.5, Math.round(hy) - 3.5, 7, 7); };
       sq(x + Math.max(5, fiw), top + 4, fiw > 1); sq(x + w - Math.max(5, fow), top + 4, fow > 1);

@@ -161,5 +161,25 @@ ok(FLM_TYPES[25].name === 'Pitcher' && FLM_TYPES[41].name === 'Waveshaper' && FL
   ok(!diffs.length && n > 4000, `value texts as FL Studio Mobile prints them: ${n} texts equal to Honeydew's` + (diffs.length ? ': ' + diffs.slice(0, 4).join('; ') : '')); }
 { const { fmtParam } = await import(path.join(root, 'js/defs.js')), P = (t, i, v) => fmtParam(DEVICES[t].params[i], v);
   ok(P(135, 4, 0.068) === '1.5s' && P(120, 1, 0.738) === '0 dB' && P(106, 3, 1) === '0.0 dB' && P(129, 2, 0.1) === '25 ms', `knobs read FLM units (Reverb 2 Decay ${P(135, 4, 0.068)}, Leveller ${P(120, 1, 0.738)}, Distortion Gain ${P(106, 3, 1)}, Autoduck Attack at 120 BPM ${P(129, 2, 0.1)})`); }
+// ---- FLM audio-clip details (Honeydew audio_clips.rs / read.rs): clip envelopes, whole-semitone Speed, project build
+{
+  const FI = await import(path.join(root, 'js/import/flm.js')), BI = await import(path.join(root, 'js/import/build.js')), PJ = await import(path.join(root, 'js/project.js'));
+  const ev = (t, key, value) => ({ t, pitch: key < 0 ? 65536 + key : key, value });
+  const E = FI.clipEnvs([ev(0, 1, 65535), ev(0.5, -1, 32768), ev(1, 1, 0), ev(0, 2, 0), ev(2, 3, 40000)]);
+  ok(E.lvlEnv.length === 3 && Math.abs(E.lvlEnv[0][1] - FI.flmGain(1)) < 1e-12 && E.lvlEnv[2][1] === 0 && E.panEnv[0][1] === -1 && E.spdEnv === 1, 'clip envelopes: key +-1 Level (flmGain), +-2 Pan (-1..1), +-3 Speed counted');
+  const law = (v) => Math.trunc(Math.fround(48 * Math.fround(v) - 24));
+  ok(law(0.413333) === -4 && law(0.5) === 0 && law(0.52) === 0 && law(0.53) === 1 && law(0) === -24 && law(1) === 24, 'clip Speed: whole semitones, trunc(48 v - 24) (0.413333 -> -4, not -4.16)');
+  const M = { app: 'FL Studio Mobile', name: 't', bpm: 120, sig: [4, 4], loop: [4, 12], warnings: [], channels: [{ kind: 'track', name: 'A', zipped: true, gain: 1, pan: 0, sends: [], modules: [], pads: [], tracks: [{ kind: 'audio', clips: [
+    { pos: 0, len: 8, cycle: 0, offset: 0, sample: 'x.wav', name: 'x', pitch: 0, repitch: -4, stretch: 1, gain: 0.5, pan: 0, reverse: true, lvlEnv: [[0, 1], [2, 0]], panEnv: [[1, 0.5]] }] }] }] };
+  const { json } = BI.buildMdaw(M, { root: '/r', resolve: (q) => q, relName: (e) => e });
+  const t = json.tracks[0], c = t.clips[0];
+  ok(json.loop.on && json.loop.start === 4 * 960 && json.loop.end === 12 * 960, 'project play loop (HEAD @272 / @280) -> loop region');
+  ok(t.fold === true, 'zipped channel (CHHD @1024) -> folded track');
+  ok(c.warp && c.warp.rev === true && c.warp.mode === 'repitch' && Math.abs(c.warp.ratio - Math.pow(2, 4 / 12)) < 1e-12, 'clip reverse + whole-semitone repitch -> warp');
+  ok(c.genv.length === 2 && c.genv[1][0] === 1 && c.penv[0][0] === 0.5 && c.genvRef === c.gain, 'clip envelopes on the source time (seconds at the project tempo)');
+  const F = PJ.clipEnvFlat(c);
+  ok(F.length === 9 && F[1] === 1 && F[4] === 0.5 && F[5] === 0.5 && F[7] === 0 && F[8] === 0.5 && F[2] === 0, 'engine points: Level and Pan read at every point of either (linear, clip pan before the first)');
+  const F2 = PJ.clipEnvFlat({ ...c, gain: c.gain * 2 }); ok(Math.abs(F2[1] - 2) < 1e-12 && Math.abs(F2[4] - 1) < 1e-12, 'the clip Gain knob scales the Level envelope');
+}
 console.log(bad ? `\n${bad} FAILED` : '\nALL FLM FX TESTS PASSED');
 process.exit(bad ? 1 : 0);

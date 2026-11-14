@@ -224,6 +224,14 @@ export const SCENARIOS = [
       set([[50, 15, [1, 0, 0, 1, 1, 0, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1]], [47, 12, E]]); play(e, 2);
       e.stop(); play(e, 1);
     } },
+  { name: 'core-clipenv', info: 'audio clips with a Level / Pan envelope (FLM clip envelope, stride 10 + points): before / between / after the points, looped segments, a clip without one',
+    run(e) {
+      samples(e); e.tempo(120);
+      const env = [0.2, 0.9, 0, 0.5, 0.1, -0.6, 0.5, 0.1, -0.6, 0.9, 1.3, 0.8, 1.6, 0.4, 0.2, 0.3, 0.2, 0, 1.0, 0.7, -1, 1.5, 0.05, 1];
+      e.trackClips(0, [0, BAR * 2, 0, 0.8, 0, 0, 0, 0, 0, 6, BAR * 2.5, BAR, 2, 0.6, 0.4, 0.01, 0.01, 0.3, 6, 2, BAR * 3.5, BAR, 0, 0.7, 0.5, 0, 0.2, 0, 0, 0], 3, 10, env);
+      e.trackClips(1, [PPQ, BAR * 2, 1, 1, 0, 0, 0, 0, 8, 1], 1, 10, env);   // a point index past the points: no envelope
+      e.play(); play(e, 4, [128, 77, 256]); e.seek(BAR * 2.75); play(e, 1.5); e.stop(); play(e, 0.3);
+    } },
   { name: 'inst-flmslicer', native: true, info: 'C++ only (native/engine/hdslicer.cpp, Honeydew slicer.rs): FL Studio Mobile Slicer (35): a loop sliced at its transients (Sensitivity), slices on keys from 48 / a set first key, Pitch, Attack / Decay, Sustain Off / Hold / To End, Mono',
     run(e) {
       samples(e); e.tempo(118); e.trackInst(0, 35); e.instParam(0, 100, 2); e.instParam(0, 7, 0.6);

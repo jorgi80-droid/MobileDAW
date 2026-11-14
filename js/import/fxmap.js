@@ -33,7 +33,9 @@ export const FLM_TYPES = {
   33: { name: 'Slicer', sure: true, synth: 'slicer' },   // Honeydew: module 33 (7 params; CSTM PATH = the loop, SENS = Sensitivity)   // Honeydew effect_info / params: module 19 (14 params)   // preset Synth Presets2/SuperSaw/*
   52: { name: 'SoundFont Player', sure: true, synth: 'soundfont' },   // preset = Resources/SoundFonts/*.sf2 (FLM content, not in the project)
   18: { name: 'Tape Delay', sure: true },             // owner's screenshots of "New Song 1": rack slot 3 reads "Tape Delay" (on/off + 4 controls)
-  16: { name: 'Trance Delay', sure: true },           // same screenshots: rack slot 4 reads "Trance Delay"
+  16: { name: 'Trance Delay', sure: true },
+  24: { name: 'Tuner', sure: true },                  // Honeydew params effects_24_51: measuring tools, the audio passes untouched
+  26: { name: 'Analyzer', sure: true },           // same screenshots: rack slot 4 reads "Trance Delay"
   // 11 (on/off + 4) was guessed as Tape Delay from its layout: the screenshots name 18 Tape Delay, so 11 is unknown again
   // 44 (on/off + 4) was guessed as Stereoizer: the 2nd project names 15 Stereoizer, so 44 is unknown again
 };

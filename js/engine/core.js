@@ -225,10 +225,15 @@ export class Engine {
     if (c[7]) { const m = clamp(this.ccAt(c[7], tick) / 127, 0, 1); if (Math.abs(m - s.mod) > 1e-4) this.modWheel(idx, m); }
   }
   // flat = [start tick, length ticks, sample id, gain, offset seconds, fade in seconds, fade out seconds, (stride 8: pan -1..1 balance)] * n
-  trackClips(t, flat, n, stride = 7) {
+  // (stride 10: envelope first point, point count into env = [source seconds, gain, pan] * points, as engine.cpp)
+  trackClips(t, flat, n, stride = 7, env = null) {
     if (!this.ok(t) || t >= MASTER) return;
-    const c = [];
-    for (let i = 0; i < n; i++) c.push({ start: flat[i * stride], len: flat[i * stride + 1], sample: flat[i * stride + 2] | 0, gain: flat[i * stride + 3], offset: stride > 4 ? flat[i * stride + 4] : 0, fadeIn: stride > 5 ? flat[i * stride + 5] : 0, fadeOut: stride > 6 ? flat[i * stride + 6] : 0, pan: stride > 7 ? flat[i * stride + 7] : 0 });
+    const c = [], np = Array.isArray(env) ? Math.floor(env.length / 3) : 0;
+    for (let i = 0; i < n; i++) {
+      const x = { start: flat[i * stride], len: flat[i * stride + 1], sample: flat[i * stride + 2] | 0, gain: flat[i * stride + 3], offset: stride > 4 ? flat[i * stride + 4] : 0, fadeIn: stride > 5 ? flat[i * stride + 5] : 0, fadeOut: stride > 6 ? flat[i * stride + 6] : 0, pan: stride > 7 ? flat[i * stride + 7] : 0 };
+      if (stride > 9) { const e0 = flat[i * stride + 8], en = flat[i * stride + 9]; if (e0 >= 0 && en > 0 && e0 + en <= np) x.env = env.slice(e0 * 3, (e0 + en) * 3); }
+      c.push(x);
+    }
     c.sort((a, b) => a.start - b.start);
     this.s[t].clips = c;
   }
@@ -414,10 +419,21 @@ export class Engine {
         if (ce <= pos) continue;
         const sm = this.bank[c.sample]; if (!sm) continue;
         const from = Math.max(pos, cs), to = Math.min(pos + n, ce), off = Math.round(c.offset * this.sr);
-        const sl = sm.l, sr2 = sm.r, frames = sm.frames, cp = c.pan || 0, pl = cp > 0 ? 1 - cp : 1, pr = cp < 0 ? 1 + cp : 1;   // clip pan = balance: the centre leaves both sides untouched
+        const sl = sm.l, sr2 = sm.r, frames = sm.frames, cp = c.pan || 0, ev = c.env, en = ev ? ev.length / 3 : 0; let pl = cp > 0 ? 1 - cp : 1, pr = cp < 0 ? 1 + cp : 1, ei = 0;   // clip pan = balance: the centre leaves both sides untouched
         for (let k = from; k < to; k++) {
           const idx = off + (k - cs); if (idx >= frames || idx < 0) { if (idx >= frames) break; continue; }
           let g = c.gain; const fi = k - cs, fo = ce - 1 - k;
+          if (ev) {                                       // the clip's envelope at this source position (seconds), as engine.cpp
+            const ts = idx / this.sr;
+            if (ts < ev[0]) { pl = cp > 0 ? 1 - cp : 1; pr = cp < 0 ? 1 + cp : 1; }
+            else {
+              while (ei > 0 && ev[ei * 3] > ts) ei--;
+              while (ei + 1 < en && ev[(ei + 1) * 3] <= ts) ei++;
+              let eg = ev[ei * 3 + 1], ep = ev[ei * 3 + 2];
+              if (ei + 1 < en) { const t0 = ev[ei * 3], t1 = ev[(ei + 1) * 3], u = t1 > t0 ? (ts - t0) / (t1 - t0) : 0; eg += (ev[(ei + 1) * 3 + 1] - eg) * u; ep += (ev[(ei + 1) * 3 + 2] - ep) * u; }
+              g = eg; pl = ep > 0 ? 1 - ep : 1; pr = ep < 0 ? 1 + ep : 1;
+            }
+          }
           if (fi < FI) g *= (fi + 1) / FI; if (fo < FO) g *= (fo + 1) / FO;
           L[k - pos] += sl[idx] * g * pl; R[k - pos] += sr2[idx] * g * pr;
         }
