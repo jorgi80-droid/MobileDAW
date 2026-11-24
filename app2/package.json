@@ -1,0 +1,18 @@
+{
+  "name": "mobiledaw2",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "description": "MobileDAW 2: aplikasi Android terpisah (com.mobiledaw.app2). Paket npm dipasang di root repositori (npm ci); folder ini hanya memberi tahu Capacitor plugin yang dipakai.",
+  "dependencies": {
+    "@capacitor/android": "8.6.0",
+    "@capacitor/app": "8.1.2",
+    "@capacitor/core": "8.6.0",
+    "@capacitor/filesystem": "8.1.5",
+    "@capacitor/share": "8.0.3",
+    "@capacitor-community/keep-awake": "8.0.1"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "8.6.0"
+  }
+}

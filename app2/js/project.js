@@ -1,0 +1,2686 @@
+// Project model + the one place that talks to the engine about project data.
+// The UI edits `state`; this module mirrors changes into the native engine.
+import { eng, MASTER, RET0, hooks } from './engine.js';
+import { processBuffers, detectBpm } from './engine/audioops.js';
+import { valueAt as curveAt, densify } from './autocurve.js';
+import { encodeWav } from './engine/wav.js';
+import * as WOPS from './engine/waveops.js';
+import { log } from './log.js';
+import { INSTRUMENTS, DEVICES, DRUM_PADS, INST, PRESETS, normOf, valOf, MOD_MAP, IRACK_DEF, migrateClassicInst, migrateFlmInst, FLM_FMT, CLASSIC_TO_FLM, MIX_P, GAIN_P, WET_GAIN_MIN, WET_GAIN_MAX } from './defs.js';
+
+export const PPQ = 960, MAX_TRACKS = 64;
+export let BEAT = PPQ, BAR = PPQ * 4;   // live bindings: they change with the time signature (setSig), so always read them at use time
+import { TempoMap } from './engine/tmap.js';
+import { MeterMap } from './engine/meter.js';
+import { setLawTempo } from './fxlaw.js';
+export const COLORS = ['#1fbccf', '#e3c000', '#f07200', '#f02ec8', '#0b9fdb', '#8d5de0', '#a3df00', '#b8573c'];   // Ableton Live's saturated clip colours (new tracks)
+export const SWATCHES = [...COLORS, '#5cffe8', '#f7f47c', '#ffa529', '#ff94a6', '#8bc5ff', '#d86ce4', '#bffb00', '#ff3636'];   // the colour picker: saturated row + bright row
+const OLD_COLORS = ['#6fe0e6', '#f5e05a', '#ff9d63', '#f38fb8', '#8fa0f7', '#b98ae8', '#86dc7e', '#ef7a6a'];        // pastel set of older projects: mapped to the same slot of the new set
+export const AUTO_COLOR = '#9fb4d8';
+
+export const state = {
+  bpm: 120, loop: { on: false, start: 0, end: BAR * 4 }, metro: false,
+  sig: { n: 4, d: 4 }, sigs: [], markers: [], groove: { amt: 0, grid: 240 }, countIn: 0, punch: { on: false, start: 0, end: 0 }, recLoop: false,
+  playing: false, pos: 0, cpu: 0, meters: new Array(146).fill(0), ccLinks: {},
+  tracks: [], master: { vol: 1, devices: [] }, returns: makeReturns(),
+  sel: { track: 0, clip: null },
+  nextSample: 16, samples: {}, projectName: 'Untitled',
+};
+setLawTempo(() => state.bpm);   // FLM module value texts that read the song tempo (fxlaw.js)
+
+let _id = 1;
+const uid = () => _id++;
+const listeners = new Set();
+export const onChange = (fn) => { listeners.add(fn); return () => listeners.delete(fn); };
+export const emit = (what) => { if (what === 'devices' || what === 'tracks' || what === 'all') { fixMods(); state.tracks.forEach((_, i) => nfxCheck(i)); } if (what !== 'mix' && what !== 'transport' && state.tracks.some((t) => t.frozen)) state.tracks.forEach((t, i) => { if (t.frozen) checkFrozen(i); }); listeners.forEach((f) => f(what)); };
+// FL Studio Mobile note effects (FLM modules 47..51 as devices 147..151, defs.js noteFx): the C++ engine works a track's notes out through
+// them when the notes arrive (native/engine/hdnfx.cpp): trackNoteFx [type, instance, count, params...] per module, before trackNotes.
+// A change of the chain (add, remove, move, bypass, a param) sends the track's notes again (nfxCheck).
+const nfxSent = new Map();
+const nfxInstance = (id) => { let h = 0; for (const ch of String(id)) h = (Math.imul(h, 31) + ch.charCodeAt(0)) | 0; return h; };
+function nfxFlat(t) {
+  const f = [];
+  for (const d of t.devices || []) {
+    const def = DEVICES[d.type]; if (!def || !def.noteFx) continue;
+    const n = def.flmParams, p = (d.params || []).slice(0, n).map((v, k) => (Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : def.params[k].def));
+    p[0] = d.bypass ? 0 : 1;                                       // the device's bypass is the module's Enable
+    f.push(def.flm, nfxInstance(d.id), n, ...p);
+  }
+  return f;
+}
+const nfxEnd = () => { let e = 0; for (const t of state.tracks) for (const c of t.clips || []) e = Math.max(e, c.start + c.len); return e / PPQ + 4; };
+function nfxCheck(i) { const t = state.tracks[i]; if (!t || t.kind === 'audio' || t.kind === 'auto') return; const sig = JSON.stringify(nfxFlat(t)); if ((nfxSent.get(t) || '[]') !== sig) syncClips(i); }
+// Undo hook, filled in by js/history.js. hit(key) = true when this change belongs to the gesture already recorded (a knob being dragged); add(entry) stores
+// a small "before" entry. on is false while an undo / redo / project load runs, so replayed changes are not recorded again.
+export const HK = { on: true, hit: () => false, add: () => {}, group: (f) => f(), barrier: () => {}, checkpoint: () => {}, begin: () => {}, end: () => {} };
+// ------------------------------------------------------------------ time signature, markers, tempo map, groove
+export const SIGS = [[2, 4], [3, 4], [4, 4], [5, 4], [6, 4], [7, 4], [3, 8], [5, 8], [6, 8], [7, 8], [9, 8], [12, 8]];
+// meter map: state.sig = signature from bar 1, state.sigs = [{ bar (0-based, > 0), n, d }] = changes later in the song. BAR / BEAT stay the length of the FIRST signature (default clip length etc.);
+// everything that depends on where a bar really starts must use barStart / barAt / barFloor / barCeil / barRound (they follow the changes).
+export const MM = new MeterMap();
+export const MAX_SIG_CHANGES = 64;
+const okD = (d) => ([1, 2, 4, 8, 16].includes(+d) ? +d : 4), okN = (n) => Math.max(1, Math.min(32, Math.round(+n) || 4));
+export const meterFlat = () => { const f = [0, state.sig.n, state.sig.d]; for (const c of state.sigs) f.push(c.bar, c.n, c.d); return f; };
+function rebuildMeter() {
+  let prev = { n: state.sig.n, d: state.sig.d }; const out = [];
+  for (const c of [...state.sigs].filter((x) => x && Number.isFinite(x.bar) && x.bar > 0).sort((a, b) => a.bar - b.bar)) {
+    const n = okN(c.n), d = okD(c.d), bar = Math.round(c.bar);
+    if (out.length && out[out.length - 1].bar === bar) out.pop();
+    if (n === prev.n && d === prev.d) continue;          // no real change
+    out.push({ bar, n, d }); prev = { n, d };
+    if (out.length >= MAX_SIG_CHANGES) break;
+  }
+  state.sigs = out; MM.set(meterFlat());
+}
+export const barStart = (k) => MM.barStart(k), barAt = (t) => MM.barAt(t), barFloor = (t) => MM.barFloor(t), barCeil = (t) => MM.barCeil(t), barRound = (t) => MM.barRound(t);
+export const barLenAt = (t) => MM.barLenAt(t), beatLenAt = (t) => MM.beatLenAt(t), beatRound = (t) => MM.beatRound(t);
+export const sigAtTick = (t) => ({ n: MM.nAt(t), d: MM.dAt(t) });
+export const sigTextAt = (t) => { const s = sigAtTick(t); return s.n + '/' + s.d; };
+export function applySig(n, d, sigs) {
+  state.sig = { n: okN(n), d: okD(d) }; BEAT = Math.round(PPQ * 4 / state.sig.d); BAR = BEAT * state.sig.n;
+  if (sigs !== undefined) state.sigs = Array.isArray(sigs) ? sigs.map((c) => ({ bar: +c.bar, n: +c.n, d: +c.d })) : [];
+  rebuildMeter();
+}
+export const sigText = () => state.sig.n + '/' + state.sig.d;
+export function syncMeter() { eng.sig(BEAT, state.sig.n); eng.meter(meterFlat()); }
+const meterSnap = () => ({ sig: { n: state.sig.n, d: state.sig.d }, sigs: state.sigs.map((c) => ({ ...c })) });
+function restoreMeter(m) {
+  applySig(m.sig.n, m.sig.d, m.sigs);
+  if (state.loop.end <= state.loop.start) state.loop.end = state.loop.start + BAR;
+  syncMeter(); eng.loop(state.loop.on, state.loop.start, state.loop.end);
+  emit('transport'); emit('clips');
+}
+export function setSig(n, d) {                               // signature from bar 1
+  if (HK.on && !(okN(n) === state.sig.n && okD(d) === state.sig.d)) HK.add({ t: 'meter', v: meterSnap() });
+  applySig(n, d);
+  if (state.loop.end <= state.loop.start) state.loop.end = state.loop.start + BAR;
+  syncMeter(); eng.loop(state.loop.on, state.loop.start, state.loop.end);
+  emit('transport'); emit('clips');
+}
+// signature change at a bar (0-based). bar 0 = the project signature. A change equal to the one before it is dropped.
+export function setSigAt(bar, n, d) {
+  bar = Math.max(0, Math.round(bar));
+  if (bar === 0) return setSig(n, d);
+  const i = state.sigs.findIndex((c) => c.bar === bar), c = { bar, n: okN(n), d: okD(d) };
+  if (i < 0 && state.sigs.length >= MAX_SIG_CHANGES) return false;
+  if (HK.on) HK.add({ t: 'meter', v: meterSnap() });
+  if (i >= 0) state.sigs[i] = c; else state.sigs.push(c);
+  rebuildMeter(); syncMeter(); emit('transport'); emit('clips'); return true;
+}
+export function removeSigAt(bar) {
+  const i = state.sigs.findIndex((c) => c.bar === bar); if (i < 0) return;
+  if (HK.on) HK.add({ t: 'meter', v: meterSnap() });
+  state.sigs.splice(i, 1); rebuildMeter(); syncMeter(); emit('transport'); emit('clips');
+}
+// tempo map (tempo lane = an automation track whose target.kind is 6): tmain mirrors what the engine plays, so the UI and export use the same time
+const tmain = new TempoMap();
+export const TEMPO_DEF = { min: 20, max: 300, step: 0.01, unit: 'BPM', fmt: 'bpm' };
+export const tempoLane = () => state.tracks.findIndex((t) => t.kind === 'auto' && t.target && t.target.kind === 6);
+let tmOn = false, tmKey = '';
+export const tempoMapOn = () => tmOn;
+export function tempoPts() {
+  const i = tempoLane(); if (i < 0) return [];
+  const t = state.tracks[i]; if (t.mute) return [];
+  const flat = []; let last = null;
+  for (const c of [...t.clips].sort((a, b) => a.start - b.start)) {
+    if (c.muted || !c.pts || !c.pts.length) continue;
+    const sorted = [...c.pts].sort((a, b) => a.t - b.t);
+    if (last !== null && c.start > last.tick) flat.push(c.start - 1, last.value);
+    for (const [qt, qv] of densify(sorted)) flat.push(c.start + qt, valOf(TEMPO_DEF, qv));   // curve shapes (autocurve.js) as dense breakpoints
+    last = { tick: c.start + c.len, value: valOf(TEMPO_DEF, sorted[sorted.length - 1].v) };
+  }
+  return flat;
+}
+export function syncTempoMap() {
+  const f = tempoPts(); tmain.set(f); tmOn = f.length >= 2;
+  tmKey = tmOn ? f.join(',') : '';
+  eng.tempoMap(tmOn, tmOn ? f : []);
+  scheduleBake();
+}
+export const bpmAt = (tick) => (tmOn ? tmain.bpmAt(tick) : state.bpm);
+export const tickToSec = (tick) => (tmOn ? tmain.tickToSec(tick) : tick / PPQ * 60 / state.bpm);
+export const secToTick = (sec) => (tmOn ? tmain.secToTick(sec) : sec * state.bpm / 60 * PPQ);
+// markers: { id, t, name, color }
+export const MARKER_COLORS = ['#ffa722', '#5cffe8', '#ff94a6', '#bffb00', '#8bc5ff', '#d86ce4', '#f7f47c', '#ff3636'];
+const marksSnap = () => state.markers.map((m) => ({ ...m }));
+export function addMarker(t, name, color) {
+  t = Math.max(0, Math.round(t));
+  const hit = state.markers.find((m) => m.t === t); if (hit) return hit;
+  if (HK.on) HK.add({ t: 'marks', v: marksSnap() });
+  const m = { id: uid(), t, name: name || 'Marker ' + (state.markers.length + 1), color: color || MARKER_COLORS[state.markers.length % MARKER_COLORS.length] };
+  state.markers.push(m); state.markers.sort((a, b) => a.t - b.t); emit('markers'); return m;
+}
+export function editMarker(id, patch) { const m = state.markers.find((x) => x.id === id); if (!m) return; if (HK.on && !HK.hit('mk' + id)) HK.add({ t: 'marks', v: marksSnap() }); Object.assign(m, patch); if ('t' in patch) { m.t = Math.max(0, Math.round(m.t)); state.markers.sort((a, b) => a.t - b.t); } emit('markers'); }
+export function removeMarker(id) { if (!state.markers.some((m) => m.id === id)) return; if (HK.on) HK.add({ t: 'marks', v: marksSnap() }); state.markers = state.markers.filter((m) => m.id !== id); emit('markers'); }
+export function jumpMarker(dir) {
+  const p = state.pos, l = state.markers; let m;
+  if (dir > 0) m = l.find((x) => x.t > p + 1); else { for (const x of l) if (x.t < p - 1) m = x; }
+  if (m) seekTo(m.t); return m || null;
+}
+export function loopBetween(a, b) { const l = state.markers; if (!a || !b) return; const s = Math.min(a.t, b.t), e = Math.max(a.t, b.t); if (e <= s) return; setLoop({ on: true, start: s, end: e }); }
+// groove / swing: delays the notes that sit on the odd positions of the grid (default 1/16). Applied when notes are sent to the engine, so playback and export match.
+export function setGroove(patch) { if (HK.on && !HK.hit('groove')) HK.add({ t: 'groove', v: { amt: state.groove.amt, grid: state.groove.grid } }); Object.assign(state.groove, patch); state.groove.amt = Math.max(0, Math.min(1, +state.groove.amt || 0)); for (let i = 0; i < state.tracks.length; i++) { const k = state.tracks[i].kind; if (k === 'midi' || k === 'drum') touchClips(i); } scheduleBake(); emit('transport'); }
+export const swingOf = (c) => (c.swing != null && c.swing >= 0 ? c.swing : state.groove.amt);
+function swingShift(c, t) {
+  const a = swingOf(c); if (!a) return 0;
+  const g = state.groove.grid || 240, k = Math.round(t / g);
+  return (k & 1) && Math.abs(t - k * g) < g / 4 ? Math.round(a * g * 0.5) : 0;
+}
+
+function makeReturns() { return [0, 1].map((k) => ({ name: 'Return ' + 'AB'[k], vol: 0.85, pan: 0, mute: false, devices: [] })); }
+export const tr = (i) => (i === MASTER ? state.master : i >= RET0 ? state.returns[i - RET0] : state.tracks[i]);
+const raf = typeof requestAnimationFrame === 'function' ? requestAnimationFrame : (f) => setTimeout(f, 16);
+
+// ------------------------------------------------------------------ engine sync
+
+// ------------------------------------------------------------------ clip loop
+// A clip dragged longer than its content repeats that content (like FL Studio Mobile / Live) instead of showing empty bars.
+// `c.ll` = length in ticks of the content that repeats; it only matters while c.len > c.ll.
+export const loopOf = (c) => (c.ll > 0 && c.len > c.ll ? c.ll : 0);
+// the pieces a looped clip plays: [{ o: where in the clip (ticks), len, s: where inside the content it starts (ticks) }]; `c.lp` = loop phase of a clip that was split from the middle of a loop
+export function loopSegs(c) {
+  const ll = c.ll > 0 ? c.ll : 0;
+  if (!ll) return [{ o: 0, len: c.len, s: 0 }];
+  const out = [];
+  let o = 0, ph = (c.lp || 0) % ll;
+  while (o < c.len && out.length < 512) { const seg = Math.min(ll - ph, c.len - o); out.push({ o, len: seg, s: ph }); o += seg; ph = 0; }
+  return out;
+}
+// content length of a clip before it is stretched out: MIDI/drum = its own length, audio = what is left of the sample after the offset
+export function contentLen(c, kind) {
+  if (c.ll > 0) return c.ll;
+  if (kind === 'audio') {
+    const es = c.dsample || c.sample;
+    if (es && es.duration > 0) return Math.max(PPQ / 4, Math.min(c.len, Math.round((es.duration - (c.offset || 0)) * state.bpm / 60 * PPQ)));
+  }
+  return c.len;
+}
+// ------------------------------------------------------------------ pattern clips (MIDI / drum)
+// Four separate things (none of them is derived from another one by accident):
+//   pattern data      c.notes / c.cc: the source. Looping never copies it; playback reads it again in every cycle.
+//   source length     patternOf(c) = c.ll when set, else c.len: one cycle of the pattern (where it repeats).
+//   clip length       c.len: the instance in the arrangement; it may end anywhere inside a cycle.
+//   loop position     c.lp: where in the cycle the clip starts (left-trimmed / split clips). For a point `local` ticks into the clip the
+//                     pattern plays sourcePos = (local + lp) % sourceLength (loopSegs() hands that out as pieces).
+// Auto vs manual length:
+//   c.pb  base length of the pattern (ticks): its length when it was made, or the length the person picked in the Clip panel. The auto
+//         length never goes below it, so a 4-bar pattern that grew to 8 for a note in bar 5 returns to 4 when that note is deleted, and
+//         empty bars that are part of a sequence stay.
+//   c.cm  the clip length was set by hand (arrangement resize / trim, Clip panel): note edits never change c.len, only the cycle.
+// Pattern sizes: a piano-roll cycle is 1, 4, 8, 16, 32 ... 1024 bars (2 or 3 bars of notes make a 4-bar cycle, the rest of it silent); a
+// drum-step cycle is any whole number of bars (1, 2, 3 ...).
+export const PATTERN_BARS = [1, 4, 8, 16, 32, 64, 128, 256, 512, 1024];
+export function patternBars(nb, kind) { nb = Math.max(1, Math.ceil(nb)); return kind === 'drum' ? nb : (PATTERN_BARS.find((k) => k >= nb) || nb); }
+// length in ticks of the pattern that holds content up to `end` ticks into clip c (bars counted from the clip start: time signatures apply)
+export function patternFor(c, kind, end) {
+  const b0 = barAt(c.start), nb = end > 0 ? barAt(c.start + end - 1) - b0 + 1 : 1;
+  return barStart(b0 + patternBars(nb, kind)) - c.start;
+}
+export const notesEnd = (notes) => { let e = 0; for (const n of notes || []) if (n.t + n.d > e) e = n.t + n.d; return e; };
+const ccEnd = (c) => { let e = 0; for (const l of c.cc || []) for (const q of l.pts) if (q.t > e) e = q.t; return e; };
+export const patternOf = (c) => (c.ll > 0 ? c.ll : c.len);
+export const isPatternClip = (c, kind) => !!c.notes && (kind === 'midi' || kind === 'drum');
+// hand-sized clip: the flag, or a clip saved before the flag existed that was resized / trimmed (its loop length differs from its length)
+export const clipManual = (c) => !!c.cm || (c.ll > 0 && c.ll !== c.len) || (c.lp || 0) > 0;
+// projects saved before c.pb: piano roll starts from 1 bar (its cycle comes from the notes), a drum sequence keeps the length it has
+function basePattern(c, kind) { if (!(c.pb > 0)) c.pb = kind === 'drum' ? patternOf(c) : patternFor(c, kind, 1); return c.pb; }
+// the auto length: the base, grown to hold every note / controller point, rounded to the pattern sizes of the editor
+export function autoPattern(c, kind) { return patternFor(c, kind, Math.max(basePattern(c, kind), notesEnd(c.notes), ccEnd(c))); }
+// keep the stored fields minimal: c.ll / c.lp only when they say something (old project files read the same)
+export function normLoop(c) {
+  if (c.ll > 0 && c.lp) c.lp = ((c.lp % c.ll) + c.ll) % c.ll;
+  if (!c.lp) delete c.lp;
+  if (c.ll > 0 && c.ll === c.len && !c.lp) delete c.ll;
+  if (!(c.ll > 0)) { delete c.ll; delete c.lp; }
+}
+// set the source length of a pattern clip: a clip that follows its pattern changes length with it, a hand-sized clip keeps its length
+function setPattern(c, nl) {
+  if (clipManual(c)) { c.cm = true; c.ll = nl; } else { c.len = nl; delete c.ll; delete c.lp; }
+  normLoop(c);
+}
+// After every note edit: measure the auto length again (it grows AND shrinks). Returns true when the cycle or the clip length changed.
+export function fitPattern(c, kind, max = Infinity) {
+  if (!isPatternClip(c, kind)) return false;
+  const old = patternOf(c), nl = Math.min(max, autoPattern(c, kind));
+  if (nl === old) return false;
+  setPattern(c, nl);
+  return true;
+}
+// Manual pattern length (Clip panel): the base becomes `len`; the cycle never cuts notes off (content past it keeps the cycle longer).
+export function setPatternBase(i, id, len) {
+  const t = state.tracks[i], c = t && t.clips.find((x) => x.id === id);
+  if (!c || !isPatternClip(c, t.kind) || !(len > 0)) return false;
+  c.pb = len; const nl = autoPattern(c, t.kind);
+  if (nl !== patternOf(c)) setPattern(c, nl);
+  syncClips(i); emit('clips'); emit('notes');
+  return true;
+}
+// Clip length by hand (arrangement resize, Clip panel): only c.len changes; the cycle is kept (c.ll), no note is added, moved or removed.
+export function setClipLength(c, len, ll0) {
+  const ll = ll0 > 0 ? ll0 : patternOf(c);
+  c.len = len; c.cm = true;
+  if (c.notes) { c.ll = ll; normLoop(c); }
+}
+// Loop length used when a clip is dragged longer in the arrangement: the cycle of a pattern clip (a clip that follows its pattern: the
+// pattern size that holds it), the content of an audio clip.
+export function patternLen(c, kind) {
+  if (c.ll > 0 || !c.notes) return contentLen(c, kind);
+  if (kind !== 'midi' && kind !== 'drum') return c.len;
+  if (clipManual(c)) return c.len;
+  return patternFor(c, kind, Math.max(c.len, notesEnd(c.notes)));
+}
+// Unlink: turn the repeats of a looped clip into real notes (only on request: "Lepas loop" / "Unlink Loop", "Ulangi"). The clip then
+// shows exactly its new notes.
+export function bakeLoop(c, i) {
+  if (!c.notes || !(loopOf(c) || (c.ll > 0 && c.lp > 0))) return false;
+  const segs = loopSegs(c), out = [];
+  for (const g of segs) for (const n of c.notes) if (n.t >= g.s && n.t < g.s + g.len) out.push({ ...n, t: g.o + n.t - g.s, d: Math.min(n.d, g.s + g.len - n.t) });
+  if (c.cc) for (const l of c.cc) { const pts = []; for (const g of segs) for (const q of l.pts) if (q.t >= g.s && q.t <= g.s + g.len) pts.push({ ...q, t: g.o + q.t - g.s }); l.pts = pts; }
+  c.notes = out; delete c.ll; delete c.lp; c.pb = c.len; c.cm = true;
+  if (i !== undefined) syncClips(i);
+  return true;
+}
+// Clip transpose for MIDI / synth clips: playback only, the notes in the piano roll stay as written (field c.xpose, default 0).
+export function setClipXpose(i, id, st) {
+  const t = state.tracks[i], c = t && t.clips.find((x) => x.id === id);
+  if (!c || !c.notes || t.kind === 'drum') return { error: 'Transpose hanya untuk klip MIDI non-drum.' };
+  st = Math.max(-48, Math.min(48, Math.round(st) || 0));
+  if (st) c.xpose = st; else delete c.xpose;
+  syncClips(i); emit('clips'); emit('notes');
+  return { ok: true, st };
+}
+// Repeat the content of a MIDI / drum clip n times (real notes, so the piano roll shows them). The clip grows to n x its current length.
+export function repeatClipContent(i, id, n) {
+  const t = state.tracks[i], c = t && t.clips.find((x) => x.id === id);
+  if (!c || !c.notes) return { error: 'Klip ini tidak punya not.' };
+  n = Math.max(2, Math.min(64, n | 0)); bakeLoop(c, i);
+  const base = c.len, src = c.notes.filter((x) => x.t < base).map((x) => ({ ...x, d: Math.min(x.d, base - x.t) })), out = [];   // what the clip plays (a trimmed clip: only its visible part)
+  delete c.ll; delete c.lp;
+  for (let k = 0; k < n; k++) for (const x of src) out.push({ ...x, t: x.t + k * base });
+  c.notes = out; c.len = base * n; c.pb = c.len;
+  syncClips(i); emit('clips'); emit('notes');
+  return { ok: true };
+}
+// Audio clip loop: n > 1 repeats the clip's region n times (c.ll = region length, c.len = n x ll); n = 1 switches the loop off.
+export function setAudioLoop(i, id, n) {
+  const t = state.tracks[i], c = t && t.clips.find((x) => x.id === id);
+  if (!c || t.kind !== 'audio') return { error: 'Klip audio tidak ditemukan.' };
+  const one = c.ll > 0 ? c.ll : c.len;
+  n = Math.max(1, Math.min(64, n | 0));
+  if (n === 1) { delete c.ll; delete c.lp; c.len = one; }
+  else { c.ll = one; c.lp = 0; c.len = one * n; }
+  syncClips(i); emit('clips');
+  return { ok: true };
+}
+export function setClipsMuted(list, m) {
+  const touched = new Set();
+  for (const { i, c } of list) { c.muted = !!m; touched.add(i); }
+  for (const i of touched) syncClips(i);
+  emit('clips');
+}
+
+// A clip's Level / Pan envelopes (c.genv [[source seconds, gain]], c.penv [[source seconds, pan -1..1]], from FLM) as the engine's
+// [seconds, gain, pan] points: both read at every point of either (linear, the clip's own gain / pan before an envelope's first point).
+const envAt = (e, t, d) => { if (!e || !e.length || t < e[0][0]) return d; let k = 0; while (k + 1 < e.length && e[k + 1][0] <= t) k++; const a = e[k], b = e[k + 1]; return b && b[0] > a[0] ? a[1] + (b[1] - a[1]) * (t - a[0]) / (b[0] - a[0]) : a[1]; };
+export function clipEnvFlat(c) {
+  const g = Array.isArray(c.genv) ? c.genv : null, p = Array.isArray(c.penv) ? c.penv : null;
+  if (!(g && g.length) && !(p && p.length)) return [];
+  const ts = [...new Set([...(g || []), ...(p || [])].map((q) => q[0]).filter(Number.isFinite))].sort((a, b) => a - b), o = [];
+  const k = c.genvRef > 0 ? c.gain / c.genvRef : 1;                         // the clip's Gain knob still scales the Level envelope (genvRef = the gain it was made with)
+  for (const t of ts) o.push(t, envAt(g, t, c.genvRef > 0 ? c.genvRef : c.gain) * k, envAt(p, t, c.pan || 0));
+  return o;
+}
+const lateSet = new Set();
+function lateDerive(c) {
+  if (lateSet.has(c) || !c.sample || !(c.sample.id >= 0)) return;
+  lateSet.add(c); const gen = loading.gen;
+  deriveSample(c.sample, c.warp).then((ds) => {
+    lateSet.delete(c);
+    if (gen !== loading.gen || c.dsample !== undefined) return;
+    c.dsample = ds && ds !== c.sample ? ds : null;
+    const i = state.tracks.findIndex((t) => t.clips.includes(c)); if (i >= 0) { syncClips(i); emit('clips'); }
+  }, () => lateSet.delete(c));
+}
+export function syncClips(i) {
+  const t = state.tracks[i];
+  if (!t) return;
+  if (t.frozen) { checkFrozen(i); if (frozenLive(i)) { syncFrozen(i); return; } }
+  if (t.kind === 'auto') { syncAutomation(); return; }
+  const f = [];
+  let n = 0;
+  if (t.kind === 'audio') {
+    const env = [];
+    for (const c of t.clips) {
+      if (c.muted) continue;
+      const ce = clipEnvFlat(c), e0 = env.length / 3, en = ce.length / 3;
+      const bk = bakeCurrent(c);       // grid-locked clip on a tempo map / with swing: one pre-warped buffer that starts at the clip start
+      if (bk) { const o = c.offset || 0; for (let q = 0; q < ce.length; q += 3) env.push(ce[q] - o, ce[q + 1], ce[q + 2]); f.push(c.start, c.len, bk.sample.id, c.gain, 0, c.fadeIn || 0, c.fadeOut || 0, c.pan || 0, e0, en); n++; continue; }
+      const es = c.dsample || c.sample;
+      if (!es || !(es.id >= 0)) continue;                          // its audio is still loading (or could not be loaded)
+      if (c.dsample === undefined && warpNeeded(c.warp)) { lateDerive(c); continue; }   // stretched / pitched, its render not made yet: never the raw file
+      env.push(...ce);
+      const segs = loopSegs(c);       // clip dragged longer than its audio: the audio repeats instead of leaving silence
+      segs.forEach((g, k) => { f.push(c.start + g.o, g.len, es.id, c.gain, (c.offset || 0) + g.s / PPQ * 60 / state.bpm * (c.lps || 1), k === 0 ? c.fadeIn || 0 : 0, k === segs.length - 1 ? c.fadeOut || 0 : 0, c.pan || 0, e0, en); n++; });
+    }
+    eng.trackClips(i, f, n, 10, env);
+  } else {
+    for (const c of t.clips) {
+      if (c.muted || subMuted(t, c)) continue;                     // a muted sub-track row: its clips are left out
+      n += clipNoteEvents(c, t.kind, f, true);
+    }
+    { const nf = nfxFlat(t), sig = JSON.stringify(nf); if (nf.length || (nfxSent.get(t) || '[]') !== sig) eng.trackNoteFx(i, nf, nfxEnd()); nfxSent.set(t, sig); }
+    eng.trackNotes(i, f, n, 6);
+    const cf = []; let cn = 0;                                   // controller lanes (pitch bend, CC7 / 10 / 11) of the clips
+    const KIND = { bend: 0, 7: 1, 10: 2, 11: 3 };
+    for (const c of t.clips) {
+      if (c.muted || !c.cc || subMuted(t, c)) continue;
+      const segs = loopSegs(c);
+      for (const l of c.cc) {
+        const kd = l.k === 'bend' ? 0 : KIND[l.n]; if (kd === undefined) continue;
+        for (const g of segs) for (const q of l.pts) if (q.t >= g.s && q.t <= g.s + g.len) { cf.push(c.start + g.o + q.t - g.s, kd, q.v); cn++; }
+      }
+    }
+    for (const c of t.clips) if (!c.muted && !subMuted(t, c) && t.kind === 'midi' && c.notes && c.notes.some((q) => q.sl)) cn += slideLane(c, cf);   // Slide notes -> lane kind 4 (exact semitones)
+    eng.trackCC(i, cf, cn);
+  }
+}
+
+// The note events a pattern clip plays (appended to `f` as start, length, pitch, velocity, pan; returns the count). One event per note per
+// cycle, read from the source: sourcePos = (local + lp) % cycle. A note sounds in a piece of the clip when it starts inside that piece and
+// is cut at the piece end (cycle end / clip end), so nothing hangs over into the next cycle and nothing triggers twice.
+const DRUM_STEP = 240;   // one step of the step sequencer (a 16th) in ticks
+// FL Studio Mobile Slide notes: a slide note does not play a note of its own; over its length it glides the pitch of the note that is sounding
+// (the latest plain note under it) to the slide note's pitch, which then holds until that note ends. Written as lane kind 4 (semitones, exact,
+// both engines bend every sounding voice of the track). Returns the number of points appended to f as [tick, 4, semitones].
+// Slide notes glide the sounding note's pitch (kind 4, semitones), and, when the slide note's velocity / pan differ from that note's,
+// its level (kind 5, gain ratio slide velocity / note velocity) and pan (kind 6, offset) the same way (FL Studio: a slide note carries its
+// note properties). Kinds 5 / 6 are only written when some slide changes them, so older projects get exactly the lane they had.
+export function slideLane(c, f) {
+  const L = [[], [], []], dflt = [0, 1, 0];
+  for (const g of loopSegs(c)) {
+    const e = g.s + g.len, at = (t) => c.start + g.o + Math.min(t, e) - g.s;
+    const plain = c.notes.filter((q) => !q.sl).sort((a, b) => a.t - b.t);
+    const slides = c.notes.filter((q) => q.sl && q.t >= g.s && q.t < e).sort((a, b) => a.t - b.t);
+    let base = null, cur = dflt.slice();
+    // back to the note's own pitch: not at the note's end (its release would jump back) but when the next plain note starts (or 2 bars on)
+    const back = () => { const end = base.t + base.d, nx = plain.find((q) => q.t >= end), x = at(nx ? nx.t : end + 7680), x0 = Math.max(at(end), x - 1); for (let k = 0; k < 3; k++) if (cur[k] !== dflt[k]) L[k].push(x0, cur[k], Math.max(x0 + 1, x), dflt[k]); };
+    for (const s of slides) {
+      let b = null; for (const q of plain) { if (q.t > s.t) break; if (q.t + q.d > s.t) b = q; }
+      if (!b) continue;
+      if (b !== base) { if (base) back(); base = b; cur = dflt.slice(); }
+      const end = Math.min(s.t + Math.max(1, s.d), b.t + b.d);
+      const to = [s.p - b.p, b.v > 0 ? s.v / b.v : 1, (s.pan || 0) - (b.pan || 0)];
+      for (let k = 0; k < 3; k++) L[k].push(at(s.t), cur[k], at(end), to[k]);
+      cur = to;
+    }
+    if (base) back();
+  }
+  let n = 0;
+  for (let k = 0; k < 3; k++) {
+    const v = L[k]; if (k > 0 && !v.some((x, j) => j % 2 === 1 && x !== dflt[k])) continue;   // velocity / pan never change: no lane
+    for (let j = 0; j < v.length; j += 2) { f.push(v[j], 4 + k, v[j + 1]); n++; }
+  }
+  return n;
+}
+// Harmor vocals (several in one Harmor): a colour and a name per vocal, shared by the piano roll and the arrangement's clip preview
+export const VOC_COLORS = ['#2ec5d9', '#ff9f1c', '#ff5fa8', '#a07cff', '#5bd46c', '#ff6145', '#f0d84a', '#5b9dff'];
+export const vocSrc = (t, g) => (t && t.inst && t.inst.type === 38 ? (g ? (t.inst.hmI || {})[g] : t.inst.hm) || null : null);
+export const vocList = (t) => { const out = []; for (let g = 0; g < 8; g++) if (vocSrc(t, g)) out.push(g); return out; };
+export function vocName(t, g) {                        // its own name, else the file name (+ its Start when several vocals share one file)
+  const x = vocSrc(t, g); if (!x) return 'Vokal ' + (g + 1); if (x.name) return x.name;
+  const base = x.path.split('/').pop().replace(/\.[^.]+$/, ''), same = vocList(t).filter((q) => vocSrc(t, q).path === x.path);
+  if (same.length < 2) return base;
+  const st = t.inst.params[g ? 1100 + 10 * (g - 1) + 4 : 1070] || 0; return base + ' ' + Math.round(st * 100) + '%';
+}
+export function vocShort(t, g) {                       // 'body 1' -> 'b1', 'imut' -> 'im'
+  const w = vocName(t, g).split(/[\s_\-]+/).filter(Boolean); if (!w.length) return String(g + 1);
+  const last = w[w.length - 1]; return /^\d+%?$/.test(last) && w.length > 1 ? w[0][0] + last.replace('%', '') : w[0].slice(0, 2);
+}
+export function clipNoteEvents(c, kind, f = [], st6 = false) {   // st6: a 6th value per note = pitch offset in semitones (drum step Pitch lane) / the note's image (img, Harmor)
+  let n = 0;
+  const xp = kind === 'drum' ? 0 : (c.xpose | 0);   // xpose = clip transpose (semitones, playback only)
+  for (const g of loopSegs(c)) {
+    const e = g.s + g.len;
+    for (const nt of c.notes) {
+      if (nt.t < g.s || nt.t >= e || (nt.sl && kind === 'midi')) continue;   // a slide note glides the sounding note (slideLane), it is not played
+      const at = g.o + nt.t - g.s, sw = swingShift(c, at);
+      if (kind === 'drum' && nt.rpt > 1) {                       // step graph Note Repeat: rpt triggers spread over the step (both engines get plain note events)
+        const q = Math.min(8, nt.rpt | 0), sub = DRUM_STEP / q;
+        for (let k = 0; k < q; k++) { const t0 = nt.t + k * sub; if (t0 >= e) break; f.push(c.start + at + Math.round(k * sub) + sw, Math.max(1, Math.min(nt.d, sub * 0.9, e - t0)), nt.p, nt.v, nt.pan || 0); if (st6) f.push(nt.pt || 0); n++; }
+        continue;
+      }
+      f.push(c.start + at + sw, Math.min(nt.d, e - nt.t), xp ? Math.max(0, Math.min(127, nt.p + xp)) : nt.p, nt.v, nt.pan || 0);
+      if (st6) f.push(kind === 'drum' ? nt.pt || 0 : nt.img || 0);   // melodic tracks: the note's image (Harmor: which vocal / map it plays)
+      n++;
+    }
+  }
+  return n;
+}
+const dirty = new Set();
+let pending = false;
+// Drags can produce hundreds of edits per second; the engine only needs the latest state once per frame.
+export function touchClips(i) {
+  dirty.add(i);
+  if (pending) return;
+  pending = true;
+  raf(() => { pending = false; for (const k of dirty) syncClips(k); dirty.clear(); });
+}
+
+// A device whose type this version does not have (removed like MultiFX, or saved by a newer MobileDAW) is not dropped: it becomes a neutral
+// placeholder (Utility at its defaults: the audio passes through untouched) that keeps the original device verbatim in d.missing.orig.
+// Saving writes the placeholder with that data, so nothing is lost, and a version that knows the type gets the original device back.
+const GONE_FX = { 11: 'MultiFX' };
+export function placeholderOf(src) {
+  const orig = JSON.parse(JSON.stringify(src));
+  const name = (src && src.name) || GONE_FX[src && src.type] || 'Modul tipe ' + (src && src.type);
+  return { id: (src && src.id) || uid(), type: 0, params: DEVICES[0].params.map((q) => q.def), bypass: !!(src && src.bypass), missing: { name, app: 'MobileDAW', orig } };
+}
+export function devOrPlaceholder(d) {
+  if (d && d.missing && d.missing.orig && DEVICES[d.missing.orig.type]) { const o = d.missing.orig; o.id = d.id; return o; }   // the type exists again
+  return d && DEVICES[d.type] ? d : placeholderOf(d || {});
+}
+const fixChain = (list) => (Array.isArray(list) ? list : []).filter((d) => d && typeof d === 'object').map(devOrPlaceholder);
+function syncDevices(i) {
+  const t = tr(i);
+  t.devices = fixChain(t.devices);
+  for (const d of t.devices) if (d.chains) for (const ch of d.chains) ch.devices = fixChain(ch.devices);
+  t.devices.forEach((d, di) => {
+    const dp = DEVICES[d.type] && DEVICES[d.type].params;     // projects saved before a parameter existed: fill the new ones with their defaults
+    if (dp) { if (!Array.isArray(d.params)) d.params = []; const n0 = d.params.length; for (let k = 0; k < dp.length; k++) if (!Number.isFinite(d.params[k])) d.params[k] = dp[k].def; if (n0 < dp.length && DEVICES[d.type].migrate) DEVICES[d.type].migrate(d.params, n0); }
+    eng.insertDevice(i, di, d.type);
+    d.params.forEach((v, pi) => eng.devParam(i, di, pi, v));
+    wetSend(d, (p, v) => eng.devParam(i, di, p, v));
+    if (d.bypass) eng.devBypass(i, di, true);
+    if (d.chains) rackSync(i, di);
+  });
+}
+
+// ---- Track Freeze: the track's instrument + devices (+ their automation) rendered offline once, then played as audio through the same
+// channel (fader, pan, width, sends, routing stay live). Saves the CPU of the instrument and effects. t.frozen = { path, len, key }:
+// the audio is a WAV in the library (/Frozen/<track id>.wav) so it survives reload; key = what the render depended on. Any change to it
+// (notes, instrument, devices, tempo, signature...) unfreezes the track by itself, so a frozen track never plays stale audio.
+const frozenSmp = new Map();                 // track id -> sample object of the frozen audio (engine bank slot)
+let freezing = -1;                           // the track being rendered: replayed live (not frozen) into the offline engine
+const FREEZE_SKIP = new Set(['sample', 'dsample', 'peaks', 'pyr', 'frozen', 'vol', 'pan', 'mute', 'solo', 'send', 'out', 'width', 'inv', 'name', 'color', 'fold', 'hx', 'arm', 'mon']);
+function freezeKey(i) {
+  const t = state.tracks[i], laneT = state.tracks.filter((a) => a.kind === 'auto' && a.target && a.target.strip === stripOf(i) && ![0, 1, 2, 3, 7].includes(a.target.kind)).map((a) => [a.target, a.mute, a.clips]);
+  return JSON.stringify([t, laneT, state.bpm, tmKey, state.sig, state.sigs, state.groove], (k, v) => (FREEZE_SKIP.has(k) ? (k === 'sample' && v && v.path ? v.path : undefined) : v));
+}
+export const isFrozen = (i) => { const t = state.tracks[i]; return !!(t && t.frozen && frozenSmp.has(t.id)); };
+const frozenLive = (i) => isFrozen(i) && freezing !== i;
+// a frozen track whose inputs changed goes back to live
+function checkFrozen(i) { const t = state.tracks[i]; if (!t || !t.frozen || freezing === i) return; if (!frozenSmp.has(t.id) || t.frozen.key !== freezeKey(i)) unfreezeTrack(i, true); }
+export async function freezeTrack(i, onProgress) {
+  const t = state.tracks[i]; if (!t || t.kind === 'auto') return { error: 'Track ini tidak bisa dibekukan.' };
+  if (!eng.renderTrack) return { error: 'Freeze butuh engine Web (AudioWorklet).' };
+  let end = 0; for (const c of t.clips) if (!c.muted) end = Math.max(end, c.start + c.len);
+  if (!end) return { error: 'Track kosong.' };
+  const secs = tickToSec(end) + 6;                                  // + the tail of the effects (trimmed below)
+  freezing = i;
+  let r; try { r = await eng.renderTrack(i, secs, onProgress); } finally { freezing = -1; }
+  if (!r || !r.l) return { error: 'Render gagal.' };
+  let last = Math.ceil(tickToSec(end) * r.sr);                      // keep the clips' length, then the tail while it is above -140 dBFS
+  for (let k = r.l.length - 1; k > last; k--) if (Math.abs(r.l[k]) > 1e-7 || Math.abs(r.r[k]) > 1e-7) { last = k + 1; break; }   // -140 dBFS
+  last = Math.min(last, r.l.length);
+  const L = r.l.slice(0, last), R = r.r.slice(0, last), path = `/Frozen/${t.id}.wav`;
+  await eng.saveBytes(path, encodeWav([L], [R], L.length, r.sr, 32));
+  delete state.samples[path];                                       // a re-freeze must not reuse the previous decode
+  const s = await loadSampleObj(path); if (!s) return { error: deriveErr || 'Audio freeze tidak bisa dimuat.' };
+  frozenSmp.set(t.id, s);
+  t.frozen = { path, len: Math.max(1, Math.round(secToTick(L.length / r.sr))), key: freezeKey(i) };
+  syncTrackFull(i); emit('tracks');
+  return { ok: true, secs: L.length / r.sr };
+}
+export function unfreezeTrack(i, auto = false) {
+  const t = state.tracks[i]; if (!t || !t.frozen) return;
+  delete t.frozen; frozenSmp.delete(t.id); syncTrackFull(i); emit('tracks');
+  if (auto) log('info', `freeze "${t.name}" dilepas: isi track berubah`);
+}
+function syncFrozen(i) {
+  const t = state.tracks[i], s = frozenSmp.get(t.id);
+  eng.resetTrack(i);
+  eng.trackVol(i, t.vol); eng.trackPan(i, t.pan); eng.trackPanLaw(i, t.panLaw === 'flm' ? 1 : 0); eng.trackMute(i, t.mute); eng.trackSolo(i, t.solo); eng.trackWidth(i, t.width ?? 1); eng.trackInvert(i, t.inv | 0);
+  eng.send(i, 0, t.send ? t.send[0] : 0); eng.send(i, 1, t.send ? t.send[1] : 0);
+  eng.trackOut(i, t.out >= 0 && t.out < state.returns.length ? t.out : -1);
+  eng.trackClips(i, [0, t.frozen.len, s.id, 1, 0, -1, -1], 1);   // fades -1 = none (0 would mean the default 64-frame clip fade)
+}
+
+export function syncTrackFull(i) {
+  const t = state.tracks[i];
+  checkFrozen(i);
+  if (frozenLive(i)) { syncFrozen(i); return; }
+  eng.resetTrack(i);
+  if (t.inst) {
+    eng.trackInst(i, t.inst.type);
+    if (t.inst.type === 11 && t.inst.params && t.inst.params[90] !== undefined) { if (t.inst.params[106] === undefined) t.inst.params[106] = t.inst.params[90]; delete t.inst.params[90]; }   // old projects: Vel>Filter Res moved from 90 (pitch) to 106
+    for (const [k, v] of Object.entries(t.inst.params)) eng.instParam(i, +k, v);
+    if (INSTRUMENTS[t.inst.type] && INSTRUMENTS[t.inst.type].full) INSTRUMENTS[t.inst.type].params.forEach((q, k) => { if (!(k in t.inst.params)) eng.instParam(i, k, q.def); });
+    eng.instParam(i, 90, t.inst.pitch || 0);
+    if (t.inst.chains) rackSync(i, -1);
+  }
+  syncZones(i);
+  syncPads(i);
+  syncSoundFont(i);
+  syncDevices(i);
+  eng.trackVol(i, t.vol); eng.trackPan(i, t.pan); eng.trackPanLaw(i, t.panLaw === 'flm' ? 1 : 0); eng.trackMute(i, t.mute); eng.trackSolo(i, t.solo); eng.trackWidth(i, t.width ?? 1); eng.trackInvert(i, t.inv | 0);
+  eng.send(i, 0, t.send ? t.send[0] : 0); eng.send(i, 1, t.send ? t.send[1] : 0);
+  eng.trackOut(i, t.out >= 0 && t.out < state.returns.length ? t.out : -1);
+  syncClips(i);
+}
+
+export function syncAll() {
+  for (let i = 0; i < MAX_TRACKS; i++) {
+    if (i < state.tracks.length) syncTrackFull(i); else eng.resetTrack(i);
+  }
+  eng.resetTrack(MASTER);
+  syncDevices(MASTER);
+  eng.trackVol(MASTER, state.master.vol); eng.trackWidth(MASTER, state.master.width ?? 1); eng.trackInvert(MASTER, state.master.inv | 0);
+  state.returns.forEach((r, k) => {
+    eng.resetTrack(RET0 + k);
+    syncDevices(RET0 + k);
+    eng.trackVol(RET0 + k, r.vol); eng.trackPan(RET0 + k, r.pan); eng.trackPanLaw(RET0 + k, r.panLaw === 'flm' ? 1 : 0); eng.trackMute(RET0 + k, r.mute); eng.trackWidth(RET0 + k, r.width ?? 1); eng.trackInvert(RET0 + k, r.inv | 0);
+  });
+  for (let k = state.returns.length; k < MAX_FX; k++) eng.resetTrack(RET0 + k);   // effect tracks that no longer exist
+  syncAutomation();
+  eng.tempo(state.bpm);
+  syncMeter();
+  syncTempoMap();
+  eng.loop(state.loop.on, state.loop.start, state.loop.end);
+  eng.metro(state.metro);
+}
+
+// ------------------------------------------------------------------ transport
+
+export function play() { eng.play(); }
+export function stop() { eng.stop(); }
+export function togglePlay() { (state.playing ? stop : play)(); }
+export function seekTo(tick) { state.pos = Math.max(0, tick); eng.seek(state.pos); }
+const lanePts = () => { const i = tempoLane(); return i < 0 ? null : state.tracks[i].clips.map((c) => ({ id: c.id, pts: (c.pts || []).map((q) => ({ ...q })) })); };
+export function setBpm(b) {
+  const old = state.bpm, nb = Math.max(20, Math.min(300, b));
+  if (HK.on && nb !== old && !HK.hit('bpm')) HK.add({ t: 'bpm', v: old, lane: tmOn ? lanePts() : null });
+  state.bpm = nb;
+  if (tmOn && old > 0) { const k = state.bpm / old, i = tempoLane(); if (i >= 0) { for (const c of state.tracks[i].clips) for (const q of (c.pts || [])) q.v = normOf(TEMPO_DEF, Math.max(20, Math.min(300, valOf(TEMPO_DEF, q.v) * k))); syncTempoMap(); } }   // with tempo automation the BPM box scales the whole curve
+  eng.tempo(state.bpm); emit('transport');
+}
+export function setLoop(patch) {
+  if (HK.on && ('start' in patch || 'end' in patch) && !HK.hit('loop')) HK.add({ t: 'loop', v: { start: state.loop.start, end: state.loop.end } });
+  Object.assign(state.loop, patch);
+  if (state.loop.end <= state.loop.start) state.loop.end = state.loop.start + BAR;
+  eng.loop(state.loop.on, state.loop.start, state.loop.end);
+  emit('transport');
+}
+export function setCountIn(n) { state.countIn = [0, 1, 2, 4].includes(n) ? n : 0; emit('transport'); }
+export function setRecLoop(on) { state.recLoop = !!on; emit('transport'); }
+export function setPunch(patch) {
+  const q = state.punch; Object.assign(q, patch);
+  if (q.on && !(q.end > q.start)) { const L = state.loop; if (L.end > L.start) { q.start = L.start; q.end = L.end; } else { q.start = barStart(1); q.end = barStart(3); } }
+  q.start = Math.max(0, Math.round(q.start)); q.end = Math.max(q.start + BEAT, Math.round(q.end));
+  emit('transport');
+}
+export function toggleMetro() { state.metro = !state.metro; eng.metro(state.metro); emit('transport'); }
+
+// Playhead clock. The engine reports its position ~30x per second; between reports the position is extrapolated from the tempo.
+// A report is used ONCE (stamped with its arrival time, `rx`): re-reading the same stale report every frame used to restart the
+// extrapolation from an old position and made the playhead stutter. A fresh report only nudges the clock (25 %) unless it is far
+// off (seek, loop wrap, start/stop) - that keeps scrolling smooth at 60-120 Hz.
+const clk = { tick: 0, at: 0, rx: -1 };
+function clkAt(now) { return clk.tick + (now - clk.at) / 60000 * bpmAt(clk.tick) * PPQ; }
+export function applyPoll(p) {
+  if (!p || typeof p !== 'object' || p.error) return;
+  const was = state.playing;
+  state.playing = p.playing; state.cpu = p.cpu / 1000; state.meters = p.m; state.load = p.tl || null;   // load: [voices, per mille of the block budget] per track (only while the mixer is open)
+  const rx = p.rx || performance.now();
+  if (p.rx && p.rx === clk.rx) return;                        // same report as last time: nothing new about the position
+  clk.rx = p.rx || -1;
+  state.pos = p.pos; cinOn = !!p.cin;
+  if (rec.on) recWatch(p);
+  if (p.playing && was && clk.at) {
+    const pred = clkAt(rx), err = p.pos - pred, lim = 0.12 * bpmAt(p.pos) / 60 * PPQ;   // 120 ms
+    if (Math.abs(err) < lim) { clk.tick = pred + err * 0.25; clk.at = rx; return; }
+  }
+  clk.tick = p.pos; clk.at = rx;
+}
+
+// ------------------------------------------------------------------ tracks
+
+export function addTrack(kind) {
+  if (state.tracks.length >= MAX_TRACKS) return null;
+  const n = state.tracks.length + 1;
+  const names = { midi: 'Synth', drum: 'Drums', audio: 'Audio' };
+  const t = {
+    id: uid(), name: `${names[kind]} ${n}`, color: COLORS[(n - 1) % COLORS.length], kind,
+    inst: kind === 'audio' ? null : { type: kind === 'drum' ? INST.DRUM : INST.FLM_MINI, params: {} },   // new synth tracks: FL Studio Mobile MiniSynth
+    clips: [], devices: [], vol: 0.85, pan: 0, mute: false, solo: false, send: [0, 0], out: -1,   // out: -1 = Master, k = effect track k
+  };
+  state.tracks.push(t);
+  if (HK.on) HK.add({ t: 'trk', present: true, r: { gone: t, items: [{ t, at: state.tracks.length - 1 }], src: [] } });
+  syncTrackFull(state.tracks.length - 1);
+  emit('tracks');
+  return t;
+}
+
+// Sidechain sources (Autoduck) are stored as track numbers; after tracks move or disappear they must follow the track, not the number.
+export function remapSources(oldIds) {
+  const chains = [state.master, ...state.returns, ...state.tracks];
+  for (const c of chains) for (const d of c.devices) {
+    const def = DEVICES[d.type];
+    if (!def) continue;
+    def.params.forEach((p, k) => {
+      if (p.fmt !== 'src' || !(d.params[k] >= 1)) return;
+      const id = oldIds[d.params[k] - 1], nk = id === undefined ? -1 : state.tracks.findIndex((t) => t.id === id);
+      d.params[k] = nk < 0 ? 0 : nk + 1;
+    });
+  }
+}
+
+// Taking a track out (with the automation lanes that point at it) is reversible: the record keeps the track objects, their old positions and the
+// Autoduck source numbers that remapSources rewrites, so undo can put everything back exactly.
+function snapSources() {
+  const o = [];
+  for (const c of [state.master, ...state.returns, ...state.tracks]) for (const d of c.devices) { const def = DEVICES[d.type]; if (def) def.params.forEach((p, k) => { if (p.fmt === 'src') o.push({ a: d.params, k, v: d.params[k] }); }); }
+  return o;
+}
+function detachTrack(i) {
+  const gone = state.tracks[i], oldIds = state.tracks.map((t) => t.id), src = snapSources();
+  const items = [{ t: gone, at: i }];
+  state.tracks.forEach((t, k) => { if (k !== i && t.kind === 'auto' && t.target && t.target.strip === gone.id) items.push({ t, at: k }); });
+  items.sort((a, b) => a.at - b.at);
+  state.tracks.splice(i, 1);
+  state.tracks = state.tracks.filter((t) => !(t.kind === 'auto' && t.target && t.target.strip === gone.id));
+  remapSources(oldIds);
+  state.sel.track = Math.max(0, Math.min(state.sel.track, state.tracks.length - 1));
+  state.sel.clip = null;
+  syncAll();
+  emit('tracks');
+  return { gone, items, src };
+}
+function attachTrack(r) {
+  for (const x of r.items) state.tracks.splice(Math.min(x.at, state.tracks.length), 0, x.t);
+  for (const q of r.src) q.a[q.k] = q.v;
+  state.sel.track = Math.max(0, state.tracks.indexOf(r.gone)); state.sel.clip = null;
+  syncAll(); scheduleBake(60);
+  emit('tracks');
+}
+export function removeTrack(i) {
+  if (!state.tracks[i]) return;
+  const r = detachTrack(i);
+  if (HK.on) HK.add({ t: 'trk', present: false, r });
+}
+// Duplicate Track (Live: Ctrl+D): a full copy right below the original - instrument (zones, pads, chains), effects, clips, mixer settings and
+// sends; the decoded samples are shared, not copied. Frozen audio, record-arm and solo are not carried over, the track's automation lanes stay with
+// the original. One undo step. -> { track } or { error }
+export function duplicateTrack(i) {
+  const src = state.tracks[i];
+  if (!src) return { error: 'Track tidak ada.' };
+  if (src.kind === 'auto') return { error: 'Track otomasi tidak bisa diduplikasi.' };
+  if (state.tracks.length >= MAX_TRACKS) return { error: `Jumlah track maksimum (${MAX_TRACKS}) tercapai.` };
+  const copy = (o) => {                                           // deep copy; decoded samples (shared audio data) are kept by reference
+    if (Array.isArray(o)) return o.map(copy);
+    if (o && typeof o === 'object') { const r = {}; for (const k of Object.keys(o)) r[k] = k === 'sample' || k === 'dsample' ? o[k] : copy(o[k]); return r; }
+    return o;
+  };
+  const n = copy(src);
+  n.id = uid(); n.name = (src.name + ' 2').slice(0, 40); n.arm = false; n.solo = false; delete n.frozen;
+  for (const c of n.clips) c.id = uid();
+  for (const d of n.devices) reidDev(d);
+  if (n.inst) {
+    if (n.inst.chains) { const had = 'id' in n.inst; reidDev(n.inst); if (!had) delete n.inst.id; }          // Instrument Rack: new chain / device ids, macro links follow
+    for (const q of n.inst.pads || []) if (q && q.chain) for (const x of q.chain.devices || []) x.id = uid(); // Drum Rack pad chains
+  }
+  const at = i + 1, oldIds = state.tracks.map((t) => t.id);
+  state.tracks.splice(at, 0, n);
+  remapSources(oldIds);                                           // Autoduck sidechain sources are track numbers: they follow their tracks
+  if (HK.on) HK.add({ t: 'trk', present: true, r: { gone: n, items: [{ t: n, at }], src: [] } });
+  syncAll(); scheduleBake(60);
+  state.sel.track = at; state.sel.clip = null;
+  emit('tracks'); emit('sel');
+  return { track: n };
+}
+export function swapTracks(i, j) {
+  if (!state.tracks[i] || !state.tracks[j] || i === j) return;
+  if (HK.on) HK.add({ t: 'tswap', a: state.tracks[i].id, b: state.tracks[j].id });
+  const oldIds = state.tracks.map((t) => t.id);
+  [state.tracks[i], state.tracks[j]] = [state.tracks[j], state.tracks[i]];
+  remapSources(oldIds);
+  state.sel.track = j; syncAll(); emit('tracks');
+}
+
+// ------------------------------------------------------------------ master + effect tracks (group routing)
+// Every track plays into the Master by default (t.out = -1). An effect track ("Effect 1", ...) is a bus: tracks that route to it are mixed
+// together, processed by its devices and then go to the Master, so a group is mastered once instead of track by track.
+export const MAX_FX = 8;
+export const outLabel = (k) => (k >= 0 && state.returns[k] ? state.returns[k].name : 'Master');
+export function addFxTrack() {
+  if (state.returns.length >= MAX_FX) return null;
+  let n = 1; while (state.returns.some((r) => r.name === 'Effect ' + n)) n++;
+  const r = { name: 'Effect ' + n, vol: 1, pan: 0, mute: false, devices: [] };
+  state.returns.push(r);
+  const k = state.returns.length - 1;
+  eng.resetTrack(RET0 + k); eng.trackVol(RET0 + k, r.vol); eng.trackPan(RET0 + k, r.pan); eng.trackPanLaw(RET0 + k, r.panLaw === 'flm' ? 1 : 0); eng.trackMute(RET0 + k, false);
+  emit('tracks');
+  return k;
+}
+export function removeFxTrack(k) {
+  if (k < 2 || k >= state.returns.length) return false;       // Return A / B are the fixed send buses
+  HK.barrier();                                               // not reversible (routing + lanes are renumbered): older undo steps would no longer fit
+  state.returns.splice(k, 1);
+  for (const t of state.tracks) { if (t.out === k) t.out = -1; else if (t.out > k) t.out--; }
+  const key = 'ret' + k;
+  state.tracks = state.tracks.filter((t) => !(t.kind === 'auto' && t.target && t.target.strip === key));
+  for (const t of state.tracks) if (t.kind === 'auto' && t.target && /^ret\d+$/.test(t.target.strip)) { const m = +t.target.strip.slice(3); if (m > k) t.target.strip = 'ret' + (m - 1); }
+  state.sel.track = MASTER; state.sel.clip = null;
+  syncAll(); emit('tracks');
+  return true;
+}
+export function renameFx(k, name) { if (state.returns[k] && name) { if (HK.on && name !== state.returns[k].name) HK.add({ t: 'name', s: 'ret' + k, v: state.returns[k].name }); state.returns[k].name = name; emit('tracks'); } }
+export function setOut(i, k) {
+  const t = state.tracks[i]; if (!t) return;
+  const nk = k >= 0 && k < state.returns.length ? k : -1;
+  if (HK.on && nk !== t.out) HK.add({ t: 'out', s: stripOf(i), v: t.out });
+  t.out = nk;
+  eng.trackOut(i, t.out); emit('mix');
+}
+export function renameTrack(i, name) { if (HK.on && name !== state.tracks[i].name) HK.add({ t: 'name', s: stripOf(i), v: state.tracks[i].name }); state.tracks[i].name = name; emit('tracks'); }
+export function noteColor(strip, before) { if (HK.on) HK.add({ t: 'color', s: strip, v: before }); }   // the colour picker edits live, so it reports the old colour when it closes
+export function setVol(i, v) { const ar = autoRec(i, 0, 0, null, v); const t = tr(i); if (!ar && HK.on && t.vol !== v && !HK.hit('vol' + stripOf(i))) HK.add({ t: 'val', k: 'vol', s: stripOf(i), v: t.vol }); t.vol = v; eng.trackVol(i, v); }
+export function setPan(i, v) { const ar = autoRec(i, 1, 0, null, v); const t = tr(i); if (!ar && HK.on && t.pan !== v && !HK.hit('pan' + stripOf(i))) HK.add({ t: 'val', k: 'pan', s: stripOf(i), v: t.pan }); t.pan = v; eng.trackPan(i, v); }
+// channel stereo width (0 mono .. 1 normal .. 2 wide) and phase invert (bit 0 left, bit 1 right): tracks, returns and master
+export function setWidth(i, v) { const t = tr(i); v = Math.max(0, Math.min(2, +v)); const ar = autoRec(i, 7, 0, null, v); const old = t.width ?? 1; if (!ar && HK.on && old !== v && !HK.hit('wid' + stripOf(i))) HK.add({ t: 'val', k: 'width', s: stripOf(i), v: old }); if (v === 1) delete t.width; else t.width = v; eng.trackWidth(i, v); }
+export function setInvert(i, f) { const t = tr(i); f = (f | 0) & 3; const old = t.inv | 0; if (HK.on && old !== f) HK.add({ t: 'val', k: 'inv', s: stripOf(i), v: old }); if (f) t.inv = f; else delete t.inv; eng.trackInvert(i, f); emit('mix'); }
+export function setSend(i, k, v) { const ar = autoRec(i, 2 + k, 0, null, v); const t = state.tracks[i]; t.send = t.send || [0, 0]; if (!ar && HK.on && t.send[k] !== v && !HK.hit('snd' + stripOf(i) + k)) HK.add({ t: 'val', k: 'send', s: stripOf(i), p: k, v: t.send[k] }); t.send[k] = v; eng.send(i, k, v); }
+// Arm = the track the record button records into (one at a time); Monitor = whether live input (keys, pads, MIDI) sounds on a MIDI / drum track. Fields t.arm / t.mon, default off / on.
+const REC_KINDS = ['audio', 'midi', 'drum'];
+export const armedTrack = () => state.tracks.findIndex((t) => t.arm && REC_KINDS.includes(t.kind));
+export function flipTrackFlag(i, k) { const t = state.tracks[i]; if (!t) return; if (k === 'arm') t.arm = !t.arm; else t.mon = t.mon === false; emit('mix'); }
+export function toggleArm(i) {
+  const t = state.tracks[i]; if (!t || !REC_KINDS.includes(t.kind)) return;
+  HK.group(() => {
+    if (!t.arm) state.tracks.forEach((o, k) => { if (k !== i && o.arm) { if (HK.on) HK.add({ t: 'tog', k: 'arm', s: o.id }); o.arm = false; } });
+    if (HK.on) HK.add({ t: 'tog', k: 'arm', s: t.id });
+    t.arm = !t.arm;
+  });
+  if (t.arm) selectTrack(i); else emit('mix');
+}
+// Monitor modes as in Live: In (live input always sounds), Auto (sounds only while the track is armed), Off. Stored in t.mon: undefined = In, 'auto', false = Off.
+export const monMode = (t) => (t.mon === false ? 'off' : t.mon === 'auto' ? 'auto' : 'in');
+export const monSounds = (t) => (t.mon === 'auto' ? !!t.arm : t.mon !== false);
+export function setMonitor(i, mode) {
+  const t = state.tracks[i]; if (!t || (t.kind !== 'midi' && t.kind !== 'drum')) return;
+  const old = monMode(t); if (old === mode) return;
+  if (HK.on) HK.add({ t: 'val', k: 'mon', s: stripOf(i), v: old });
+  if (mode === 'off') t.mon = false; else if (mode === 'auto') t.mon = 'auto'; else delete t.mon;
+  emit('mix');
+}
+export function toggleMonitor(i) {
+  const t = state.tracks[i]; if (!t || (t.kind !== 'midi' && t.kind !== 'drum')) return;
+  setMonitor(i, monMode(t) === 'off' ? 'in' : 'off');
+}
+export function toggleReturnMute(k) { const r = state.returns[k]; if (HK.on) HK.add({ t: 'tog', k: 'mute', s: 'ret' + k }); r.mute = !r.mute; eng.trackMute(RET0 + k, r.mute); emit('mix'); }
+export function toggleMute(i) { const t = state.tracks[i]; if (HK.on) HK.add({ t: 'tog', k: 'mute', s: t.id }); t.mute = !t.mute; eng.trackMute(i, t.mute); if (t.kind === 'auto') syncAutomation(); emit('mix'); }
+export function toggleSolo(i) { const t = state.tracks[i]; if (HK.on) HK.add({ t: 'tog', k: 'solo', s: t.id }); t.solo = !t.solo; eng.trackSolo(i, t.solo); emit('mix'); }
+export const isSampler = (type) => type === INST.FLM_SLICER || type === INST.DIRECTWAVE || type === INST.FLM_DW || type === INST.KEYSTONE || type === INST.SAMPLER || type === INST.SIMPLER || type === INST.IMPULSE || type === INST.GRANULATOR;
+export function setInstrument(i, type) {
+  const t = state.tracks[i];
+  type = CLASSIC_TO_FLM[type] || type;                                         // the classic Mini Synth / SuperSaw / GMS / DirectWave are gone: their FL Studio Mobile twin
+  if (HK.on) HK.add({ t: 'inst', s: t.id, v: t.inst });
+  t.inst = { type, params: {}, pitch: (t.inst && t.inst.pitch) || 0 };
+  if (isSampler(type)) t.inst.zones = type === INST.IMPULSE ? Array.from({ length: 8 }, newZone) : [newZone()];
+  if (type === IRACK) { t.inst.chains = [{ id: uid(), name: 'Chain', devices: [], inst: null }]; t.inst.macroMap = []; t.inst.params[IRB + 32] = 1; }
+  eng.trackInst(i, type);
+  for (const [k, v] of Object.entries(t.inst.params)) eng.instParam(i, +k, v);
+  if (INSTRUMENTS[type] && INSTRUMENTS[type].full) INSTRUMENTS[type].params.forEach((q, k) => { if (!(k in t.inst.params)) eng.instParam(i, k, q.def); });
+  if (type === IRACK) rackSync(i, -1);
+  syncZones(i);
+  emit('devices');
+}
+export function applyPreset(i, preset) {
+  const t = state.tracks[i], def = INSTRUMENTS[t.inst.type];
+  if (HK.on) HK.add({ t: 'ipar', s: t.id, v: { ...t.inst.params } });
+  t.inst.params = {};
+  def.params.forEach((p, k) => { if (k === 90 && t.inst.type === 11) return; if (p.hidden && t.inst.type === 6) return; /* SoundFont: index 1 is the program, kept */ const v = preset.p[k] ?? p.def; t.inst.params[k] = v; eng.instParam(i, k, v); });
+  emit('devices');
+}
+export const presetsFor = (type) => PRESETS[type] || [];
+
+// ---- sampler zones (DirectWave = 1 zone, Keystone / Sampler = up to 16): instrument parameter base + zone*stride + field
+// DirectWave / Keystone: 100 + zone*8 + field.  Sampler: 200 + zone*16 + field (more fields: start / end / loop / crossfade / reverse / volume / pan).
+export const ZONE_FIELDS = { sample: 0, root: 1, lo: 2, hi: 3, vlo: 4, vhi: 5, tune: 6, loop: 7, sus: 7, s0: 8, s1: 9, l0: 10, l1: 11, xf: 12, rev: 13, vol: 14, pan: 15 };
+export const MAX_ZONES = 16;
+export const newZone = () => ({ sample: null, root: 60, lo: 0, hi: 127, vlo: 1, vhi: 127, tune: 0, loop: false, sus: 0, s0: 0, s1: 1, l0: 0, l1: 1, xf: 0, rev: false, vol: 0, pan: 0 });
+const bigZ = (type) => type === INST.SAMPLER || type === INST.SIMPLER || type === INST.IMPULSE || type === INST.GRANULATOR;   // Sampler / Simpler: 200 + zone * 16 + field (start / end / loop / ...)
+const zIdx = (i, k, f) => (bigZ(state.tracks[i].inst.type) ? 200 + k * 16 + ZONE_FIELDS[f] : 100 + k * 8 + ZONE_FIELDS[f]);
+const zNum = (v) => (v === true ? 1 : v === false ? 0 : v);
+function sendZone(i, k) {
+  const z = state.tracks[i].inst.zones[k], big = bigZ(state.tracks[i].inst.type);
+  eng.instParam(i, zIdx(i, k, 'sample'), z.sample ? z.sample.id : -1);
+  for (const f of ['root', 'lo', 'hi', 'vlo', 'vhi', 'tune']) eng.instParam(i, zIdx(i, k, f), z[f]);
+  if (big) for (const f of ['sus', 's0', 's1', 'l0', 'l1', 'xf', 'rev', 'vol', 'pan']) eng.instParam(i, zIdx(i, k, f), zNum(z[f] ?? newZone()[f]));
+  else eng.instParam(i, zIdx(i, k, 'loop'), z.loop ? 1 : 0);
+  if (state.tracks[i].inst.type === INST.FLM_DW) { eng.instParam(i, 300 + k * 2, z.vol || 0); eng.instParam(i, 301 + k * 2, z.pan || 0); }   // FLM DirectWave: layer level (dB) / pan
+}
+export function syncZones(i) {
+  const t = state.tracks[i];
+  if (!t || !t.inst || !isSampler(t.inst.type)) return;
+  const zs = t.inst.zones = t.inst.zones || [newZone()];
+  for (let k = 0; k < zs.length; k++) zs[k] = { ...newZone(), ...zs[k] };
+  for (let k = 0; k < (t.inst.type === INST.SIMPLER || t.inst.type === INST.GRANULATOR || t.inst.type === INST.FLM_SLICER ? 1 : MAX_ZONES); k++) {
+    if (k < zs.length) sendZone(i, k); else eng.instParam(i, zIdx(i, k, 'sample'), -1);
+  }
+}
+export function addZone(i) {
+  const zs = state.tracks[i].inst.zones;
+  if (zs.length >= MAX_ZONES) return null;
+  zs.push(newZone());
+  sendZone(i, zs.length - 1);
+  emit('devices');
+  return zs.length - 1;
+}
+export function removeZone(i, k) {
+  const zs = state.tracks[i].inst.zones;
+  if (zs.length < 2) return;
+  zs.splice(k, 1);
+  syncZones(i);
+  emit('devices');
+}
+// quiet = true: engine + data only (used while dragging markers, the display repaints itself)
+export function setZoneField(i, k, field, v, quiet) {
+  const z = state.tracks[i].inst.zones[k];
+  if (HK.on && z[field] !== v && !HK.hit('zn' + state.tracks[i].id + '.' + k + field)) HK.add({ t: 'val', k: 'zone', s: state.tracks[i].id, d: k, p: field, v: z[field] });
+  z[field] = v;
+  if (state.tracks[i].inst.type === INST.FLM_DW && (field === 'vol' || field === 'pan')) eng.instParam(i, 300 + k * 2 + (field === 'pan' ? 1 : 0), v);   // FLM DirectWave layer level / pan
+  else eng.instParam(i, zIdx(i, k, field), zNum(v));
+  if (!quiet) emit('devices');
+}
+export async function setZoneSample(i, k, path) {
+  const s = await loadSampleObj(path);
+  if (!s) return null;
+  const z = state.tracks[i].inst.zones[k];
+  z.sample = s;
+  eng.instParam(i, zIdx(i, k, 'sample'), s.id);
+  emit('devices');
+  return s;
+}
+// a file of the library by its name: the folder given first, then every folder (Samples, FLM, Recordings, ...); null when none
+export function findLibFile(name, dir) {
+  if (!name || !eng.listDir) return null;
+  const low = name.toLowerCase(), hit = (d) => { const r = eng.listDir(d); const it = r && (r.items || []).find((x) => !x.dir && x.name.toLowerCase() === low); return it ? d + '/' + it.name : null; };
+  if (dir) { const f = hit(dir); if (f) return f; }
+  for (const top of ['/Samples', '/FLM', '/Recordings', '/SoundFonts', '/Exports']) for (const d of (eng.allDirs ? eng.allDirs(top) : [top])) { const f = hit(d); if (f) return f; }
+  return null;
+}
+// The library as a lookup for an imported project's files: find(path) -> the device file with that name (case / Unicode tolerant) whose
+// folders match the most trailing folders of `path` ("My Samples/Kicks/k.wav" prefers .../Kicks/k.wav), or null. exclude: a folder to
+// skip (the import's own placeholders). Built once per import: one pass over the library folders.
+export function libIndex(exclude = '/_missing/') {
+  const fold = (x) => String(x).normalize('NFC').toLowerCase(), by = new Map();
+  if (eng.listDir) for (const top of ['/FLM', '/Samples', '/Recordings', '/SoundFonts', '/Exports']) for (const d of (eng.allDirs ? eng.allDirs(top) : [top])) {
+    if (exclude && (d + '/').includes(exclude)) continue;
+    const r = eng.listDir(d); for (const it of (r && r.items) || []) if (!it.dir) { const k = fold(it.name); if (!by.has(k)) by.set(k, []); by.get(k).push(d + '/' + it.name); }
+  }
+  return (path) => {
+    const parts = String(path || '').replace(/\\/g, '/').split('/').filter(Boolean), base = parts.pop(); if (!base) return null;
+    const hits = by.get(fold(base)); if (!hits) return null;
+    let best = hits[0], top = -1;
+    for (const h of hits) { const dp = h.split('/').filter(Boolean); dp.pop(); let n = 0; for (let a = parts.length - 1, b = dp.length - 1; a >= 0 && b >= 0 && fold(parts[a]) === fold(dp[b]); a--, b--) n++; if (n > top) { top = n; best = h; } }
+    return best;
+  };
+}
+// a DirectWave program (.dwp, js/dwp.js) into DirectWave (30): its zones replace the track's (16 at most). Embedded audio is saved next to the
+// program as .wav / .flac (Samples/DirectWave/<program>/) so the project refers to plain files; a zone's file is looked up by name in the
+// .dwp's folder, then the whole library. Attack / Release from the program's last zone. Returns { zones, missing: [names], error }.
+export async function loadDwpProgram(i, path) {
+  const t = state.tracks[i]; if (!t || !t.inst || t.inst.type !== INST.FLM_DW) return { error: 'Pilih track DirectWave dulu.' };
+  const bytes = await eng.readBytes(path); if (!bytes) return { error: 'File .dwp tidak bisa dibaca.' };
+  const { parseDwp, toMdawZone, dwpAttackRelease } = await import('./dwp.js');
+  let prog; try { prog = parseDwp(bytes); } catch (e) { return { error: e.message }; }
+  if (!prog.zones.length) return { error: 'Program DirectWave ini tidak punya zona yang bisa dimainkan.' };
+  const dir = path.slice(0, path.lastIndexOf('/')), pname = path.split('/').pop().replace(/\.dwp$/i, '').replace(/[\\/:*?"<>|]+/g, '_') || 'program';
+  const zones = [], missing = [];
+  for (const [k, z] of prog.zones.slice(0, MAX_ZONES).entries()) {
+    let sp = null;
+    if (z.audio) {
+      sp = '/Samples/DirectWave/' + pname + '/' + String(k + 1).padStart(2, '0') + (z.file ? ' ' + z.file.replace(/\.[^.]*$/, '').replace(/[\\/:*?"<>|]+/g, '_') : '') + (z.audio.kind === 'flac' ? '.flac' : '.wav');
+      const data = z.audio.kind === 'flac' ? z.audio.bytes : new Uint8Array(encodeWav([z.audio.l], [z.audio.r], z.audio.l.length, z.audio.rate, 32, z.audio.r === z.audio.l ? 1 : 2));
+      try { await eng.saveBytes(sp, data); } catch (_) { sp = null; }
+    }
+    if (!sp && z.file) sp = findLibFile(z.file, dir);
+    const s = sp ? await loadSampleObj(sp) : null;
+    if (!s) { missing.push(z.file || 'zona ' + (k + 1)); continue; }
+    zones.push({ ...newZone(), ...toMdawZone(z), sample: s });
+  }
+  if (!zones.length) return { error: 'Sample program ini tidak ditemukan: ' + missing.slice(0, 4).join(', ') + (missing.length > 4 ? ', …' : '') + '. Salin sample-nya ke folder Samples lalu coba lagi.', missing };
+  if (HK.on) HK.add({ t: 'inst', s: t.id, v: { ...t.inst, params: { ...t.inst.params }, zones: (t.inst.zones || []).map((z) => ({ ...z })), from: t.inst.from } });
+  const was = HK.on; HK.on = false;
+  t.inst.zones = zones; t.inst.from = { ...(t.inst.from || {}), name: pname, preset: pname, dwp: path };
+  const ar = dwpAttackRelease(prog.zones); if (ar) { setInstParam(i, 2, ar.attack); setInstParam(i, 5, ar.release); }
+  HK.on = was;
+  syncZones(i); emit('devices');
+  return { zones: zones.length, missing, name: pname, dropped: Math.max(0, prog.zones.length - MAX_ZONES) };
+}
+// DirectWave "New from samples" (FLM's instrument builder, js/tokenmap.js): regions { path, root, keys, vels } -> the track's zones (16 at most,
+// in the order given). One undo step. Returns { zones, failed: [names], dropped }.
+export async function buildDwFromSamples(i, regions) {
+  const t = state.tracks[i]; if (!t || !t.inst || t.inst.type !== INST.FLM_DW) return { error: 'Pilih track DirectWave dulu.' };
+  const zones = [], failed = [];
+  for (const r of regions.slice(0, MAX_ZONES)) {
+    const s = await loadSampleObj(r.path); if (!s) { failed.push(r.path.split('/').pop()); continue; }
+    zones.push({ ...newZone(), sample: s, root: r.root, lo: r.keys[0], hi: r.keys[1], vlo: Math.max(1, r.vels[0]), vhi: Math.max(1, r.vels[1]) });
+  }
+  if (!zones.length) return { error: 'Tidak ada sample yang bisa dimuat.', failed };
+  if (HK.on) HK.add({ t: 'inst', s: t.id, v: { ...t.inst, params: { ...t.inst.params }, zones: (t.inst.zones || []).map((z) => ({ ...z })) } });
+  t.inst.zones = zones; syncZones(i); emit('devices');
+  return { zones: zones.length, failed, dropped: Math.max(0, regions.length - MAX_ZONES) };
+}
+export const PITCH_PARAM = { n: 'Pitch', min: -24, max: 24, def: 0, step: 1, fmt: 'int' };   // instrument param 90, handled by the engine for every instrument
+export function setBend(i, st) { const t = state.tracks[i]; if (!t || !t.inst) return; eng.bend(i, st); }
+// mod wheel position 0..1 per track (the keyboard's Mod wheel, MIDI CC1): live control, not saved with the project (as FLM)
+export const modPos = new Map();
+export function setMod(i, v) { const t = state.tracks[i]; if (!t || !t.inst) return; const x = Math.max(0, Math.min(1, +v || 0)); modPos.set(t.id, x); eng.modWheel(i, x); emit('mod'); }
+export function setPitch(i, v) { const t = state.tracks[i]; if (!t || !t.inst) return; const nv = Math.max(-24, Math.min(24, Math.round(v) || 0)); if (HK.on && nv !== (t.inst.pitch || 0) && !HK.hit('pit' + t.id)) HK.add({ t: 'val', k: 'pitch', s: t.id, v: t.inst.pitch || 0 }); t.inst.pitch = nv; eng.instParam(i, 90, t.inst.pitch); }
+// value of an instrument parameter as the engine sees it (a parameter never touched still has its default / pad value)
+function instVal(t, pi) {
+  const v = t.inst.params[pi];
+  if (v !== undefined) return v;
+  const q = INSTRUMENTS[t.inst.type] && INSTRUMENTS[t.inst.type].params[pi];
+  if (q) return q.def;
+  const pad = t.kind === 'drum' && t.inst.pads && pi >= 0 && pi < MAX_PADS * 3 ? t.inst.pads[(pi / 3) | 0] : null;
+  return pad ? [pad.gain, pad.pit, pad.dec][pi % 3] : undefined;
+}
+// an instrument parameter that is data, not an edit (a Harmor map's slot): no undo step, no automation recording
+export function setInstParamQuiet(i, pi, v) { const t = state.tracks[i]; if (!t || !t.inst) return; t.inst.params[pi] = v; eng.instParam(i, pi, v); }
+export function setInstParam(i, pi, v) {
+  const ar = autoRec(i, 5, pi, null, v);
+  const t = state.tracks[i]; if (t.frozen) unfreezeTrack(i, true);
+  if (!ar && HK.on) { const old = instVal(t, pi); if (old !== undefined && old !== v && !HK.hit('ip' + t.id + '.' + pi)) HK.add({ t: 'val', k: 'inst', s: t.id, p: pi, v: old, u: !(pi in t.inst.params) }); }
+  t.inst.params[pi] = v; eng.instParam(i, pi, v); if (modsMapped) fixMods();
+  if (t.kind === 'drum' && pi >= 0 && pi < MAX_PADS * 3 && t.inst.pads) {   // automation of the original pad parameters: keep the pad data equal
+    const q = t.inst.pads[(pi / 3) | 0];
+    if (q) { const j = pi % 3; if (j === 0) q.gain = v; else if (j === 1) q.pit = v; else q.dec = v; }
+  }
+}
+
+// ---- drum pads: every drum track owns up to 16 pads; a pad is a built-in synth sound or a sample, with gain / pan / sample / envelope settings
+export const MAX_PADS = 16;
+const PAD_FREE = [37, 43, 45, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59];   // MIDI pitches given to added pads (35, 40 and 44 stay GM aliases)
+// pad envelope = FL Studio Mobile's drum slot envelope (engine model 1, Honeydew drums.rs): a / d / r are FLM's 0..1 sliders. A pad saved
+// before that (no eg: attack / decay / release in seconds) is converted to the sliders that play closest (3 time constants per segment).
+const padSlider = (c) => Math.min(1, Math.max(0, (Math.pow(0.0002 / c, 0.25) - 0.05) / 0.95));
+function padEnvToFlm(o) {
+  if (!o || o.eg === 1 || (o.a == null && o.d == null && o.r == null)) return o;
+  const a = +o.a || 0, d = +o.d || 0, r = +o.r || 0, R3 = (x) => Math.round(x * 1000) / 1000;
+  return { ...o, eg: 1, a: a <= 0.0005 ? 0 : R3(padSlider(500 * 0.2231 / (a * 44100))), d: d <= 0 ? 0 : R3(padSlider(50 * 3 / (d * 44100))), r: r <= 0 ? 1 : R3(padSlider(50 * 3 / (r * 44100))) };
+}
+export const newPad = (o) => ({ pitch: 36, name: 'Pad', kind: -1, sample: null, gain: 0, pan: 0, pit: 0, dec: 1, start: 0, end: 1, rev: false, a: 0, d: 1, s: 1, r: 1, mute: false, solo: false, cut: 0, poly: true, hold: 0, shift: 0, eg: 1, ...padEnvToFlm(o) });
+export function padsOf(i) {
+  const t = state.tracks[i];
+  if (!t || t.kind !== 'drum' || !t.inst) return [];
+  if (!Array.isArray(t.inst.pads) || !t.inst.pads.length) {          // first use / project saved before pads existed: the six built-in sounds with their old settings
+    const pr = t.inst.params || {};
+    t.inst.pads = DRUM_PADS.map((d, k) => newPad({ pitch: d.pitch, name: d.name, kind: k, gain: pr[k * 3] ?? 0, pit: pr[k * 3 + 1] ?? 0, dec: pr[k * 3 + 2] ?? 1 }));
+  }
+  return t.inst.pads;
+}
+// an FLM drum slot's Sample Start (signed seconds) and Length (fraction of the sample) from the import, resolved once its sample's duration is
+// known (Honeydew drums.rs): a later start -> pad Start, a negative start (silence before the hit, up to 0.5 s) -> pad Shift, Length -> Hold
+// (the gate, then the release). The resolved values stay in the project; the FLM fields go.
+function flmPadTime(q) {
+  const D = (q.dsample || q.sample) && (q.dsample || q.sample).duration;
+  if (!(D > 0) || (q.flmSt == null && q.flmLen == null)) return;
+  const st = +q.flmSt || 0;
+  if (st > 0) q.start = Math.min(0.999, st / D); else if (st < 0) q.shift = Math.min(0.25, (q.shift || 0) - st);
+  if (q.flmLen > 0) q.hold = Math.min(4, Math.max(0.001, q.flmLen * D));
+  delete q.flmSt; delete q.flmLen;
+}
+const padSolo = (ps) => ps.some((q) => q.solo);
+function sendPad(i, k) {
+  const ps = padsOf(i), q = ps[k], b = 200 + k * 16, solo = padSolo(ps);
+  if (!q) { eng.instParam(i, b + 11, -1); eng.instParam(i, b, -1); return; }
+  eng.instParam(i, k * 3, q.gain); eng.instParam(i, k * 3 + 1, q.pit); eng.instParam(i, k * 3 + 2, q.dec);
+  const wait = !!q.sample && (!(q.sample.id >= 0) || (padWarp(q) && q.dsample === undefined));   // still loading: silent, never the synth drum or the raw file
+  eng.instParam(i, b, q.sample && !wait ? (q.dsample || q.sample).id : -1);   // an FLM pad's stretch / pitch render (q.warp) plays in place of its file eng.instParam(i, b + 1, q.kind); eng.instParam(i, b + 2, q.pan);
+  eng.instParam(i, b + 3, q.start); eng.instParam(i, b + 4, q.end); eng.instParam(i, b + 5, q.rev ? 1 : 0);
+  eng.instParam(i, b + 6, q.a); eng.instParam(i, b + 7, q.d); eng.instParam(i, b + 8, q.s); eng.instParam(i, b + 9, q.r);
+  eng.instParam(i, b + 10, q.mute || wait || (solo && !q.solo) ? 1 : 0); eng.instParam(i, b + 11, q.pitch);
+  eng.instParam(i, b + 12, q.cut || 0); eng.instParam(i, b + 13, q.poly === false ? 0 : 1); eng.instParam(i, b + 14, q.hold || 0); eng.instParam(i, b + 15, q.shift || 0); eng.instParam(i, 500 + k, 1);   // Seq: cut group, poly, hold, shift (projects before these had none: defaults)
+}
+export function syncPads(i) {
+  const t = state.tracks[i];
+  if (!t || t.kind !== 'drum' || !t.inst) return;
+  padsOf(i);
+  for (let k = 0; k < MAX_PADS; k++) sendPad(i, k);
+  eng.rackCmd(i, -1, 0, 0, 0, 0, 0);
+  for (let k = 0; k < MAX_PADS; k++) sendPadChain(i, k);
+}
+// ---- Drum Rack chains: a pad can hold an instrument + effects (pad.chain = { inst: { type, params, sample }, devices: [{ id, type, params, bypass }] }).
+// The engine plays the chain instead of the pad's own sound (instruments.js DrumSynth.cmd). Every change is one undo step (the whole chain).
+export const PAD_INSTS = [19, 20, 21, 22, 23, 24, 18, 25, 26, 27, 13, 14, 15, 16, 17, 32, 33];   // DS ..., Simpler, physical models, synths
+const cloneChain = (c) => (c ? { inst: c.inst ? { ...c.inst, params: { ...c.inst.params } } : null, devices: c.devices.map((d) => ({ ...d, params: [...d.params] })) } : null);
+function sendPadChain(i, k) {
+  const q = padsOf(i)[k], x = q && q.chain;
+  eng.rackCmd(i, -1, 7, k, 0, 0, 0);
+  if (!x) return;
+  const def = x.inst && INSTRUMENTS[x.inst.type];
+  if (def) {
+    eng.rackCmd(i, -1, 5, k, 0, x.inst.type, 0);
+    def.params.forEach((p, j) => { if (!p.hidden) eng.rackCmd(i, -1, 6, k, 0, j, x.inst.params[j] ?? p.def); });
+    if (def.sampler) { eng.rackCmd(i, -1, 6, k, 0, 200, x.inst.sample ? x.inst.sample.id : -1); eng.rackCmd(i, -1, 6, k, 0, 201, 60); }   // Simpler: the sample is its zone 0
+  }
+  x.devices.forEach((d, j) => { if (!DEVICES[d.type]) return; fillParams(d, DEVICES); eng.rackCmd(i, -1, 1, k, j, d.type, 0); d.params.forEach((v, p) => eng.rackCmd(i, -1, 2, k, j, p, v)); wetSend(d, (p, v) => eng.rackCmd(i, -1, 2, k, j, p, v)); if (d.bypass) eng.rackCmd(i, -1, 3, k, j, 1, 0); });
+}
+const padChainEdit = (i, k, key, fn) => {
+  const q = padsOf(i)[k]; if (!q) return null;
+  if (HK.on && !(key && HK.hit('pdc' + state.tracks[i].id + '.' + k + key))) HK.add({ t: 'val', k: 'pad', s: state.tracks[i].id, d: k, p: 'chain', v: cloneChain(q.chain) });
+  if (!q.chain) q.chain = { inst: null, devices: [] };
+  const r = fn(q.chain, q);
+  if (!q.chain.inst && !q.chain.devices.length) q.chain = null;            // an empty chain = the pad's own sound again
+  return r;
+};
+export function setPadChainInst(i, k, type) {
+  padChainEdit(i, k, null, (c, q) => { c.inst = type ? { type, params: {}, sample: null } : null; if (type) q.name = INSTRUMENTS[type].name.slice(0, 14); });
+  sendPadChain(i, k); emit('devices');
+}
+export function padChainParam(i, k, j, v) {
+  padChainEdit(i, k, 'p' + j, (c) => { if (c.inst) c.inst.params[j] = v; });
+  eng.rackCmd(i, -1, 6, k, 0, j, v);
+}
+export async function setPadChainSample(i, k, path) {
+  const s = await loadSampleObj(path); if (!s) return { error: 'Sample tidak bisa dimuat (format atau file terlalu panjang).' };
+  padChainEdit(i, k, null, (c, q) => { if (!c.inst || !INSTRUMENTS[c.inst.type].sampler) c.inst = { type: 18, params: {}, sample: null }; c.inst.sample = s; q.name = cleanName(s.name); });
+  sendPadChain(i, k); emit('devices'); return { k };
+}
+export function padChainAddDevice(i, k, type) {
+  padChainEdit(i, k, null, (c) => { if (c.devices.length < 8) c.devices.push({ id: uid(), type, params: DEVICES[type].params.map((p) => p.def), bypass: false }); });
+  sendPadChain(i, k); emit('devices');
+}
+export function padChainRemoveDevice(i, k, j) { padChainEdit(i, k, null, (c) => { c.devices.splice(j, 1); }); sendPadChain(i, k); emit('devices'); }
+export function padChainMoveDevice(i, k, j, to) { const q = padsOf(i)[k], a = q && q.chain && q.chain.devices; if (!a || !a[j] || to < 0 || to >= a.length || to === j) return; padChainEdit(i, k, null, (c) => { c.devices.splice(to, 0, c.devices.splice(j, 1)[0]); }); sendPadChain(i, k); emit('devices'); }
+export function padChainBypass(i, k, j) { padChainEdit(i, k, null, (c) => { const d = c.devices[j]; if (d) d.bypass = !d.bypass; }); sendPadChain(i, k); emit('devices'); }
+export function padChainDevParam(i, k, j, p, v) {
+  padChainEdit(i, k, 'd' + j + '.' + p, (c) => { const d = c.devices[j]; if (d) d.params[p] = v; });
+  eng.rackCmd(i, -1, 2, k, j, p, v);
+}
+const PAD_FIELD_PARAM = { sample: 0, kind: 1, pan: 2, start: 3, end: 4, rev: 5, a: 6, d: 7, s: 8, r: 9, pitch: 11, cut: 12, poly: 13, hold: 14, shift: 15 };
+export function setPad(i, k, field, v) {
+  const q = padsOf(i)[k]; if (!q) return;
+  if (HK.on && q[field] !== v && !HK.hit('pd' + state.tracks[i].id + '.' + k + field)) HK.add({ t: 'val', k: 'pad', s: state.tracks[i].id, d: k, p: field, v: q[field] });
+  q[field] = v;
+  if (field === 'name') return;
+  if (field === 'chain') { sendPadChain(i, k); return; }
+  if (field === 'mute' || field === 'solo') { for (let m = 0; m < MAX_PADS; m++) sendPad(i, m); return; }
+  const b = 200 + k * 16;
+  if (field === 'gain') eng.instParam(i, k * 3, v); else if (field === 'pit') eng.instParam(i, k * 3 + 1, v); else if (field === 'dec') eng.instParam(i, k * 3 + 2, v);
+  else if (field in PAD_FIELD_PARAM) eng.instParam(i, b + PAD_FIELD_PARAM[field], typeof v === 'boolean' ? (v ? 1 : 0) : v);
+  else if (field === 'eg') eng.instParam(i, 500 + k, v ? 1 : 0);
+}
+// Replace the whole pad list (loading a drum kit / template). One undo step that swaps the complete list back (record 'kit').
+export function setPadKit(i, list) {
+  const t = state.tracks[i];
+  if (!t || t.kind !== 'drum' || !t.inst) return false;
+  const old = padsOf(i);
+  if (HK.on) HK.add({ t: 'kit', s: t.id, v: old });
+  t.inst.pads = list.slice(0, MAX_PADS).map((q) => newPad(q));
+  syncPads(i); emit('devices');
+  return true;
+}
+const cleanName = (n) => String(n || 'Sample').replace(/\.[^.]+$/, '').slice(0, 14);
+export async function addPadSample(i, path) {
+  const ps = padsOf(i);
+  if (ps.length >= MAX_PADS) return { error: 'Batas 16 pad tercapai.' };
+  const s = await loadSampleObj(path);
+  if (!s) return { error: 'Sample tidak bisa dimuat (format atau file terlalu panjang).' };
+  const used = new Set(ps.map((q) => q.pitch)), pitch = PAD_FREE.find((x) => !used.has(x));
+  if (pitch === undefined) return { error: 'Tidak ada nada kosong untuk pad baru.' };
+  ps.push(newPad({ pitch, name: cleanName(s.name), kind: -1, sample: s }));
+  sendPad(i, ps.length - 1);
+  emit('devices');
+  return { k: ps.length - 1 };
+}
+export async function setPadSample(i, k, path) {
+  const q = padsOf(i)[k]; if (!q) return { error: 'Pad tidak ada.' };
+  const s = await loadSampleObj(path);
+  if (!s) return { error: 'Sample tidak bisa dimuat (format atau file terlalu panjang).' };
+  q.sample = s; q.name = cleanName(s.name); q.start = 0; q.end = 1; delete q.warp; delete q.dsample;
+  sendPad(i, k); emit('devices');
+  return { k };
+}
+export function resetPadSound(i, k) {           // back to the built-in synth sound (only pads that have one)
+  const q = padsOf(i)[k]; if (!q || !q.sample) return false;
+  const k0 = DRUM_PADS.findIndex((d) => d.pitch === q.pitch);
+  if (k0 < 0) return false;
+  q.sample = null; q.kind = k0; q.name = DRUM_PADS[k0].name; delete q.warp; delete q.dsample;
+  sendPad(i, k); emit('devices');
+  return true;
+}
+export const padHasSynth = (i, k) => { const q = padsOf(i)[k]; return !!q && q.kind >= 0; };
+// Drum channel menu (FL Studio Mobile): Clone = the same sound and settings on a new pad (next free MIDI key, no steps);
+// Set MIDI Key = the pad answers another note; its steps in every clip of the track move with it. Callers take the undo checkpoint.
+export function clonePad(i, k) {
+  const ps = padsOf(i), q = ps[k];
+  if (!q) return { error: 'Pad tidak ada.' };
+  if (ps.length >= MAX_PADS) return { error: 'Batas 16 pad tercapai.' };
+  const used = new Set(ps.map((x) => x.pitch)), pitch = PAD_FREE.find((x) => !used.has(x));
+  if (pitch === undefined) return { error: 'Tidak ada nada kosong untuk pad baru.' };
+  ps.splice(k + 1, 0, { ...q, pitch, name: (q.name + ' 2').slice(0, 14), mute: false, solo: false, chain: cloneChain(q.chain) });
+  syncPads(i); emit('devices');
+  return { k: k + 1 };
+}
+export function setPadKey(i, k, pitch) {
+  const ps = padsOf(i), q = ps[k];
+  pitch = Math.round(+pitch);
+  if (!q) return { error: 'Pad tidak ada.' };
+  if (!(pitch >= 0 && pitch <= 127)) return { error: 'Nada MIDI harus 0-127.' };
+  if (pitch === q.pitch) return { ok: true };
+  if (ps.some((x) => x !== q && x.pitch === pitch)) return { error: 'Nada itu sudah dipakai pad lain.' };
+  const old = q.pitch; q.pitch = pitch;
+  for (const c of state.tracks[i].clips) if (c.notes) for (const n of c.notes) if (n.p === old) n.p = pitch;
+  syncPads(i); syncClips(i); emit('devices'); emit('clips');
+  return { ok: true };
+}
+export function removePad(i, k) {
+  const ps = padsOf(i), q = ps[k];
+  if (!q || ps.length < 2) return false;
+  ps.splice(k, 1);
+  for (const c of state.tracks[i].clips) if (c.notes) c.notes = c.notes.filter((n) => n.p !== q.pitch);   // its steps go with it
+  syncPads(i); syncClips(i);
+  emit('devices'); emit('clips');
+  return true;
+}
+
+// ------------------------------------------------------------------ devices (i == MASTER for master chain)
+
+export function addDevice(i, type) {
+  const t = tr(i);
+  if (t.devices.length >= 16) return;
+  const d = { id: uid(), type, params: DEVICES[type].params.map((p) => p.def), bypass: false };
+  if (type === RACK) { d.chains = [{ id: uid(), name: 'Chain', devices: [] }]; d.macroMap = []; d.params[32] = 1; }
+  t.devices.push(d);
+  if (HK.on) HK.add({ t: 'dpres', s: stripOf(i), d, di: t.devices.length - 1, present: true });
+  const di = t.devices.length - 1;
+  eng.insertDevice(i, di, type);
+  d.params.forEach((v, pi) => eng.devParam(i, di, pi, v));
+  if (d.chains) rackSync(i, di);
+  emit('devices');
+}
+// ---- module menu (FL Studio Mobile Rack: Insert Above / Below, Replace, Copy / Paste, Reset) and rack presets. Every call is one undo step.
+const reidDev = (c) => { c.id = uid(); if (c.chains) for (const ch of c.chains) { const old = ch.id; ch.id = uid(); for (const m of c.macroMap || []) if (m && m.c === old) m.c = ch.id; for (const x of ch.devices || []) { const oid = x.id; x.id = uid(); for (const m of c.macroMap || []) if (m && m.id === oid && m.c === ch.id) m.id = x.id; } } return c; };   // fresh ids for a copied device / rack (chains, chain devices, macro links)
+const cloneDev = (d) => reidDev(JSON.parse(JSON.stringify(d)));
+export const devicesSnapshot = (i, a = 0, b = Infinity) => tr(i).devices.slice(a, b).map((d) => JSON.parse(JSON.stringify(d)));
+// insert copies of devices (from a copy / a preset) at position `at`; unknown types are skipped and reported (never dropped silently)
+export function insertDeviceCopies(i, at, list) {
+  const t = tr(i); let added = 0; const skipped = [], held = [];
+  HK.group(() => {
+    for (const src of list || []) {
+      if (t.devices.length >= 16) { skipped.push((DEVICES[src.type] ? DEVICES[src.type].name : src.name || 'tipe ' + src.type) + ' (rantai penuh)'); continue; }
+      const d = devOrPlaceholder(cloneDev(src));                                 // an unknown module comes in as a placeholder that keeps its data
+      if (d.missing && d.missing.orig) held.push(d.missing.name); if (!Array.isArray(d.params)) d.params = []; fillParams(d, DEVICES); d.bypass = !!d.bypass;
+      if (d.type === RACK && !d.chains) { d.chains = [{ id: uid(), name: 'Chain', devices: [] }]; d.macroMap = []; }
+      if (d.chains) for (const ch of d.chains) ch.devices = fixChain(ch.devices).map((x) => { if (x.missing && x.missing.orig) held.push(x.missing.name); if (!Array.isArray(x.params)) x.params = []; fillParams(x, DEVICES); return x; });
+      const di = Math.min(Math.max(0, at + added), t.devices.length);
+      placeDevice(i, di, d);
+      if (HK.on) HK.add({ t: 'dpres', s: stripOf(i), d, di, present: true });
+      added++;
+    }
+  });
+  return { added, skipped, held };
+}
+export function insertDeviceAt(i, at, type) { if (!DEVICES[type]) return { added: 0, skipped: [] }; const d = { type, params: DEVICES[type].params.map((q) => q.def), bypass: false }; if (type === RACK) { d.chains = [{ id: uid(), name: 'Chain', devices: [] }]; d.macroMap = []; d.params[32] = 1; } return insertDeviceCopies(i, at, [d]); }
+export function replaceDevice(i, di, type) { const t = tr(i); if (!t.devices[di] || !DEVICES[type]) return; HK.group(() => { removeDevice(i, di); insertDeviceAt(i, di, type); }); }
+export function resetDevice(i, di) { const d = tr(i).devices[di]; if (!d) return; HK.group(() => { DEVICES[d.type].params.forEach((q, k) => { if (k !== 32 || d.type !== RACK) setDeviceParam(i, di, k, q.def); }); setDeviceWet(i, di, 'mix', 1); setDeviceWet(i, di, 'gain', 0); }); emit('devices'); }
+// replace the whole chain (Load Rack Preset / Paste All)
+export function replaceChain(i, list) { const t = tr(i); let r = null; HK.group(() => { while (t.devices.length) removeDevice(i, t.devices.length - 1); r = insertDeviceCopies(i, 0, list); }); return r; }
+export function removeDevice(i, di) { const d0 = tr(i).devices[di]; if (HK.on && d0) HK.add({ t: 'dpres', s: stripOf(i), d: d0, di, present: false }); tr(i).devices.splice(di, 1); eng.removeDevice(i, di); emit('devices'); }
+export function setDeviceParam(i, di, pi, v) { const ar = autoRec(i, 4, pi, di, v); if (i < MAX_TRACKS && state.tracks[i] && state.tracks[i].frozen) unfreezeTrack(i, true); const d = tr(i).devices[di]; if (!ar && HK.on && d.params[pi] !== v && !HK.hit('dp' + stripOf(i) + '.' + d.id + '.' + pi)) HK.add({ t: 'val', k: 'dev', s: stripOf(i), d: d.id, p: pi, v: d.params[pi] }); tr(i).devices[di].params[pi] = v; eng.devParam(i, di, pi, v);  if (modsMapped) fixMods(); if (DEVICES[d.type] && DEVICES[d.type].noteFx) nfxCheck(i); }
+// Per-module Mix (0..1) / Gain (dB) of a device in a track / Master / return chain. Values equal to the default are removed from the device
+// (old files and untouched devices stay exactly as they were).
+export const wetOf = (d) => ({ mix: d && Number.isFinite(d.mix) ? d.mix : 1, gain: d && Number.isFinite(d.gain) ? d.gain : 0 });
+function wetSend(d, f) {
+  const w = wetOf(d);
+  if (w.mix !== 1) f(MIX_P, w.mix);
+  if (w.gain !== 0) f(GAIN_P, Math.pow(10, w.gain / 20));
+}
+export function setDeviceWet(i, di, key, v) {
+  const d = tr(i) && tr(i).devices[di]; if (!d || (key !== 'mix' && key !== 'gain')) return;
+  if (i < MAX_TRACKS && state.tracks[i] && state.tracks[i].frozen) unfreezeTrack(i, true);
+  v = key === 'mix' ? Math.min(1, Math.max(0, +v || 0)) : Math.min(WET_GAIN_MAX, Math.max(WET_GAIN_MIN, +v || 0));
+  const cur = wetOf(d)[key];
+  if (HK.on && cur !== v && !HK.hit('dw' + stripOf(i) + '.' + d.id + '.' + key)) HK.add({ t: 'val', k: 'wet', s: stripOf(i), d: d.id, p: key, v: cur });
+  if (v === (key === 'mix' ? 1 : 0)) delete d[key]; else d[key] = v;
+  eng.devParam(i, di, key === 'mix' ? MIX_P : GAIN_P, key === 'mix' ? v : Math.pow(10, v / 20));
+}
+export function toggleBypass(i, di) {
+  const d = tr(i).devices[di];
+  if (HK.on) HK.add({ t: 'tog', k: 'byp', s: stripOf(i), d: d.id });
+  d.bypass = !d.bypass;
+  eng.devBypass(i, di, d.bypass);
+  emit('devices');
+}
+export function moveDevice(i, from, to) {
+  const t = tr(i);
+  if (to < 0 || to >= t.devices.length) return;
+  if (HK.on && from !== to) HK.add({ t: 'dmv', s: stripOf(i), d: t.devices[from].id, a: from, b: to });
+  const [d] = t.devices.splice(from, 1);
+  t.devices.splice(to, 0, d);
+  eng.removeDevice(i, from);   // reordering recreates the device (its internal tail restarts)
+  eng.insertDevice(i, to, d.type);
+  d.params.forEach((v, pi) => eng.devParam(i, to, pi, v));
+  wetSend(d, (p, v) => eng.devParam(i, to, p, v));
+  if (d.bypass) eng.devBypass(i, to, true);
+  if (d.chains) rackSync(i, to);
+  emit('devices');
+}
+
+// ---- modulators (LFO / Shaper / Envelope Follower): d.map = { s: stripOf(target), id: device id or 'inst', k: parameter }. The engine gets the
+// target as strip / device index / range / base value through the hidden Map parameters (MOD_MAP), rewritten whenever tracks or devices
+// change and when the target's own value changes (base for Mod mode). A target that no longer exists unmaps the modulator.
+let modsMapped = false;
+const allStrips = () => [...state.tracks.map((_, i) => i), MASTER, ...state.returns.map((_, k) => RET0 + k)];
+export function modTarget(m) {
+  const i = allStrips().find((j) => tr(j) && stripOf(j) === m.s); if (i == null) return null; const t = tr(i);
+  if (m.id === 'inst') { const q = t.inst && INSTRUMENTS[t.inst.type] && INSTRUMENTS[t.inst.type].params[m.k]; return q ? { i, di: -1, p: q, v: instVal(t, m.k) } : null; }
+  const di = t.devices.findIndex((d) => d.id === m.id); if (di < 0) return null; const d = t.devices[di];
+  return DEVICES[d.type].params[m.k] ? { i, di, d, p: DEVICES[d.type].params[m.k], v: d.params[m.k] } : null;
+}
+function writeMap(i, di, d) {
+  const o = MOD_MAP[d.type], tg = d.map && modTarget(d.map); if (d.map && !tg) d.map = null;
+  const vals = tg ? [tg.i, tg.di, d.map.k, tg.p.min, tg.p.max, tg.p.curve === 'log' ? 1 : 0, tg.v ?? tg.p.def] : [-1, 0, 0, 0, 1, 0, 0];
+  vals.forEach((v, j) => { if (d.params[o + 5 + j] !== v) { d.params[o + 5 + j] = v; eng.devParam(i, di, o + 5 + j, v); } });
+  if (tg) modsMapped = true;
+}
+export function fixMods() {
+  if (!state || !state.tracks) return; modsMapped = false;
+  for (const i of allStrips()) { const t = tr(i); if (t && t.devices) t.devices.forEach((d, di) => { if (MOD_MAP[d.type] != null) writeMap(i, di, d); }); }
+}
+export function setModMap(i, di, m) { const d = tr(i).devices[di]; d.map = m || null; writeMap(i, di, d); emit('devices'); }
+
+// ---- Racks (engine fx7.js). Audio Effect Rack = device type 51 (params in d.params); Instrument Rack = instrument type 12 (di = -1 in every
+// rack* function; params stored in t.inst.params at 100 + k, because instrument parameter 90 is the engine's Pitch). Both hold
+// chains = [{ id, name, devices: [{ id, type, params, bypass }], inst?: { type, params } }]; the chain mixer and the macros are rack parameters
+// (chain c at 4c: volume, pan, activator, solo; 32 chain count; 33.. macros; 105 chain selector; 106 + 2c chain zones; Instrument Rack also
+// 122 + 2c key zones, 138 + 2c velocity zones); macroMap[m] = { c: chain id, id: device id | 'inst', k } is written into the hidden macro
+// map parameters (41 + 8m) by fixMacros. Every structural change is one undo step (a snapshot of the rack).
+export const RACK = 51, IRACK = 12, RACK_MAX_CH = 8, IRACK_INSTS = [32, 33, 31, 34, 36, 37, 13, 14, 15, 16, 17, 25, 26, 27];   // layering: FL Studio Mobile MiniSynth / SuperSaw / GMS / Transistor Bass / 3x Osc, Moisture, Osphere and the Live synths (no sample needed)
+const IRB = 100;
+const RDEF = (di) => (di < 0 ? IRACK_DEF : DEVICES[RACK]);
+function R(i, di) {
+  const t = tr(i);
+  if (di < 0) { const o = t.inst; return { o, id: 'inst', get: (k) => o.params[IRB + k] ?? IRACK_DEF.params[k].def, put: (k, v) => { if (o.params[IRB + k] !== v) { o.params[IRB + k] = v; eng.instParam(i, IRB + k, v); } } }; }
+  const o = t.devices[di]; return { o, id: o.id, get: (k) => o.params[k], put: (k, v) => { if (o.params[k] !== v) { o.params[k] = v; eng.devParam(i, di, k, v); } } };
+}
+const fillParams = (x, defs) => { const dp = defs[x.type].params; for (let k = 0; k < dp.length; k++) if (!Number.isFinite(x.params[k])) x.params[k] = dp[k].def; };
+const rackSnap = (o, di) => JSON.stringify({ c: o.chains, p: di < 0 ? o.params : o.params, mm: o.macroMap || [] });
+const rackUndo = (i, di, key) => { const r = R(i, di); if (HK.on && !(key && HK.hit(key))) HK.add({ t: 'rack', s: stripOf(i), d: r.id, v: rackSnap(r.o, di) }); };
+function sendChainInst(i, di, ci, x) { if (!x) { eng.rackCmd(i, di, 5, ci, 0, 0, 0); return; } eng.rackCmd(i, di, 5, ci, 0, x.type, 0); const dp = INSTRUMENTS[x.type].params; dp.forEach((q, k) => eng.rackCmd(i, di, 6, ci, 0, k, x.params[k] ?? q.def)); }
+export function rackSync(i, di) {
+  const r = R(i, di), o = r.o; if (!o || !o.chains) return;
+  eng.rackCmd(i, di, 0, 0, 0, 0, 0);
+  for (const c of o.chains) c.devices = fixChain(c.devices);                    // unknown modules inside: placeholders (the chain keeps its order)
+  o.chains.forEach((c, ci) => {
+    if (di < 0) sendChainInst(i, di, ci, c.inst);
+    c.devices.forEach((x, j) => { if (!DEVICES[x.type]) return; fillParams(x, DEVICES); eng.rackCmd(i, di, 1, ci, j, x.type, 0); x.params.forEach((v, k) => eng.rackCmd(i, di, 2, ci, j, k, v)); wetSend(x, (p, v) => eng.rackCmd(i, di, 2, ci, j, p, v)); if (x.bypass) eng.rackCmd(i, di, 3, ci, j, 1, 0); });
+  });
+  r.put(32, o.chains.length); fixMacros(i, di);
+}
+function fixMacros(i, di) {
+  const r = R(i, di), o = r.o; if (!o.macroMap) o.macroMap = [];
+  for (let m = 0; m < 8; m++) {
+    const mm = o.macroMap[m], ci = mm ? o.chains.findIndex((c) => c.id === mm.c) : -1, ch = ci >= 0 ? o.chains[ci] : null;
+    const j = !ch ? -2 : mm.id === 'inst' ? (ch.inst ? -1 : -2) : ch.devices.findIndex((x) => x.id === mm.id);
+    const q = j === -1 ? INSTRUMENTS[ch.inst.type].params[mm.k] : j >= 0 ? DEVICES[ch.devices[j].type].params[mm.k] : null; if (mm && !q) o.macroMap[m] = null;
+    (q ? [ci, j, mm.k, q.min, q.max, q.curve === 'log' ? 1 : 0] : [-1, 0, 0, 0, 1, 0]).forEach((v, n) => r.put(41 + m * 8 + n, v));
+  }
+}
+const CH_GROUPS = (di) => [[0, 4, [0, 0, 1, 0]], [106, 2, [0, 127]], ...(di < 0 ? [[122, 2, [0, 127]], [138, 2, [1, 127]]] : [])];
+const chainDefaults = (r, di, c) => { for (const [b, n, dv] of CH_GROUPS(di)) for (let k = 0; k < n; k++) r.put(b + c * n + k, dv[k]); };
+export function rackAddChain(i, di, inst) {
+  const r = R(i, di), o = r.o; if (o.chains.length >= RACK_MAX_CH) return -1; rackUndo(i, di); const c = o.chains.length;
+  o.chains.push({ id: uid(), name: inst ? INSTRUMENTS[inst].name : 'Chain', devices: [], ...(di < 0 ? { inst: inst ? { type: inst, params: {} } : null } : {}) });
+  chainDefaults(r, di, c); rackSync(i, di); emit('devices'); return c;
+}
+export function rackRemoveChain(i, di, c) {
+  const r = R(i, di), o = r.o; if (!o.chains[c]) return; rackUndo(i, di); o.chains.splice(c, 1);
+  for (let x = c; x < RACK_MAX_CH; x++) for (const [b, n, dv] of CH_GROUPS(di)) for (let k = 0; k < n; k++) r.put(b + x * n + k, x + 1 < RACK_MAX_CH ? r.get(b + (x + 1) * n + k) : dv[k]);
+  rackSync(i, di); emit('devices');
+}
+export function rackDuplicateChain(i, di, c) {
+  const r = R(i, di), o = r.o; if (o.chains.length >= RACK_MAX_CH) return; rackUndo(i, di); const n = o.chains.length, src = o.chains[c];
+  o.chains.push({ ...src, id: uid(), devices: src.devices.map((x) => ({ ...x, id: uid(), params: x.params.slice() })), ...(src.inst ? { inst: { type: src.inst.type, params: { ...src.inst.params } } } : {}) });
+  for (const [b, m] of CH_GROUPS(di)) for (let k = 0; k < m; k++) r.put(b + n * m + k, r.get(b + c * m + k));
+  rackSync(i, di); emit('devices');
+}
+export function rackRenameChain(i, di, c, name) { const o = R(i, di).o; if (!o.chains[c]) return; rackUndo(i, di); o.chains[c].name = name || 'Chain'; emit('devices'); }
+export function rackAddDevice(i, di, c, type) {
+  const o = R(i, di).o, ch = o.chains[c]; if (!ch || ch.devices.length >= 16) return; rackUndo(i, di);
+  const x = { id: uid(), type, params: DEVICES[type].params.map((q) => q.def), bypass: false }; ch.devices.push(x); const j = ch.devices.length - 1;
+  eng.rackCmd(i, di, 1, c, j, type, 0); x.params.forEach((v, k) => eng.rackCmd(i, di, 2, c, j, k, v)); fixMacros(i, di); emit('devices');
+}
+export function rackRemoveDevice(i, di, c, j) { const o = R(i, di).o; if (!o.chains[c] || !o.chains[c].devices[j]) return; rackUndo(i, di); o.chains[c].devices.splice(j, 1); eng.rackCmd(i, di, 4, c, j, 0, 0); fixMacros(i, di); emit('devices'); }
+export function rackMoveDevice(i, di, c, j, to) { const ch = R(i, di).o.chains[c]; if (!ch) return; const a = ch.devices; if (to < 0 || to >= a.length) return; rackUndo(i, di); a.splice(to, 0, a.splice(j, 1)[0]); rackSync(i, di); emit('devices'); }
+export function rackParam(i, di, c, j, k, v) { const o = R(i, di).o, x = o.chains[c] && o.chains[c].devices[j]; if (!x) return; rackUndo(i, di, 'rk' + stripOf(i) + '.' + di + '.' + x.id + '.' + k); x.params[k] = v; eng.rackCmd(i, di, 2, c, j, k, v); }
+export function rackBypass(i, di, c, j) { const ch = R(i, di).o.chains[c], x = ch && ch.devices[j]; if (!x) return; rackUndo(i, di); x.bypass = !x.bypass; eng.rackCmd(i, di, 3, c, j, x.bypass ? 1 : 0, 0); emit('devices'); }
+export function rackMapMacro(i, di, m, map) { const o = R(i, di).o; rackUndo(i, di); if (!o.macroMap) o.macroMap = []; o.macroMap[m] = map || null; fixMacros(i, di); emit('devices'); }
+// Instrument Rack: the chain's instrument (type 0 = remove) and its parameters
+export function rackSetChainInst(i, c, type) { const o = R(i, -1).o, ch = o.chains[c]; if (!ch) return; rackUndo(i, -1); const was = ch.inst && INSTRUMENTS[ch.inst.type] ? INSTRUMENTS[ch.inst.type].name : null; ch.inst = type ? { type, params: {} } : null; if (type && (/^Chain/.test(ch.name) || ch.name === was)) ch.name = INSTRUMENTS[type].name; /* a chain still named after its instrument follows the swap */ sendChainInst(i, -1, c, ch.inst); fixMacros(i, -1); emit('devices'); }
+export function rackInstParam(i, c, k, v) { const ch = R(i, -1).o.chains[c]; if (!ch || !ch.inst) return; rackUndo(i, -1, 'ri' + stripOf(i) + '.' + ch.id + '.' + k); ch.inst.params[k] = v; eng.rackCmd(i, -1, 6, c, 0, k, v); }
+export const rackDef = RDEF;
+
+// ------------------------------------------------------------------ clips + notes
+
+export function findClip(id) {
+  for (let i = 0; i < state.tracks.length; i++) {
+    const c = state.tracks[i].clips.find((x) => x.id === id);
+    if (c) return { track: i, clip: c };
+  }
+  return null;
+}
+export function selectedClip() { return state.sel.clip == null ? null : findClip(state.sel.clip); }
+export function selectTrack(i) { state.sel.track = i; emit('sel'); }
+export function selectClip(i, id) { state.sel.track = i; state.sel.clip = id; emit('sel'); }
+
+export function addClip(i, start, len) {
+  const t = state.tracks[i];
+  if (!t || t.kind === 'audio') return null;
+  if (!(len > 0)) len = barLenAt(Math.max(0, start));          // default: one bar of the signature that is active there
+  const c = { id: uid(), start: Math.max(0, start), len, name: '' };
+  if (t.kind === 'auto') { const v = autoCurrent(t); c.pts = [{ t: 0, v }, { t: len, v }]; } else { c.notes = []; c.pb = len; }   // pb: the pattern's base length
+  t.clips.push(c);
+  syncClips(i);
+  selectClip(i, c.id);
+  emit('clips');
+  return c;
+}
+
+const sLoads = new Map();          // gen|path -> the decode in flight (a file used by many clips is decoded once)
+export function loadSampleObj(path) {
+  const have = state.samples[path];
+  if (have && !have.pending) return Promise.resolve(have);
+  const gen = loading.gen, key = gen + '|' + path;
+  if (sLoads.has(key)) return sLoads.get(key);
+  const p = (async () => {
+    if (state.nextSample >= SAMPLE_MAX) { deriveErr = SAMPLE_FULL; return null; }   // the engine bank has 256 slots: a higher id would be silently ignored
+    const id = state.nextSample++;
+    const r = await eng.loadSample(id, path);
+    if (gen !== loading.gen) return null;
+    const ph = state.samples[path] && state.samples[path].pending ? state.samples[path] : null;   // a placeholder of the project being opened: completed in place
+    if (!r || r.error) { if (ph) delete state.samples[path]; return null; }
+    const s = Object.assign(ph || {}, { id, path, name: path.split('/').pop(), duration: r.duration, peaks: r.peaks, pyr: r.pyr });
+    delete s.pending; state.samples[path] = s;
+    return s;
+  })();
+  sLoads.set(key, p); p.then(() => sLoads.delete(key));
+  return p;
+}
+
+// A sample file moved or renamed in the file browser: the open project keeps pointing at the right file.
+export function renamePath(from, to) {
+  const s = state.samples[from];
+  if (!s) return;
+  s.path = to; s.name = to.split('/').pop();
+  state.samples[to] = s; delete state.samples[from];
+  for (const t of state.tracks) for (const c of (t.clips || [])) if (c.sample === s && c.name === from.split('/').pop()) c.name = s.name;
+  emit('clips');
+}
+
+export async function addAudioClip(i, path, start) {
+  const t = state.tracks[i];
+  if (!t || t.kind !== 'audio') return null;
+  const s = await loadSampleObj(path);
+  if (!s) return null;
+  const len = Math.max(PPQ / 4, Math.round(s.duration * state.bpm / 60 * PPQ));
+  const c = { id: uid(), start: Math.max(0, start), len, sample: s, gain: 1, name: s.name };
+  t.clips.push(c);
+  syncClips(i);
+  selectClip(i, c.id);
+  emit('clips');
+  return c;
+}
+
+// v66 (FL Studio Mobile "Combine"): merge two or more MIDI / drum clips of ONE track into a single clip. Notes keep their absolute position.
+// Refuses what it cannot merge without changing the music (audio, automation, looped, transposed or CC clips) and returns { error } then.
+export function combineClips(i, ids) {
+  const t = state.tracks[i];
+  if (!t || t.kind === 'audio' || t.kind === 'auto') return { error: 'Gabung hanya untuk klip MIDI / drum.' };
+  const L = t.clips.filter((c) => ids.includes(c.id));
+  if (L.length < 2) return { error: 'Pilih minimal 2 klip di track yang sama.' };
+  if (L.some((c) => c.ll || c.xpose || (c.cc && c.cc.length))) return { error: 'Klip dengan loop, transpose, atau CC belum bisa digabung.' };
+  const a = Math.min(...L.map((c) => c.start)), e = Math.max(...L.map((c) => c.start + c.len));
+  const notes = [];
+  for (const c of L) for (const n of (c.notes || [])) if (n.t < c.len) notes.push({ ...n, t: n.t + c.start - a, d: Math.min(n.d, c.len - n.t) });
+  notes.sort((x, y) => x.t - y.t || x.p - y.p);
+  const first = L.reduce((m, c) => (c.start < m.start ? c : m), L[0]);
+  const merged = { id: uid(), start: a, len: e - a, name: first.name || '', notes };
+  t.clips = [...t.clips.filter((c) => !ids.includes(c.id)), merged];
+  syncClips(i); selectClip(i, merged.id); emit('clips');
+  return { ok: true, id: merged.id };
+}
+
+export function removeClip(i, id) {
+  const t = state.tracks[i];
+  t.clips = t.clips.filter((c) => c.id !== id);
+  if (state.sel.clip === id) state.sel.clip = null;
+  syncClips(i);
+  emit('clips');
+}
+
+export function duplicateClip(i, id) {
+  const t = state.tracks[i];
+  const c = t.clips.find((x) => x.id === id);
+  if (!c) return;
+  const copy = JSON.parse(JSON.stringify(c, (k, v) => (k === 'sample' || k === 'dsample' ? undefined : v)));
+  copy.id = uid();
+  copy.start = c.start + c.len;
+  if (c.sample) copy.sample = c.sample;   // keep the shared sample objects (peaks are large)
+  if (c.dsample) copy.dsample = c.dsample;
+  t.clips.push(copy);
+  syncClips(i);
+  selectClip(i, copy.id);
+  emit('clips');
+}
+
+export function splitClip(i, id, tick) {
+  const t = state.tracks[i];
+  const c = t.clips.find((x) => x.id === id);
+  if (!c || tick <= c.start || tick >= c.start + c.len) return;
+  const cut = tick - c.start;
+  if (c.notes && (c.ll > 0 || c.lp > 0)) {   // a pattern clip that loops / is trimmed: both halves keep the same pattern and cycle, the right half starts later in it
+    const ll = patternOf(c), right = JSON.parse(JSON.stringify(c));
+    Object.assign(right, { id: uid(), start: tick, len: c.len - cut, ll, lp: ((c.lp || 0) + cut) % ll, cm: true });
+    c.len = cut; c.ll = ll; c.cm = true; normLoop(c); normLoop(right);
+    t.clips.push(right); syncClips(i); emit('clips'); return;
+  }
+  if (t.kind === 'audio' && loopOf(c)) {   // a looped audio clip: both halves keep the repeating pattern in phase
+    const ll = c.ll, right = { ...c, id: uid(), start: tick, len: c.len - cut, fadeIn: 0, lp: ((c.lp || 0) + cut) % ll };
+    if (c.warp) right.warp = { ...c.warp };
+    c.fadeOut = 0; c.len = cut;
+    t.clips.push(right); syncClips(i); emit('clips'); return;
+  }
+  if (t.kind === 'audio') {   // both halves keep playing the same audio: the right half starts later inside the sample
+    const right = { ...c, id: uid(), start: tick, len: c.len - cut, offset: (c.offset || 0) + cut / PPQ * 60 / state.bpm };
+    if (c.warp) right.warp = { ...c.warp };
+    right.fadeIn = 0;                    // the cut point must not dip: fade-in stays on the left half, fade-out moves to the right half
+    right.fadeOut = c.fadeOut || 0;
+    c.fadeOut = 0;
+    c.len = cut;
+    t.clips.push(right);
+    syncClips(i); emit('clips');
+    return;
+  }
+  if (t.kind === 'auto') {
+    const at = autoValueAt(c, cut), seg = [...c.pts].sort((x, y) => x.t - y.t).filter((p) => p.t < cut).pop() || {}, sh = seg.s ? { s: seg.s, k: seg.k } : {};   // the cut keeps the segment's shape
+    const right = { id: uid(), start: tick, len: c.len - cut, name: c.name, pts: [{ t: 0, v: at, ...sh }, ...c.pts.filter((p) => p.t > cut).map((p) => ({ ...p, t: p.t - cut }))] };
+    c.pts = [...c.pts.filter((p) => p.t < cut), { t: cut, v: at }];
+    c.len = cut;
+    t.clips.push(right);
+    syncClips(i); emit('clips');
+    return;
+  }
+  const right = { id: uid(), start: tick, len: c.len - cut, notes: [], name: c.name, pb: c.len - cut, cm: true };   // a plain clip: its notes go to the half they start in
+  c.notes = c.notes.filter((n) => {
+    if (n.t >= cut) { right.notes.push({ ...n, t: n.t - cut }); return false; }
+    if (n.t + n.d > cut) n.d = cut - n.t;
+    return true;
+  });
+  c.len = cut; c.pb = cut; c.cm = true;
+  t.clips.push(right);
+  syncClips(i);
+  emit('clips');
+}
+
+export function pasteClip(i, data, start) {
+  const t = state.tracks[i];
+  if (!t || !data || (t.kind === 'audio') !== (data.kind === 'audio')) return null;
+  const c = JSON.parse(JSON.stringify(data.clip, (k, v) => (k === 'sample' || k === 'dsample' ? undefined : v)));
+  if (data.clip.sample) c.sample = data.clip.sample;
+  if (data.clip.dsample) c.dsample = data.clip.dsample;
+  c.id = uid(); c.start = Math.max(0, start); c.muted = false;
+  t.clips.push(c);
+  syncClips(i);
+  selectClip(i, c.id);
+  emit('clips');
+  return c;
+}
+
+// ---- Sub-tracks (FL Studio Mobile): extra rows under a drum / synth track with clips of their own, played by the same instrument and
+// mixer channel. t.subs = [{ id, name, kind: 'steps' | 'notes', mute }]; a clip in a sub-track carries c.sub = that id (no c.sub = the
+// track's own row). Data only: the engine gets the clips of all rows of the track together (muted rows left out). Callers checkpoint()
+// before a change (the undo snapshot holds t.subs next to the clips).
+export const SUB_MAX = 8;
+// file -> state: only drum / synth tracks keep sub-tracks; broken entries are dropped, a clip pointing at a sub-track that is gone goes back
+// to the track's own row (nothing is lost).
+function fixSubs(t) {
+  const ok = (t.kind === 'drum' || t.kind === 'midi') && Array.isArray(t.subs);
+  const L = ok ? t.subs.filter((s) => s && s.id != null).slice(0, SUB_MAX).map((s) => ({ id: s.id, name: String(s.name || 'Sub').slice(0, 32), kind: s.kind === 'notes' ? 'notes' : 'steps', mute: !!s.mute })) : [];
+  if (L.length) t.subs = L; else delete t.subs;
+  const ids = new Set(L.map((s) => s.id));
+  for (const c of t.clips) if (c && c.sub != null && !ids.has(c.sub)) delete c.sub;
+}
+export const subsOf = (t) => (t && Array.isArray(t.subs) ? t.subs : []);
+export const subOfClip = (t, c) => (c && c.sub ? subsOf(t).find((s) => s.id === c.sub) || null : null);
+const subMuted = (t, c) => { const s = subOfClip(t, c); return !!(s && s.mute); };
+export function addSub(i, kind) {
+  const t = state.tracks[i]; if (!t || (t.kind !== 'drum' && t.kind !== 'midi')) return null;
+  const L = subsOf(t); if (L.length >= SUB_MAX) return null;
+  const k = kind === 'notes' ? 'notes' : 'steps', s = { id: uid(), name: (k === 'notes' ? 'Notes' : 'Steps') + ' ' + (L.length + 1), kind: k, mute: false };
+  t.subs = [...L, s]; emit('tracks'); return s;
+}
+export function removeSub(i, id) {                                         // its clips go back to the track's own row (nothing is deleted)
+  const t = state.tracks[i]; if (!t || !subsOf(t).some((s) => s.id === id)) return;
+  t.subs = subsOf(t).filter((s) => s.id !== id); if (!t.subs.length) delete t.subs;
+  for (const c of t.clips) if (c.sub === id) delete c.sub;
+  syncClips(i); emit('tracks'); emit('clips');
+}
+export function setSub(i, id, key, v) {
+  const t = state.tracks[i], s = subsOf(t).find((x) => x.id === id); if (!s) return;
+  if (key === 'name') s.name = String(v || '').trim().slice(0, 32) || s.name;
+  else if (key === 'kind') s.kind = v === 'notes' ? 'notes' : 'steps';
+  else if (key === 'mute') { s.mute = !!v; syncClips(i); }
+  emit('tracks'); emit('clips');
+}
+export function setClipSub(i, c, id) {
+  const t = state.tracks[i]; if (!t || !c) return;
+  if (id && !subsOf(t).some((s) => s.id === id)) id = null;
+  if ((c.sub || null) === (id || null)) return;
+  if (id) c.sub = id; else delete c.sub;
+  syncClips(i); emit('clips');
+}
+export function moveClipToTrack(from, id, to) {
+  const a = state.tracks[from], b = state.tracks[to];
+  if (!a || !b || a === b || a.kind !== b.kind) return false;
+  const k = a.clips.findIndex((c) => c.id === id);
+  if (k < 0) return false;
+  const mc = a.clips.splice(k, 1)[0]; if (mc.sub && !subsOf(b).some((s) => s.id === mc.sub)) delete mc.sub;   // the sub-track row stays with its track
+  b.clips.push(mc);
+  state.sel.track = to;
+  syncClips(from); syncClips(to);
+  return true;
+}
+
+export function clipChanged(i) { touchClips(i); emit('notes'); }
+
+// ------------------------------------------------------------------ demo + save/load
+
+export function newProject(demo = true) {
+  HK.on = false;
+  try { return newProjectInner(demo); } finally { HK.on = true; HK.barrier(); }
+}
+function newProjectInner(demo) {
+  loading.gen++; loading.busy = false;                               // a project still loading in the background stops
+  for (const k of Object.keys(state.samples)) delete state.samples[k];
+  state.nextSample = 16; bakes.clear(); freeSlots.length = 0;
+  state.tracks = []; state.master = { vol: 1, devices: [] }; state.returns = makeReturns();
+  applySig(4, 4, []); state.markers = []; state.groove = { amt: 0, grid: 240 }; state.countIn = 0; state.punch = { on: false, start: 0, end: 0 }; state.recLoop = false;
+  state.bpm = 120; state.loop = { on: false, start: 0, end: BAR * 2 }; state.metro = false;
+  state.sel = { track: 0, clip: null }; state.projectName = 'Untitled';
+  state.ccLinks = {}; learn.pending = null;   // MIDI CC links belong to the project that is being replaced
+  eng.stop(); state.pos = 0;
+  if (demo) {
+    const d = addTrack('drum'); d.name = 'Drums';
+    const dc = addClip(0, 0, BAR * 2);
+    for (let bar = 0; bar < 2; bar++) {
+      for (let s = 0; s < 16; s++) {
+        const t = bar * 3840 + s * 240;
+        if (s % 4 === 0) dc.notes.push({ t, d: 200, p: 36, v: 0.95 });
+        if (s === 4 || s === 12) dc.notes.push({ t, d: 200, p: 38, v: 0.9 });
+        if (s % 2 === 0) dc.notes.push({ t, d: 120, p: 42, v: s % 4 === 0 ? 0.8 : 0.55 });
+      }
+    }
+    const s = addTrack('midi'); s.name = 'Bass';
+    const bc = addClip(1, 0, BAR * 2);
+    const roots = [36, 36, 39, 34];
+    for (let k = 0; k < 8; k++) bc.notes.push({ t: k * 960, d: 700, p: roots[k % 4] + 12, v: 0.85 });
+    state.sel = { track: 0, clip: dc.id };
+    state.master.devices.push({ id: uid(), type: 5, params: DEVICES[5].params.map((p) => p.def), bypass: false });   // limiter: the demo mix must not clip
+  }
+  syncAll();
+  scheduleBake(200);
+  emit('all');
+}
+
+export function serialize() {
+  const compact = (k, v) => {
+    if (k === 'dsample') return undefined;                                                   // derived buffers are rebuilt on load
+    if (k === 'sample' && v && v.path) return { path: v.path, name: v.name, duration: v.duration };   // no peaks / engine ids in the file
+    if (k === 'sf' && v) return { path: v.path, preset: v.preset };
+    return v;
+  };
+  return JSON.stringify({ v: 2, flm: FLM_FMT, name: state.projectName, bpm: state.bpm, sig: state.sig, sigs: state.sigs, markers: state.markers, groove: state.groove, countIn: state.countIn, punch: state.punch, recLoop: state.recLoop, loop: state.loop, tracks: state.tracks, master: state.master, returns: state.returns, cc: state.ccLinks }, compact);
+}
+
+// onProgress(fraction): optional, called while samples are decoded / stretched clips rendered (big imported projects take a while)
+// Mini Synth / SuperSaw / GMS / DirectWave Klasik are no longer offered: a project that uses them opens with the FL Studio Mobile instrument
+// of the same name (defs.js migrateClassicInst: parameters converted, original values kept in inst.classic). Covers tracks, Instrument Rack
+// chains and Drum Rack pad chains; automation lanes of a converted instrument follow the parameter of the same name (dropped otherwise).
+function migrateClassic(tracks) {
+  const moved = new Map();                                                    // track id -> { from, to }
+  for (const t of tracks) {
+    const inst = t && t.inst; if (!inst) continue;
+    const from = inst.type;
+    if (migrateClassicInst(inst)) moved.set(t.id, { from, to: inst.type });
+    for (const ch of inst.chains || []) if (ch && ch.inst) migrateClassicInst(ch.inst);
+    for (const q of inst.pads || []) if (q && q.chain && q.chain.inst) migrateClassicInst(q.chain.inst);
+  }
+  if (!moved.size) return;
+  for (let k = tracks.length - 1; k >= 0; k--) {
+    const t = tracks[k], tg = t && t.kind === 'auto' && t.target;
+    if (!tg || tg.kind !== 5 || !moved.has(tg.strip)) continue;
+    const m = moved.get(tg.strip), old = INSTRUMENTS[m.from].params[tg.param], ni = old ? INSTRUMENTS[m.to].params.findIndex((q) => q.n === old.n) : -1;
+    if (ni >= 0) { tg.param = ni; tg.def = { ...INSTRUMENTS[m.to].params[ni] }; } else tracks.splice(k, 1);
+  }
+}
+// ---- opening a project: two stages, so a big project no longer freezes the app while it loads. openStructure puts the whole project in
+// place at once (tracks, clips, devices, automation; the engine synced) and the UI is usable straight away; loadAssets then decodes the
+// samples and renders the stretch / pitch clips behind it, LOAD_PAR at a time, instruments first and then the audio nearest the song start,
+// re-syncing each track the moment its audio is in. A sample not loaded yet is a placeholder object ({ id: -1, pending }) shared by
+// everything that uses it and completed in place, so a copy made while loading (duplicate, paste, undo) gets the audio too; the engine
+// gets -1 (silence) for it. deserialize resolves when everything is loaded (the missing files); onReady(): the project is on screen.
+export const loading = { gen: 0, busy: false };
+const LOAD_PAR = 4;
+let loadIdle = Promise.resolve();
+const warpNeeded = (w) => !!(w && ((w.ratio || 1) !== 1 || w.rev || w.pitch));
+const padWarp = (q) => !!(q.warp && ((q.warp.ratio || 1) !== 1 || q.warp.pitch));
+export async function deserialize(text, onProgress, onReady) {
+  const gen = ++loading.gen;
+  await loadIdle;                                       // the previous project's loads still in flight finish their engine writes first
+  if (gen !== loading.gen) return [];                   // a newer project was opened meanwhile
+  let ctx;
+  HK.on = false;
+  try { ctx = await openStructure(text, gen); } finally { HK.on = true; HK.barrier(); }
+  if (onReady) { try { onReady(); } catch (e) { console.error(e); } }
+  let fin; loadIdle = new Promise((r) => { fin = r; }); loading.busy = true;
+  try { return await loadAssets(ctx, gen, onProgress); } finally { if (gen === loading.gen) loading.busy = false; fin(); }
+}
+async function openStructure(text, gen) {
+  const o = JSON.parse(text);
+  if (!o || typeof o !== 'object' || !Array.isArray(o.tracks)) throw new Error('Berkas proyek tidak valid (tidak ada daftar track).');
+  if (o.tracks.length > MAX_TRACKS) throw new Error('Proyek memiliki terlalu banyak track.');
+  eng.stop(); state.pos = 0; learn.pending = null;
+  for (const k of Object.keys(state.samples)) delete state.samples[k];
+  state.nextSample = 16; bakes.clear(); freeSlots.length = 0;
+  state.bpm = Math.max(20, Math.min(300, +o.bpm || 120));
+  applySig(o.sig && o.sig.n, o.sig && o.sig.d, o.sigs);          // old projects have no signature: 4/4
+  state.markers = Array.isArray(o.markers) ? o.markers.filter((m) => m && Number.isFinite(m.t)).map((m) => ({ id: uid(), t: Math.max(0, Math.round(m.t)), name: String(m.name || 'Marker'), color: m.color || MARKER_COLORS[0] })) : [];
+  state.groove = { amt: Math.max(0, Math.min(1, +(o.groove && o.groove.amt) || 0)), grid: [120, 240, 480].includes(o.groove && o.groove.grid) ? o.groove.grid : 240 };
+  state.countIn = [0, 1, 2, 4].includes(o.countIn) ? o.countIn : 0;
+  state.punch = o.punch && Number.isFinite(o.punch.start) && Number.isFinite(o.punch.end) && o.punch.end > o.punch.start ? { on: !!o.punch.on, start: Math.max(0, Math.round(o.punch.start)), end: Math.round(o.punch.end) } : { on: false, start: 0, end: 0 };
+  state.recLoop = false;                                   // loop was removed from the UI: old projects always open with loop and loop-recording off
+  state.loop = o.loop && Number.isFinite(o.loop.start) && Number.isFinite(o.loop.end) && o.loop.end > o.loop.start ? { ...o.loop, on: false } : { on: false, start: 0, end: BAR * 2 };
+  state.master = o.master && Array.isArray(o.master.devices) ? o.master : { vol: 1, devices: [] };
+  state.projectName = o.name || 'Untitled';
+  state.returns = Array.isArray(o.returns) && o.returns.length >= 2 && o.returns.length <= MAX_FX ? o.returns : makeReturns();
+  state.tracks = o.tracks;
+  if (!(o.flm >= FLM_FMT)) for (const t of state.tracks) migrateFlmInst(t && t.inst, o.flm || 1);   // FLM synth parameters saved before the manual corrections
+  migrateClassic(state.tracks);
+  state.ccLinks = o.cc || {};
+  for (const t of state.tracks) { const oc = OLD_COLORS.indexOf(t.color); if (oc >= 0) t.color = COLORS[oc]; else if (t.color === '#8ea2c0') t.color = AUTO_COLOR; t.send = t.send || [0, 0]; t.clips = Array.isArray(t.clips) ? t.clips : []; t.devices = Array.isArray(t.devices) ? t.devices : []; fixSubs(t); }
+  for (const r of state.returns) r.devices = Array.isArray(r.devices) ? r.devices : [];
+  for (const t of state.tracks) t.out = Number.isInteger(t.out) && t.out >= 0 && t.out < state.returns.length ? t.out : -1;   // projects from before routing existed: everything goes to the Master
+  const missing = [];
+  // samples: placeholders now, decoded by loadAssets (the file keeps path, name and duration, so the clips are drawn at their size)
+  const ph = (ref) => {
+    const p = ref && typeof ref.path === 'string' && ref.path ? ref.path : null; if (!p) return null;
+    return state.samples[p] || (state.samples[p] = { id: -1, path: p, name: p.split('/').pop(), duration: +ref.duration || 0, pending: true });
+  };
+  for (const t of state.tracks) {
+    if (t.kind !== 'audio') continue;
+    t.clips = t.clips.filter((c) => c && c.sample && c.sample.path);   // a clip without a sample reference cannot be played
+    for (const c of t.clips) { c.sample = ph(c.sample); delete c.dsample; }
+  }
+  frozenSmp.clear();                                               // frozen tracks: their audio first (missing = the track plays live again)
+  await Promise.all(state.tracks.map(async (t) => {
+    if (!t.frozen || !t.frozen.path) { delete t.frozen; return; }
+    const s = await loadSampleObj(t.frozen.path); if (s) frozenSmp.set(t.id, s); else delete t.frozen;
+  }));
+  if (gen !== loading.gen) return { missing };
+  for (const t of state.tracks) {
+    if (!t.inst) continue;
+    if (t.inst.type === 37 && t.inst.params) t.inst.params[302] = t.inst.params[303] = -1;   // Moisture wavetables: new sample ids each load
+    if (t.inst.type === 38 && t.inst.params) t.inst.params[13] = t.inst.params[23] = t.inst.params[1061] = t.inst.params[1062] = t.inst.params[1063] = t.inst.params[1065] = -1;   // Harmor harmonic tables / partial map: new sample ids each load
+    if (t.inst.type === INST.SOUNDFONT && t.inst.sf) delete t.inst.sf.id;                    // the SoundFont gets a new id when it is loaded
+    if (t.inst.zones) for (const z of t.inst.zones) if (z) z.sample = z.sample ? ph(z.sample) : null;
+  }
+  for (const t of state.tracks) {
+    if (t.kind !== 'drum' || !t.inst) continue;
+    if (!Array.isArray(t.inst.pads)) { delete t.inst.pads; continue; }
+    t.inst.pads = t.inst.pads.filter((q) => q && Number.isFinite(q.pitch)).slice(0, MAX_PADS).map((q) => newPad(q));
+    for (const q of t.inst.pads) {
+      if (q.chain) {                                                          // Drum Rack chain: instrument (+ its sample) and effects
+        const c = q.chain; c.devices = fixChain(c.devices).filter((d) => !DEVICES[d.type].hidden);
+        for (const d of c.devices) { if (!Array.isArray(d.params)) d.params = []; fillParams(d, DEVICES); d.bypass = !!d.bypass; }
+        if (c.inst && !INSTRUMENTS[c.inst.type]) c.inst = null;
+        if (c.inst) { c.inst.params = c.inst.params || {}; if (c.inst.sample) c.inst.sample = ph(c.inst.sample); }
+        if (!c.inst && !c.devices.length) q.chain = null;
+      }
+      if (!q.sample) continue;
+      q.sample = ph(q.sample); delete q.dsample;
+      if (!q.sample && q.kind < 0) q.mute = true;
+    }
+  }
+  const chains = [state.master, ...state.returns, ...state.tracks];
+  let maxId = 0;
+  for (const t of state.tracks) { maxId = Math.max(maxId, t.id || 0); for (const c of t.clips) maxId = Math.max(maxId, c.id || 0); for (const x of subsOf(t)) maxId = Math.max(maxId, +x.id || 0); }
+  for (const c of chains) for (const d of c.devices) maxId = Math.max(maxId, d.id || 0);
+  for (const t of state.tracks) for (const q of (t.kind === 'drum' && t.inst && t.inst.pads) || []) if (q.chain) for (const d of q.chain.devices) maxId = Math.max(maxId, d.id || 0);
+  _id = 1 + maxId;
+  for (const c of chains) for (const d of c.devices) if (!d.id) d.id = uid();
+  for (const t of state.tracks) for (const q of (t.kind === 'drum' && t.inst && t.inst.pads) || []) if (q.chain) for (const d of q.chain.devices) if (!d.id) d.id = uid();
+  state.sel = { track: 0, clip: null };
+  syncAll();
+  emit('all');
+  return { missing };
+}
+async function pool(jobs, n, live) {
+  let k = 0;
+  const run = async () => { while (k < jobs.length && live()) { const j = jobs[k++]; try { await j(); } catch (e) { console.error('load', e); } } };
+  await Promise.all(Array.from({ length: Math.min(n, jobs.length) }, run));
+}
+// progress: every sample to decode, every stretch / pitch render, SoundFont, wavetable pair and DirectWave program is one step;
+// onProgress(fraction, label, done, total)
+async function loadAssets({ missing }, gen, onProgress) {
+  const live = () => gen === loading.gen, failed = new Set(), uses = new Map();   // placeholder -> the earliest tick it is heard (-1: an instrument)
+  const see = (s, at) => { if (s && s.pending) uses.set(s, Math.min(uses.has(s) ? uses.get(s) : Infinity, at)); };
+  let renders = 0;
+  for (const t of state.tracks) {
+    if (t.kind === 'audio') for (const c of t.clips) { see(c.sample, c.start); if (warpNeeded(c.warp)) renders++; }
+    if (t.inst && t.inst.zones) for (const z of t.inst.zones) if (z) see(z.sample, -1);
+    if (t.kind === 'drum' && t.inst && t.inst.pads) for (const q of t.inst.pads) { see(q.sample, -1); if (q.chain && q.chain.inst) see(q.chain.inst.sample, -1); if (q.sample && padWarp(q)) renders++; }
+  }
+  const tjobs = state.tracks.filter((t) => t.inst && ((t.inst.type === INST.SOUNDFONT && t.inst.sf && t.inst.sf.path) || (t.inst.type === 37 && t.inst.wt && t.inst.wt.some(Boolean)) || (t.inst.type === 38 && ((t.inst.hm && t.inst.hm.path) || (t.inst.hmT && t.inst.hmT.some(Boolean)) || Object.keys(t.inst.hmI || {}).length))));
+  const dwps = state.tracks.filter((t) => t.inst && t.inst.type === INST.FLM_DW && t.inst.dwp);
+  const total = Math.max(1, uses.size + renders + tjobs.length + dwps.length);
+  let done = 0, lastP = 0, what = 'Memuat sample\u2026';
+  const report = (force) => { const now = Date.now(); if (onProgress && live() && (force || now - lastP > 80)) { lastP = now; onProgress(Math.min(0.99, done / total), what, done, total); } };
+  const say = (label) => { what = label; report(); };
+  const step = () => { done++; report(); };
+  const dirty = new Set(); let flushT = 0;
+  const flush = () => {
+    clearTimeout(flushT); flushT = 0; if (!live() || !dirty.size) return;
+    for (const t of dirty) { const i = state.tracks.indexOf(t); if (i < 0) continue; if (t.kind === 'audio') syncClips(i); else { syncZones(i); syncPads(i); } }
+    dirty.clear(); emit('clips'); emit('devices');
+  };
+  const touch = (t) => { dirty.add(t); if (!flushT) flushT = setTimeout(flush, 150); };
+  const sampleJob = (s) => async () => {
+    say('Memuat sample: ' + s.name);
+    let r = await loadSampleObj(s.path);
+    if (!live()) return;
+    const scan = !r && eng.whenSynced && eng.whenSynced();         // not found while the folder is still being scanned: once more after the scan
+    if (scan && typeof scan.then === 'function') { say('Menunggu pemindaian folder: ' + s.name); await scan; if (!live()) return; if (!state.samples[s.path]) state.samples[s.path] = s; r = await loadSampleObj(s.path); if (!live()) return; }
+    step();
+    if (!r) { failed.add(s); missing.push(s.path); }
+    for (const t of [...state.tracks]) {                         // everything that uses it: its stretch / pitch renders, then a re-sync
+      let hit = false;
+      if (t.kind === 'audio') for (const c of [...t.clips]) {
+        if (c.sample !== s) continue; hit = true;
+        if (!r || !warpNeeded(c.warp) || c.dsample !== undefined) continue;
+        say('Merender stretch / pitch: ' + (c.name || s.name));
+        const ds = await deriveSample(r, c.warp); if (!live()) return;
+        if (c.dsample === undefined) c.dsample = ds && ds !== r ? ds : null;
+        step();
+      }
+      if (t.inst && t.inst.zones) for (const z of t.inst.zones) if (z && z.sample === s) { hit = true; if (!r) z.sample = null; }
+      if (t.kind === 'drum' && t.inst && t.inst.pads) for (const q of [...t.inst.pads]) {
+        if (q.chain && q.chain.inst && q.chain.inst.sample === s) { hit = true; if (!r) q.chain.inst.sample = null; }
+        if (q.sample !== s) continue; hit = true;
+        if (!r) { q.sample = null; if (q.kind < 0) q.mute = true; continue; }
+        if (padWarp(q) && q.dsample === undefined) {
+          say('Merender stretch / pitch pad: ' + (q.name || s.name));
+          const ds = await deriveSample(r, q.warp); if (!live()) return;
+          q.dsample = ds && ds !== r ? ds : null; step();
+        }
+        flmPadTime(q);
+      }
+      if (hit) touch(t);
+    }
+  };
+  const instJob = (t) => async () => {
+    let i = state.tracks.indexOf(t);
+    if (i >= 0 && t.inst.type === INST.SOUNDFONT) {
+      say('Memuat SoundFont: ' + (t.name || ''));
+      const r = await loadSoundFontFor(i, t.inst.sf.path, t.inst.sf.preset); if (r && r.error) missing.push(t.inst.sf.path);
+    } else if (i >= 0 && t.inst.type === 38) {
+      say(t.inst.hm ? (t.inst.hm.src === 'image' ? 'Membuat peta gambar Harmor: ' : 'Resintesis Harmor: ') + t.inst.hm.path.split('/').pop() : 'Tabel harmonik Harmor: ' + (t.name || ''));
+      const r = await (await import('./harmor/harmor.js')).restoreHarmorMap(t); if (r && r.error) missing.push(t.inst.hm ? t.inst.hm.path : Object.values(t.inst.hmI || {}).map((x) => x.path).join(', '));
+    } else if (i >= 0) {
+      say('Memuat wavetable: ' + (t.name || ''));
+      for (let o = 0; o < 2 && live(); o++) { const w = t.inst.wt && t.inst.wt[o]; i = state.tracks.indexOf(t); if (!w || i < 0) continue; const r = await loadMoistureTable(i, o, w.path); if (r && r.error) missing.push(w.path); }
+    }
+    if (live()) step();
+  };
+  const dwpJob = (t) => async () => {                            // DirectWave with a library program (.dwp) still to load (an FLM import)
+    const i = state.tracks.indexOf(t);
+    if (i >= 0 && t.inst && t.inst.dwp && !(t.inst.zones || []).some((z) => z && z.sample)) {
+      say('Memuat program DirectWave: ' + t.inst.dwp.split('/').pop());
+      const r = await loadDwpProgram(i, t.inst.dwp); if (r.error) missing.push(t.inst.dwp); else delete t.inst.dwp;
+    }
+    if (live()) step();
+  };
+  report(true);
+  await pool([...tjobs.map(instJob), ...[...uses.entries()].sort((x, y) => x[1] - y[1]).map(([s]) => sampleJob(s))], LOAD_PAR, live);
+  if (live()) await pool(dwps.map(dwpJob), 2, live);
+  if (!live()) { clearTimeout(flushT); return []; }
+  if (failed.size) for (const t of state.tracks) if (t.kind === 'audio') { const n = t.clips.length; t.clips = t.clips.filter((c) => !failed.has(c.sample)); if (t.clips.length !== n) touch(t); }   // a clip without its audio is removed, as before
+  flush();
+  if (onProgress) onProgress(1, 'Selesai', total, total);
+  return [...new Set(missing)];
+}
+
+// ------------------------------------------------------------------ automation
+// An automation track targets one parameter: { kind, strip, devId?, param, def }.
+//   kind: 0 volume, 1 pan, 2 send A, 3 send B, 4 device parameter, 5 instrument parameter
+//   strip: a track id, or 'master' / 'ret0' / 'ret1'.   def: { min, max, curve?, step? } of the parameter.
+// Clip points are { t: ticks inside the clip, v: 0..1 }; the engine receives real parameter values.
+export const AUTO_WIDTH = { n: 'Width', min: 0, max: 2, unit: '%', def: 1 };
+export const AUTO_VOL = { n: 'Volume', min: 0, max: 1.4, fmt: 'gain' }, AUTO_PAN = { n: 'Pan', min: -1, max: 1, fmt: 'pan' }, AUTO_SEND = { n: 'Send', min: 0, max: 1, unit: '%' };
+
+export function stripIndex(strip) {
+  if (strip === 'master') return MASTER;
+  if (/^ret\d+$/.test(strip)) { const k = +strip.slice(3); return k < state.returns.length ? RET0 + k : -1; }
+  return state.tracks.findIndex((t) => t.id === strip);
+}
+export const stripOf = (i) => (i === MASTER ? 'master' : i >= RET0 ? 'ret' + (i - RET0) : state.tracks[i].id);
+
+function resolveTarget(tg) {
+  if (tg.kind === 6) return { track: MASTER, dev: 0 };   // tempo lane: not an engine parameter, it feeds the tempo map
+  const idx = stripIndex(tg.strip);
+  if (idx < 0) return null;
+  if (tg.kind === 4) {
+    const di = tr(idx).devices.findIndex((d) => d.id === tg.devId), d = tr(idx).devices[di];
+    return di < 0 || (d.missing && d.missing.orig) ? null : { track: idx, dev: di };   // a lane of a module this version lacks stays in the file, unplayed
+  }
+  if (tg.kind === 5 && !(state.tracks[idx] && state.tracks[idx].inst)) return null;
+  return { track: idx, dev: 0 };
+}
+
+export function autoCurrent(t) {
+  const tg = t.target;
+  if (!tg) return 0.5;
+  const r = resolveTarget(tg);
+  if (!r) return 0.5;
+  if (tg.kind === 6) return normOf(TEMPO_DEF, state.bpm);
+  const o = tr(r.track);
+  let v;
+  switch (tg.kind) {
+    case 0: v = o.vol; break;
+    case 1: v = o.pan || 0; break;
+    case 2: case 3: v = (o.send || [0, 0])[tg.kind - 2]; break;
+    case 4: v = tg.param === MIX_P ? wetOf(o.devices[r.dev]).mix : o.devices[r.dev].params[tg.param]; break;   // MIX_P: the module's Mix (not in its parameter list)
+    case 7: v = o.width ?? 1; break;
+    default: { const x = tg.param === 90 ? (o.inst.pitch || 0) : o.inst.params[tg.param]; v = x === undefined ? tg.def.def ?? tg.def.min : x; }
+  }
+  return normOf(tg.def, v ?? tg.def.min);
+}
+
+export function autoValueAt(c, t) { return curveAt([...c.pts].sort((a, b) => a.t - b.t), t); }   // with the segment shapes (autocurve.js)
+
+// FL Studio Mobile CTRL -> "Link to Current Track": the selected automation track drives another parameter from now on (its points stay;
+// they are read in the new parameter's range). One undo step.
+export function retargetAutoTrack(i, target, label) {
+  const t = state.tracks[i]; if (!t || t.kind !== 'auto' || !target) return false;
+  if (HK.on) HK.add({ t: 'atgt', s: t.id, v: { target: t.target, name: t.name } });
+  t.target = target; t.name = 'Auto: ' + label;
+  syncAutomation(); emit('tracks');
+  return true;
+}
+// Live's Lock Envelopes off (the default): moving clips takes the track's automation in their time span with them. The breakpoints of every
+// automation lane of the strip inside [s0, s0 + len) move by delta and replace what the lane had at the destination; the edges get points with
+// the old values, so the curve outside both spans stays as it was. Returns the number of lanes changed.
+export function moveEnvelopes(strip, s0, len, delta) {
+  if (!delta || !(len > 0)) return 0;
+  const s1 = s0 + len, d0 = s0 + delta, d1 = s1 + delta, inR = (t, a, b) => t >= a && t < b; let n = 0;
+  for (const t of state.tracks) {
+    if (t.kind !== 'auto' || !t.target || t.target.strip !== strip || !t.clips.length) continue;
+    const clips = [...t.clips].filter((c) => !c.muted && c.pts && c.pts.length).sort((a, b) => a.start - b.start); if (!clips.length) continue;
+    const at = (T) => { let c = clips.find((q) => T >= q.start && T < q.start + q.len); if (!c) c = clips.filter((q) => q.start <= T).pop() || clips[0]; return autoValueAt(c, Math.max(0, Math.min(c.len, T - c.start))); };
+    const covered = clips.some((c) => c.start < s1 && c.start + c.len > s0); if (!covered) continue;
+    const abs = []; for (const c of clips) for (const p of c.pts) abs.push({ ...p, t: c.start + p.t });
+    const moved = [{ t: d0, v: at(s0) }, ...abs.filter((p) => inR(p.t, s0, s1)).map((p) => ({ ...p, t: p.t + delta })), { t: d1 - 1, v: at(s1 - 1) }];
+    const keep = abs.filter((p) => !inR(p.t, s0, s1) && !inR(p.t, d0, d1));
+    for (const E of [s0 - 1, s1, d0 - 1, d1]) if (E >= 0 && !inR(E, d0, d1)) keep.push({ t: E, v: at(E) });
+    const all = [...keep, ...moved].filter((p) => p.t >= 0).sort((a, b) => a.t - b.t), out = [];
+    for (const p of all) { if (out.length && out[out.length - 1].t === p.t) out[out.length - 1] = p; else out.push(p); }
+    for (const c of clips) c.pts = [];
+    for (const p of out) {                                          // each point into the clip that holds it, or the nearest clip (stretched to hold it)
+      let c = clips.find((q) => p.t >= q.start && p.t <= q.start + q.len);
+      if (!c) { c = clips.reduce((b, q) => (Math.min(Math.abs(p.t - q.start), Math.abs(p.t - q.start - q.len)) < Math.min(Math.abs(p.t - b.start), Math.abs(p.t - b.start - b.len)) ? q : b), clips[0]);
+        if (p.t < c.start) { const sh = c.start - p.t; for (const q of c.pts) q.t += sh; c.len += sh; c.start = p.t; } else c.len = Math.max(c.len, p.t - c.start + 1); }
+      c.pts.push({ ...p, t: p.t - c.start });
+    }
+    for (const c of clips) { c.pts.sort((a, b) => a.t - b.t); if (!c.pts.length) c.pts.push({ t: 0, v: at(c.start) }); }
+    n++;
+  }
+  if (n) { syncAutomation(); emit('tracks'); }
+  return n;
+}
+export function syncAutomation() {
+  const flat = [];
+  syncTempoMap();
+  for (const t of state.tracks) {
+    if (t.kind !== 'auto' || !t.target || t.mute || t.target.kind === 6) continue;
+    const r = resolveTarget(t.target);
+    if (!r) continue;
+    const pts = [];
+    let last = null;
+    for (const c of [...t.clips].sort((a, b) => a.start - b.start)) {
+      if (c.muted || !c.pts.length) continue;
+      const sorted = [...c.pts].sort((a, b) => a.t - b.t);
+      if (last !== null && c.start > last.tick) pts.push([c.start - 1, last.value]);   // hold the previous value across the gap
+      for (const [pt, pv] of densify(sorted)) pts.push([c.start + pt, valOf(t.target.def, pv)]);   // linear segments as before, curves as dense breakpoints
+      last = { tick: c.start + c.len, value: valOf(t.target.def, sorted[sorted.length - 1].v) };
+    }
+    if (!pts.length) continue;
+    flat.push(t.target.kind, r.track, r.dev, t.target.param || 0, pts.length);
+    for (const [tk, v] of pts) flat.push(tk, v);
+  }
+  eng.automation(flat, flat.length);
+}
+
+export function addAutoTrack(target, label) {
+  if (state.tracks.length >= MAX_TRACKS) return null;
+  const existing = state.tracks.findIndex((t) => t.kind === 'auto' && t.target && t.target.kind === target.kind && t.target.strip === target.strip && t.target.devId === target.devId && t.target.param === target.param);
+  if (existing >= 0) { selectTrack(existing); return state.tracks[existing]; }   // one lane per parameter
+  const n = state.tracks.length + 1;
+  const t = {
+    id: uid(), name: 'Auto: ' + label, color: AUTO_COLOR, kind: 'auto', inst: null, clips: [], devices: [],
+    vol: 0.85, pan: 0, mute: false, solo: false, send: [0, 0], target,
+  };
+  state.tracks.push(t);
+  if (HK.on) HK.add({ t: 'trk', present: true, r: { gone: t, items: [{ t, at: state.tracks.length - 1 }], src: [] } });
+  const i = state.tracks.length - 1;
+  syncTrackFull(i);
+  emit('tracks');
+  { const a0 = barFloor(state.pos); addClip(i, a0, barStart(barAt(a0) + 2) - a0); }
+  selectTrack(i);
+  return t;
+}
+
+export function autoLabel(t) {
+  const tg = t.target;
+  if (!tg) return '';
+  const idx = stripIndex(tg.strip);
+  if (idx < 0) return 'target hilang';
+  const o = tr(idx);
+  return (idx === MASTER ? 'Master' : idx >= RET0 ? o.name : o.name);
+}
+
+
+// ------------------------------------------------------------------ audio clip operations (web engine)
+// c.warp = { beats, ratio, rev, pitch, mode }: ratio = stretched length / original length. c.dsample is the derived buffer actually played.
+// mode = warp algorithm (audioops.js): 'beats' WSOLA (default, also every clip saved before modes existed), 'tones' phase vocoder, 'repitch'.
+const SAMPLE_MAX = 256, SAMPLE_FULL = 'Slot sample penuh (256). Simpan proyek lalu buka ulang untuk membersihkan hasil stretch lama.';
+let deriveErr = '';
+// Offline audio rendering (reverse / pitch / stretch) runs in module Workers so the UI stays smooth: a small pool (one per spare core, up
+// to 4) so a project with many stretched clips renders them side by side; each job goes to the least busy worker. If workers are not
+// available it falls back to the main thread.
+const RENDER_W = Math.max(1, Math.min(4, ((typeof navigator !== 'undefined' && navigator.hardwareConcurrency) || 2) - 1));
+const workers = []; let workerDead = false, noSpawn = false, jobId = 0;   // noSpawn: a worker failed once, the pool does not grow again
+function spawnWorker() {
+  let w;
+  try { w = new Worker(new URL('./engine/stretchworker.js', import.meta.url), { type: 'module' }); } catch (_) { return null; }
+  const me = { w, jobs: new Map() };
+  w.onmessage = (e) => { const j = me.jobs.get(e.data.id); if (!j) return; me.jobs.delete(e.data.id); if (e.data.error) j.rej(new Error(e.data.error)); else j.res({ l: e.data.l, r: e.data.mono ? e.data.l : e.data.r }); };
+  w.onerror = () => {                                              // a worker that dies: its jobs fall back to the main thread, it leaves the pool
+    const k = workers.indexOf(me); if (k >= 0) workers.splice(k, 1);
+    try { w.terminate(); } catch (_) { /* ignore */ }
+    for (const [id, j] of me.jobs) { me.jobs.delete(id); j.rej(Object.assign(new Error('worker'), { dead: true })); }
+    noSpawn = true; if (!workers.length) workerDead = true;
+  };
+  workers.push(me);
+  return me;
+}
+function pickWorker() {
+  if (workerDead || typeof Worker === 'undefined') return null;
+  let best = null; for (const x of workers) if (!best || x.jobs.size < best.jobs.size) best = x;
+  if ((!best || best.jobs.size > 0) && workers.length < RENDER_W && !noSpawn) best = spawnWorker() || best;
+  if (!best && !workers.length) workerDead = true;
+  return best;
+}
+async function renderAudio(l, r, opts) {
+  const x = pickWorker(), mono = r === l;
+  if (x) {
+    try {
+      return await new Promise((res, rej) => { const id = ++jobId; x.jobs.set(id, { res, rej }); x.w.postMessage({ id, l, r: mono ? null : r, mono, opts }); });
+    } catch (e) { if (!(e && e.dead)) throw e; }                    // the worker itself failed (not the audio): do it here instead
+  }
+  await new Promise((res) => setTimeout(res, 0));
+  return processBuffers(l, r, opts);
+}
+// ---- render cache: a stretch / pitch render is kept in the app's own storage (/.cache/render, never mirrored to the device folder), so
+// opening the project again plays it at once instead of rendering it again. Keyed by the file (path, size, length in frames) and the settings;
+// the file holds its key and is checked on read (a hash collision cannot play the wrong audio). At most RC_MAX bytes: oldest first out.
+const RC_DIR = '/.cache/render/', RC_MAX = 768 * 1024 * 1024, RC_IDX = 'mobiledaw2.rcache.v1';
+const fnv = (str, h) => { for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; } return h; };
+function rcKey(base, key, frames) { const k = key + '|' + (eng.fileSize ? eng.fileSize(base.path) : 0) + '|' + frames + '|' + ((eng.info && eng.info().sampleRate) || 0); return { k, path: RC_DIR + fnv(k, 2166136261).toString(16).padStart(8, '0') + fnv(k, 33554467).toString(16).padStart(8, '0') + '.f32' }; }
+const rcIdx = () => { try { return JSON.parse(localStorage.getItem(RC_IDX)) || []; } catch (_) { return []; } };
+const rcSave = (ix) => { try { localStorage.setItem(RC_IDX, JSON.stringify(ix)); } catch (_) { /* full: the cache just stays smaller */ } };
+async function rcGet({ k, path }) {
+  try {
+    if (!eng.fileSize || !(eng.fileSize(path) > 0)) return null;
+    const buf = await eng.readBytes(path); if (!buf) return null;
+    const ab = buf instanceof ArrayBuffer ? buf : buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength), h = new Uint32Array(ab, 0, 4);
+    if (h[0] !== 0x4d445243) return null;
+    const frames = h[1], ch = h[2], kl = h[3], kb = 16 + kl + ((4 - kl % 4) % 4);
+    if (new TextDecoder().decode(new Uint8Array(ab, 16, kl)) !== k || ab.byteLength < kb + frames * ch * 4) return null;
+    const l = new Float32Array(ab, kb, frames), r = ch > 1 ? new Float32Array(ab, kb + frames * 4, frames) : l;
+    const ix = rcIdx(), e = ix.find((x) => x.p === path); if (e) { e.t = Date.now(); rcSave(ix); }
+    return { l, r };
+  } catch (_) { return null; }
+}
+function rcPut({ k, path }, l, r) {
+  try {
+    if (!eng.saveBytes) return;
+    const ch = r && r !== l ? 2 : 1, kb8 = new TextEncoder().encode(k), kl = kb8.length, kb = 16 + kl + ((4 - kl % 4) % 4), size = kb + l.length * ch * 4;
+    if (size > RC_MAX / 4) return;
+    const ab = new ArrayBuffer(size); new Uint32Array(ab, 0, 4).set([0x4d445243, l.length, ch, kl]); new Uint8Array(ab, 16, kl).set(kb8);
+    new Float32Array(ab, kb, l.length).set(l); if (ch > 1) new Float32Array(ab, kb + l.length * 4, l.length).set(r);
+    let ix = rcIdx().filter((x) => x.p !== path); ix.push({ p: path, s: size, t: Date.now() });
+    ix.sort((a, b) => a.t - b.t); let tot = ix.reduce((n, x) => n + x.s, 0);
+    while (tot > RC_MAX && ix.length > 1) { const o = ix.shift(); tot -= o.s; if (eng.deleteFile) eng.deleteFile(o.p); }
+    rcSave(ix);
+    Promise.resolve(eng.saveBytes(path, ab)).catch(() => {});
+  } catch (_) { /* no cache: the render was still used */ }
+}
+// a free engine sample slot (-1 when the 256 are used): Harmor's maps
+export function allocSampleSlot() { return state.nextSample < SAMPLE_MAX ? state.nextSample++ : -1; }
+// a generic entry of the render cache (key: any text): { l, r } or null / write
+export const cacheGet = (key) => rcGet({ k: key, path: RC_DIR + fnv(key, 2166136261).toString(16).padStart(8, '0') + fnv(key, 33554467).toString(16).padStart(8, '0') + '.f32' });
+export const cachePut = (key, l, r) => rcPut({ k: key, path: RC_DIR + fnv(key, 2166136261).toString(16).padStart(8, '0') + fnv(key, 33554467).toString(16).padStart(8, '0') + '.f32' }, l, r);
+const dLoads = new Map();          // gen|key -> the render in flight
+export function deriveSample(base, warp) {
+  deriveErr = '';
+  const ratio = warp.ratio || 1, rev = !!warp.rev, pitch = warp.pitch || 0, mode = WARP_MODES.includes(warp.mode) ? warp.mode : 'beats';
+  if (ratio === 1 && !rev && !pitch) return Promise.resolve(base);
+  const key = `${base.path}|${ratio.toFixed(5)}|${rev ? 1 : 0}|${pitch}` + (mode !== 'beats' ? '|' + mode : '');
+  if (state.samples[key]) return Promise.resolve(state.samples[key]);
+  const gen = loading.gen, k = gen + '|' + key;
+  if (dLoads.has(k)) return dLoads.get(k);
+  const p = (async () => {
+    const b = eng.sampleBuffers(base.id);
+    if (!b) return null;
+    let l, r;
+    const ck = rcKey(base, key, b.l.length), hit = await rcGet(ck);    // rendered before (this file, these settings): no render at all
+    if (hit) ({ l, r } = hit);
+    else {
+      try { ({ l, r } = await renderAudio(b.l, b.r || b.l, { rev, pitch, ratio, mode })); }
+      catch (e) { deriveErr = 'Gagal memproses audio: ' + (e && e.message || e); return null; }
+      rcPut(ck, l, r);
+    }
+    if (gen !== loading.gen) return null;
+    if (state.nextSample >= SAMPLE_MAX) { deriveErr = SAMPLE_FULL; return null; }
+    const id = state.nextSample++;
+    const m = await eng.putSampleBuffers(id, l, r);
+    if (!m || m.error || gen !== loading.gen) return null;
+    const s = { id, path: base.path, name: base.name, duration: m.duration, peaks: m.peaks, pyr: m.pyr, derived: true };
+    state.samples[key] = s;
+    return s;
+  })();
+  dLoads.set(k, p); p.then(() => dLoads.delete(k));
+  return p;
+}
+export const WARP_MODES = ['beats', 'tones', 'repitch'];
+export const canWarp = () => !!eng.sampleBuffers(0) || state.nextSample > 16;
+// opts: { rev?, beats? (stretch the whole sample to this many beats), reset? }
+export async function setClipAudio(i, id, opts) {
+  const t = state.tracks[i], c = t && t.clips.find((x) => x.id === id);
+  if (!c || t.kind !== 'audio') return { error: 'Klip tidak ditemukan' };
+  const w = opts.reset ? { beats: 0, ratio: 1, rev: false, pitch: 0 } : { beats: c.warp ? c.warp.beats : 0, ratio: c.warp ? c.warp.ratio : 1, rev: c.warp ? c.warp.rev : false, pitch: c.warp ? c.warp.pitch || 0 : 0 };
+  const md = opts.mode !== undefined ? opts.mode : !opts.reset && c.warp && c.warp.mode; if (WARP_MODES.includes(md) && md !== 'beats') w.mode = md;
+  if (opts.rev !== undefined) w.rev = opts.rev;
+  if (opts.pitch !== undefined) w.pitch = opts.pitch;
+  if (opts.beats) { w.beats = opts.beats; w.ratio = (opts.beats * 60 / state.bpm) / c.sample.duration; }
+  const ds = await deriveSample(c.sample, w);
+  if (!ds) return { error: deriveErr || 'Operasi audio hanya tersedia di versi web.' };
+  w.bpm = state.bpm; c.warp = w; c.dsample = ds === c.sample ? null : ds;
+  if (opts.reset || opts.beats) c.warpAuto = false;                       // an explicit warp / reset takes the clip off "follow project tempo"
+  if ((opts.pitch === undefined && opts.mode === undefined) || opts.rev !== undefined || opts.beats || opts.reset) c.offset = 0;   // pitch-only / mode-only keeps the trimmed start
+  if (opts.beats) c.len = Math.round(opts.beats * PPQ);
+  else if (opts.reset) c.len = Math.max(PPQ / 4, Math.round(c.sample.duration * state.bpm / 60 * PPQ));
+  syncClips(i); emit('clips');
+  if (gridLocked(c)) scheduleBake(60);                                    // tempo-map / swing bake uses the clip's warp mode too
+  return { ok: true };
+}
+// ---- Wave Editor time-selection operations (FL Studio Mobile): op = normalize | fadeIn | fadeOut | silence | duplicate | clear | deleteSpace | trim.
+// a / b = the selection in seconds of the audio the editor shows (the clip's played buffer). The edit is applied to the clip's source sample
+// (mapped through stretch / reverse), written as a new file in Samples/Edits (the original file is never touched) and the clip points at it;
+// warp settings are applied again, and the clip's region follows insertions / removals. The caller takes the undo checkpoint first.
+export const WAVE_OPS = { normalize: 'Normalize', fadeIn: 'Fade In', fadeOut: 'Fade Out', silence: 'Insert Silence', duplicate: 'Duplicate', clear: 'Clear', deleteSpace: 'Delete Space', trim: 'Trim Selection' };
+export async function editClipAudio(i, id, op, a, b) {
+  const t = state.tracks[i], c = t && t.clips.find((x) => x.id === id);
+  if (!c || t.kind !== 'audio') return { error: 'Klip audio tidak ditemukan.' };
+  if (!WAVE_OPS[op]) return { error: 'Operasi tidak dikenal.' };
+  const base = c.sample, buf = base && eng.sampleBuffers(base.id);
+  if (!buf || !buf.l) return { error: 'Edit audio hanya tersedia di versi web.' };
+  if (state.nextSample >= SAMPLE_MAX) return { error: SAMPLE_FULL };
+  const w = c.warp || {}, warped = !!c.dsample, ratio = warped ? w.ratio || 1 : 1, rev = warped && !!w.rev, Dd = (c.dsample || base).duration;
+  a = Math.max(0, Math.min(Dd, a)); b = Math.max(0, Math.min(Dd, b)); if (b - a < 0.002) return { error: 'Seleksi terlalu pendek.' };
+  const l = buf.l, r = buf.r || buf.l, sr = l.length / base.duration;
+  const fa = Math.round((rev ? Dd - b : a) / ratio * sr), fb = Math.round((rev ? Dd - a : b) / ratio * sr);
+  const o = op === 'normalize' ? WOPS.normalize(l, r, fa, fb) : op === 'fadeIn' ? WOPS.fade(l, r, fa, fb, rev ? -1 : 1) : op === 'fadeOut' ? WOPS.fade(l, r, fa, fb, rev ? 1 : -1)
+    : op === 'silence' ? WOPS.insertSilence(l, r, fa, fb) : op === 'duplicate' ? WOPS.duplicate(l, r, fa, fb) : op === 'clear' ? WOPS.clear(l, r, fa, fb, sr)
+    : op === 'deleteSpace' ? WOPS.deleteSpace(l, r, fa, fb, sr) : WOPS.trim(l, r, fa, fb, sr);
+  if (op === 'normalize' && o.gain === 1 && o.l === l) return { error: 'Seleksi hening: tidak ada yang dinormalisasi.' };
+  // the new source file (32-bit float: no quality loss), then the engine bank slot
+  const stem = (base.name || 'sample').replace(/\.[^.]+$/, '').replace(/-ed[0-9a-z]+$/i, '').replace(/[^\w\- ]+/g, '').slice(0, 40) || 'sample';
+  const path = '/Samples/Edits/' + stem + '-ed' + Date.now().toString(36) + '.wav';
+  const wav = encodeWav([o.l], o.r === o.l ? null : [o.r], o.l.length, Math.round(sr), 32, o.r === o.l ? 1 : 2);
+  try { await eng.saveBytes(path, new Uint8Array(wav)); } catch (e) { return { error: 'File hasil edit tidak bisa disimpan: ' + (e && e.message || e) }; }
+  const sid = state.nextSample++, m = await eng.putSampleBuffers(sid, o.l, o.r);
+  if (!m || m.error) return { error: 'Engine tidak bisa memuat hasil edit.' };
+  const ns = { id: sid, path, name: path.split('/').pop(), duration: m.duration, peaks: m.peaks, pyr: m.pyr };
+  state.samples[path] = ns;
+  // region bookkeeping in the shown (effective) seconds
+  const spt = 60 / (state.bpm * PPQ), lp = loopOf(c), off = c.offset || 0, end = off + (lp || c.len) * spt, d = b - a;
+  let offset = off, grow = 0;
+  if (op === 'silence' || op === 'duplicate') { const p = op === 'silence' ? a : b; if (p <= off) offset += d; else if (p < end) grow = d; }
+  else if (op === 'deleteSpace') { const rb = Math.max(0, Math.min(b, off) - a), ri = Math.max(0, Math.min(b, end) - Math.max(a, off)); offset -= rb; grow = -ri; }
+  else if (op === 'trim') { const s0 = Math.max(off, a), e0 = Math.min(end, b); if (e0 > s0) { offset = s0 - a; grow = (e0 - s0) - (end - off); } else { offset = 0; grow = d - (end - off); } }
+  c.sample = ns;
+  if (warped) { const ds = await deriveSample(ns, w); c.dsample = ds && ds !== ns ? ds : null; }
+  c.offset = Math.max(0, offset);
+  if (grow) { const k = Math.round(grow / spt), min = PPQ / 16; if (lp) c.ll = Math.max(min, c.ll + k); else c.len = Math.max(min, c.len + k); if (lp) normLoop(c); }
+  syncClips(i); emit('clips'); emit('notes');
+  return { ok: true, path, gain: o.gain };
+}
+// ---- tempo: detect, sync and free stretch (the clip keeps its trimmed region and its place on the grid)
+const baseOf = (c) => c.sample;
+export function detectClipBpm(i, id) {
+  const t = state.tracks[i], c = t && t.clips.find((x) => x.id === id);
+  if (!c || t.kind !== 'audio') return { error: 'Klip audio tidak ditemukan.' };
+  const b = eng.sampleBuffers(baseOf(c).id);
+  if (!b || !b.l) return { error: 'Deteksi tempo hanya tersedia di versi web.' };
+  const sr = (eng.info && eng.info().sampleRate) || 48000;
+  return detectBpm(b.l, b.r || b.l, sr);
+}
+export function setClipSrcBpm(i, id, bpm) {
+  const t = state.tracks[i], c = t && t.clips.find((x) => x.id === id);
+  if (!c) return;
+  c.srcBpm = bpm > 0 ? Math.round(Math.max(20, Math.min(400, bpm)) * 100) / 100 : 0;
+  if (!c.srcBpm) c.warpAuto = false;
+  emit('clips');
+}
+// ratio = stretched length / original length (relative to the ORIGINAL sample). opts.len = explicit clip length in ticks
+// (used by the arrangement stretch handle); opts.beats = keep the "N beat" label.
+export async function restretchClip(i, id, ratio, opts = {}) {
+  const t = state.tracks[i], c = t && t.clips.find((x) => x.id === id);
+  if (!c || t.kind !== 'audio') return { error: 'Klip tidak ditemukan' };
+  if (!Number.isFinite(ratio) || ratio <= 0) return { error: 'Rasio stretch tidak valid.' };
+  if (ratio < 0.25 || ratio > 4) return { error: 'Selisih tempo terlalu jauh (maks 4x lebih cepat / lambat). Coba ×2 atau ÷2 pada BPM sample.' };
+  ratio = Math.round(ratio * 10000) / 10000;
+  const old = c.warp || { beats: 0, ratio: 1, rev: false, pitch: 0 }, D0 = (c.dsample || c.sample).duration;
+  const sptOld = 60 / ((old.bpm || state.bpm) * PPQ), sptNew = 60 / (state.bpm * PPQ);
+  const o0 = c.offset || 0, f0 = o0 / D0, f1 = (o0 + c.len * sptOld) / D0;
+  const w = { ...old, ratio, beats: opts.beats || 0, bpm: state.bpm };
+  const ds = await deriveSample(c.sample, w);
+  if (!ds) return { error: deriveErr || 'Operasi audio hanya tersedia di versi web.' };
+  const D1 = ds.duration, k = D1 / D0;
+  c.warp = w; c.dsample = ds === c.sample ? null : ds;
+  c.offset = Math.max(0, f0 * D1);
+  c.len = opts.len ? Math.max(PPQ / 32, Math.round(opts.len)) : Math.max(PPQ / 32, Math.round((f1 - f0) * D1 / sptNew));
+  if (c.fadeIn) c.fadeIn *= k; if (c.fadeOut) c.fadeOut *= k;
+  for (const e of [c.genv, c.penv]) if (e) for (const q of e) q[0] *= k;   // the clip envelopes follow the audio
+  syncClips(i); emit('clips');
+  return { ok: true, ratio };
+}
+// Make the sample play on the project tempo: ratio = sample BPM / project BPM.
+export async function syncClipToTempo(i, id, srcBpm, auto = true) {
+  const t = state.tracks[i], c = t && t.clips.find((x) => x.id === id);
+  if (!c || t.kind !== 'audio') return { error: 'Klip tidak ditemukan' };
+  const b = srcBpm || c.srcBpm;
+  if (!(b > 0)) return { error: 'BPM sample belum diketahui. Deteksi atau isi BPM sample dulu.' };
+  const out = await restretchClip(i, id, b / state.bpm);
+  if (out.error) return out;
+  c.srcBpm = Math.round(b * 100) / 100; c.warpAuto = !!auto;
+  emit('clips');
+  return out;
+}
+export const unsyncClip = (i, id) => { const t = state.tracks[i], c = t && t.clips.find((x) => x.id === id); if (c) { c.warpAuto = false; emit('clips'); } return restretchClip(i, id, 1); };
+export const retempoClip = async (i, id) => {
+  const c = state.tracks[i].clips.find((x) => x.id === id);
+  if (c && c.srcBpm && c.warpAuto) return syncClipToTempo(i, id, c.srcBpm, true);
+  if (!c || !c.warp || !c.warp.beats) return { error: 'Klip ini belum di-warp ke jumlah beat.' };
+  return restretchClip(i, id, (c.warp.beats * 60 / state.bpm) / c.sample.duration, { beats: c.warp.beats });
+};
+
+// Clips with "ikuti tempo" follow the project tempo once the tempo has settled (debounced: each distinct ratio costs a sample slot).
+let followTimer = 0, followBpm = 0;
+export async function followTempo() {
+  followBpm = state.bpm;
+  let n = 0, err = '';
+  for (let i = 0; i < state.tracks.length; i++) {
+    const t = state.tracks[i]; if (t.kind !== 'audio') continue;
+    for (const c of [...t.clips]) {
+      if (!c.warpAuto || !(c.srcBpm > 0)) continue;
+      const want = Math.round(c.srcBpm / state.bpm * 10000) / 10000, have = c.warp ? c.warp.ratio : 1;
+      if (Math.abs(want - have) < 0.00005 && (!c.warp || !c.warp.bpm || c.warp.bpm === state.bpm)) continue;
+      const out = await restretchClip(i, c.id, want);
+      if (out.error) { err = out.error; c.warpAuto = false; } else n++;
+    }
+  }
+  if (n || err) emit('followed');
+  return { n, error: err };
+}
+onChange((what) => { if (what === 'transport' && state.bpm !== followBpm) { clearTimeout(followTimer); followTimer = setTimeout(followTempo, 450); } });
+
+// ---- grid-locked audio: clips that follow the project tempo ("ikuti tempo", srcBpm known) stay on the musical grid when the tempo map
+// changes the speed along the song and when swing is on. Playback and export use the same pre-warped buffer: the clip is rendered
+// once (WSOLA with a variable ratio, in the stretch worker) for exactly its place on the timeline, then played from its start.
+// Clips that are not synced keep playing in absolute time, as before. Constant tempo without swing never takes this path (identical to v41).
+const bakes = new Map();          // clip id -> { id: sample slot, key, sample }
+const freeSlots = [];
+export let bakeError = '';
+export const gridLocked = (c) => !!(c && c.warpAuto && c.srcBpm > 0 && c.sample);
+const bakeWanted = (c) => gridLocked(c) && (tmOn || swingOf(c) > 0);
+function bakeKey(c) {
+  const w = c.warp || {};
+  return [c.sample.path, c.start, c.len, (c.offset || 0).toFixed(5), c.ll || 0, c.lp || 0, c.srcBpm, w.ratio || 1, w.rev ? 1 : 0, w.pitch || 0, swingOf(c), state.groove.grid || 240, tmOn ? tmKey : 'c' + state.bpm, w.mode || 'beats'].join('|');
+}
+function bakeCurrent(c) { if (!bakeWanted(c)) return null; const b = bakes.get(c.id); return b && b.key === bakeKey(c) ? b : null; }
+// breakpoints (output frame, source frame) of one stretch of the clip: ticks y0..y1 of the timeline, content starting at tick s of the clip's loop
+function bakeSeg(c, g, sr, srate, o0beats) {
+  const a = swingOf(c), gr = state.groove.grid || 240, sh = a > 0 ? Math.round(a * gr * 0.5) : 0;
+  const yj = (j) => j * gr + ((j & 1) ? sh : 0);
+  const pinv = (y) => { if (!sh) return y; let j = Math.floor(y / gr); if (y < yj(j)) j--; return j * gr + (y - yj(j)) * gr / (yj(j + 1) - yj(j)); };
+  const Y0 = c.start + g.o, Y1 = Y0 + g.len, T0 = tickToSec(Y0), oS = Math.round((tickToSec(Y0) - tickToSec(c.start)) * sr), oE = Math.round((tickToSec(Y1) - tickToSec(c.start)) * sr);
+  const xo = [], xs = [], ST = 60;
+  for (let y = Y0; ; y += ST) {
+    if (y > Y1) y = Y1;
+    const beat = o0beats + (g.s + (pinv(y) - Y0)) / PPQ;
+    xo.push((tickToSec(y) - T0) * sr); xs.push(beat * 60 / c.srcBpm * srate);
+    if (y >= Y1) break;
+  }
+  return { o: oS, n: Math.max(1, oE - oS), xo: Float64Array.from(xo), xs: Float64Array.from(xs) };
+}
+async function bakeClip(c) {
+  const sr = (eng.info && eng.info().sampleRate) || 48000, w = c.warp || {}, ratio = w.ratio || 1;
+  const base = await deriveSample(c.sample, { ratio: 1, rev: !!w.rev, pitch: w.pitch || 0, mode: w.mode });
+  if (!base) return { error: deriveErr || 'Gagal menyiapkan audio.' };
+  const b = eng.sampleBuffers(base.id); if (!b || !b.l || !base.duration) return { error: 'Buffer sample tidak tersedia.' };
+  const srate = b.l.length / base.duration, o0beats = ((c.offset || 0) / ratio) * c.srcBpm / 60;
+  const segs = loopSegs(c).map((g) => bakeSeg(c, g, sr, srate, o0beats));
+  const total = Math.max(1, Math.round((tickToSec(c.start + c.len) - tickToSec(c.start)) * sr));
+  if (total > sr * 60 * 20) return { error: 'Klip terlalu panjang untuk disesuaikan dengan tempo map.' };
+  let out;
+  try { out = await renderAudio(b.l, b.r || b.l, { map: { n: total, segs }, mode: w.mode || 'beats' }); } catch (e) { return { error: 'Gagal memproses audio: ' + (e && e.message || e) }; }
+  return { l: out.l, r: out.r };
+}
+let bakeTimer = 0, baking = null, bakeAgain = false;
+export function scheduleBake(ms = 350) { clearTimeout(bakeTimer); bakeTimer = setTimeout(ensureBakes, ms); }
+export function ensureBakes() {
+  clearTimeout(bakeTimer);
+  if (bakeHooks.hold) { scheduleBake(200); return Promise.resolve(); }
+  if (baking) { bakeAgain = true; return baking; }
+  baking = (async () => { try { do { bakeAgain = false; await bakeAll(); } while (bakeAgain); } catch (_) { /* a failed bake leaves the clip on the plain path */ } baking = null; })();
+  return baking;
+}
+// bakeProgress(done, total): the clips still to warp onto the tempo map / swing grid (the loading window shows it after a project opens)
+export const bakeHooks = { progress: null, hold: false };   // hold: a project is loading (its bakes wait, then run under the loading window)
+export function bakesPending() { let n = 0; for (const t of state.tracks) if (t.kind === 'audio') for (const c of t.clips) { if (!bakeWanted(c)) continue; const b = bakes.get(c.id); if (!b || b.key !== bakeKey(c)) n++; } return n; }
+async function bakeAll() {
+  const alive = new Set();
+  for (const t of state.tracks) if (t.kind === 'audio') for (const c of t.clips) alive.add(c.id);
+  for (const [id, b] of [...bakes]) if (!alive.has(id)) { bakes.delete(id); freeSlots.push(b.id); }
+  let changed = false; const total = bakesPending(); let done = 0;
+  for (let i = 0; i < state.tracks.length; i++) {
+    const t = state.tracks[i]; if (t.kind !== 'audio') continue;
+    for (const c of [...t.clips]) {
+      if (!bakeWanted(c)) continue;
+      const key = bakeKey(c), have = bakes.get(c.id);
+      if (have && have.key === key) continue;
+      if (bakeHooks.progress) bakeHooks.progress(done, total, c.name || (c.sample && c.sample.name) || '');
+      const r = await bakeClip(c); done++;
+      if (r.error) { bakeError = r.error; continue; }
+      if (bakeKey(c) !== key) { bakeAgain = true; continue; }      // edited while rendering: go round again
+      let id = have ? have.id : freeSlots.pop();
+      if (id === undefined) { if (state.nextSample >= SAMPLE_MAX) { bakeError = SAMPLE_FULL; continue; } id = state.nextSample++; }
+      const m = await eng.putSampleBuffers(id, r.l, r.r);
+      if (!m || m.error) { bakeError = (m && m.error) || 'Gagal memuat hasil warp.'; continue; }
+      bakeError = '';
+      bakes.set(c.id, { id, key, sample: { id, path: c.sample.path, name: c.sample.name, duration: m.duration, peaks: m.peaks, pyr: m.pyr, derived: true } });
+      syncClips(i); changed = true;
+    }
+  }
+  if (changed) emit('clips');
+}
+// the waveform of a baked clip (drawn from the warped buffer), or null
+export const bakedSample = (c) => { const b = bakeCurrent(c); return b ? b.sample : null; };
+
+// ------------------------------------------------------------------ SoundFont instrument
+function syncSoundFont(i) {
+  const t = state.tracks[i];
+  if (!t || !t.inst || t.inst.type !== INST.SOUNDFONT || !t.inst.sf || t.inst.sf.id === undefined) return;
+  eng.instParam(i, 100, t.inst.sf.id); eng.instParam(i, 1, t.inst.sf.preset || 0);
+}
+const t0Flm = (i) => { const sf = state.tracks[i] && state.tracks[i].inst && state.tracks[i].inst.sf; const v = sf && sf.flmPatch; return Number.isInteger(v) ? v : null; };
+// ---- Moisture (37): wavetables (a .wav read as stored, frames of 2048 points) and Serum presets (.fxp, js/serumfxp.js)
+export async function loadMoistureTable(i, osc, path) {
+  const t = state.tracks[i]; if (!t || !t.inst || t.inst.type !== 37) return { error: 'Bukan Moisture' };
+  const bytes = await eng.readBytes(path); if (!bytes) return { error: 'File wavetable tidak bisa dibaca.' };
+  const { parseWavetable, toFrames2048 } = await import('./serumfxp.js');
+  let f; try { f = toFrames2048(parseWavetable(bytes)); } catch (e) { return { error: e.message }; }
+  if (state.nextSample >= SAMPLE_MAX) return { error: SAMPLE_FULL };
+  const id = state.nextSample++; const m = await eng.putSampleBuffers(id, f, f); if (!m || m.error) return { error: (m && m.error) || 'Wavetable tidak bisa dimuat (hanya versi web).' };
+  t.inst.wt = t.inst.wt || [null, null]; t.inst.wt[osc] = { path, name: path.split('/').pop(), frames: f.length / 2048 };
+  t.inst.params[302 + osc] = id; eng.instParam(i, 302 + osc, id); emit('devices');
+  return { ok: true, frames: f.length / 2048 };
+}
+export function clearMoistureTable(i, osc) { const t = state.tracks[i]; if (!t || !t.inst || !t.inst.wt) return; t.inst.wt[osc] = null; t.inst.params[302 + osc] = -1; eng.instParam(i, 302 + osc, -1); emit('devices'); }
+export async function applySerumPreset(i, path) {
+  const t = state.tracks[i]; if (!t || t.kind !== 'midi') return { error: 'Pilih track instrumen (MIDI).' };
+  const bytes = await eng.readBytes(path); if (!bytes) return { error: 'File preset tidak bisa dibaca.' };
+  const { parseSerumFxp } = await import('./serumfxp.js'); const { encodeWav } = await import('./engine/wav.js');
+  let r; try { r = await parseSerumFxp(bytes); } catch (e) { return { error: e.message }; }
+  if (!t.inst || t.inst.type !== 37) setInstrument(i, 37);
+  const amt = new Set([...Array.from({ length: 16 }, (_, k) => 180 + 2 * k), ...Array.from({ length: 16 }, (_, k) => 228 + 2 * k)]);
+  let n = 0; for (let k = 0; k < 299; k++) { const v = r.params[k]; if (!Number.isFinite(v) || amt.has(k)) continue; setInstParam(i, k, v); n++; }
+  for (let k = 0; k < 32; k++) setInstParam(i, 332 + 2 * k, 0);   // the routings are not in the documented part of the file
+  const notes = r.notes.slice(); let tables = 0;
+  for (let o = 0; o < 2; o++) { const f = r.tables[o]; if (!f) continue;
+    const out = '/Samples/Wavetables/' + String((r.wtName && r.wtName[o]) || (r.name || 'Serum') + (o ? ' B' : ' A')).replace(/[^A-Za-z0-9 ._-]+/g, '_') + '.wav';
+    try { await eng.saveBytes(out, new Uint8Array(encodeWav([f], [f], f.length, 48000, 32))); const x = await loadMoistureTable(i, o, out); if (x && x.ok) tables++; else if (x && x.error) notes.push(x.error); } catch (e) { notes.push('Wavetable ' + (o ? 'B' : 'A') + ': ' + (e.message || e)); } }
+  t.inst.from = { app: 'Serum', name: r.name, path };
+  emit('devices');
+  return { ok: true, name: r.name, params: n, tables, notes };
+}
+async function loadSoundFontFor(i, path, preset = 0) {
+  const t = state.tracks[i];
+  const r = await eng.loadSoundFont(path);
+  if (!r || r.error) return r || { error: 'SoundFont tidak bisa dimuat' };
+  i = state.tracks.indexOf(t); if (i < 0 || !t.inst || t.inst.type !== INST.SOUNDFONT) return r;   // the track was removed / changed while the file loaded
+  const fp = t0Flm(i);   // an FLM import: the SF2D patch is a file-order index, MobileDAW lists the presets by bank / program
+  if (fp != null && Array.isArray(r.order)) { const k = r.order.indexOf(fp); if (k >= 0) preset = k; }
+  t.inst.sf = { path, id: r.id, preset: Math.min(preset, r.presets.length - 1), presets: r.presets };
+  syncSoundFont(i);
+  return r;
+}
+export async function setSoundFont(i, path) { const r = await loadSoundFontFor(i, path, 0); emit('devices'); return r; }
+export function setSfPreset(i, k) { const t = state.tracks[i]; if (!t.inst.sf) return; t.inst.sf.preset = k; eng.instParam(i, 1, k); emit('devices'); }
+
+// ------------------------------------------------------------------ live input (keyboard, pads, MIDI) and recording
+// ---- automation recording (FL Studio Mobile Editors: "If you are recording and move any parameter an Automation Track and Clip will be
+// automatically created"). While the transport records, a control the user moves (knob, fader, pan, send, width, device / instrument
+// parameter, a MIDI-linked CC) writes points into its automation lane at the play position: the lane and a clip are created when missing,
+// a clip grows bar by bar, the points under a moving control are replaced, a new touch keeps the old curve up to that moment. One undo step
+// (the clips as they were) before the first recorded point of a take.
+const AREC = new Map(), AWIDTH = { n: 'Width', min: 0, max: 2, def: 1, unit: '%' };
+let arecSync = 0, arecTake = -1, arecTold = false, arecOpen = false;
+function autoRec(i, kind, param, di, value) {   // -> true when the move was recorded (the take's one undo step covers it)
+  if (!rec.on || !state.playing || cinOn || !HK.on || !(value === value)) return false;
+  const tick = currentTick(); if (!inPunch(tick)) return false;
+  const o = tr(i); if (!o) return false;
+  const strip = stripOf(i), sname = i === MASTER ? 'Master' : o.name || 'Track';
+  let target, label;
+  if (kind === 0) { target = { kind, strip, param: 0, def: AUTO_VOL }; label = sname + ' \u2022 Volume'; }
+  else if (kind === 1) { target = { kind, strip, param: 0, def: AUTO_PAN }; label = sname + ' \u2022 Pan'; }
+  else if (kind === 2 || kind === 3) { target = { kind, strip, param: 0, def: AUTO_SEND }; label = sname + ' \u2022 Send ' + 'AB'[kind - 2]; }
+  else if (kind === 7) { target = { kind, strip, param: 0, def: AWIDTH }; label = sname + ' \u2022 Width'; }
+  else if (kind === 4) { const d = o.devices && o.devices[di], q = d && DEVICES[d.type] && DEVICES[d.type].params[param]; if (!q || d.missing) return false; target = { kind, strip, devId: d.id, param, def: q }; label = sname + ' \u2022 ' + DEVICES[d.type].name + ' ' + q.n; }
+  else { const q = o.inst && INSTRUMENTS[o.inst.type] && INSTRUMENTS[o.inst.type].params[param]; if (!q || typeof q.min !== 'number') return false; target = { kind: 5, strip, param, def: q }; label = sname + ' \u2022 ' + q.n; }
+  const same = (a) => a && a.kind === target.kind && a.strip === target.strip && a.devId === target.devId && a.param === target.param;
+  if (!arecOpen) { arecOpen = true; HK.begin(); HK.checkpoint(); }   // the whole take (new lanes + points) is one undo step, closed in stopRecording
+  if (arecTake !== rec.pass + rec.startTick * 1e-9) { arecTake = rec.pass + rec.startTick * 1e-9; AREC.clear(); }
+  let ai = state.tracks.findIndex((t) => t.kind === 'auto' && same(t.target));
+  if (ai < 0) {
+    if (state.tracks.length >= MAX_TRACKS) return false;
+    const sel = state.sel.track, nt = addAutoTrack(target, label); if (!nt) return false;
+    ai = state.tracks.indexOf(nt); nt.clips = []; if (sel >= 0 && sel < state.tracks.length) selectTrack(sel);
+    if (!arecTold) { arecTold = true; setTimeout(() => emit('autorec'), 0); }
+  }
+  const t = state.tracks[ai], v = normOf(target.def, value), key = [target.kind, target.strip, target.devId ?? '', target.param].join('|'), now = performance.now();
+  let s = AREC.get(key), c = s && t.clips.find((x) => x.id === s.clip);
+  const touch = !s || now - s.at > 400 || !c;
+  if (!c) c = t.clips.find((x) => tick >= x.start && tick <= x.start + x.len);
+  if (!c) { const a0 = barFloor(tick), prev = t.clips.length ? autoCurrent(t) : v; c = { id: uid(), start: a0, len: barStart(barAt(a0) + 1) - a0, name: '', pts: [{ t: 0, v: prev }] }; t.clips.push(c); }
+  if (tick > c.start + c.len) c.len = barStart(barAt(tick) + 1) - c.start;
+  const rt = Math.max(0, tick - c.start);
+  if (touch) { if (c.pts.length) c.pts.push({ t: Math.max(0, rt - 1), v: autoValueAt(c, rt) }); }   // the old curve stays up to the touch
+  else { if (rt - s.rt < 12 && Math.abs(v - s.v) < 0.01) return true; c.pts = c.pts.filter((p) => !(p.t > s.rt && p.t <= rt)); }   // overwrite under the moving control
+  c.pts.push({ t: rt, v }); c.pts.sort((a, b) => a.t - b.t);
+  AREC.set(key, { at: now, clip: c.id, rt, v });
+  if (!arecSync) arecSync = setTimeout(() => { arecSync = 0; syncAutomation(); emit('clips'); }, 120);
+  return true;
+}
+export const rec = { on: false, kind: null, track: -1, startTick: 0, open: new Map(), notes: [], pass: 0, passes: [], punch: null, loopRec: false, cinUntil: 0, cinSecs: 0, lastPos: 0, last: null };
+let cinOn = false;                                   // the engine is still counting in (the song has not started)
+const inPunch = (t) => !rec.punch || (t >= rec.punch.start && t < rec.punch.end);
+export function currentTick() {
+  if (!state.playing || cinOn) return state.pos;
+  let t = clkAt(performance.now());
+  const L = state.loop;
+  if (L.on && t >= L.end && state.pos < L.end) t = L.start + ((t - L.end) % Math.max(1, L.end - L.start));   // the engine has not reported the wrap yet
+  return Math.max(0, t);
+}
+// Drum pads follow FL Studio Mobile: MIDI notes 48.. play the pads in order.
+export const drumPitch = (note, i) => { const ps = i === undefined ? DRUM_PADS : padsOf(i); return note >= 48 && note < 48 + ps.length ? ps[note - 48].pitch : note; };
+export function noteEvent(i, pitch, vel, on) {
+  const t = state.tracks[i];
+  if (!t || (t.kind !== 'midi' && t.kind !== 'drum')) return;
+  if (t.kind === 'drum') pitch = drumPitch(pitch, i);
+  if (monSounds(t) || !on) eng.preview(i, pitch, on ? vel : 0, on);   // Monitor off: live input is recorded but does not sound (note-offs always pass)
+  if (rec.on && rec.kind === 'midi' && rec.track === i && performance.now() >= rec.cinUntil && !cinOn) {
+    const tick = currentTick();
+    if (on) { if (inPunch(tick)) rec.open.set(pitch, { tick, vel, pass: rec.pass }); }
+    else { const o = rec.open.get(pitch); if (o) { rec.notes.push({ tick: o.tick, end: rec.punch ? Math.min(tick, rec.punch.end) : tick, p: pitch, v: o.vel, pass: o.pass }); rec.open.delete(pitch); } }
+  }
+}
+// called with every engine report while recording: loop wrap -> next take; punch-out -> stop recording, playback goes on
+function recWatch(p) {
+  if (!p.playing || p.cin) return;
+  const L = state.loop;
+  if (rec.loopRec && p.pos < rec.lastPos - 0.5 * (L.end - L.start)) {
+    for (const [pp, o] of rec.open) rec.notes.push({ tick: o.tick, end: L.end, p: pp, v: o.vel, pass: o.pass });
+    rec.open.clear();
+    rec.passes[rec.passes.length - 1].b = L.end;
+    rec.passes.push({ a: L.start, b: L.end });
+    rec.pass++;
+  }
+  rec.lastPos = p.pos;
+  if (!rec.loopRec && rec.punch && p.pos >= rec.punch.end && !rec.ending) {
+    rec.ending = true;
+    stopRecording({ keepPlaying: true }).then((r) => { rec.last = r; emit('recend'); });
+  }
+}
+export async function startRecording() {
+  if (rec.on) return { ok: true };
+  const ar = armedTrack(); if (ar >= 0 && ar !== state.sel.track) selectTrack(ar);   // an armed track is the record target: live input goes to the selected track
+  const i = state.sel.track, t = state.tracks[i];
+  if (!t || (t.kind !== 'audio' && t.kind !== 'midi' && t.kind !== 'drum')) return { error: 'Pilih track audio, synth, atau drum dulu untuk merekam.' };
+  const pn = state.punch.on && state.punch.end > state.punch.start ? { start: state.punch.start, end: state.punch.end } : null;
+  const L = state.loop, loopRec = !!(state.recLoop && L.on && L.end > L.start);
+  let from = state.pos;
+  if (loopRec && (from < L.start || from >= L.end)) from = L.start;
+  else if (pn && from >= pn.end) from = Math.max(0, barStart(barAt(pn.start) - 1));
+  if (from !== state.pos) seekTo(from);
+  if (t.kind === 'audio') { const r = await eng.recStart(); if (r && r.error) return r; }
+  const beats = state.countIn * MM.nAt(from), cinSecs = beats > 0 ? beats * (tickToSec(from + beatLenAt(from)) - tickToSec(from)) : 0;
+  Object.assign(rec, { on: true, ending: false, kind: t.kind === 'audio' ? 'audio' : 'midi', track: i, startTick: from, notes: [], pass: 0, passes: [{ a: from, b: loopRec ? L.end : from }], punch: pn, loopRec, cinSecs, cinUntil: performance.now() + cinSecs * 1000 + 40, lastPos: from, last: null });
+  rec.open.clear(); cinOn = beats > 0;
+  if (beats > 0) eng.playCountIn(beats); else eng.play();
+  emit('rec');
+  return { ok: true };
+}
+export async function stopRecording(opts = {}) {
+  if (!rec.on) return null;
+  rec.on = false;
+  if (arecOpen) { arecOpen = false; if (arecSync) { clearTimeout(arecSync); arecSync = 0; syncAutomation(); emit('clips'); } HK.end(); }
+  const i = rec.track, endTick = Math.min(currentTick(), rec.punch ? rec.punch.end : Infinity), startTick = rec.startTick, wasCin = cinOn || performance.now() < rec.cinUntil;
+  if (!opts.keepPlaying) eng.stop();
+  cinOn = false;
+  const passes = rec.passes.map((q) => ({ ...q })); passes[passes.length - 1].b = Math.max(passes[passes.length - 1].a, endTick);
+  let out = { ok: true, kind: rec.kind, takes: 0 };
+  if (rec.kind === 'audio') {
+    const stamp = new Date().toISOString().replace(/[:T]/g, '-').slice(0, 19);
+    const r = await eng.recStop(`/Recordings/Rec-${stamp}.wav`);
+    if (r && r.error) out = { error: r.error };
+    else {
+      const lat = ((eng.latencyMs() || 0) + (eng.pdcMs ? eng.pdcMs() || 0 : 0)) / 1000, made = [];   // + PDC: the player heard the song that much later
+      let elapsed = rec.cinSecs;                                    // seconds of the file that belong to the count-in (not music)
+      for (const q of passes) {
+        const a2 = rec.punch ? Math.max(q.a, rec.punch.start) : q.a, b2 = rec.punch ? Math.min(q.b, rec.punch.end) : q.b;
+        const off = elapsed + (tickToSec(a2) - tickToSec(q.a)) + lat;
+        elapsed += tickToSec(q.b) - tickToSec(q.a);
+        if (b2 - a2 < PPQ / 8 || wasCin && q.b <= q.a) continue;
+        const c = await addAudioClip(i, r.path, a2);
+        if (!c) { out = { error: 'Rekaman tersimpan tapi tidak bisa dimuat sebagai klip.' }; break; }
+        if (off >= c.sample.duration) { removeClip(i, c.id); continue; }
+        c.offset = off; c.len = Math.max(PPQ / 4, Math.min(b2 - a2, Math.round((secToTick(tickToSec(a2) + c.sample.duration - off) - a2))));
+        made.push(c);
+      }
+      if (!out.error) {
+        made.forEach((c, k) => { if (made.length > 1) { c.name = 'Take ' + (k + 1); if (k < made.length - 1) c.muted = true; } });   // stacked takes: the last one sounds, the others are muted
+        for (const c of made) c.name = c.name || (c.sample && c.sample.name) || 'Rekaman';
+        syncClips(i); emit('clips');
+        out.takes = made.length; out.clip = made[made.length - 1];
+        if (!made.length) out = { ok: true, kind: 'audio', empty: true };
+      }
+    }
+  } else {
+    for (const [p, o] of rec.open) rec.notes.push({ tick: o.tick, end: endTick, p, v: o.vel, pass: o.pass });
+    rec.open.clear();
+    if (!rec.notes.length) out = { ok: true, kind: 'midi', empty: true };
+    else {
+      const byPass = new Map(); for (const n of rec.notes) { if (!byPass.has(n.pass)) byPass.set(n.pass, []); byPass.get(n.pass).push(n); }
+      const keys = [...byPass.keys()].sort((x, y) => x - y), made = [];
+      for (const k of keys) {
+        const list = byPass.get(k), L = state.loop;
+        const start = rec.loopRec ? L.start : barFloor(Math.max(startTick, rec.punch ? rec.punch.start : 0));
+        const len = rec.loopRec ? Math.max(barLenAt(L.start), L.end - L.start) : Math.max(barLenAt(start), barCeil(Math.max(endTick, ...list.map((n) => n.end))) - start);
+        const c = addClip(i, start, len);
+        for (const n of list) c.notes.push({ t: Math.max(0, Math.round(n.tick - start)), d: Math.max(60, Math.round(n.end - n.tick)), p: n.p, v: Math.max(0.05, Math.min(1, n.v)) });
+        c.notes.sort((a, b) => a.t - b.t); made.push(c);
+      }
+      made.forEach((c, k) => { if (made.length > 1) { c.name = 'Take ' + (k + 1); if (k < made.length - 1) c.muted = true; } });
+      for (const c of made) clipChanged(i);
+      out.takes = made.length; out.clip = made[made.length - 1];
+    }
+  }
+  if (!opts.keepPlaying) seekTo(startTick);
+  emit('rec');
+  return out;
+}
+
+// ------------------------------------------------------------------ MIDI CC links ("Link to MIDI CC" in FL Studio Mobile)
+export const learn = { pending: null };
+export function startCcLearn(target, label) { learn.pending = { target, label }; emit('learn'); }
+export function cancelCcLearn() { learn.pending = null; emit('learn'); }
+let _rt = 0;
+const scheduleRefresh = () => { if (!_rt) _rt = setTimeout(() => { _rt = 0; emit('devices'); emit('mix'); }, 90); };
+// the value a target holds now (Fine tune dialog prefill): track volume / pan / sends / width, a device or instrument parameter
+export function targetValue(target) {
+  const r = resolveTarget(target); if (!r) return null;
+  const t = tr(r.track);
+  switch (target.kind) {
+    case 0: return t.vol; case 1: return t.pan; case 2: case 3: return (t.send || [0, 0])[target.kind - 2]; case 7: return t.width ?? 1;
+    case 4: { const d = t.devices[r.dev]; return d ? d.params[target.param] : null; }
+    default: return t.inst ? instVal(t, target.param) : null;
+  }
+}
+export function applyTargetValue(target, v) {
+  const r = resolveTarget(target);
+  if (!r) return;
+  switch (target.kind) {
+    case 0: setVol(r.track, v); break;
+    case 1: setPan(r.track, v); break;
+    case 2: case 3: if (r.track < MASTER) setSend(r.track, target.kind - 2, v); break;
+    case 4: setDeviceParam(r.track, r.dev, target.param, v); break;
+    case 7: setWidth(r.track, v); break;
+    default: setInstParam(r.track, target.param, v);
+  }
+  scheduleRefresh();
+}
+export function midiCC(cc, value) {
+  if (learn.pending) { state.ccLinks[cc] = learn.pending; const l = learn.pending; learn.pending = null; emit('learn'); return { linked: cc, label: l.label }; }
+  const l = state.ccLinks[cc];
+  if (l) applyTargetValue(l.target, valOf(l.target.def, value / 127));
+  else if (cc === 1) setMod(state.sel.track, value / 127);   // the controller's mod wheel (CC1) -> the selected track's instrument (unless linked)
+  return null;
+}
+export function unlinkCc(cc) { delete state.ccLinks[cc]; emit('learn'); }
+
+// ------------------------------------------------------------------ undo / redo of everything that is not a clip
+// js/history.js calls this with recording switched off. An entry holds the OLD value of one thing; swapping it puts that value back and keeps the
+// value it replaced inside the entry, so the same object serves undo and redo. Things are found by stable ids (track id, device id), never by position.
+function placeDevice(i, di, d) {
+  tr(i).devices.splice(di, 0, d);
+  eng.insertDevice(i, di, d.type);
+  d.params.forEach((v, pi) => eng.devParam(i, di, pi, v));
+  wetSend(d, (p, v) => eng.devParam(i, di, p, v));
+  if (d.bypass) eng.devBypass(i, di, true);
+  if (d.chains) rackSync(i, di);
+  emit('devices');
+}
+export function swapRec(e) {
+  const i = e.s === undefined ? -1 : stripIndex(e.s), t = i >= 0 ? tr(i) : null;
+  switch (e.t) {
+    case 'val': {
+      if (!t) return;
+      let cur;
+      if (e.k === 'vol') { cur = t.vol; setVol(i, e.v); }
+      else if (e.k === 'pan') { cur = t.pan; setPan(i, e.v); }
+      else if (e.k === 'width') { cur = t.width ?? 1; setWidth(i, e.v); }
+      else if (e.k === 'inv') { cur = t.inv | 0; setInvert(i, e.v); }
+      else if (e.k === 'mon') { cur = monMode(t); setMonitor(i, e.v); }
+      else if (e.k === 'send') { cur = t.send ? t.send[e.p] : 0; setSend(i, e.p, e.v); }
+      else if (e.k === 'wet') { const di = t.devices.findIndex((x) => x.id === e.d); if (di < 0) return; cur = wetOf(t.devices[di])[e.p]; setDeviceWet(i, di, e.p, e.v); }
+      else if (e.k === 'dev') { const di = t.devices.findIndex((x) => x.id === e.d); if (di < 0) return; cur = t.devices[di].params[e.p]; setDeviceParam(i, di, e.p, e.v); }
+      else if (e.k === 'inst') { if (!t.inst) return; const had = e.p in t.inst.params; cur = instVal(t, e.p); setInstParam(i, e.p, e.v); if (e.u) delete t.inst.params[e.p]; e.u = !had; }   // a parameter that was never touched goes back to "not stored", so saved files stay the same
+      else if (e.k === 'pitch') { if (!t.inst) return; cur = t.inst.pitch || 0; setPitch(i, e.v); }
+      else if (e.k === 'pad') { const q = t.inst && padsOf(i)[e.d]; if (!q) return; cur = q[e.p]; setPad(i, e.d, e.p, e.v); }
+      else if (e.k === 'zone') { const z = t.inst && t.inst.zones && t.inst.zones[e.d]; if (!z) return; cur = z[e.p]; setZoneField(i, e.d, e.p, e.v, true); }
+      else return;
+      if (cur !== undefined) e.v = cur;
+      emit('mix'); emit('devices');
+      return;
+    }
+    case 'tog': {
+      if (!t) return;
+      if (e.k === 'mute') { if (i === MASTER) return; if (i >= RET0) toggleReturnMute(i - RET0); else toggleMute(i); }
+      else if (e.k === 'solo') toggleSolo(i);
+      else if (e.k === 'arm' || e.k === 'mon') flipTrackFlag(i, e.k);
+      else if (e.k === 'byp') { const di = t.devices.findIndex((x) => x.id === e.d); if (di >= 0) toggleBypass(i, di); }
+      return;
+    }
+    case 'out': { if (!t || i >= MASTER) return; const cur = t.out; setOut(i, e.v); e.v = cur; return; }
+    case 'name': { if (!t) return; const cur = t.name; t.name = e.v; e.v = cur; emit('tracks'); return; }
+    case 'color': { if (!t) return; const cur = t.color; t.color = e.v; e.v = cur; emit('tracks'); return; }
+    case 'bpm': {
+      const cur = { v: state.bpm, lane: e.lane ? lanePts() : null };
+      state.bpm = e.v;
+      if (e.lane) { const li = tempoLane(); if (li >= 0) for (const x of e.lane) { const c = state.tracks[li].clips.find((q) => q.id === x.id); if (c) c.pts = x.pts; } syncTempoMap(); }
+      eng.tempo(state.bpm); emit('transport');
+      e.v = cur.v; e.lane = cur.lane; return;
+    }
+    case 'loop': { const cur = { start: state.loop.start, end: state.loop.end }; Object.assign(state.loop, e.v); eng.loop(state.loop.on, state.loop.start, state.loop.end); emit('transport'); e.v = cur; return; }
+    case 'groove': { const cur = { amt: state.groove.amt, grid: state.groove.grid }; setGroove(e.v); e.v = cur; return; }
+    case 'marks': { const cur = marksSnap(); state.markers = e.v; state.markers.sort((a, b) => a.t - b.t); e.v = cur; emit('markers'); return; }
+    case 'meter': { const cur = meterSnap(); restoreMeter(e.v); e.v = cur; return; }
+    case 'atgt': { const t2 = state.tracks.find((x) => x.id === e.s); if (!t2) return; const cur = { target: t2.target, name: t2.name }; t2.target = e.v.target; t2.name = e.v.name; e.v = cur; syncAutomation(); emit('tracks'); return; }
+    case 'trk': {
+      if (e.present) { const k = state.tracks.indexOf(e.r.gone); if (k < 0) return; e.r = detachTrack(k); e.present = false; }
+      else { attachTrack(e.r); e.present = true; }
+      return;
+    }
+    case 'kit': { if (!t || !t.inst) return; const cur = t.inst.pads; t.inst.pads = e.v; e.v = cur; syncPads(i); emit('devices'); return; }
+    case 'tswap': { const a = state.tracks.findIndex((x) => x.id === e.a), b = state.tracks.findIndex((x) => x.id === e.b); if (a >= 0 && b >= 0) swapTracks(a, b); return; }
+    case 'dpres': {
+      if (!t) return;
+      if (e.present) { const di = t.devices.findIndex((x) => x.id === e.d.id); if (di < 0) return; e.di = di; removeDevice(i, di); e.present = false; }
+      else { placeDevice(i, Math.min(e.di, t.devices.length), e.d); e.present = true; }
+      return;
+    }
+    case 'rack': {
+      if (!t) return; const di = e.d === 'inst' ? -1 : t.devices.findIndex((x) => x.id === e.d); if (di < -1 || (di < 0 && (!t.inst || t.inst.type !== IRACK))) return;
+      const d = di < 0 ? t.inst : t.devices[di], cur = rackSnap(d, di), o = JSON.parse(e.v); d.chains = o.c; d.params = o.p; d.macroMap = o.mm || [];
+      if (di < 0) for (const [k, v] of Object.entries(d.params)) eng.instParam(i, +k, v); else d.params.forEach((v, pi) => eng.devParam(i, di, pi, v));
+      rackSync(i, di); e.v = cur; emit('devices'); return;
+    }
+    case 'dmv': { if (!t) return; const cur = t.devices.findIndex((x) => x.id === e.d); if (cur < 0) return; moveDevice(i, cur, cur === e.b ? e.a : e.b); return; }
+    case 'inst': { if (!t) return; const cur = t.inst; t.inst = e.v; e.v = cur; syncTrackFull(i); emit('devices'); return; }   // syncTrackFull also rebuilds an Instrument Rack
+    case 'ipar': {
+      if (!t || !t.inst) return;
+      const cur = { ...t.inst.params }; t.inst.params = { ...e.v }; e.v = cur;
+      const def = INSTRUMENTS[t.inst.type];
+      if (def) def.params.forEach((p, k) => { if (k === 90 && t.inst.type === 11) return; if (p.hidden && t.inst.type === 6) return; /* SoundFont: index 1 is the program, kept */ eng.instParam(i, k, t.inst.params[k] ?? p.def); });
+      emit('devices'); return;
+    }
+  }
+}
+
+hooks.replay = syncAll;

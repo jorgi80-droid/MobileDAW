@@ -1,0 +1,1757 @@
+// Arrangement view: ruler, track headers, clips, playhead. One canvas, all hit-testing by hand.
+// Gestures follow FL Studio Mobile (tap clip = controls, double-tap = editor, long-tap = menus,
+// right-edge handle = resize, ruler drag = time selection) on an Ableton-style layout.
+import { densify } from './autocurve.js';
+import { slicesOf } from './slicerdetect.js';
+import { C, T, currentTone, tone } from './theme.js';
+import { attachGestures, gestureTiming, haptic } from './gesture.js';
+import { menu, ask, modal, toast, clamp } from './ui.js';
+import { checkpoint, revertLast } from './history.js';
+import { prefs, savePrefs } from './prefs.js';
+import { wavePath, peaksPath, buildPyramid } from './waveform.js';
+// Live draws a stereo clip as two waveforms (left above right): per-channel pyramids, built once per sample on first use
+const chPyr = new WeakMap();
+const stereoPyr = (p) => { if (!p || p.mono || p.r === p.l) return null; let q = chPyr.get(p); if (!q) { q = [buildPyramid(p.l, p.l), buildPyramid(p.r, p.r)]; chPyr.set(p, q); } return q; };
+import * as P from './project.js';
+import { BAR, BEAT } from './project.js';   // live bindings (they follow the time signature)
+import { pickColor } from './colorpick.js';
+import { MASTER, RET0 } from './engine.js';
+import { INSTRUMENTS, DEVICES } from './defs.js';
+import { exportTrackMidi, importMidiInto } from './midiio.js';
+import * as PRS from './presets.js';
+const { state, PPQ, SWATCHES } = P;
+
+// Live 12 layout: locator strip + beat ruler on top, time ruler at the bottom (with the grid / zoom fields at its right end), track
+// headers on the RIGHT: a title bar in the track colour, the mixer buttons under it, volume / pan sliders when the row is tall enough
+// and a level meter along the right edge of every header.
+let HEAD = 140;                                                 // header width: prefs.headW (drag the header's left edge), else chosen from the canvas width
+const OV = 0, RULER = 38, MROW = 12, LT = 21;   // Live 12 order: the beat-time ruler (bar numbers) on top [0, LT), the scrub area with the locators and the loop brace under it [LT, RULER)
+const BOT = 19, HANDLE = 18, TH = 20, METW = 9;   // top ruler (locators + beats) / bottom time ruler / header title bar / meter strip
+const FOLD_H = 24, MIN_ROW = 52, ADD_H = 44, XROW_H = 26;                // folded row (title bar only) / smallest open row (title + buttons) / "+" row / Master + FX rows (thin, as Live's return / main rows)
+export const view = { x0: 0, ppt: 0.06, y0: 0, rowH: 60 };   // 60: the three header rows (buttons, volume + pan, sends + output) fit with their borders
+let CW = 0;                                                    // width of the clip area = canvas width - HEAD
+const sn = (n, f) => ({ 0: n, get 1() { return f(); } });   // snap values are read live: BAR / BEAT change with the time signature
+const SNAPS = [sn('Auto', () => -1), sn('Bar', () => BAR), sn('1 Beat', () => BEAT), sn('1/2 Beat', () => BEAT / 2), sn('1/4 Beat', () => BEAT / 4), sn('Triplet', () => BEAT / 3), sn('Off', () => 0),
+  sn('8 Bars', () => 8 * BAR), sn('4 Bars', () => 4 * BAR), sn('2 Bars', () => 2 * BAR), sn('1/2', () => 2 * BEAT), sn('1/32', () => BEAT / 8)];   // appended: saved prefs keep their index (6 = Off)
+const SNAP_OFF = 6;
+// Live's grid menu (refs/live12/119): adaptive widths (px between grid lines) and the fixed grids from 8 Bars to 1/32, widest first
+const ADAPT = [['Widest', 104], ['Wide', 52], ['Medium', 26], ['Narrow', 13], ['Narrowest', 7]], FIXED = [[7, '8 Bars'], [8, '4 Bars'], [9, '2 Bars'], [1, '1 Bar'], [10, '1/2'], [2, '1/4'], [3, '1/8'], [4, '1/16'], [11, '1/32']];
+const cfg = { snap: prefs.snap, follow: prefs.follow };
+export function applyTimelinePrefs() { cfg.snap = prefs.snap; cfg.follow = prefs.follow; invalidate(); }
+let marq = null, clipM = null, selbar = null, selW = 0;   // marq = rubber-band rectangle in world coordinates (tick, content-y) so it survives scrolling
+let stretchMode = false;                                       // audio clips: the right handle stretches the audio (keeps pitch) instead of trimming
+export const isStretch = () => stretchMode;
+const live = new Map();                                        // clip id -> stretch factor while dragging / rendering (the old waveform is scaled so the clip never jumps)
+const msel = new Set();   // ids of the picked clips: long-press a clip, or long-press an empty spot and drag a rectangle (no mode button)
+const fh = new Map();     // track id -> row height while a fold / unfold glides; hit tests read the same height, so nothing under the finger jumps
+const gl = new Map();     // clip id -> { c, s, l }: drawn start / length while a dragged clip glides onto its snapped position
+let canvas, ctx, W = 0, H = 0, dpr = 1, dirty = true, hooks = {}, sel = null, touchedAt = 0;
+
+export const invalidate = () => { dirty = true; };
+export function snapTicks() {
+  const m = SNAPS[cfg.snap][1], tri = prefs.tripGrid && cfg.snap !== 5 ? 2 / 3 : 1;   // Triplet Grid: every grid 2/3 as wide
+  if (m >= 0) return Math.round(m * tri);
+  const px = prefs.adaptPx || 26; for (const t of [60, 120, 240, 480, 960, 1920, 3840, 7680, 15360]) if (t * tri * view.ppt >= px) return Math.round(t * tri);
+  return 15360;
+}
+// grid ticks in [a, b) aligned to the start of each signature segment (with a single signature this is the plain grid)
+function eachGrid(a, b, g, fn) {
+  const M = P.MM;
+  for (let j = M.segOfTick(Math.max(0, a)); j < M.m; j++) {
+    const s0 = M.T[j], e0 = j + 1 < M.m ? M.T[j + 1] : Infinity;
+    if (s0 >= b) break;
+    const hi = Math.min(b, e0);
+    for (let t = s0 + Math.max(0, Math.floor((a - s0) / g)) * g; t < hi; t += g) fn(t, j);
+  }
+}
+const snapT = (t) => {
+  const s = snapTicks(); if (!s) return Math.round(t);
+  if (!P.state.sigs.length) return Math.round(t / s) * s;
+  if (SNAPS[cfg.snap][0] === 'Bar') return Math.round(P.barRound(t));
+  const M = P.MM, j = M.segOfTick(Math.max(0, t)), s0 = M.T[j], e0 = j + 1 < M.m ? M.T[j + 1] : Infinity;   // steps restart at every signature change
+  return Math.round(Math.max(s0, Math.min(e0, s0 + Math.round((t - s0) / s) * s)));
+};
+const gridT = () => { for (const t of [120, 240, 480, 960, 1920, 3840, 7680, 15360, 30720]) if (t * view.ppt >= 14) return t; return 30720; };
+const gridName = () => { const s = snapTicks(); if (!s) return 'Off'; const k = s / (BEAT * 4); return k >= 1 ? (Number.isInteger(k) ? k + ' Bar' : (s / BAR).toFixed(1) + ' Bar') : '1/' + Math.round(1 / k); };
+const tx = (tick) => (tick - view.x0) * view.ppt;
+const xt = (x) => view.x0 + x / view.ppt;
+const LANE_B = () => H - BOT;                                  // bottom edge of the lanes (the time ruler sits below)
+// rows have individual heights: a folded track is FOLD_H tall, the others view.rowH (gliding while a fold animates)
+// below the tracks: the Master row and one row per effect track (Return A/B stay in the mixer), then the "+" row
+// top corner over the headers (Live: Set Locator, Previous / Next Locator, then our Snap switch)
+const cornerRects = () => { const y = 8, h = RULER - 16, x = CW + 6, bw = 24, sw = 30; const ax = x + sw + 2 * bw + 8, aw = HEAD > 190 ? 26 : 0, lw = HEAD > 230 ? 22 : 0, lx = ax + (aw ? aw + 1 : 0), sx = lx + (lw ? lw + 4 : aw ? 3 : 0); return { set: { x, y, w: sw, h }, prev: { x: x + sw + 3, y, w: bw, h }, next: { x: x + sw + 3 + bw + 1, y, w: bw, h }, auto: { x: ax, y, w: aw, h }, lock: { x: lx, y, w: lw, h }, snap: { x: sx, y, w: Math.max(40, CW + HEAD - 6 - sx), h } }; };
+const snapRect = () => cornerRects().snap;
+const songEnd = () => state.tracks.reduce((m, t) => t.clips.reduce((a, c) => Math.max(a, c.start + c.len), m), 0);
+
+const followRect = () => ({ x: CW + 6, y: H - BOT + 3, w: HEAD - 12, h: BOT - 6 });
+const badges = () => (CW < 170 ? [] : [['gridbtn', 'Grid ' + (SNAPS[cfg.snap][0] === 'Auto' ? gridName() : SNAPS[cfg.snap][0]), { x: CW - 150, y: H - BOT + 3, w: 92, h: BOT - 6 }], ['zoombtn', (view.ppt / 0.06).toFixed(2) + 'x', { x: CW - 54, y: H - BOT + 3, w: 50, h: BOT - 6 }], ...(CW < 420 ? [] : [['wzoom', '\u2248' + (prefs.waveZoom || 1) + 'x', { x: CW - 242, y: H - BOT + 3, w: 38, h: BOT - 6 }]]), ...(CW < 330 ? [] : [['fith', 'H', { x: CW - 198, y: H - BOT + 3, w: 19, h: BOT - 6 }], ['fitw', 'W', { x: CW - 177, y: H - BOT + 3, w: 19, h: BOT - 6 }]])]);
+let pressed = null;                                           // which corner / badge button is under the finger (drawn highlighted)
+const nX = () => 1 + Math.max(0, state.returns.length - 2);
+const xInfo = (i) => { const j = i - state.tracks.length; return j === 0 ? { master: true, strip: MASTER, name: 'Master', color: state.master.color || '#4cd964', obj: state.master } : { master: false, k: j + 1, strip: RET0 + j + 1, name: state.returns[j + 1].name, color: state.returns[j + 1].color || '#35d0e0', obj: state.returns[j + 1] }; };
+const ROW_MAX = 260;                                                // tallest row a drag allows
+// The header column has two looks, as in Live: FULL = a coloured name / routing column + a grey mixer column, COMPACT = the coloured name block only
+// (a tap on any header switches; the timeline gets the room). Each look has its own width: drag the column's left edge, double tap = automatic.
+const full = () => prefs.headFull !== false;
+const compact = () => !full();
+const headLim = () => (full() ? [150, 460] : [56, 160]);
+const headAuto = () => (full() ? (W >= 1100 ? 262 : W >= 760 ? 240 : 208) : (W >= 760 ? 96 : 84));   // about a fifth of the screen, as Live's track header
+const headPref = () => (full() ? prefs.headW : prefs.headWc) || 0;
+function applyHead() { const [lo, hi] = headLim(); HEAD = headPref() > 0 ? Math.round(clamp(headPref(), lo, Math.min(hi, Math.max(lo, W - 120)))) : headAuto(); CW = Math.max(60, W - HEAD); }
+const nameW = () => (full() ? Math.max(76, Math.round((HEAD - METW) * 0.46)) : HEAD - METW);   // Live 12 (refs/live12-official): the coloured name block takes nearly half the header; coloured column width: only the name; the rest, left of the meter, is the wide mixer column
+export const headWidth = () => HEAD;
+export const headerLayout = (i) => (state.tracks[i] ? hdr(i) : null);
+export const subLayout = (i) => (state.tracks[i] ? P.subsOf(state.tracks[i]).map((_, k) => subHdr(i, k)) : []);   // tests: the sub-track rows of track i (y, h, M button)   // tests: where the header controls of track i are
+export function setHeadW(w) { const [lo, hi] = headLim(); prefs[full() ? 'headW' : 'headWc'] = w > 0 ? Math.round(clamp(w, lo, hi)) : 0; savePrefs(); applyHead(); clampView(); invalidate(); }
+export function setHeadFull(on) { prefs.headFull = !!on; savePrefs(); applyHead(); clampView(); invalidate(); }
+export const headIsFull = () => full();
+const WZ = () => prefs.waveZoom || 1;                          // Live's Waveform Vertical Zoom
+const autoMode = () => prefs.autoMode !== false;
+const lockEnv = () => prefs.lockEnv === true;                 // Live's Lock Envelopes (off by default: automation moves with the clips)              // Live's Automation Mode: off hides the automation lanes
+const rowTarget = (t) => (t.kind === 'auto' && !autoMode() ? 0 : t.fold ? FOLD_H : t.hx ? Math.round(clamp(view.rowH * t.hx, MIN_ROW, ROW_MAX)) : view.rowH) + subN(t) * SUBH();
+// Sub-tracks (project.js subsOf, FL Studio Mobile): rows under the track's own row, SUBH high each, with clips of their own that play through
+// the track's instrument and mixer channel. A folded track hides them (their clips then lie in the thin row). rhMain = the track's own row.
+const subN = (t) => (t && !t.fold && t.kind !== 'auto' ? P.subsOf(t).length : 0);
+const SUBH = () => Math.round(clamp(view.rowH * 0.5, 24, 56));
+const rhMain = (i) => { const t = state.tracks[i], n = subN(t); return n ? Math.max(16, rh(i) - n * SUBH()) : rh(i); };
+function laneBox(i, c) {
+  const y = rowY(i), t = state.tracks[i], n = subN(t); if (!n) return { y, h: rh(i) };
+  const k = c && c.sub ? P.subsOf(t).findIndex((s) => s.id === c.sub) : -1, mh = rhMain(i);
+  return k < 0 ? { y, h: mh } : { y: y + mh + k * SUBH(), h: SUBH() };
+}
+function laneAt(i, y) { const t = state.tracks[i], n = subN(t); if (!n) return null; const k = Math.floor((y - rowY(i) - rhMain(i)) / SUBH()); return k >= 0 && k < n ? P.subsOf(t)[k].id : null; }
+function subHdr(i, k) { const y = rowY(i) + rhMain(i) + k * SUBH(), h = SUBH(), q = Math.min(16, h - 8), R = CW + HEAD - METW - 6; return { y, h, mute: { x: R - 22, y: y + (h - q) / 2, w: 22, h: q } }; }   // t.hx = own height as a factor of the zoomed row height (drag the header's bottom edge)
+// Live 12: under the tracks the "Drop Files and Devices Here" area stretches over the free room and the Master / effect-track rows sit at the
+// bottom of the lanes (no empty band below them). On screen: tracks, then the "+" row (index nn), then the Master / FX rows (indices n .. nn-1).
+const tracksH = () => { let y = 0; for (let k = 0; k < state.tracks.length; k++) y += rh(k); return y; };
+const addH = () => Math.max(ADD_H, Math.floor(LANE_B() - RULER - tracksH() - nX() * XROW_H));
+const rh = (i) => { const n = state.tracks.length; if (i >= n) return i >= n + nX() ? (i === n + nX() ? addH() : ADD_H) : XROW_H; const t = state.tracks[i], a = fh.size ? fh.get(t.id) : undefined; return a !== undefined ? a : rowTarget(t); };
+function rowY(i) {
+  const n = state.tracks.length, nn = n + nX(); let y = RULER - view.y0;
+  if (i <= n) { for (let k = 0; k < i; k++) y += rh(k); return i === n ? y + addH() : y; }
+  y += tracksH(); if (i === nn) return y;
+  return i < nn ? y + addH() + (i - n) * XROW_H : y + addH() + nX() * XROW_H;
+}
+function visRows() {                                    // rows on screen: visible tracks, then the Master / FX rows and the "+" row (not in index order on screen)
+  const n = state.tracks.length, nn = n + nX(), LB = LANE_B(), out = [], b = rowAt(LB);
+  for (let i = Math.max(0, rowAt(RULER)); i < n && i <= b; i++) out.push(i);
+  for (let i = n; i <= nn; i++) { const y = rowY(i); if (y < LB && y + rh(i) > RULER) out.push(i); }
+  return out;
+}
+function rowAt(y) { let a = RULER - view.y0; const n = state.tracks.length, nn = n + nX(); for (const i of [...Array(n).keys(), nn, ...Array.from({ length: nX() }, (_, k) => n + k)]) { const e = a + rh(i); if (y < e) return i; a = e; } return nn + 1; }
+const contentH = () => { let y = 0; for (let i = 0; i <= state.tracks.length + nX(); i++) y += rh(i); return y; };
+// Header layout of one track. FULL look: left = coloured column (the name only), right = wide grey mixer column (activator, S, arm, automation /
+// volume, pan / Send A, B / output). Controls only appear when the row is tall enough, so nothing can overlap. COMPACT look: name block + activator.
+function hdr(i) {
+  const t = state.tracks[i], y = rowY(i), h = rhMain(i), x = CW, auto = t.kind === 'auto', th = Math.min(TH, h - 3), nw = nameW();
+  const r = { y, h, th, nw, title: { x, y, w: HEAD - METW, h: th }, fold: { x, y, w: 26, h: th } };
+  if (compact()) { if (HEAD >= 92) { const R = x + HEAD - METW - 5; r.mute = { x: R - (auto ? 26 : 20), y: y + 3, w: auto ? 26 : 20, h: Math.max(10, th - 6) }; } return r; }
+  const L = x + nw + 4, R = x + HEAD - METW - 4, gp = 3;
+  if (h < 46) {                                                      // folded row: the three switches as small squares in the mixer column
+    const q = Math.max(10, Math.min(18, h - 8)), by = y + (h - 1 - q) / 2;
+    r.mute = { x: L, y: by, w: auto ? 30 : q + 4, h: q };
+    if (!auto) {
+      r.solo = { x: L + q + 4 + gp, y: by, w: q + 4, h: q }; r.arm = { x: L + (q + 4 + gp) * 2, y: by, w: q + 4, h: q };
+      const ex = r.arm.x + r.arm.w + 6, end = x + HEAD - 5;             // folded row: the level meter lies flat next to the switches (it is vertical at the
+      if (end - ex >= 24) r.hm = { x: ex, y: by + 1, w: end - ex, h: q - 2 };   // right edge of an open row), so the thin row is filled and still shows the level
+    }
+    return r;
+  }
+  // Mixer column like Live's: small fixed controls, ALL the same height (15 px, text 10 px), never growing with the row. Row 1 = activator / S / arm /
+  // automation, row 2 = volume + pan, row 3 = Send A | Send B, row 4 = output (Master) across the whole width, right under the sends.
+  // A shorter row drops row 4, then 3, then 2. When the column is wide enough the sends and the output share row 3 (no row 4).
+  // Live 12's arrangement track controls (refs/live12/058): three columns - half / quarter / quarter of the width. Row 1 = track activator (the
+  // number) | Solo | Arm, row 2 = volume | pan, row 3 = send A | send B as bare values. No automation button and no output field in the header
+  // (Live keeps them in the menus: the header's menu has Output... and the automation lanes). Small fixed controls (15 px), never growing.
+  const sends = state.returns.length >= 2, gap = 2, fs = 9.5, CH = 14; r.fs = fs;   // Live: compact 14 px fields
+  const ys = [0, 1, 2].map((k) => y + 3 + k * (CH + gap)), fits = (k) => h >= ys[k] - y + CH + 3;
+  const A = Math.round((R - L - gp * 2) * 0.5), Q = Math.floor((R - L - gp * 2 - A) / 2), xB = L + A + gp, xC = xB + Q + gp;
+  r.mute = { x: L, y: ys[0], w: auto ? Math.min(R - L, A + 14) : A, h: CH, fs };
+  if (!auto) {
+    r.solo = { x: xB, y: ys[0], w: Q, h: CH, fs }; r.arm = { x: xC, y: ys[0], w: R - xC, h: CH, fs };
+    if (fits(1)) { r.vol = { x: L, y: ys[1], w: A, h: CH, fs }; r.pan = { x: xB, y: ys[1], w: R - xB, h: CH, fs }; }
+    if (sends && r.vol && fits(2)) { r.sa = { x: L, y: ys[2], w: A, h: CH, fs }; r.sb = { x: xB, y: ys[2], w: R - xB, h: CH, fs }; }
+  }
+  return r;
+}
+function xhdr(i) { const y = rowY(i), h = rh(i), ah = Math.min(18, h - 6); return { y, h, act: full() ? { x: CW + nameW() + 4, y: y + Math.round((h - 1 - ah) / 2), w: 28, h: ah, fs: 10 } : { x: CW + HEAD - METW - 33, y: y + Math.round((h - 1 - ah) / 2), w: 28, h: ah, fs: 10 } }; }
+const inRect = (r, x, y, p = 0) => x >= r.x - p && x <= r.x + r.w + p && y >= r.y - p && y <= r.y + r.h + p;
+
+function clampView() {
+  view.x0 = Math.max(0, view.x0);                           // the arrangement starts flush at the left edge: tick 0 is the first pixel, clips can reach it
+  view.y0 = clamp(view.y0, 0, Math.max(0, contentH() - (H - RULER - BOT) + 20));
+}
+
+// ------------------------------------------------------------------ drawing
+const FONT = (w, s) => `${w} ${s}px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`;
+function noteBox(c) {
+  let lo = 127, hi = 0;
+  for (const n of c.notes) { if (n.p < lo) lo = n.p; if (n.p > hi) hi = n.p; }
+  if (lo > hi) { lo = 48; hi = 72; }
+  if (hi - lo < 11) { const m = (hi + lo) / 2; lo = m - 6; hi = m + 6; }
+  return [lo, hi];
+}
+
+// colour of the clip that plays at a tick: the selected track first, otherwise the topmost active track with a clip there (null = no clip)
+function clipColorAt(tick) {
+  const T0 = state.tracks, sel = T0[state.sel.track], hit = (t) => t && t.kind !== 'auto' && !t.mute && t.clips.some((c) => !c.muted && tick >= c.start && tick < c.start + c.len);
+  if (hit(sel)) return sel.color;
+  for (const t of T0) if (hit(t)) return t.color;
+  return null;
+}
+const calmTL = () => prefs.reduceMotion || (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
+function washRgba(hex, a) { const m = /^#?([0-9a-f]{6})$/i.exec(String(hex)); if (!m) return `rgba(128,128,128,${a})`; const v = parseInt(m[1], 16); return `rgba(${v >> 16},${(v >> 8) & 255},${v & 255},${a})`; }
+const shadeCache = new Map();
+function shade(hex, k) {                 // darken a colour by k (0..1): clip outlines and the note / waveform ink are deep tones of the track colour
+  const key = hex + k; let r = shadeCache.get(key);
+  if (r) return r;
+  const n = parseInt(hex.slice(1, 7), 16), m = (v) => Math.round(v * (1 - k));
+  r = `rgb(${m(n >> 16)},${m((n >> 8) & 255)},${m(n & 255)})`; shadeCache.set(key, r); return r;
+}
+// Right-edge resize of MIDI / drum / audio clips: pulling a clip longer than its content makes the content repeat (c.ll = repeat length)
+function applyLoop(c, ll0, len0, hadLl) {
+  if (c.pts) return;
+  if (c.notes) {                                                    // pattern clip: only the clip length changes (by hand); the cycle and the notes stay
+    if (c.len === len0 && !hadLl && !c.cm) { delete c.ll; delete c.lp; return; }
+    c.cm = true; c.ll = ll0; P.normLoop(c); return;
+  }
+  if (c.len === len0 && !hadLl) return;
+  if (c.len === ll0 && !hadLl) { delete c.ll; delete c.lp; } else c.ll = ll0;
+}
+const tintCache = new Map();
+function tint(hex, k) {                 // mix a colour with white by k (0..1): Live's clip body is a pale tone of the track colour under a saturated title strip
+  const key = hex + k; let r = tintCache.get(key);
+  if (r) return r;
+  const n = parseInt(hex.slice(1, 7), 16), m = (v) => Math.round(v + (255 - v) * k);
+  r = `rgb(${m(n >> 16)},${m((n >> 8) & 255)},${m(n & 255)})`; tintCache.set(key, r); return r;
+}
+const inkCache = new Map();
+function ink(hex) {                     // text on a colour: dark on light colours, white on dark ones
+  let r = inkCache.get(hex); if (r) return r;
+  const n = parseInt(String(hex).slice(1, 7), 16) || 0, l = 0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255);
+  r = l > 75 ? 'rgba(14,14,18,.9)' : 'rgba(255,255,255,.94)'; inkCache.set(hex, r); return r;   // (threshold 75: red and saturated colours take black, as in Live 12) Live: black text / content on all but the darkest colours (pink, orange, teal included)
+}
+
+const contentInk = (hex) => (ink(hex).startsWith('rgba(14') ? 'rgba(10,10,12,.86)' : 'rgba(250,250,252,.88)');   // Live: black content on light clip colours, white on dark ones
+function drawClip(t, c, y, hh) {
+  if (t.kind === 'auto') {                                                    // Live 12: automation has no clip boxes - the lane's envelope is drawn by drawEnvelopes; a selected
+    if (state.sel.clip === c.id || msel.has(c.id)) { const x = tx(c.start), w = c.len * view.ppt; ctx.fillStyle = 'rgba(255,255,255,.07)'; ctx.fillRect(x, y + 1, w, hh - 2); ctx.strokeStyle = 'rgba(255,255,255,.35)'; ctx.lineWidth = 1; ctx.strokeRect(Math.round(x) + 0.5, y + 1.5, Math.max(1, Math.round(w) - 1), hh - 3); }   // piece shows as a light frame
+    return; }
+  if (t.fold && t.kind !== 'auto') {                                         // Live: a folded track shows its clips as a thin band in their colour
+    const g0 = gl.get(c.id), x = tx(g0 ? g0.s : c.start), w = (g0 ? g0.l : c.len) * view.ppt; if (x > CW || x + w < 0) return;
+    const col = c.muted ? '#8a8a8f' : tone(t.color), by = y + 1, bh2 = hh - 2;   // Live 12 (refs/live12-official 04): the folded row is filled by the clip colour, "..." at its start
+    ctx.fillStyle = col; ctx.fillRect(x, by, w, bh2);
+    if (w > 16) { ctx.fillStyle = ink(col); ctx.font = FONT(700, 10); ctx.textBaseline = 'middle'; ctx.fillText('...', Math.max(x, 0) + 4, by + bh2 / 2); }
+    if (state.sel.clip === c.id || msel.has(c.id)) { ctx.strokeStyle = 'rgba(255,255,255,.6)'; ctx.lineWidth = 1; ctx.strokeRect(Math.round(x) + 0.5, by + 0.5, Math.max(1, Math.round(w) - 1), bh2 - 1); }
+    return; }
+  { const tc = tone(t.color); if (tc !== t.color) t = { __proto__: t, color: tc }; }   // Color Intensity / Hue of the theme reach the clip colours
+  const g = gl.get(c.id), cs = g ? g.s : c.start, cl = g ? g.l : c.len;
+  const x = tx(cs), w = cl * view.ppt;
+  if (x > CW || x + w < 0) return;
+  const xs = Math.max(x, 0), xe = Math.min(x + w, CW);
+  const isSel = state.sel.clip === c.id || msel.has(c.id);
+  const tall = hh >= 40, hd = tall ? 14 : 0, y0 = y + 1, h0 = hh - 2;   // folded / short rows: no title strip, only colour + content
+  const col = c.muted ? '#8a8a8f' : t.color;                               // deactivated clip: the same neutral grey in every theme (clip colours are not themed)
+  // Live's clips are flat: no drop shadow, no glow (the selection shows as a lighter body and a light edge, drawn below)
+  ctx.save();
+  const cy0 = Math.max(RULER, y0), cy1 = Math.min(LANE_B(), y0 + h0);              // clipped to the clip itself and the lane area: notes never spill while it glides
+  ctx.beginPath(); ctx.rect(xs, cy0, Math.max(0, xe - xs), Math.max(0, cy1 - cy0)); ctx.clip();
+  // Live (replica of the arrangement clip, same in every theme: clip colours are not themed): title strip and body in the clip colour, the name and the
+  // content (waveform / notes / envelope) in near-black on a light colour or near-white on a dark one, a thin dark edge; a selected clip turns lighter,
+  // a deactivated clip is grey. Folded / short rows show only the colour + content (no strip).
+  const body = c.muted ? '#9a9a9f' : t.color;                              // owner: the clip keeps exactly its track's colour (the header's) also when selected; the light edge shows the selection
+  ctx.fillStyle = body; ctx.fillRect(x, y0, w, h0);
+  if (tall) { ctx.fillStyle = col; ctx.fillRect(x, y0, w, hd); ctx.fillStyle = 'rgba(0,0,0,.14)'; ctx.fillRect(x, y0 + hd, w, 1); }   // the name strip: same colour, a faint line under it
+  // Live 12 (refs/live12-official/02): no outline around a clip; the arrangement grid runs through its body as faint darker lines (beats, bars)
+  { const gx = gridT(), bp = BAR * view.ppt; if (gx * view.ppt >= 6) { ctx.fillStyle = 'rgba(0,0,0,.08)'; for (let tk = Math.ceil(cs / gx) * gx; tk < cs + cl; tk += gx) { const lx = Math.round(tx(tk)); if (lx > xs && lx < xe) ctx.fillRect(lx, y0 + hd, 1, h0 - hd); } }
+    if (bp >= 4) { ctx.fillStyle = 'rgba(0,0,0,.12)'; for (let b = Math.max(0, P.barAt(cs)); P.barStart(b) < cs + cl; b++) { const lx = Math.round(tx(P.barStart(b))); if (lx > xs && lx < xe) ctx.fillRect(lx, y0 + hd, 1, h0 - hd); } } }
+  if (tall && w > 18) {
+    ctx.fillStyle = ink(col); ctx.font = FONT(500, 10); ctx.textBaseline = 'middle';   // Live: clip names regular weight
+    { const room = xe - xs - 10, nm = c.name || (c.sample ? c.sample.name : t.name); if (room > 8) ctx.fillText(cut2(nm, room), xs + 5, y0 + hd / 2 + 0.5); }   // owner: cut with an ellipsis ("11 Cas…"), never squeezed
+  }
+  const by = y0 + hd + 2, bh = h0 - hd - 4, INK = c.muted ? 'rgba(20,20,24,.6)' : contentInk(t.color);
+  if (t.kind === 'auto' && c.pts && bh > 8) {
+    const pts = [...c.pts].sort((a, b) => a.t - b.t), yy = (v) => by + bh - v * bh;
+    ctx.fillStyle = washRgba(t.color, 0.35); ctx.strokeStyle = INK; ctx.lineWidth = 1.5; ctx.beginPath();
+    ctx.moveTo(x, yy(pts[0].v));
+    for (const [pt, pv] of densify(pts)) ctx.lineTo(x + pt * view.ppt, yy(pv));   // with the segment shapes (autocurve.js)
+    ctx.lineTo(x + w, yy(pts[pts.length - 1].v)); ctx.stroke();
+    ctx.lineTo(x + w, by + bh); ctx.lineTo(x, by + bh); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = INK; for (const p of pts) { const px = x + p.t * view.ppt; if (px >= xs - 3 && px <= xe + 3) ctx.fillRect(px - 2, yy(p.v) - 2, 4, 4); }   // breakpoints, as in Live's automation
+  } else if (t.kind === 'audio' && (c.dsample || c.sample) && ((c.dsample || c.sample).pyr || (c.dsample || c.sample).peaks) && bh > 8) {
+    const es = c.dsample || c.sample, lk = live.get(c.id) || 1, o = c.offset || 0;
+    ctx.fillStyle = c.muted ? INK : shade(t.color, 0.72);   // Live 12 (refs/live12-official 02, 03): the waveform in a deep tone of the clip colour, not black
+    for (const g of P.loopSegs(c)) {                            // a clip longer than its audio repeats it: every repeat is drawn from the start of the content
+      const sx = x + g.o * view.ppt, sw = g.len * view.ppt;
+      if (sx > xe || sx + sw < xs) continue;
+      const dur = (g.len / PPQ) * 60 / state.bpm / lk, px0 = Math.floor(Math.max(xs, sx)), px1 = Math.ceil(Math.min(xe, sx + sw));
+      if (px1 <= px0) continue;
+      const sec0 = o + (g.s / PPQ) * 60 / state.bpm / lk + (px0 - sx) / sw * dur, spp0 = dur / sw / es.duration;
+      if (es.pyr) {
+        const N = es.pyr.l.length, two = bh >= 34 ? stereoPyr(es.pyr) : null;
+        if (two) {                                                      // stereo, row tall enough: left channel in the upper half, right in the lower (as Live)
+          const hh = bh / 2; ctx.save(); ctx.globalAlpha = 0.55; for (let k = 0; k < 2; k++) ctx.fillRect(px0, Math.round(by + hh * k + hh / 2), px1 - px0, 1); ctx.restore();   // centre line of each lane
+          for (let k = 0; k < 2; k++) ctx.fill(wavePath(two[k], { x0: px0, x1: px1, s0: sec0 / es.duration * N, spp: spp0 * N, mid: by + hh * k + hh / 2, amp: hh * 0.5 * 0.94, gain: WZ() }));
+        } else { ctx.save(); ctx.globalAlpha = 0.55; ctx.fillRect(px0, Math.round(by + bh / 2), px1 - px0, 1); ctx.restore(); ctx.fill(wavePath(es.pyr, { x0: px0, x1: px1, s0: sec0 / es.duration * N, spp: spp0 * N, mid: by + bh / 2, amp: bh * 0.5 * 0.96, gain: WZ() })); }
+      } else if (es.peaks) {
+        const N = es.peaks.length;
+        ctx.fill(peaksPath(es.peaks, { x0: px0, x1: px1, s0: sec0 / es.duration * N, spp: spp0 * N, mid: by + bh / 2, amp: bh * 0.5 * 0.96, gain: WZ() }));
+      }
+    }
+  } else if (c.notes && bh > 6) {
+    const [lo, hi] = noteBox(c), span = hi - lo + 1, nh = Math.max(2, Math.min(bh / span * 0.8, 7));   // Live: solid note bars, about 4/5 of a pitch row
+    ctx.fillStyle = c.muted ? INK : shade(t.color, 0.85);   // Live 12: notes nearly black (the clip colour's darkest tone), in every theme
+    for (const g of P.loopSegs(c)) {                            // looped MIDI: the notes are drawn again in every repeat (no empty bars)
+      const gx = x + g.o * view.ppt;
+      if (gx > xe || gx + g.len * view.ppt < xs) continue;
+      for (const n of c.notes) {
+        if (n.t < g.s || n.t >= g.s + g.len) continue;              // the piece of the cycle this repeat plays (g.s = where in the pattern it starts)
+        const nx = gx + (n.t - g.s) * view.ppt, nw = Math.max(1.5, Math.min(n.d, g.s + g.len - n.t) * view.ppt - 0.5);
+        if (nx + nw < xs || nx > xe) continue;
+        const ny = by + (hi - n.p) / span * (bh - nh);
+        ctx.fillRect(nx, ny, nw, nh);
+      }
+    }
+  }
+  if (t.kind === 'audio' && bh > 8) {                             // fades (Live): the faded part is shaded above the fade line; handles on the selected clip
+    const spt = 60 / state.bpm / PPQ, fiw = Math.min(w / 2, (c.fadeIn || 0) / spt * view.ppt), fow = Math.min(w / 2, (c.fadeOut || 0) / spt * view.ppt), top = y0 + hd + 1, bot = y0 + h0 - 1;
+    ctx.fillStyle = 'rgba(0,0,0,.24)'; ctx.strokeStyle = INK; ctx.lineWidth = 1.2;
+    // Live draws a fade as a curve (slow start, fast rise) with the cut-away part shaded above it
+    if (fiw > 1) { const cv = () => { ctx.moveTo(x, bot); ctx.bezierCurveTo(x + fiw * 0.55, bot, x + fiw * 0.45, top, x + fiw, top); }; ctx.beginPath(); cv(); ctx.lineTo(x, top); ctx.closePath(); ctx.fill(); ctx.beginPath(); cv(); ctx.stroke(); }
+    if (fow > 1) { const cv = () => { ctx.moveTo(x + w - fow, top); ctx.bezierCurveTo(x + w - fow * 0.45, top, x + w - fow * 0.55, bot, x + w, bot); }; ctx.beginPath(); cv(); ctx.lineTo(x + w, top); ctx.closePath(); ctx.fill(); ctx.beginPath(); cv(); ctx.stroke(); }
+    if (Array.isArray(c.genv) && c.genv.length && w > 6) {      // clip Level envelope (FLM): a line over the clip, 0 at the bottom, its loudest point at the top
+      const o = c.offset || 0, gm = Math.max(1e-6, c.gain, ...c.genv.map((q) => q[1])), Y = (g) => bot - (bot - top) * Math.min(1, g / gm), X = (ts) => x + (ts - o) / spt * view.ppt;
+      ctx.save(); ctx.beginPath(); ctx.rect(x, top, w, bot - top); ctx.clip(); ctx.strokeStyle = 'rgba(255,90,70,.9)'; ctx.lineWidth = 1.3; ctx.beginPath();
+      ctx.moveTo(x, Y(c.genv[0][0] > o ? c.gain : c.genv[0][1])); if (c.genv[0][0] > o) ctx.lineTo(X(c.genv[0][0]), Y(c.gain));
+      for (const [ts, g] of c.genv) ctx.lineTo(X(ts), Y(g));
+      ctx.lineTo(x + w, Y(c.genv[c.genv.length - 1][1])); ctx.stroke(); ctx.restore();
+    }
+    if (isSel && w > 30) {
+      const sq = (hx, hy, on) => { ctx.fillStyle = on ? C('#bfe3f5') : tint(t.color, 0.6); ctx.fillRect(Math.round(hx) - 4, Math.round(hy) - 4, 8, 8); ctx.strokeStyle = shade(t.color, 0.7); ctx.lineWidth = 1; ctx.strokeRect(Math.round(hx) - 3.5, Math.round(hy) - 3.5, 7, 7); };
+      sq(x + Math.max(5, fiw), top + 4, fiw > 1); sq(x + w - Math.max(5, fow), top + 4, fow > 1);
+      ctx.fillStyle = shade(t.color, 0.7); ctx.fillRect(Math.round(x) + 1, bot - 7, 7, 7); ctx.fillRect(Math.round(x + w) - 8, bot - 7, 7, 7);   // Live's clip corner marks
+    }
+  }
+  if (c.ll > 0 && (c.len > c.ll || c.lp > 0) && w > 0) {         // loop restarts: a notch in the title strip and a hairline through the body (Live's loop marks)
+    for (const g of P.loopSegs(c)) {
+      if (!g.o) continue; const gx = Math.round(x + g.o * view.ppt); if (gx < xs || gx > xe) continue;
+      ctx.fillStyle = 'rgba(0,0,0,.22)'; ctx.fillRect(gx, y0 + hd, 1, h0 - hd);
+      if (tall) { ctx.fillStyle = shade(t.color, 0.5); ctx.beginPath(); ctx.moveTo(gx - 4, y0); ctx.lineTo(gx + 4, y0); ctx.lineTo(gx, y0 + 5); ctx.closePath(); ctx.fill(); }
+    }
+  }
+  if (isSel) {
+    ctx.strokeStyle = shade(t.color, 0.6); ctx.lineWidth = 1; ctx.strokeRect(Math.round(x) + 0.5, y0 + 0.5, Math.max(0, Math.round(w) - 1), h0 - 1);   // selected: one crisp 1 px edge (owner: thinner)
+    if (tall && w > 44 && !msel.size) { const mx = Math.min(x + w, CW) - 12, my = y0 + hd / 2; ctx.fillStyle = shade(t.color, 0.75); for (const d of [-4, 0, 4]) { ctx.beginPath(); ctx.arc(mx + d, my, 1.3, 0, 6.2832); ctx.fill(); } }   // ⋯ : the clip's context menu
+    const hl = Math.min(26, h0 - hd - 10), hy = y0 + hd + (h0 - hd - hl) / 2, st = stretchMode && t.kind === 'audio';   // edge grips for touch: pills on both ends
+    if (hl > 6 && w > 26 && st) { ctx.fillStyle = C('#ffa722'); ctx.fillRect(x + w - 6, hy, 3, hl); }   // the stretch mode's mark (the handles are drawn by drawHandles)
+  }
+  ctx.restore();
+}
+
+function draw() {
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.fillStyle = C('#1d1d1f'); ctx.fillRect(0, 0, W, H);
+  const n = state.tracks.length, g = gridT(), LB = LANE_B(), nn = n + nX();
+  ctx.save(); ctx.beginPath(); ctx.rect(0, RULER, CW, LB - RULER); ctx.clip();
+  // lanes: one flat grey per track, the selected track a step lighter (as Live highlights the selected track's lane)
+  for (let i = Math.max(0, rowAt(RULER)); i <= Math.min(n - 1, rowAt(LB)); i++) {
+    const y = rowY(i), h = rh(i); if (h < 2) continue;   // a hidden automation lane (Automation Mode off)
+    ctx.fillStyle = state.sel.track === i ? C('#333337') : state.tracks[i].kind === 'auto' ? C('#262628') : C('#2a2a2c'); ctx.fillRect(0, y, CW, h);   // automation lanes a shade darker (Live)
+    const sn = subN(state.tracks[i]);
+    if (sn) { const mh = rhMain(i), sh = SUBH(), L = P.subsOf(state.tracks[i]); for (let k = 0; k < sn; k++) { const sy = y + mh + k * sh; ctx.fillStyle = C('#262628'); ctx.fillRect(0, sy, CW, sh); if (L[k].mute) { ctx.fillStyle = 'rgba(0,0,0,.18)'; ctx.fillRect(0, sy, CW, sh); } ctx.fillStyle = C('#1a1a1c'); ctx.fillRect(0, sy - 1, CW, 1); } }   // sub-track rows: a shade darker, a thin line above each
+    ctx.fillStyle = HD('--hd-line', '#141416'); ctx.fillRect(0, y + h - 1, CW, 1);                     // Live 12 (refs/live12-official): a thin dark line between tracks
+  }
+  const xl = [];                                                                       // captions of the Master / effect lanes, drawn after the grid
+  for (const i of visRows()) { if (i < n || i >= nn) continue;                          // Master / effect track rows: no clips, they only mix
+    const y = rowY(i), h = rh(i), x = xInfo(i);
+    ctx.fillStyle = state.sel.track === x.strip ? C('#2f2f33') : C('#252527'); ctx.fillRect(0, y, CW, h);   // theme background first, so the tint below is a real transparent wash in dark AND light themes
+     ctx.fillStyle = HD('--hd-line', '#141415'); ctx.fillRect(0, y + h - 1, CW, 1); if (i === state.tracks.length) ctx.fillRect(0, y - 1, CW, 1);   // the first Master / FX row: a line above it too (it sits under the drop area)
+    const src = x.master ? state.tracks.filter((q) => q.kind !== 'auto' && !q.mute).length : state.tracks.filter((q) => q.out === x.k && !q.mute).length;
+    xl.push({ y, h, t: `${src} track aktif → ${x.name}` });
+  }
+  const gy1 = Math.min(LB, RULER - view.y0 + contentH());                               // Live 12: the grid runs on through the drop area and the Master / FX rows
+  // grid (Live 12): flat lines in the theme's ink at four strengths - every labelled bar (the ruler's step) > bar > beat > subdivision - so a
+  // zoomed-out arrangement is not striped with bright bar lines; every other labelled group a shade darker. Grid Line Intensity scales them.
+  const barPx = BAR * view.ppt; let kb = 1; while (barPx * kb < 34) kb *= 2;                     // the same step as the ruler's bar numbers
+  const light = currentTone() === 'light', INK = light ? '0,0,0' : '255,255,255', GI = 0.4 + 1.2 * (prefs.gridInt == null ? 0.5 : prefs.gridInt), line = (a) => `rgba(${INK},${Math.min(0.6, a * GI).toFixed(3)})`;
+  ctx.fillStyle = light ? 'rgba(0,0,0,.04)' : 'rgba(0,0,0,.035)';   // Live 12 dark: the bands barely show
+  for (let b = Math.floor(Math.max(0, P.barAt(view.x0)) / kb) * kb; tx(P.barStart(b)) < CW; b += kb) { if ((b / kb) & 1) { const x0 = tx(P.barStart(b)), x1 = tx(P.barStart(b + kb)); ctx.fillRect(x0, RULER, x1 - x0, gy1 - RULER); } }
+  const tEnd = view.x0 + CW / view.ppt + g, sub = line(light ? 0.05 : 0.025), beat = line(light ? 0.09 : 0.04);
+  eachGrid(view.x0 - g, tEnd, g, (t, j) => {
+    const x = Math.round(tx(t));
+    if (x < 0 || x > CW) return;
+    const r = t - P.MM.T[j];
+    if (r % P.MM.bl[j] === 0) return;
+    ctx.fillStyle = r % P.MM.bt[j] === 0 ? beat : sub;
+    ctx.fillRect(x, RULER, 1, gy1 - RULER);
+  });
+  const barL = line(light ? 0.14 : 0.06), grpL = line(light ? 0.24 : 0.10);   // Live 12's dark grid is faint: about 3-5 levels off the lane (sampled from refs/live12-official/02)
+  for (let b = Math.max(0, P.barAt(view.x0)); tx(P.barStart(b)) < CW; b++) { const x = Math.round(tx(P.barStart(b))); if (x >= 0) { ctx.fillStyle = b % kb ? barL : grpL; ctx.fillRect(x, RULER, 1, gy1 - RULER); } }
+  if (P.state.sigs.length) { ctx.fillStyle = 'rgba(255,167,34,.3)'; for (const c of P.state.sigs) { const x = Math.round(tx(P.barStart(c.bar))); if (x >= 0 && x <= CW) ctx.fillRect(x, RULER, 1, gy1 - RULER); } }
+  for (const m of state.markers) { const x = Math.round(tx(m.t)); if (x < 0 || x > CW) continue; ctx.fillStyle = C('#0e0e10'); ctx.fillRect(x, RULER, 1, gy1 - RULER); }   // Live: a dark line down from every locator
+  const PU = state.punch;
+  if (PU.on && PU.end > PU.start) { const a0 = Math.max(0, tx(PU.start)); ctx.fillStyle = 'rgba(255,54,54,.07)'; ctx.fillRect(a0, RULER, Math.max(0, Math.min(CW, tx(PU.end)) - a0), gy1 - RULER); ctx.fillStyle = 'rgba(255,54,54,.55)'; for (const e of [PU.start, PU.end]) { const lx = Math.round(tx(e)); if (lx >= 0 && lx <= CW) ctx.fillRect(lx, RULER, 1, gy1 - RULER); } }
+  if (xl.length) {                                                                        // caption on a small pill, so the grid never cuts through the letters
+    ctx.font = FONT(600, 10); ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
+    for (const l of xl) {
+      if (l.h < 40) continue;                                                            // thin Live-style rows: no caption
+      const w = Math.round(ctx.measureText(l.t).width + 20), x = Math.round(CW / 2 - w / 2), y = Math.round(l.y + l.h / 2 - 9);
+      ctx.fillStyle = C('#1f1f21'); ctx.fillRect(x, y, w, 18); ctx.strokeStyle = C('#141415'); ctx.lineWidth = 1; ctx.strokeRect(x + 0.5, y + 0.5, w - 1, 17);
+      ctx.fillStyle = C('#8b8b92'); ctx.fillText(l.t, CW / 2, l.y + l.h / 2 + 0.5);
+    }
+    ctx.textAlign = 'left';
+  }
+  // the "+" row: Live's "Drop Files and Devices Here" area
+  { const y = rowY(nn), h = rh(nn);
+    if (y < LB && y + h > RULER && CW > 120) {
+      ctx.fillStyle = C('#8b8b92'); ctx.font = FONT(500, 11);   // Live: only the words, centred, no box ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
+      ctx.fillText(cut2('Seret file dan device ke sini', CW - 30), CW / 2, y + h / 2 + 0.5); ctx.textAlign = 'left';
+    } }
+  ctx.restore();
+  // clips
+  const first = Math.max(0, rowAt(RULER)), last = Math.min(n - 1, rowAt(LB));
+  for (let i = first; i <= last; i++) for (const c of state.tracks[i].clips) { const b = laneBox(i, c); if (b.h < 2) continue; drawClip(state.tracks[i], c, b.y, b.h); }   // a clip of a sub-track sits in its row
+  drawHandles();
+  // automation lanes: one continuous envelope across the lane (Live 12): red line, the value held before the first and after the last point,
+  // small round breakpoints; the lane a shade darker than a track's
+  for (let i = first; i <= last; i++) { const t = state.tracks[i]; if (t.kind !== 'auto' || rh(i) < 12) continue;
+    const y0 = rowY(i) + 6, hh = rh(i) - 13, yy = (v) => y0 + hh - clamp(v, 0, 1) * hh, cs = [...t.clips].filter((c) => c.pts && c.pts.length).sort((a, b) => a.start - b.start); if (!cs.length) continue;
+    ctx.save(); ctx.beginPath(); ctx.rect(0, Math.max(RULER, rowY(i)), CW, Math.max(0, Math.min(LB, rowY(i) + rh(i)) - Math.max(RULER, rowY(i)))); ctx.clip();
+    const col = t.mute ? C('#8b8b92') : '#ff5a4e'; ctx.strokeStyle = col; ctx.lineWidth = 1.5; ctx.beginPath(); let st = false, lv = null;
+    for (const c of cs) { const pts = [...c.pts].sort((a, b) => a.t - b.t); if (c.muted) continue;
+      for (const [pt, pv] of densify(pts)) { const X = tx(c.start + pt), Y = yy(pv); if (!st) { ctx.moveTo(Math.min(0, X), Y); st = true; } else if (lv != null && X > tx(c.start) - 0.5 && pt === pts[0].t) ctx.lineTo(X, yy(lv)); ctx.lineTo(X, Y); }
+      lv = pts[pts.length - 1].v; }
+    if (lv != null) ctx.lineTo(CW, yy(lv)); ctx.stroke();
+    ctx.fillStyle = col; for (const c of cs) for (const p of c.pts) { const X = tx(c.start + p.t); if (X > -4 && X < CW + 4) { ctx.beginPath(); ctx.arc(X, yy(p.v), 2.6, 0, 6.2832); ctx.fill(); } }
+    ctx.restore(); }
+  // Automation Mode (Live, refs/live12/112-115): the track's automation drawn over its clips - a red line with its breakpoints, the parameter's
+  // name at the lane's top left. Display only: the curve is edited on its automation lane. The first visible lane of the track is shown.
+  if (autoMode()) for (let i = first; i <= last; i++) {
+    const t = state.tracks[i]; if (t.kind === 'auto' || t.fold) continue;
+    const sid = P.stripOf(i), lane = state.tracks.find((q) => q.kind === 'auto' && q.target && q.target.strip === sid && !q.mute && q.clips.some((c) => c.pts && c.pts.length)); if (!lane) continue;
+    const y0 = rowY(i) + 16, hh = rhMain(i) - 22; if (hh < 10) continue;
+    const yy = (v) => y0 + hh - clamp(v, 0, 1) * hh, cs = [...lane.clips].filter((c) => !c.muted && c.pts.length).sort((a, b) => a.start - b.start);
+    ctx.save(); ctx.beginPath(); ctx.rect(0, Math.max(RULER, rowY(i)), CW, Math.max(0, Math.min(LB, rowY(i) + rhMain(i)) - Math.max(RULER, rowY(i)))); ctx.clip();
+    ctx.fillStyle = 'rgba(0,0,0,.16)'; ctx.fillRect(0, rowY(i), CW, rhMain(i));                                      // Live dims the clips under the envelope
+    ctx.strokeStyle = '#ff4f45'; ctx.lineWidth = 1.6; ctx.beginPath(); let first2 = true, lastV = null;
+    for (const c of cs) { const pts = [...c.pts].sort((a, b) => a.t - b.t);
+      if (lastV != null) ctx.lineTo(tx(c.start), yy(lastV));
+      for (const [pt, pv] of densify(pts)) { const X = tx(c.start + pt), Y = yy(pv); if (first2) { ctx.moveTo(Math.min(X, 0), Y); first2 = false; } ctx.lineTo(X, Y); }
+      lastV = pts[pts.length - 1].v; }
+    if (lastV != null) ctx.lineTo(CW, yy(lastV)); ctx.stroke();
+    ctx.fillStyle = '#ff4f45'; for (const c of cs) for (const p of c.pts) { const X = tx(c.start + p.t); if (X > -4 && X < CW + 4) ctx.fillRect(Math.round(X) - 2, Math.round(yy(p.v)) - 2, 5, 5); }
+    const nm = String(lane.name || '').replace(/^Auto:\s*/, ''); ctx.font = FONT(600, 9); ctx.textBaseline = 'top'; const tw = ctx.measureText(nm).width;
+    ctx.fillStyle = 'rgba(0,0,0,.55)'; ctx.fillRect(4, rowY(i) + rhMain(i) - 15, tw + 8, 12); ctx.fillStyle = '#ff8a80'; ctx.fillText(nm, 8, rowY(i) + rhMain(i) - 14);
+    ctx.restore();
+  }
+  if (sel) { const a = Math.max(0, tx(sel.a)), b = Math.min(CW, tx(sel.b)); ctx.fillStyle = 'rgba(255,255,255,.2)'; ctx.fillRect(a, RULER, Math.max(0, b - a), gy1 - RULER); ctx.fillStyle = 'rgba(255,255,255,.55)'; ctx.fillRect(Math.round(a), RULER, 1, gy1 - RULER); ctx.fillRect(Math.round(b), RULER, 1, gy1 - RULER); }   // Live: the selection is a white wash with bright edges
+  if (marq) {
+    const ax = tx(marq.t0), bx = tx(marq.t1), ay = RULER - view.y0 + marq.y0, by = RULER - view.y0 + marq.y1;
+    const x = Math.min(ax, bx), y = Math.min(ay, by), w = Math.abs(bx - ax), hh = Math.abs(by - ay);
+    ctx.save(); ctx.beginPath(); ctx.rect(0, RULER, CW, LB - RULER); ctx.clip();
+    ctx.fillStyle = 'rgba(120,182,230,.16)'; ctx.fillRect(x, y, w, hh); ctx.strokeStyle = 'rgba(160,205,240,.9)'; ctx.lineWidth = 1; ctx.strokeRect(x + 0.5, y + 0.5, w, hh); ctx.restore();
+  }
+  if (drag) drawDragAids();
+  drawRuler(g);
+  drawTimeRuler();
+  drawHeads();
+  if (msel.size) placeBar();
+}
+
+// While a clip is dragged: a dashed ghost where it started (where it goes back to when the drag is cancelled) and a small bubble with
+// the snapped position (move) or length (resize / stretch) next to the finger, so the drop point is known before the finger lifts.
+const posTxt = (tick) => { const b = P.barAt(tick), r = tick - P.barStart(b), bl = P.beatLenAt(tick); return `${b + 1}.${Math.floor(r / bl) + 1}.${Math.floor((r % bl) / (bl / 4)) + 1}`; };
+const lenTxt = (len, at) => { const bl = P.barLenAt(at), bt = P.beatLenAt(at), bars = Math.floor(len / bl), r = len - bars * bl; return `${bars}.${Math.floor(r / bt)}.${Math.floor((r % bt) / (bt / 4))}`; };
+function drawDragAids() {
+  const d = drag, single = d.k === 'move' || d.k === 'resize' || d.k === 'resizeL' || d.k === 'stretch', group = d.k === 'gmove' || d.k === 'gresize';
+  if (!single && !group) return;
+  const LB = H - BOT, ghosts = single ? [{ i: d.i0 ?? d.i, start: d.start, len: d.len }] : d.items.map((it) => ({ i: it.i, start: it.start, len: it.len }));
+  ctx.save(); ctx.beginPath(); ctx.rect(0, RULER, CW, LB - RULER); ctx.clip();
+  ctx.setLineDash([4, 3]); ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(255,255,255,.55)';
+  for (const q of ghosts) { if (!state.tracks[q.i]) continue; const y = rowY(q.i), h = rh(q.i), x = tx(q.start), w = tx(q.start + q.len) - x; if (w > 2 && y < LB && y + h > RULER) ctx.strokeRect(Math.round(x) + 0.5, y + 2.5, Math.max(2, Math.round(w) - 1), h - 5); }
+  ctx.setLineDash([]); ctx.restore();
+  const c = single ? d.c : (d.items.find((it) => it.c.id === state.sel.clip) || d.items[0]).c, ti = single ? d.i : (d.items.find((it) => it.c === c) || d.items[0]).cur;
+  if (!c || !state.tracks[ti]) return;
+  const moving = d.k === 'move' || d.k === 'gmove' || d.k === 'resizeL';
+  const txt = moving ? posTxt(c.start) : (d.k === 'stretch' ? '\u2194 ' : '') + lenTxt(c.len, c.start) + (d.k === 'stretch' && d.len ? '  ' + (c.len / d.len).toFixed(2) + 'x' : '');
+  ctx.font = FONT(600, 11); const tw = ctx.measureText(txt).width + 12, bh = 18;
+  const ax = moving ? tx(c.start) : tx(c.start + c.len), y = Math.max(RULER + 2, rowY(ti) - bh - 3), x = clamp(ax - tw / 2, 2, CW - tw - 2);
+  ctx.fillStyle = 'rgba(14,14,16,.92)'; ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(x, y, tw, bh, 4); else ctx.rect(x, y, tw, bh); ctx.fill();
+  ctx.fillStyle = '#f2f2f2'; ctx.textBaseline = 'middle'; ctx.textAlign = 'center'; ctx.fillText(txt, x + tw / 2, y + bh / 2 + 0.5); ctx.textAlign = 'left';
+}
+
+let loopA = 0;                                                   // drawn brightness of the loop brace (eases to 1 when the loop is on)
+const PUon = () => state.punch.on && state.punch.end > state.punch.start;
+function drawRuler(g) {
+  ctx.fillStyle = C('#2c2c2f'); ctx.fillRect(0, 0, CW, LT);                                 // beat-time ruler
+  ctx.fillStyle = C('#2c2c2f'); ctx.fillRect(0, LT, CW, RULER - LT);                       // scrub area: locators, loop brace (Live 12: the ruler's colour)
+  ctx.fillStyle = C('#08080a'); ctx.fillRect(0, LT - 1, CW, 1); ctx.fillRect(0, RULER - 2, CW, 2);
+  ctx.save(); ctx.beginPath(); ctx.rect(0, 0, CW, RULER); ctx.clip();
+  if (sel) { ctx.fillStyle = 'rgba(255,255,255,.22)'; ctx.fillRect(tx(sel.a), 0, tx(sel.b) - tx(sel.a), LT - 1); }
+  // loop brace along the bottom of the beat ruler: grey when the loop is off, lit when it is on (Live's Arrangement Loop)
+  const LP = state.loop;
+  if (LP && LP.end > LP.start) {
+    const a = Math.round(tx(LP.start)), b = Math.round(tx(LP.end));
+    if (b > 0 && a < CW) {
+      const brace = () => { ctx.fillRect(a, RULER - 7, b - a, 5); ctx.fillRect(a, RULER - 12, 3, 10); ctx.fillRect(b - 3, RULER - 12, 3, 10); };
+      ctx.fillStyle = C('#4c4c52'); brace();
+      if (loopA > 0.01) { ctx.globalAlpha = loopA; ctx.fillStyle = T('--accent'); brace(); ctx.globalAlpha = 1; }   // on / off fades (Live's lit brace)
+      if (drag && (drag.k === 'loop' || drag.k === 'loopL' || drag.k === 'loopR')) { ctx.fillStyle = 'rgba(255,255,255,.35)'; ctx.fillRect(a, RULER - 7, b - a, 1); }
+    }
+  }
+  ctx.font = FONT(400, 9.5); ctx.textBaseline = 'top';   // Live's ruler numbers: small, regular
+  const barPx = BAR * view.ppt; let k = 1; while (barPx * k < 34) k *= 2;
+  const chg = new Map(P.state.sigs.map((c) => [c.bar, c]));
+  const RI = currentTone() === 'light' ? '0,0,0' : '255,255,255';
+  ctx.fillStyle = `rgba(${RI},.85)`;   // ticks in the theme's ink, the same black as the arrangement's grid lines
+  eachGrid(view.x0 - g, view.x0 + CW / view.ppt + g, g, (t, j) => { const r = (t - P.MM.T[j]) % P.MM.bl[j]; if (r) ctx.fillRect(Math.round(tx(t)), r % P.MM.bt[j] ? LT - 4 : LT - 7, 1, r % P.MM.bt[j] ? 3 : 6); });   // Live: beat ticks taller than subdivisions
+  for (let b = Math.floor(Math.max(0, P.barAt(view.x0)) / k) * k; tx(P.barStart(b)) < CW; b++) {
+    const c = chg.get(b), x = Math.round(tx(P.barStart(b)));
+    if (b % k && !c) { ctx.fillStyle = `rgba(${RI},.9)`; ctx.fillRect(x, LT - 10, 1, 9); continue; }   // unlabelled bars: a longer tick
+    ctx.fillStyle = c ? C('#ffa722') : `rgb(${RI})`; ctx.fillRect(x, LT - 12, 1, 11);   // Live: a short line up from the ruler's bottom edge, the number right of it
+    const lab = String(b + 1); ctx.fillStyle = c ? C('#ffa722') : `rgba(${RI},.72)`; ctx.fillText(lab, x + 3, 4);
+    if (c) { ctx.font = FONT(700, 9); ctx.fillText(c.n + '/' + c.d, x + 8 + ctx.measureText(lab).width, 5); ctx.font = FONT(400, 9.5); }
+  }
+  if (PUon()) { ctx.fillStyle = C('#ff3636'); ctx.fillRect(tx(state.punch.start), RULER - 3, tx(state.punch.end) - tx(state.punch.start), 2); ctx.fillRect(tx(state.punch.start) - 1, RULER - 11, 4, 9); ctx.fillRect(tx(state.punch.end) - 3, RULER - 11, 4, 9); }
+  // locators (markers): a flag with its name on the locator strip
+  ctx.font = FONT(600, 9); ctx.textBaseline = 'middle';
+  const ml = state.markers;
+  for (let k2 = 0; k2 < ml.length; k2++) {
+    const m = ml[k2], x = Math.round(tx(m.t));
+    if (x > CW + 4) break;
+    const nx = k2 + 1 < ml.length ? Math.round(tx(ml[k2 + 1].t)) : CW + 200, w = Math.min(nx - x - 3, ctx.measureText(m.name).width + 16);
+    if (x + Math.max(8, w) < 0) continue;
+    ctx.fillStyle = C('#3a3a3e'); ctx.strokeStyle = C('#d6d6da'); ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x + 0.5, LT + 1.5); ctx.lineTo(x + 9, LT + 6.5); ctx.lineTo(x + 0.5, LT + 11.5); ctx.closePath(); ctx.fill(); ctx.stroke();   // Live: outlined flag
+    if (w > 18) { ctx.save(); ctx.beginPath(); ctx.rect(x + 1, LT, w, 13); ctx.clip(); ctx.fillStyle = C('#d6d6da'); ctx.fillText(m.name, x + 12, LT + 7); ctx.restore(); }
+  }
+  ctx.textBaseline = 'top';
+  ctx.restore();
+}
+// time ruler (min:sec) under the lanes, like the one at the bottom of Live's Arrangement; the grid and zoom fields sit at its right end
+function drawTimeRuler() {
+  const y = H - BOT;
+  ctx.fillStyle = C('#2c2c2f'); ctx.fillRect(0, y, CW, BOT); ctx.fillStyle = C('#141415'); ctx.fillRect(0, y, CW, 1);
+  ctx.save(); ctx.beginPath(); ctx.rect(0, y, CW, BOT); ctx.clip();
+  const s0 = Math.max(0, P.tickToSec(view.x0)), s1 = P.tickToSec(view.x0 + CW / view.ppt), pps = CW / Math.max(1e-6, s1 - s0);
+  let st = 1; for (const q of [0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300]) { st = q; if (q * pps >= 58) break; }
+  ctx.font = FONT(500, 9.5); ctx.textBaseline = 'middle';
+  for (let s = Math.floor(s0 / st) * st; s <= s1 + st; s += st) {
+    const x = Math.round(tx(P.secToTick(s))); if (x < -40 || x > CW) continue;
+    ctx.fillStyle = C('#55555b'); ctx.fillRect(x, y + 1, 1, 6);
+    const mm = Math.floor(s / 60), ss = s - mm * 60;
+    ctx.fillStyle = C('#9a9aa2'); ctx.fillText(`${mm}:${(st < 1 ? ss.toFixed(1) : String(Math.floor(ss))).padStart(st < 1 ? 4 : 2, '0')}`, x + 4, y + BOT / 2 + 1);
+  }
+  ctx.restore();
+  ctx.font = FONT(600, 10); ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
+  const bg = badges(), bx0 = bg.reduce((m, q) => Math.min(m, q[2].x), CW); if (bg.length) { ctx.fillStyle = C('#2c2c2f'); ctx.fillRect(bx0 - 8, y + 1, CW - bx0 + 8, BOT - 1); ctx.fillStyle = C('#141415'); ctx.fillRect(bx0 - 8, y + 1, 1, BOT - 1); }
+  for (const [type, lbl, r] of bg) {                         // Live-style fields: flat, 1 px border, lighter while pressed
+    ctx.fillStyle = pressed === type ? C('#55555b') : C('#3a3a3e'); ctx.fillRect(r.x, r.y, r.w, r.h);
+    ctx.strokeStyle = C('#141415'); ctx.lineWidth = 1; ctx.strokeRect(r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
+    ctx.fillStyle = C('#d4d4d8'); ctx.fillText(cut2(lbl, r.w - 6), r.x + r.w / 2, r.y + r.h / 2 + 0.5);
+  }
+  ctx.textAlign = 'left';
+}
+
+// Overlay layer: playhead + header meters. It is redrawn every frame while playing, the heavy static layer is not.
+const meterFrac = (lv) => clamp((20 * Math.log10(Math.max(lv, 1e-4)) + 60) / 66, 0, 1);
+let lastMeterKey = 0;
+const mDisp = []; let mT = 0;                 // displayed levels: instant attack, ~26 dB/s release (same ballistics as the mixer), so header bars glide instead of flickering
+function smoothMeters() {
+  const now = performance.now(), dt = Math.min(0.12, (now - (mT || now)) / 1000); mT = now;
+  const m = state.meters, n = m.length, k = Math.pow(10, -26 * dt / 20);
+  for (let j = 0; j < n; j++) { const lv = (m[j] || 0) / 1000; let d = mDisp[j] || 0; d = lv >= d ? lv : d * k; mDisp[j] = d < 1e-4 ? 0 : d; }
+}
+const stripOfRow = (i) => (i < state.tracks.length ? (state.tracks[i].kind === 'auto' ? -1 : i) : xInfo(i).strip);
+function meterKey() {                        // changes whenever a visible bar would change (24 steps), so the overlay is only redrawn when needed
+  let k = 0; const nn = state.tracks.length + nX();
+  for (let i = 0; i < nn; i++) { const s = stripOfRow(i); if (s < 0) continue; k = (k * 31 + Math.round(meterFrac(mDisp[s * 2] || 0) * 24) * 25 + Math.round(meterFrac(mDisp[s * 2 + 1] || 0) * 24)) | 0; }
+  return k;
+}
+function drawMeters() {                      // Live: a slim stereo meter along the right edge of every track header, same scale as the mixer
+  const mx = CW + HEAD - METW + 1, nn = state.tracks.length + nX();
+  octx.save(); octx.beginPath(); octx.rect(CW, RULER, HEAD, LANE_B() - RULER); octx.clip();
+  for (const i of visRows()) { if (i >= nn) continue;
+    const s = stripOfRow(i); if (s < 0) continue;
+    const hm = i < state.tracks.length && full() ? hdr(i).hm : null;
+    if (hm) {                                                                     // folded row: the same meter lying flat (left = silence), L over R
+      const lh = Math.max(1.5, (hm.h - 3) / 2), x0 = hm.x + 2, w0 = hm.w - 4;
+      for (let ch = 0; ch < 2; ch++) {
+        const f = meterFrac(mDisp[s * 2 + ch] || 0), by = hm.y + 1 + ch * (lh + 1); if (f <= 0.01) continue;
+        const e = w0 * f, g = Math.min(e, w0 * 0.8), yl = Math.min(e, w0 * 0.93);
+        octx.fillStyle = '#4fae3a'; octx.fillRect(x0, by, g, lh);
+        if (e > w0 * 0.8) { octx.fillStyle = '#e8cf3a'; octx.fillRect(x0 + w0 * 0.8, by, yl - w0 * 0.8, lh); }
+        if (e > w0 * 0.93) { octx.fillStyle = '#e5484d'; octx.fillRect(x0 + w0 * 0.93, by, e - w0 * 0.93, lh); }
+      }
+      continue;
+    }
+    const y = rowY(i) + 3, hh = rh(i) - 7; if (hh < 6) continue;
+    for (let ch = 0; ch < 2; ch++) {
+      const f = meterFrac(mDisp[s * 2 + ch] || 0), bx = mx + 1 + ch * 3.5;
+      if (f > 0.01) {
+        const top = y + hh * (1 - f), yel = y + hh * (1 - 0.8), red = y + hh * (1 - 0.93);
+        octx.fillStyle = '#4fae3a'; octx.fillRect(bx, Math.max(top, yel), 2.5, y + hh - Math.max(top, yel));
+        if (top < yel) { octx.fillStyle = '#e8cf3a'; octx.fillRect(bx, Math.max(top, red), 2.5, yel - Math.max(top, red)); }
+        if (top < red) { octx.fillStyle = '#e5484d'; octx.fillRect(bx, top, 2.5, red - top); }
+      }
+    }
+  }
+  octx.restore();
+}
+function drawHead(tick) {
+  octx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  octx.clearRect(0, 0, W, H);
+  drawMeters();
+  const px = tx(tick);
+  if (px < -6 || px > CW + 6) return;
+  octx.save(); octx.beginPath(); octx.rect(0, 0, CW, H); octx.clip();
+  const x = Math.round(px * dpr) / dpr;
+  // the light travels with the playhead: a glow in the colour of the clip it is crossing, breathing with the master level while playing
+  const hc = clipColorAt(tick) || '#ffa722', lv = state.playing && !calmTL() ? meterFrac(Math.max(mDisp[MASTER * 2] || 0, mDisp[MASTER * 2 + 1] || 0)) : 0.35;
+  { const R = 20 + lv * 14, gr = octx.createRadialGradient(x, RULER, 1, x, RULER, R); gr.addColorStop(0, washRgba(hc, 0.32 + lv * 0.4)); gr.addColorStop(0.5, washRgba(hc, 0.10 + lv * 0.15)); gr.addColorStop(1, washRgba(hc, 0));   // tight: about 20..34 px around the playhead
+    // only left and right of the playhead, inside the ruler (owner: no light on the bars it has passed or has yet to reach, none in the grid)
+    octx.save(); octx.beginPath(); octx.rect(0, 0, CW, RULER); octx.clip(); octx.fillStyle = gr; octx.fillRect(x - R, 0, R * 2, RULER); octx.restore(); }
+  if (px >= 0) { octx.fillStyle = 'rgba(0,0,0,.35)'; octx.fillRect(x + 1.5, RULER, 1, LANE_B() - RULER); octx.fillStyle = C('#ffa722'); octx.fillRect(x, RULER, 1.5, LANE_B() - RULER); }
+  if (!state.playing && px >= 0) { const on = calmTL() || Math.floor(performance.now() / 530) % 2 === 0, i = state.sel.track;   // Live's flashing blue insert marker on the selected track
+    if (on) { const y0 = i >= 0 && i < state.tracks.length ? rowY(i) : RULER, h0 = i >= 0 && i < state.tracks.length ? rh(i) - 2 : LANE_B() - RULER; octx.save(); octx.beginPath(); octx.rect(0, RULER, CW, LANE_B() - RULER); octx.clip(); octx.fillStyle = '#2aa7ff'; octx.fillRect(x - 0.25, y0, 2, h0); octx.restore(); } }
+  octx.save(); octx.shadowColor = washRgba(hc, 0.9); octx.shadowBlur = 4 + lv * 4; octx.fillStyle = C('#ffa722'); octx.beginPath(); octx.moveTo(x - 5.5, LT); octx.lineTo(x + 6.5, LT); octx.lineTo(x + 0.75, LT + 8); octx.closePath(); octx.fill(); octx.restore();   // the playhead flag glows
+  octx.restore();
+}
+
+const VMAX = 1.4;
+const dbTxt = (v) => (v < 0.001 ? '-∞' : (20 * Math.log10(v)).toFixed(1));
+const panTxt = (p) => (Math.abs(p) < 0.02 ? 'C' : Math.round(Math.abs(p) * 50) + (p < 0 ? 'L' : 'R'));
+function cut2(txt, maxW) {                    // text that fits maxW, with an ellipsis when it does not
+  if (ctx.measureText(txt).width <= maxW) return txt;
+  let t = txt; while (t.length > 1 && ctx.measureText(t + '…').width > maxW) t = t.slice(0, -1);
+  return t + '…';
+}
+function foldTri(cx, cy, folded, col) {        // Live 12 fold toggle: a ring with a small triangle (right = folded, down = open)
+  ctx.strokeStyle = col; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.arc(cx, cy, 5.5, 0, 6.2832); ctx.stroke();
+  ctx.fillStyle = col; ctx.beginPath();
+  if (folded) { ctx.moveTo(cx - 1.5, cy - 3); ctx.lineTo(cx + 2.5, cy); ctx.lineTo(cx - 1.5, cy + 3); }
+  else { ctx.moveTo(cx - 3, cy - 1.5); ctx.lineTo(cx + 3, cy - 1.5); ctx.lineTo(cx, cy + 2.5); }
+  ctx.closePath(); ctx.fill();
+}
+// header colours: a theme can set them exactly (--hd-* tokens, the light themes sampled from Live 12 light); otherwise the dark design mapped by C()
+const HD = (tok, dark) => T(tok) || C(dark);
+// header button: flat grey with a 1 px border when off, filled with its colour when on (activator yellow, solo blue, arm red)
+function drawBtn(r, label, on, col, quiet) {
+  if (quiet) { ctx.fillStyle = HD('--hd-fld', '#3e3e43'); ctx.fillRect(r.x, r.y, r.w, r.h); ctx.strokeStyle = HD('--hd-bd', '#141415'); ctx.lineWidth = 1; ctx.strokeRect(r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);   // quiet switch: only the text lights up (input monitoring is on by default)
+    ctx.fillStyle = on ? col : HD('--hd-ink2', '#8b8b92'); ctx.font = FONT(700, 10); ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(cut2(label, r.w - 2), r.x + r.w / 2, r.y + r.h / 2 + 0.5); ctx.textAlign = 'left'; return; }
+  ctx.fillStyle = on ? col : HD('--hd-fld', '#3e3e43'); ctx.fillRect(r.x, r.y, r.w, r.h);
+  ctx.strokeStyle = HD('--hd-bd', '#141415'); ctx.lineWidth = 1; ctx.strokeRect(r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
+  const cx = r.x + r.w / 2, cy = r.y + r.h / 2;
+  if (label === 'arm') { ctx.fillStyle = on ? '#ffffff' : HD('--hd-ink', '#8b8b92'); ctx.beginPath(); ctx.arc(cx, cy, Math.min(4.5, r.h / 2 - 3), 0, 6.2832); ctx.fill(); return; }
+  if (label === 'aut') {                       // automation: a small breakpoint envelope
+    ctx.strokeStyle = on ? '#15151a' : HD('--hd-ink', '#b4b4ba'); ctx.lineWidth = 1.4; ctx.beginPath(); ctx.moveTo(cx - 6, cy + 4); ctx.lineTo(cx - 2, cy - 3); ctx.lineTo(cx + 2, cy + 1); ctx.lineTo(cx + 6, cy - 4); ctx.stroke(); return;
+  }
+  ctx.fillStyle = on ? '#15151a' : HD('--hd-ink', '#c8c8cc'); ctx.font = FONT(700, r.fs || (r.h < 16 ? 9 : 10.5)); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(cut2(label, r.w - 2), cx, cy + 0.5); ctx.textAlign = 'left';
+}
+// Live's header slider: a dark well, a grey fill up to the value (from the centre for pan) and the value written over it
+function drawSlider(r, frac, label, fromCenter) {
+  ctx.fillStyle = HD('--hd-well', '#19191a'); ctx.fillRect(r.x, r.y, r.w, r.h);
+  ctx.fillStyle = T('--hd-vol') || T('--lv-sel');
+  if (fromCenter) { const c = r.x + r.w / 2, e = r.x + frac * r.w; if (Math.abs(e - c) >= 1) ctx.fillRect(Math.min(c, e), r.y + 1, Math.abs(e - c), r.h - 2); }
+  else ctx.fillRect(r.x + 1, r.y + 1, Math.max(0, frac * (r.w - 2)), r.h - 2);
+  ctx.strokeStyle = HD('--hd-bd', '#141415'); ctx.lineWidth = 1; ctx.strokeRect(r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
+  ctx.font = FONT(700, r.fs || 9.5); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = HD('--hd-vink', '#f2f2f4'); ctx.fillText(cut2(label, r.w - 4), r.x + r.w / 2, r.y + r.h / 2 + 0.5); ctx.textAlign = 'left';
+}
+function drawSwitch(r, label, on, isPressed) {   // Live-style switch: LED + text in a flat field
+  ctx.fillStyle = isPressed ? HD('--hd-bgsel', '#55555b') : HD('--hd-fld', '#3a3a3e'); ctx.fillRect(r.x, r.y, r.w, r.h);
+  ctx.strokeStyle = HD('--hd-bd', '#141415'); ctx.lineWidth = 1; ctx.strokeRect(r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
+  const ly = r.y + r.h / 2; ctx.fillStyle = on ? T('--accent') : C('#55555b'); ctx.beginPath(); ctx.arc(r.x + 10, ly, 3.5, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = on ? HD('--hd-ink', '#e0e0e4') : HD('--hd-ink2', '#8b8b92'); ctx.font = FONT(600, 10); ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
+  ctx.fillText(cut2(label, r.w - 24), r.x + r.w / 2 + 6, ly + 0.5); ctx.textAlign = 'left';
+}
+function drawSubHeads(i) {                     // sub-track rows of a track header: a slim colour edge, the name (Steps / Notes) and an activator
+  const t = state.tracks[i], L = P.subsOf(t), hx = CW, ik = C('#c8c8ce');
+  L.forEach((s, k) => {
+    const r = subHdr(i, k);
+    ctx.fillStyle = C('#262628'); ctx.fillRect(hx, r.y, HEAD, r.h); ctx.fillStyle = t.color; ctx.fillRect(hx, r.y, 5, r.h);
+    ctx.fillStyle = C('#1a1a1c'); ctx.fillRect(hx, r.y - 1, HEAD, 1);
+    ctx.fillStyle = s.mute ? C('#77777e') : ik; ctx.font = FONT(600, 10.5); ctx.textBaseline = 'middle';
+    ctx.fillText(cut2('\u21B3 ' + s.name, r.mute.x - hx - 18), hx + 12, r.y + r.h / 2 + 0.5);
+    if (full() && r.mute.x - hx > 120) { ctx.fillStyle = C('#77777e'); ctx.font = FONT(500, 9.5); ctx.textAlign = 'right'; ctx.fillText(s.kind === 'notes' ? 'Notes' : 'Step', r.mute.x - 6, r.y + r.h / 2 + 0.5); ctx.textAlign = 'left'; }
+    drawBtn(r.mute, 'M', !s.mute, T('--mute'));
+  });
+}
+function drawHeads() {
+  const hx = CW, n = state.tracks.length, LB = LANE_B();
+  ctx.fillStyle = HD('--hd-bg', '#1f1f21'); ctx.fillRect(hx, 0, HEAD, H);
+  ctx.save(); ctx.beginPath(); ctx.rect(hx, RULER, HEAD, LB - RULER); ctx.clip();
+  const nn = n + nX(), lanes = new Set();
+  for (const q of state.tracks) if (q.kind === 'auto' && q.target) lanes.add(q.target.strip);
+  for (const i of visRows()) {
+    const y = rowY(i), h = i < n ? rhMain(i) : rh(i); if (y >= LB || y + h <= RULER) continue;
+    if (i < n && subN(state.tracks[i])) drawSubHeads(i);
+    if (i === nn) {                                                                          // "+" row: one wide button
+      const r = { x: hx + 6, y: y + 8, w: HEAD - METW - 12, h: Math.min(28, h - 16) };
+      ctx.fillStyle = HD('--hd-bg', '#2c2c2f'); ctx.fillRect(r.x, r.y, r.w, r.h); ctx.strokeStyle = HD('--hd-bd', '#3c3c41'); ctx.lineWidth = 1; ctx.strokeRect(r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
+      ctx.fillStyle = HD('--hd-ink', '#b4b4ba'); ctx.font = FONT(600, 11); ctx.textBaseline = 'middle'; ctx.textAlign = 'center'; ctx.fillText('+  Track', r.x + r.w / 2, r.y + r.h / 2 + 0.5); ctx.textAlign = 'left';
+      continue;
+    }
+    const meterWell = () => { ctx.fillStyle = HD('--hd-mw', '#161617'); ctx.fillRect(hx + HEAD - METW, y, METW, h - 1); ctx.fillStyle = HD('--hd-mb', '#101011'); ctx.fillRect(hx + HEAD - METW + 2, y + 3, 2.5, h - 7); ctx.fillRect(hx + HEAD - METW + 5.5, y + 3, 2.5, h - 7); };
+    if (i >= n) {                                                                            // Master / effect track header
+      const x = xInfo(i), on = state.sel.track === x.strip, fx = !x.master, rt = fx ? state.returns[x.k] : null, r = xhdr(i), nw = nameW(), ik = ink(x.color);
+      ctx.fillStyle = on ? HD('--hd-bgsel', '#3a3a3e') : HD('--hd-bg', '#2c2c2f'); ctx.fillRect(hx, y, HEAD, h - 1);
+      ctx.fillStyle = x.color; ctx.fillRect(hx, y, nw, h - 1);                                           // the whole name block in the colour, as in Live
+      ctx.fillStyle = ik; ctx.font = FONT(700, 11); ctx.textBaseline = 'middle'; ctx.fillText(cut2(x.name, nw - 14), hx + 8, y + (h - 1) / 2 + 0.5);   // thin row like Live's return / main tracks: name centred
+      if (fx) drawBtn(r.act, x.k < 2 ? 'AB'[x.k] : 'F' + (x.k - 1), !rt.mute, T('--mute'));
+      if (full()) {                                                                          // the strip's level in the mixer column (Live: the volume field of the row)
+        const vx = x.master ? r.act.x : r.act.x + r.act.w + 3, vr = hx + HEAD - METW - 4, vol = x.master ? state.master.vol : rt.vol;
+        if (vr - vx > 30) drawSlider({ x: vx, y: r.act.y, w: vr - vx, h: r.act.h, fs: 10 }, Math.sqrt(clamp(vol / VMAX, 0, 1)), dbTxt(vol) + ' dB', false);
+      }
+      meterWell();
+      ctx.fillStyle = HD('--hd-line', '#141415'); ctx.fillRect(hx, y + h - 1, HEAD, 1); if (i === n) ctx.fillRect(hx, y - 1, HEAD, 1);   // Live: the Main / return rows are boxed like the tracks
+      if (full()) ctx.fillRect(hx + nw, y, 1, h - 1);
+      continue;
+    }
+    let t = state.tracks[i]; if (rh(i) < 2) continue; { const tc = tone(t.color); if (tc !== t.color) t = { __proto__: t, color: tc }; }
+    const on = state.sel.track === i, r = hdr(i), auto = t.kind === 'auto';
+    const nw = r.nw, ik = auto ? C('#d0d0d4') : ink(t.color), fullLook = full();
+    ctx.fillStyle = on ? HD('--hd-bgsel', '#3a3a3e') : HD('--hd-bg', '#2c2c2f'); ctx.fillRect(hx, y, HEAD, h - 1);                    // selected track: the mixer column a step lighter
+    const par = auto && t.target ? state.tracks.find((q) => q.kind !== 'auto' && P.stripOf(state.tracks.indexOf(q)) === t.target.strip) : null;
+    if (auto) { ctx.fillStyle = C('#323236'); ctx.fillRect(hx, y, nw, h - 1); ctx.fillStyle = tone(par ? par.color : t.color); ctx.fillRect(hx, y, 4, h - 1); }   // Live 12: an automation lane's header is grey, a stripe in its track's colour
+    else { ctx.fillStyle = t.color; ctx.fillRect(hx, y, nw, h - 1); }                                     // the whole name block in the track colour, as in Live
+    if (fullLook) { ctx.fillStyle = HD('--hd-line', '#141415'); ctx.fillRect(hx + nw, y, 1, h - 1); }   // Live: a thin dark line between the name block and the mixer column
+    if (t.mute) { ctx.fillStyle = 'rgba(30,30,34,.35)'; ctx.fillRect(hx, y, nw, h - 1); }                  // deactivated track: the block dims
+    if (on) { ctx.strokeStyle = ik; ctx.globalAlpha = 0.45; ctx.lineWidth = 1; ctx.strokeRect(hx + 0.5, y + 0.5, nw - 1, h - 2); ctx.globalAlpha = 1; }   // selected: an inner outline flush with the block (it ends where the block ends, no strip of colour under it)
+    foldTri(hx + 12, y + r.th / 2, !!t.fold, ik);
+    ctx.fillStyle = ik; ctx.font = FONT(on ? 600 : 500, 10.5); ctx.textBaseline = 'middle';   // Live: the track name in a regular weight, a step smaller
+    const nameR = !fullLook && r.mute ? r.mute.x - 4 : hx + nw - 6;
+    ctx.fillText(cut2((P.isFrozen(i) ? '\u2744 ' : '') + (auto ? String(t.name).replace(/^Auto:\s*/, '') : t.name), nameR - hx - 28), hx + 24, y + r.th / 2 + 0.5);   // an automation lane shows its parameter only (Live)   // \u2744 = frozen; one line + ellipsis, never split mid-word
+    if (r.mute) drawBtn(r.mute, auto ? 'On' : String(i + 1), !t.mute, T('--lv-or') || T('--mute'));   // Live 12's track activator: orange with the track number
+    if (r.solo) drawBtn(r.solo, 'S', t.solo, T('--solo'));
+    if (r.arm) drawBtn(r.arm, 'arm', !!t.arm, T('--rec'));
+    if (r.aut) drawBtn(r.aut, 'aut', lanes.has(t.id), T('--accent'));
+    if (auto && fullLook && h >= 46) { const pr = state.tracks.find((q) => q.kind !== 'auto' && t.target && P.stripOf(state.tracks.indexOf(q)) === t.target.strip); ctx.fillStyle = ik; ctx.globalAlpha = 0.7; ctx.font = FONT(400, 9.5); ctx.textBaseline = 'middle'; ctx.fillText(cut2(pr ? pr.name : 'Otomasi', nw - 16), hx + 10, y + TH + 10); ctx.globalAlpha = 1; }   // the track it automates, under the parameter
+    if (r.out) {                                                                                           // output: a dark field in the mixer column, the destination written in it
+      ctx.fillStyle = HD('--hd-well', '#19191a'); ctx.fillRect(r.out.x, r.out.y, r.out.w, r.out.h); ctx.strokeStyle = HD('--hd-line', '#141415'); ctx.lineWidth = 1; ctx.strokeRect(r.out.x + 0.5, r.out.y + 0.5, r.out.w - 1, r.out.h - 1);
+      ctx.fillStyle = HD('--hd-vink', '#f2f2f4'); ctx.font = FONT(700, r.out.fs || 9.5); ctx.textAlign = 'center'; ctx.fillText(cut2(P.outLabel(t.out), r.out.w - 16), r.out.x + (r.out.w - 10) / 2, r.out.y + r.out.h / 2 + 0.5); ctx.textAlign = 'left';
+      ctx.fillStyle = HD('--hd-ink2', '#8b8b92'); { const cy = r.out.y + r.out.h / 2, q = Math.max(2.5, Math.min(4, r.out.h * 0.2)), cx = r.out.x + r.out.w - 4 - q; ctx.beginPath(); ctx.moveTo(cx - q, cy - q * 0.6); ctx.lineTo(cx + q, cy - q * 0.6); ctx.lineTo(cx, cy + q * 0.7); ctx.closePath(); ctx.fill(); }
+    }
+    if (r.vol) drawSlider(r.vol, Math.sqrt(clamp(t.vol / VMAX, 0, 1)), dbTxt(t.vol) + ' dB', false);
+    if (r.pan) drawSlider(r.pan, (clamp(t.pan, -1, 1) + 1) / 2, panTxt(t.pan), true);
+    for (const [k, rc] of [[0, r.sa], [1, r.sb]]) if (rc) { const v = (t.send && t.send[k]) || 0; drawSlider(rc, v, dbTxt(v), false); }   // Live: the sends as bare dB values (-inf at zero), A over B by position
+    if (r.hm) {                                                                            // folded row: horizontal meter well (two thin lanes, L over R)
+      ctx.fillStyle = HD('--hd-mw', '#161617'); ctx.fillRect(r.hm.x, r.hm.y, r.hm.w, r.hm.h);
+      const lh = Math.max(1.5, (r.hm.h - 3) / 2); ctx.fillStyle = HD('--hd-mb', '#101011'); ctx.fillRect(r.hm.x + 2, r.hm.y + 1, r.hm.w - 4, lh); ctx.fillRect(r.hm.x + 2, r.hm.y + 2 + lh, r.hm.w - 4, lh);
+    } else if (!auto) meterWell(); else { ctx.fillStyle = HD('--hd-mw', '#161617'); ctx.fillRect(hx + HEAD - METW, y, METW, h - 1); }
+    ctx.fillStyle = HD('--hd-line', '#141416'); ctx.fillRect(hx, y + h - 1, HEAD, 1);                  // the same thin line as the lane
+    if (!t.fold && h >= MIN_ROW && (on || (drag && drag.k === 'rowh' && drag.i === i))) { ctx.fillStyle = drag && drag.k === 'rowh' && drag.i === i ? T('--accent') : C('#46464c'); ctx.fillRect(hx + (HEAD - METW) / 2 - 8, y + h - 3, 16, 1); }   // grip of the selected track: drag the bottom edge = row height
+  }
+  ctx.restore();
+  ctx.fillStyle = HD('--hd-line', '#08080a'); ctx.fillRect(hx - 1, 0, 1, H);                                // line between clip area and headers (1 px)
+  // top corner: Snap switch (tap: snap, follow, select / fold options)
+  ctx.fillStyle = HD('--hd-bg', '#2c2c2f'); ctx.fillRect(hx + 1, 0, HEAD - 1, RULER); ctx.fillStyle = HD('--hd-line', '#141415'); ctx.fillRect(hx, RULER - 1, HEAD, 1);
+  { const q = cornerRects(), tri = (r, dir) => { const cx = r.x + r.w / 2, cy = r.y + r.h / 2; ctx.fillStyle = HD('--hd-ink', '#d4d4d8'); ctx.beginPath(); ctx.moveTo(cx - 4 * dir, cy); ctx.lineTo(cx + 3 * dir, cy - 4.5); ctx.lineTo(cx + 3 * dir, cy + 4.5); ctx.closePath(); ctx.fill(); };
+    drawBtn(q.set, 'Set', false, null, pressed !== 'locset'); for (const [r, ty, dir] of [[q.prev, 'locprev', 1], [q.next, 'locnext', -1]]) { ctx.fillStyle = pressed === ty ? HD('--hd-bgsel', '#55555b') : HD('--hd-bgsel', '#3a3a3e'); ctx.fillRect(r.x, r.y, r.w, r.h); ctx.strokeStyle = HD('--hd-line', '#141415'); ctx.lineWidth = 1; ctx.strokeRect(r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1); tri(r, dir); } }
+  { const q = cornerRects(); if (q.auto.w) drawBtn(q.auto, 'aut', autoMode(), T('--accent'));
+    if (q.lock.w) { const r = q.lock, on = lockEnv(); drawBtn(r, '', on, T('--accent')); const cx = r.x + r.w / 2, cy = r.y + r.h / 2 + 1; ctx.strokeStyle = on ? '#15151a' : C('#b4b4ba'); ctx.fillStyle = ctx.strokeStyle; ctx.lineWidth = 1.4;   // Live's Lock Envelopes: a padlock
+      ctx.fillRect(cx - 4, cy - 1, 8, 6); ctx.beginPath(); ctx.arc(cx, cy - 2, 2.8, Math.PI, on ? 0 : -0.35 * Math.PI); ctx.stroke(); } }
+  drawSwitch(snapRect(), HEAD > 260 ? 'Snap ' + SNAPS[cfg.snap][0] : SNAPS[cfg.snap][0], cfg.snap !== SNAP_OFF, pressed === 'corner');
+  // bottom corner: Follow switch (the arrangement scrolls with the playhead)
+  ctx.fillStyle = HD('--hd-bg', '#2c2c2f'); ctx.fillRect(hx + 1, H - BOT, HEAD - 1, BOT); ctx.fillStyle = HD('--hd-line', '#141415'); ctx.fillRect(hx, H - BOT, HEAD, 1);
+  drawSwitch(followRect(), 'Follow', cfg.follow, pressed === 'follow');
+}
+
+// ------------------------------------------------------------------ motion
+// Every movement of the view that is not a finger dragging it goes through here, so it eases instead of jumping: zoom buttons and
+// presets, scrolling to a seek target, follow-playhead catch-up, fling after a swipe, spring-back after an over-zoom.
+const PMIN = 0.004, PMAX = 1.2;
+const mo = { tppt: null, tx0: null, vx: 0, vy: 0, fx: null, last: 0, lastTick: 0 };   // tppt/tx0 = glide target; vx/vy = fling speed (px/s); fx = float scroll position while following
+let touching = false;
+const ease = (dt, rate) => 1 - Math.exp(-dt * rate / Math.max(0.3, prefs.animScale || 1));   // frame-rate independent smoothing factor
+const centreTick = () => view.x0 + CW / (2 * view.ppt);
+function stopMotion() { mo.tppt = mo.tx0 = mo.fx = null; mo.vx = mo.vy = 0; }
+function glideTo(x0, ppt) {                                  // ease to scroll position x0 and zoom ppt (both optional)
+  const tp = ppt == null ? view.ppt : clamp(ppt, PMIN, PMAX);
+  x0 = Math.max(0, x0 == null ? view.x0 : x0);
+  mo.vx = mo.vy = 0; mo.fx = null;
+  if (prefs.reduceMotion) { view.ppt = tp; view.x0 = x0; clampView(); mo.tppt = mo.tx0 = null; invalidate(); return; }
+  mo.tppt = tp; mo.tx0 = x0; invalidate();
+}
+function zoomAt(factor, fx = CW / 2) {                       // zoom around screen x = fx: the tick under that point stays under it
+  const base = mo.tppt != null ? mo.tppt : view.ppt, tp = clamp(base * factor, PMIN, PMAX);
+  const ft = mo.tppt != null ? mo.tx0 + fx / base : xt(fx);
+  glideTo(ft - fx / tp, tp);
+}
+function fitTo(a, b) {                                       // show the tick range [a, b] across the clip area
+  const span = Math.max(b - a, BAR), tp = clamp(CW * 0.92 / span, PMIN, PMAX);
+  glideTo(a - (CW / tp - span) / 2, tp);
+}
+function stepMotion(dt) {
+  let moved = false;
+  if (mo.tppt != null) {                                     // glide: zoom eases in log space, the centre tick eases linearly
+    const k = ease(dt, 12), lp = Math.log(view.ppt), lt = Math.log(mo.tppt), c0 = centreTick(), tc = mo.tx0 + CW / (2 * mo.tppt);
+    const np = Math.exp(lp + (lt - lp) * k), nc = c0 + (tc - c0) * k;
+    if (Math.abs(lt - lp) < 0.003 && Math.abs(tc - c0) * np < 0.5) { view.ppt = mo.tppt; view.x0 = mo.tx0; mo.tppt = mo.tx0 = null; }
+    else { view.ppt = np; view.x0 = Math.max(0, nc - CW / (2 * np)); }
+    moved = true;
+  }
+  if (mo.vx || mo.vy) {                                      // fling: friction decay, stops dead at the left wall and at the vertical ends
+    const f = Math.exp(-dt * 3.2);
+    let nx = view.x0 - mo.vx * dt / view.ppt;
+    if (nx <= 0) { nx = 0; mo.vx = 0; }
+    view.x0 = nx;
+    view.y0 -= mo.vy * dt; const y1 = view.y0; clampView(); if (view.y0 !== y1) mo.vy = 0;
+    mo.vx *= f; mo.vy *= f;
+    if (Math.abs(mo.vx) < 10) mo.vx = 0;
+    if (Math.abs(mo.vy) < 10) mo.vy = 0;
+    moved = true;
+  }
+  if (fh.size) {                                             // fold / unfold: row heights glide to their new size
+    const k = ease(dt, 16);
+    for (const t of state.tracks) {
+      const a = fh.get(t.id); if (a === undefined) continue;
+      const tg = rowTarget(t), nv = a + (tg - a) * k;
+      if (Math.abs(tg - nv) < 0.5) fh.delete(t.id); else fh.set(t.id, nv);
+    }
+    for (const id of fh.keys()) if (!state.tracks.some((t) => t.id === id)) fh.delete(id);
+    clampView(); moved = true;
+  }
+  { const tg = state.loop.on ? 1 : 0; if (loopA !== tg) { loopA = prefs.reduceMotion ? tg : loopA + (tg - loopA) * ease(dt, 14); if (Math.abs(tg - loopA) < 0.01) loopA = tg; moved = true; } }
+  if (gl.size) {                                             // dragged clips glide onto their snapped position instead of jumping a grid step
+    const k = ease(dt, 30);
+    for (const [id, g] of gl) {
+      g.s += (g.c.start - g.s) * k; g.l += (g.c.len - g.l) * k;
+      if (Math.abs(g.c.start - g.s) * view.ppt < 0.3 && Math.abs(g.c.len - g.l) * view.ppt < 0.3) gl.delete(id);
+    }
+    moved = true;
+  }
+  return moved;
+}
+function animRow(t) { if (!prefs.reduceMotion && !fh.has(t.id)) fh.set(t.id, rowTarget(t)); }   // call before t.fold changes
+function glideClip(c) { if (!prefs.reduceMotion && !gl.has(c.id)) gl.set(c.id, { c, s: c.start, l: c.len }); }   // call before c.start / c.len change
+
+let lastHeadPx = -1e9, headDirty = true;
+const FOLLOW_AT = 0.38;                       // playhead stays at this fraction of the width while the arrangement scrolls under it
+let lastBlink = 0;
+export function frame() {
+  if (!W) return;
+  const now = performance.now(), dt = clamp((now - (mo.last || now)) / 1000, 0.001, 0.05); mo.last = now;
+  const tick = P.currentTick();   // extrapolated between engine polls: smooth at 60-120 Hz
+  const vis = CW / view.ppt, q = view.ppt * dpr;
+  const idle = !drag && !touching && now - touchedAt > 1500 && CW > 40 && mo.tppt == null && !mo.vx && !mo.vy;
+  if (state.playing && cfg.follow && idle) {
+    // Follow: once the playhead reaches the anchor the content moves under it. The scroll position is chased with the playhead's own speed as
+    // feed-forward, so it starts without a jerk, never lags, and a seek or a return after manual scrolling glides in instead of jumping.
+    // The position is kept as a float and shown on whole device pixels, so the playhead never wobbles by one pixel.
+    const A = Math.round(CW * dpr * FOLLOW_AT) / q;
+    if (mo.fx !== null && Math.abs(mo.fx - view.x0) > 2 / q) mo.fx = view.x0;                  // someone else moved the view: start from there
+    if (mo.fx === null && (tick > view.x0 + A || tick < view.x0 || tick > view.x0 + vis) && tick - A > 0) mo.fx = view.x0;   // engage
+    if (mo.fx !== null) {
+      const want = Math.max(0, tick - A);
+      if (want <= 0 && view.x0 <= 0.5 / q) { mo.fx = null; }                                      // playhead is left of the anchor again, view at the start
+      else {
+        mo.fx = Math.max(0, mo.fx + (state.bpm / 60 * PPQ) * dt + (want - mo.fx) * ease(dt, 10));
+        const nx = Math.round(mo.fx * q) / q;
+        if (nx !== view.x0) { view.x0 = nx; dirty = true; }
+      }
+    }
+  } else if (mo.fx !== null) mo.fx = null;
+  if (!state.playing && cfg.follow && idle && tick !== mo.lastTick && (tick < view.x0 || tick > view.x0 + vis)) glideTo(tick - vis * 0.12);   // stop / rewind / marker jump out of view: scroll there smoothly
+  if (stepMotion(dt)) dirty = true;
+  mo.lastTick = tick;
+  if (dirty) { dirty = false; draw(); headDirty = true; }
+  const px = Math.round(tx(tick) * dpr);
+  smoothMeters();
+  const mk = state.playing || lastMeterKey ? meterKey() : 0;
+  const bl = state.playing ? 0 : Math.floor(now / 530) % 2; if (bl !== lastBlink) { lastBlink = bl; headDirty = true; }
+  if (headDirty || px !== lastHeadPx || mk !== lastMeterKey) { lastHeadPx = px; lastMeterKey = mk; headDirty = false; drawHead(tick); }
+}
+
+// Dragging a clip (or its edge) near the left / right border scrolls the arrangement so the clip can reach tick 0 and far bars.
+function edgeScroll(x) {
+  const M = 28, step = 14 / view.ppt;
+  if (x < M && view.x0 > 0) { view.x0 = Math.max(0, view.x0 - step * (1 - Math.max(0, x) / M)); }
+  else if (x > CW - M && x < CW) view.x0 += step * (1 - (CW - x) / M);
+}
+
+// ------------------------------------------------------------------ hit testing + actions
+// The selected clip's handles, as Honeydew's (src/ui/clips.rs handle_rects, GPL-3.0-or-later): the start capsule ending 0.5 U inside the clip's
+// left edge (none when it would touch the end one), the end capsule from 0.15 U right of its right edge, both centred on the clip vertically, and
+// under an audio clip that does not loop a third bar (↔) centred on its right edge, 0.12 U below it: drag it = stretch the audio (no mode switch).
+// A capsule is 0.42 U + 2 px by 1.41 U + 2 px; a touch zone is 1 U wide (the start one at most a third of the clip), the bar's 1 U tall.
+const HU = 22;
+function selHandles() {
+  if (msel.size || drag && drag.k !== 'resize' && drag.k !== 'resizeL' && drag.k !== 'stretch') return null;
+  const id = state.sel.clip; if (id == null) return null;
+  const i = state.tracks.findIndex((t) => t.clips.some((c) => c.id === id)); if (i < 0) return null;
+  const t = state.tracks[i], c = t.clips.find((q) => q.id === id), b = laneBox(i, c); if (t.kind === 'auto' || t.fold || b.h < 24) return null;
+  const g = gl.get(c.id), x0 = tx(g ? g.s : c.start), x1 = tx((g ? g.s : c.start) + (g ? g.l : c.len)), y0 = b.y + 1, y1 = b.y + b.h - 1;
+  const cw = Math.round(HU * 0.42) + 2, ch = Math.min(Math.round(HU * 1.41) + 2, y1 - y0 - 4), cy = (y0 + y1) / 2 - ch / 2;
+  const end = { x: x1 + HU * 0.15, y: cy, w: cw, h: ch }, start = { x: x0 + HU * 0.5 - cw, y: cy, w: cw, h: ch };
+  const out = { i, c, t, x0, x1, y1, end, start: start.x + start.w < end.x ? start : null, scale: null };
+  if (t.kind === 'audio' && !P.loopOf(c) && (c.sample || c.dsample)) out.scale = { x: x1 - HU / 2, y: y1 + HU * 0.12, w: HU, h: Math.round(HU * 0.56) + 2 };
+  return out;
+}
+function handleHit(x, y) {
+  const s = selHandles(); if (!s) return null;
+  if (s.t.kind === 'audio' && Math.abs(y - (rowY(s.i) + 1 + (rh(s.i) >= 40 ? 14 : 0) + 5)) < 9 && x > s.x0 - 4 && x < s.x1 + 4) return null;   // Live's fade squares (top corners) come first
+  const zone = (r, w, hh) => inRect({ x: r.x + r.w / 2 - w / 2, y: r.y + r.h / 2 - hh / 2, w, h: hh }, x, y);
+  const hit = (zn) => ({ type: 'clip', i: s.i, c: s.c, tick: xt(x), zone: zn });
+  if (s.scale && zone(s.scale, s.scale.w, HU)) return hit('scale');
+  if (zone(s.end, HU, s.end.h)) return hit('right');
+  if (s.start && zone(s.start, Math.min(HU, (s.x1 - s.x0) / 3), s.start.h)) return hit('left');
+  return null;
+}
+// The handles drawn simply (owner, 2026-11-16: Honeydew's logic, not its look): a thin bar on each edge of the selected clip (start / end:
+// drag = trim / length) and, under an audio clip that does not loop, a small flat tab with a double arrow at its right end (drag = stretch).
+// The touch zones stay Honeydew's (selHandles / handleHit), larger than what is drawn.
+function drawHandles() {
+  const s = selHandles(); if (!s) return;
+  const ink = 'rgba(255,255,255,.9)', y0 = s.end.y, hh = s.end.h, st = drag && drag.k === 'stretch';
+  ctx.save(); ctx.beginPath(); ctx.rect(0, RULER, CW, LANE_B() - RULER); ctx.clip();
+  ctx.fillStyle = ink; ctx.fillRect(Math.round(s.x1) - 3, y0, 2, hh); if (s.start) ctx.fillRect(Math.round(s.x0) + 1, y0, 2, hh);
+  if (s.scale) { const w = 18, h2 = 9, x = Math.round(s.x1) - w, y = Math.round(s.y1) + 2;
+    ctx.fillStyle = st ? T('--accent') : 'rgba(0,0,0,.55)'; ctx.fillRect(x, y, w, h2);
+    ctx.strokeStyle = st ? '#15151a' : ink; ctx.lineWidth = 1; const cy = y + h2 / 2 + 0.5; ctx.beginPath(); ctx.moveTo(x + 4, cy); ctx.lineTo(x + w - 4, cy);
+    ctx.moveTo(x + 6.5, cy - 2.5); ctx.lineTo(x + 4, cy); ctx.lineTo(x + 6.5, cy + 2.5); ctx.moveTo(x + w - 6.5, cy - 2.5); ctx.lineTo(x + w - 4, cy); ctx.lineTo(x + w - 6.5, cy + 2.5); ctx.stroke(); }
+  ctx.restore();
+}
+function hit(x, y) {
+  if (y < RULER) {
+    if (x >= CW) { const q = cornerRects(); return inRect(q.set, x, y, 2) ? { type: 'locset' } : inRect(q.prev, x, y, 1) ? { type: 'locprev' } : inRect(q.next, x, y, 1) ? { type: 'locnext' } : q.auto.w && inRect(q.auto, x, y, 1) ? { type: 'automode' } : q.lock.w && inRect(q.lock, x, y, 1) ? { type: 'lockenv' } : { type: 'corner' }; }
+    if (y >= LT - 1 && y < RULER - 10) { let best = null, bd = 18; for (const m of state.markers) { const d = Math.abs(x - tx(m.t)); if (d < bd) { bd = d; best = m; } } return best ? { type: 'marker', m: best } : { type: 'mrow', tick: xt(x) }; }
+    if (PUon() && y > RULER - 11) {
+      const dl = Math.abs(x - tx(state.punch.start)), dr = Math.abs(x - tx(state.punch.end));
+      if (Math.min(dl, dr) < 14) return { type: dl <= dr ? 'punchL' : 'punchR' };
+    }
+    const LP = state.loop;                                        // loop brace along the bottom of the beat ruler: ends = start / end, middle = move, tap = on / off
+    if (y >= RULER - 10 && LP.end > LP.start) {
+      const a = tx(LP.start), b = tx(LP.end), ez = Math.min(14, Math.max(6, (b - a) / 3));
+      if (x > a - 10 && x < b + 10) return Math.abs(x - a) < ez ? { type: 'loopL', tick: xt(x) } : Math.abs(x - b) < ez ? { type: 'loopR', tick: xt(x) } : { type: 'loop', tick: xt(x) };
+    }
+    return { type: 'ruler', tick: xt(x) };
+  }
+  if (y >= H - BOT) {                                                                            // time ruler: grid / zoom fields at its right end, Follow under the headers
+    for (const [type, , r] of badges()) if (inRect(r, x, y, 3)) return { type };
+    return x >= CW ? { type: 'follow' } : { type: 'tbar', tick: xt(x) };
+  }
+  if (x < CW) { const hh = handleHit(x, y); if (hh) return hh; }                                // the selected clip's handles reach outside it
+  const i = rowAt(y);
+  if (Math.abs(x - CW) <= 4) return { type: 'headw' };                                         // the header column's left edge: drag = its width
+  if (x >= CW) {
+    const n0 = state.tracks.length;
+    if (i === n0 + nX()) return y - rowY(i) < 8 + 28 + 6 ? { type: 'add' } : { type: 'none' };   // the "+ Track" button at the top of the (stretched) drop area
+    if (i < 0 || i > n0 + nX()) return { type: 'none' };
+    if (i >= n0) { const xi = xInfo(i); return { type: 'xhead', x: xi, mute: !xi.master && inRect(xhdr(i).act, x, y, 3) }; }
+    if (subN(state.tracks[i]) && y >= rowY(i) + rhMain(i)) { const id = laneAt(i, y), k = P.subsOf(state.tracks[i]).findIndex((s) => s.id === id); if (k >= 0) return { type: 'subhead', i, id, mute: inRect(subHdr(i, k).mute, x, y, 4) }; }
+    if (!state.tracks[i].fold && rowY(i) + rh(i) - y < 8) return { type: 'rowh', i };          // bottom edge of a header: row height
+    const r = hdr(i);
+    for (const [k, key] of [[0, 'mute'], [1, 'solo'], [2, 'fold'], [3, 'vol'], [4, 'pan'], [5, 'arm'], [7, 'aut'], [8, 'sa'], [9, 'sb'], [10, 'out']]) if (r[key] && inRect(r[key], x, y, key === 'vol' || key === 'pan' || key === 'sa' || key === 'sb' || key === 'out' ? 2 : 3)) return { type: 'head', i, btn: k };
+    return { type: 'head', i };
+  }
+  if (i < 0 || i >= state.tracks.length) return { type: 'empty', i, tick: xt(x) };
+  const tick = xt(x), ln = laneAt(i, y), sub = subN(state.tracks[i]) > 0;
+  const clips = state.tracks[i].clips;
+  for (let k = clips.length - 1; k >= 0; k--) {
+    const c = clips[k];
+    if (sub && (c.sub || null) !== ln) continue;                                      // sub-tracks: only the clips of the row under the finger
+    if (tick >= c.start && tick <= c.start + c.len) {
+      const wpx = tx(c.start + c.len) - tx(c.start), hz = Math.min(HANDLE, wpx / 2.5);   // handles never take more than 40% of a narrow clip, so it stays movable
+      if (state.sel.clip === c.id && state.tracks[i].kind === 'audio' && wpx > 30) {   // fade handles (top corners of the body): drag = fade length
+        const spt = 60 / state.bpm / PPQ, y0 = rowY(i) + 1, top = y0 + (rh(i) >= 40 ? 14 : 0) + 5, fx = tx(c.start) + Math.max(5, Math.min(wpx / 2, (c.fadeIn || 0) / spt * view.ppt)), gx = tx(c.start + c.len) - Math.max(5, Math.min(wpx / 2, (c.fadeOut || 0) / spt * view.ppt));
+        if (Math.abs(y - top) < 11) { if (Math.abs(x - fx) < 12) return { type: 'clip', i, c, tick, zone: 'fadeIn' }; if (Math.abs(x - gx) < 12) return { type: 'clip', i, c, tick, zone: 'fadeOut' }; }
+      }
+      const lb = laneBox(i, c);
+      if (state.sel.clip === c.id && lb.h >= 40 && wpx > 44) { const mx = Math.min(tx(c.start + c.len), CW) - 12, my = lb.y + 8; if (Math.abs(x - mx) < 13 && Math.abs(y - my) < 11) return { type: 'clip', i, c, tick, zone: 'menu' }; }
+      const edgeR = tx(c.start + c.len) - x < hz, edgeL = !edgeR && x - tx(c.start) < hz;
+      return { type: 'clip', i, c, tick, zone: edgeR ? 'right' : edgeL ? 'left' : 'body' };
+    }
+  }
+  return { type: 'empty', i, tick, sub: ln };
+}
+
+const canvasOrigin = () => canvas.getBoundingClientRect();
+// Live's clip context menu: edit commands with their shortcuts, then clip commands, then the clip view
+function clipMenu(i, c, tick, sx, sy) {
+  const t = state.tracks[i], r = canvasOrigin();
+  menu([
+    { label: 'Edit', fn: () => { P.selectClip(i, c.id); if (hooks.openEditor) hooks.openEditor(); } },   // piano roll / drum step / audio editor, full screen
+    { sep: true },
+    { label: 'Cut', fn: () => { copyList([{ i, c }]); checkpoint(); P.removeClip(i, c.id); } },
+    { label: 'Copy', fn: () => copyList([{ i, c }]) },
+    { label: 'Duplicate', fn: () => { checkpoint(); P.duplicateClip(i, c.id); invalidate(); } },
+    { label: 'Delete', fn: () => { checkpoint(); P.removeClip(i, c.id); } },
+    { sep: true },
+    { label: 'Rename', fn: () => renameClip(i, c) },
+    { label: 'Split', fn: () => { checkpoint(); P.splitClip(i, c.id, snapT(tick)); } },
+    { label: 'Snap Edges to Grid', fn: () => snapClip(i, c) },
+    { label: 'Chop\u2026', sub: [{ label: 'EVERY', dim: true }, ...[6, 4, 3, 2, 1].map((n) => ({ label: n === 1 ? '1 beat' : '1/' + n + ' beat', fn: () => chopClip(i, c, { every: n }) })),
+      ...(t.kind === 'audio' ? [{ sep: true }, { label: 'AT', dim: true }, { label: 'Transients', fn: () => chopClip(i, c, { transients: true }) }] : [])] },
+    ...(t.kind === 'audio' && !P.loopOf(c) ? [{ label: 'Tempo\u2026', sub: [{ label: 'Half Time (x2 length)', fn: () => tempoClip(i, c, 2) }, { label: 'Double Time (/2 length)', fn: () => tempoClip(i, c, 0.5) }] }] : []),
+    ...(c.notes ? [{ label: 'Combine with Next Clip', dim: !nextClip(i, c), fn: () => combineNext(i, c) }] : []),
+    { label: c.muted ? 'Activate Clip' : 'Deactivate Clip', fn: () => { checkpoint(); P.setClipsMuted([{ i, c }], !c.muted); invalidate(); } },
+    ...(c.notes && P.loopOf(c) ? [{ label: 'Unlink Loop', fn: () => { checkpoint(); P.bakeLoop(c, i); P.emit('clips'); invalidate(); toast('Pengulangan jadi not biasa.', 1600); } }] : []),
+    ...(t.kind === 'audio' ? [{ label: 'Stretch Mode', check: stretchMode, fn: () => { stretchMode = !stretchMode; toast(stretchMode ? 'Mode stretch: tarik ujung kanan klip audio untuk meregangkan (pitch tetap).' : 'Mode stretch mati: tarik ujung kanan untuk memotong.', 3200); invalidate(); } }] : []),
+  ], sx != null ? sx : r.left + clamp(tx(c.start), 0, Math.max(0, CW - 220)), sy != null ? sy : r.top + Math.max(RULER, rowY(i)) + 20, { passThrough: true });
+}
+const nextClip = (i, c) => state.tracks[i].clips.filter((x) => x !== c && x.notes && x.start >= c.start).sort((a, b) => a.start - b.start)[0] || null;
+function combineNext(i, c) {                                                // FL Studio Mobile "Combine" from the clip's own menu: this clip + the next one on the track
+  const n = nextClip(i, c); if (!n) return toast('Tidak ada klip berikutnya di track ini.');
+  checkpoint(); const r = P.combineClips(i, [c.id, n.id]);
+  if (r.error) { revertLast(); return toast(r.error); }
+  P.selectClip(i, r.id); invalidate(); toast('2 klip digabung jadi satu.', 1400);
+}
+// Honeydew's Chop... (src/ui/clips.rs every_ticks / chop, GPL-3.0-or-later): cuts the clip every 1/n beat of its content (the offset taken into
+// account: the cuts fall on the content's beat grid), or an audio clip at its sample's transients (the Slicer's detection at its default
+// Sensitivity 0.25); at most 256 pieces. One undo step.
+function chopClip(i, c, o) {
+  const t = state.tracks[i], end = c.start + c.len; let ticks = [];
+  if (o.every) {
+    const d = PPQ / o.every, off = t.kind === 'audio' ? (c.offset || 0) * state.bpm / 60 * PPQ : (c.lp || 0), first = c.start + (d - (((off % d) + d) % d));
+    for (let k = first; k < end && ticks.length < 255; k += d) if (k > c.start) ticks.push(Math.round(k));
+  } else {
+    const es = c.dsample || c.sample, pyr = es && es.pyr; if (!pyr || !pyr.l) { toast('Sample belum siap untuk dicari transiennya.', 1600); return; }
+    const fr = pyr.l.length, st = slicesOf(pyr, 0.25) || [];
+    for (const f of st) { const sec = f / fr * es.duration - (c.offset || 0), tk = Math.round(c.start + sec * state.bpm / 60 * PPQ); if (tk > c.start && tk < end) ticks.push(tk); }
+    ticks = ticks.slice(0, 255);
+  }
+  ticks = [...new Set(ticks)].sort((a, b) => b - a); if (!ticks.length) { toast('Tidak ada titik potong di klip ini.', 1400); return; }
+  checkpoint(); for (const tk of ticks) P.splitClip(i, c.id, tk);
+  invalidate(); toast(`Klip dipotong jadi ${ticks.length + 1} bagian.`, 1400);
+}
+export const testChop = (i, id, o) => chopClip(i, state.tracks[i].clips.find((q) => q.id === id), o);   // UI tests
+// Honeydew's Half / Double tempo of an audio clip: its audio stretched to twice / half its length (pitch kept)
+function tempoClip(i, c, k) {
+  const r0 = c.warp ? c.warp.ratio || 1 : 1;
+  checkpoint(); P.restretchClip(i, c.id, r0 * k, { len: Math.round(c.len * k) }).then((o) => { if (o && o.error) toast(o.error, 2600); else toast(k > 1 ? 'Half Time: klip 2x lebih panjang.' : 'Double Time: klip 2x lebih pendek.', 1400); invalidate(); });
+}
+function renameClip(i, c) { ask('Nama klip', c.name || '', (v) => { checkpoint(); c.name = String(v || '').trim().slice(0, 40); P.emit('clips'); invalidate(); }); }
+function snapClip(i, c) {
+  const a = Math.max(0, snapT(c.start)), e = snapT(c.start + c.len);
+  if (a === c.start && e - a === c.len) return toast('Tepi klip sudah pas di grid.');
+  if (e - a < 1) return toast('Klip terlalu pendek untuk di-snap.');
+  checkpoint(); c.len = e - a; c.start = a; P.syncClips(i); P.touchClips(i); invalidate();
+}
+
+function selMenu() {
+  const r = canvasOrigin();
+  const a = sel.a, b = sel.b, len = b - a;
+  menu([
+    { label: 'Deselect', fn: () => { sel = null; invalidate(); } }, { sep: true },
+    { label: 'Insert space', fn: () => { checkpoint(); cutAll(a); shift(a, len); sel = null; } },
+    { label: 'Duplicate', fn: () => { checkpoint(); cutAll(a); cutAll(b); dupRange(a, b); sel = null; } },
+    { label: 'Delete', fn: () => { checkpoint(); cutAll(a); cutAll(b); delRange(a, b); sel = null; } },
+    { label: 'Delete space', fn: () => { checkpoint(); cutAll(a); cutAll(b); delRange(a, b); shift(b, -len); sel = null; } },
+    { label: 'Trim', fn: () => { checkpoint(); cutAll(a); cutAll(b); delRange(0, a); delRange(b, 1e9); shift(a, -a); sel = null; } },
+  ], r.left + clamp(tx(a), 0, Math.max(0, CW - 200)), r.top + RULER + 4);
+}
+function cutAll(tick) {
+  state.tracks.forEach((t, i) => { if (t.kind !== 'audio') for (const c of [...t.clips]) if (tick > c.start && tick < c.start + c.len) P.splitClip(i, c.id, tick); });
+}
+function shift(from, delta) {
+  state.tracks.forEach((t, i) => { let ch = false; for (const c of t.clips) if (c.start >= from) { c.start = Math.max(0, c.start + delta); ch = true; } if (ch) P.syncClips(i); });
+  P.emit('clips');
+}
+function delRange(a, b) {
+  state.tracks.forEach((t, i) => { const n = t.clips.length; t.clips = t.clips.filter((c) => !(c.start >= a && c.start + c.len <= b)); if (t.clips.length !== n) P.syncClips(i); });
+  P.emit('clips');
+}
+function dupRange(a, b) {
+  const len = b - a; shift(b, len);
+  state.tracks.forEach((t, i) => {
+    const add = t.clips.filter((c) => c.start >= a && c.start + c.len <= b).map((c) => ({ ...c, notes: c.notes && c.notes.map((n) => ({ ...n })) }));
+    for (const c of add) P.pasteClip(i, { kind: t.kind, clip: c }, c.start + len);
+    if (add.length) P.syncClips(i);
+  });
+  P.emit('clips');
+}
+
+function xheadMenu(xi, x, y) {
+  const r = canvasOrigin();
+  const recolor = () => { const before = xi.obj.color; pickColor({ title: 'Warna ' + xi.name, name: xi.name, color: xi.color, swatches: SWATCHES, onChange: (c) => { xi.obj.color = c; invalidate(); }, onDone: (c) => { if (c !== before) { P.noteColor(xi.master ? 'master' : 'ret' + xi.k, before); P.emit('tracks'); } } }); };
+  if (xi.master) return menu([{ label: 'Pilih Master (modul efek)', fn: () => P.selectTrack(MASTER) }, { label: 'Warna', fn: recolor }, { label: 'Buat FX track', dim: state.returns.length >= P.MAX_FX, fn: () => addFx() }], r.left + x, r.top + y);
+  menu([
+    { label: 'Pilih (modul efek)', fn: () => P.selectTrack(xi.strip) },
+    { label: 'Warna', fn: recolor },
+    { label: 'Ganti nama', fn: () => ask('Nama FX track', xi.name, (v) => v && P.renameFx(xi.k, v.trim())) },
+    { sep: true },
+    { label: 'Hapus FX track', fn: () => modal('Hapus ' + xi.name + '?', 'Track yang masuk ke sini kembali ke Master. Modul efek di FX track ini ikut terhapus.', [{ label: 'Batal' }, { label: 'Hapus', go: true, fn: () => { checkpoint(); P.removeFxTrack(xi.k); } }]) },
+  ], r.left + x, r.top + y);
+}
+function addFx() { const k = P.addFxTrack(); if (k === null) return toast('Batas FX track tercapai.'); P.selectTrack(RET0 + k); toast('FX track dibuat. Arahkan track ke sini lewat tombol \u2192 di Mixer atau menu Output (tekan lama nama track).', 3600); }
+// FL Studio Mobile channel menu "Sync All Samples": every audio clip of the track follows the project tempo (pitch stays). A clip whose tempo
+// cannot be detected (not a rhythmic loop) is left as it is and counted.
+async function syncTrackSamples(i) {
+  const t = state.tracks[i], todo = t ? t.clips.filter((c) => (c.sample || c.dsample) && !c.warpAuto) : [];
+  if (!todo.length) return toast('Semua sample di track ini sudah di-sync.', 2200);
+  toast(`Menyamakan ${todo.length} sample ke tempo proyek\u2026`, 30000); checkpoint();
+  let ok = 0, skip = 0;
+  for (const c of todo) {
+    await new Promise((r) => setTimeout(r, 0));                                 // let the UI breathe between clips
+    if (!(c.srcBpm > 0)) { const d = P.detectClipBpm(i, c.id); if (d.error) { skip++; continue; } P.setClipSrcBpm(i, c.id, d.bpm); }
+    const out = await P.syncClipToTempo(i, c.id, c.srcBpm, true);
+    if (out.error) skip++; else ok++;
+  }
+  invalidate(); toast(`${ok} sample disamakan ke ${state.bpm} BPM` + (skip ? `, ${skip} dilewati (tempo tidak terdeteksi)` : '') + '.', 4200);
+}
+// "My Drumsets": the saved kits; picking one replaces the pads of this drum track (one undo step)
+function kitMenu(i, x, y) {
+  const r = canvasOrigin(), L = PRS.kitList();
+  if (!L.length) return toast('Belum ada kit drum. Simpan dulu lewat menu track \u2192 Simpan kit drum.', 3500);
+  menu([{ label: 'KIT DRUM SAYA', dim: true }, ...L.map((k) => ({ label: `${k.name} (${k.n} pad)`, fn: async () => { const o = await PRS.applyKit(k.path, i); toast(o.error || o.msg, 3800); invalidate(); } }))], r.left + x, r.top + y);
+}
+function outMenu(i, x, y) {
+  const t = state.tracks[i], r = canvasOrigin(); if (!t) return;
+  menu([{ label: 'Master', check: !(t.out >= 0), fn: () => P.setOut(i, -1) }, ...state.returns.map((rt, k) => ({ label: rt.name, check: t.out === k, fn: () => P.setOut(i, k) })),
+    ...(state.returns.length < P.MAX_FX ? [{ sep: true }, { label: 'Buat FX track baru\u2026', fn: () => { const k = P.addFxTrack(); if (k !== null) P.setOut(i, k); } }] : [])], r.left + x, r.top + y);
+}
+function headWMenu(x, y) {
+  const r = canvasOrigin(), set = full() ? [['Sempit', 160], ['Normal', 208], ['Lebar', 260]] : [['Sempit', 64], ['Normal', 96], ['Lebar', 130]], cur = headPref();
+  menu([{ label: 'KOLOM TRACK', dim: true }, { label: 'Kontrol penuh', check: full(), fn: () => setHeadFull(true) }, { label: 'Ringkas (hanya nama)', check: !full(), fn: () => setHeadFull(false) }, { sep: true },
+    ...set.map(([n, w]) => ({ label: 'Lebar ' + n.toLowerCase(), check: cur > 0 && Math.abs(cur - w) < 14, fn: () => setHeadW(w) })),
+    { label: 'Lebar otomatis', check: !(cur > 0), fn: () => setHeadW(0) }, { sep: true }, { label: 'Lipat semua track', fn: () => foldAll(true) }, { label: 'Buka semua track', fn: () => foldAll(false) }], r.left + x, r.top + y);
+}
+// sub-tracks: add (Step = drum steps, Notes = piano roll), and the menu of one sub-track row
+function addSubMenu(i, x, y) {
+  const r = canvasOrigin(), go = (k) => { checkpoint(); const s = P.addSub(i, k); if (s && state.tracks[i].fold) toggleFold(i); if (s) toast(`Sub-track "${s.name}" ditambahkan: klipnya dimainkan instrumen ${state.tracks[i].name}.`, 2400); invalidate(); };
+  menu([{ label: 'SUB-TRACK BARU', dim: true }, { label: 'Step track (step sequencer)', fn: () => go('steps') }, { label: 'Notes track (piano roll)', fn: () => go('notes') }], r.left + x, r.top + y);
+}
+function subMenu(i, id, x, y) {
+  const t = state.tracks[i], s = P.subsOf(t).find((q) => q.id === id), r = canvasOrigin(); if (!s) return;
+  const n = t.clips.filter((c) => c.sub === id).length;
+  menu([
+    { label: s.name.toUpperCase(), dim: true },
+    { label: s.mute ? 'Aktifkan' : 'Matikan (mute)', fn: () => { checkpoint(); P.setSub(i, id, 'mute', !s.mute); invalidate(); } },
+    { label: 'Ganti nama', fn: () => ask('Nama sub-track', s.name, (v) => { if (v) { checkpoint(); P.setSub(i, id, 'name', v); invalidate(); } }) },
+    { label: 'Editor: Step', check: s.kind !== 'notes', fn: () => { checkpoint(); P.setSub(i, id, 'kind', 'steps'); } },
+    { label: 'Editor: Notes (piano roll)', check: s.kind === 'notes', fn: () => { checkpoint(); P.setSub(i, id, 'kind', 'notes'); } },
+    { sep: true },
+    { label: 'Hapus sub-track' + (n ? ` (${n} klip pindah ke baris utama)` : ''), fn: () => { checkpoint(); P.removeSub(i, id); invalidate(); } },
+  ], r.left + x, r.top + y);
+}
+function headMenu(i, x, y) {
+  const t = state.tracks[i], r = canvasOrigin();
+  menu([
+    ...(t.kind !== 'auto' ? [{ label: 'Output: ' + P.outLabel(t.out) + '\u2026', fn: () => outMenu(i, x, y) }] : []),
+    ...(t.kind === 'audio' || t.kind === 'midi' || t.kind === 'drum' ? [{ label: t.arm ? 'Matikan Arm rekam' : 'Arm untuk rekam', fn: () => P.toggleArm(i) }] : []),
+    ...(t.kind === 'midi' || t.kind === 'drum' ? [{ label: 'Monitor input: ' + { in: 'In', auto: 'Auto', off: 'Off' }[P.monMode(t)] + '\u2026', fn: () => menu(['in', 'auto', 'off'].map((m) => ({ label: { in: 'In (selalu bunyi)', auto: 'Auto (bunyi saat arm)', off: 'Off (hanya rekam)' }[m], check: P.monMode(t) === m, fn: () => P.setMonitor(i, m) })), r.left + x, r.top + y) }] : []),
+    ...(t.kind !== 'auto' ? [{ label: 'Lane otomasi\u2026', fn: () => laneMenu(i, x, y) }] : []),
+    ...(t.kind !== 'auto' ? [P.isFrozen(i) ? { label: 'Lepas freeze (Unfreeze)', fn: () => { P.unfreezeTrack(i); toast('Track kembali live.'); } }
+      : { label: 'Freeze track', fn: async () => { toast('Membekukan track\u2026', 20000); const r = await P.freezeTrack(i); toast(r.error || `Track dibekukan (${r.secs.toFixed(1)} dtk audio). Instrumen dan efeknya tidak lagi memakai CPU.`, 4000); invalidate(); } }] : []),
+    ...(t.kind !== 'auto' ? [{ label: 'Duplikat track', fn: () => { const r = P.duplicateTrack(i); toast(r.error || 'Track diduplikasi.', r.error ? 3200 : 1400); invalidate(); } }] : []),
+    ...(t.kind === 'midi' || t.kind === 'drum' ? [{ label: 'Tambah sub-track\u2026', dim: P.subsOf(t).length >= P.SUB_MAX, fn: () => addSubMenu(i, x, y) }] : []),
+    ...(t.kind === 'midi' || t.kind === 'drum' ? [{ label: 'Simpan sebagai MIDI', fn: () => exportTrackMidi(i) }, { label: 'Impor MIDI ke track ini\u2026', fn: () => importMidiInto(i) }] : []),
+    ...(t.kind === 'audio' && t.clips.some((c) => c.sample) ? [{ label: 'Sync semua sample', fn: () => syncTrackSamples(i) }] : []),
+    ...(t.kind === 'drum' ? [{ label: 'Simpan kit drum\u2026', fn: () => ask('Nama kit drum', t.name, (v) => { const r = PRS.saveKit(i, String(v || '').trim()); toast(r.error || `Kit tersimpan di Presets/Kits (${r.n} pad${r.skipped ? `, ${r.skipped} pad chain dilewati` : ''}).`, 3500); }) },
+      { label: 'Muat kit drum\u2026', fn: () => kitMenu(i, x, y) }] : []),
+    { label: 'Ganti nama', fn: () => ask('Nama track', t.name, (v) => v && P.renameTrack(i, v.trim())) },
+    { label: 'Warna', fn: () => { const before = t.color; pickColor({ title: 'Warna track', name: t.name, color: t.color, swatches: SWATCHES, onChange: (c) => { t.color = c; invalidate(); }, onDone: (c) => { if (c !== before) { P.noteColor(t.id, before); P.emit('tracks'); } } }); } },
+    { label: t.fold ? 'Buka track' : 'Lipat track', fn: () => toggleFold(i) },
+    { label: 'Lebar kolom track\u2026', fn: () => headWMenu(x, y) },
+    { label: 'Pindah ke atas', fn: () => swapTrack(i, i - 1) },
+    { label: 'Pindah ke bawah', fn: () => swapTrack(i, i + 1) },
+    { sep: true },
+    { label: 'Hapus track\u2026', fn: () => modal('Hapus track', `Track \u201c${t.name}\u201d beserta semua klip, instrumen dan efeknya dihapus. Bisa dibatalkan dengan Urungkan.`, [{ label: 'Batal' }, { label: 'Hapus', go: true, fn: () => { P.removeTrack(i); haptic(16); } }]) },
+  ], r.left + x, r.top + y);
+}
+// Automation lane chooser (Live: the A button of a track): pick a parameter; its lane (an automation track) is created right below this track,
+// or selected when it already exists. Existing lanes can be folded / opened together.
+// Clip View (Envelopes box): the same lane menu, placed at a screen point
+export function openLaneMenu(i, sx, sy) { const r = canvasOrigin(); laneMenu(i, sx - r.left, sy - r.top); }
+function laneMenu(i, x, y) {
+  const t = state.tracks[i], r = canvasOrigin(), sid = P.stripOf(i); if (!t || t.kind === 'auto') return;
+  const open = (target, label) => {
+    let a = null, made = false;
+    P.HK.group(() => {                                                       // creating the lane and moving it below this track = ONE undo step
+      const before = state.tracks.length; a = P.addAutoTrack(target, label);
+      if (a && state.tracks.length > before) { made = true; for (let k = state.tracks.length - 1; k > i + 1; k--) P.swapTracks(k, k - 1); }
+    });
+    if (!a) return toast('Jumlah track sudah maksimum.', 2400);
+    toast(made ? 'Lane otomasi dibuat di bawah track ini.' : 'Lane ini sudah ada, dipilih.', 2000);
+    const at = state.tracks.indexOf(a); if (at >= 0) { a.fold = false; P.selectTrack(at); } invalidate();
+  };
+  const list = (base, defs, lbl) => defs.map((p, k) => ({ label: p.n, fn: () => open({ ...base, param: k, def: p }, `${t.name} \u2022 ${lbl ? lbl + ' ' : ''}${p.n}`) }));
+  const items = [
+    { label: 'Volume', fn: () => open({ kind: 0, strip: sid, param: 0, def: P.AUTO_VOL }, `${t.name} \u2022 Volume`) },
+    { label: 'Pan', fn: () => open({ kind: 1, strip: sid, param: 0, def: P.AUTO_PAN }, `${t.name} \u2022 Pan`) },
+    { label: 'Send A', fn: () => open({ kind: 2, strip: sid, param: 0, def: P.AUTO_SEND }, `${t.name} \u2022 Send A`) },
+    { label: 'Send B', fn: () => open({ kind: 3, strip: sid, param: 0, def: P.AUTO_SEND }, `${t.name} \u2022 Send B`) },
+  ];
+  const idef = t.kind === 'midi' && t.inst && INSTRUMENTS[t.inst.type];
+  if (idef && idef.params.length) items.push({ label: 'Instrumen: ' + idef.name + '\u2026', fn: () => menu(list({ kind: 5, strip: sid }, idef.params, ''), r.left + x, r.top + y) });
+  for (const d of t.devices) { const dd = DEVICES[d.type]; if (dd && dd.params && dd.params.length) items.push({ label: 'Efek: ' + dd.name + '\u2026', fn: () => menu(list({ kind: 4, strip: sid, devId: d.id }, dd.params, dd.name), r.left + x, r.top + y) }); }
+  const mine = state.tracks.filter((q) => q.kind === 'auto' && q.target && q.target.strip === sid);
+  if (mine.length) { const allFold = mine.every((q) => q.fold); items.push({ sep: true }, { label: (allFold ? 'Buka' : 'Lipat') + ' semua lane track ini (' + mine.length + ')', fn: () => { for (const q of mine) { animRow(q); q.fold = !allFold; } clampView(); invalidate(); } }); }
+  menu(items, r.left + x, r.top + y);
+}
+function toggleFold(i) { const t = state.tracks[i]; if (!t) return; animRow(t); t.fold = !t.fold; clampView(); invalidate(); }
+function foldAll(on) { for (const t of state.tracks) { if (!!t.fold !== on) animRow(t); t.fold = on; } clampView(); invalidate(); }
+function swapTrack(i, j) { P.swapTracks(i, j); }
+
+function addMenu(x, y) {
+  const r = canvasOrigin();
+  menu([
+    { label: 'Track synth (MIDI)', fn: () => { const t = P.addTrack('midi'); if (t) P.selectTrack(state.tracks.length - 1); } },
+    { label: 'Track drum (step sequencer)', fn: () => { const t = P.addTrack('drum'); if (t) P.selectTrack(state.tracks.length - 1); } },
+    { label: 'Track audio', fn: () => { const t = P.addTrack('audio'); if (t) { P.selectTrack(state.tracks.length - 1); if (hooks.pickAudio) hooks.pickAudio(); } } },
+    { sep: true },
+    { label: 'FX track (routing / grup)', dim: state.returns.length >= P.MAX_FX, fn: () => addFx() },
+  ], r.left + x, r.top + y);
+}
+
+
+// ------------------------------------------------------------------ multi-clip selection (gesture only, no mode button)
+// Long-press a clip = add it to the selection. Long-press an empty spot and drag = rubber-band rectangle. Tap a clip while
+// a selection exists = add / remove it. Tap an empty spot = clear. A floating bar with the actions follows the selection.
+const selList = () => { const out = []; state.tracks.forEach((t, i) => { for (const c of t.clips) if (msel.has(c.id)) out.push({ i, c }); }); return out; };
+function prune() { if (!msel.size) return; const live = new Set(); for (const t of state.tracks) for (const c of t.clips) live.add(c.id); for (const id of [...msel]) if (!live.has(id)) msel.delete(id); }
+function updateBar() {
+  if (!selbar) return;
+  prune();
+  const L = selList(), n = L.length;
+  selbar.classList.toggle('open', n > 0);
+  selbar.querySelector('.cnt').textContent = n + ' klip';
+  for (const b of selbar.querySelectorAll('[data-need]')) b.disabled = b.dataset.need === 'sel' ? !n : b.dataset.need === 'one' ? n !== 1 : !clipM;
+  selW = n ? selbar.offsetWidth : 0;
+  if (n) placeBar();
+}
+// the bar sits just under the selected clips (above them when there is no room), always inside the visible clip area
+function placeBar() {
+  if (!selbar || !msel.size) return;
+  let a = 1e9, b = -1e9, top = 1e9, bot = -1e9;
+  state.tracks.forEach((t, i) => { for (const c of t.clips) if (msel.has(c.id)) { const y = rowY(i); a = Math.min(a, tx(c.start)); b = Math.max(b, tx(c.start + c.len)); top = Math.min(top, y); bot = Math.max(bot, y + rh(i)); } });
+  if (a > b) return;
+  const w = selW || 200, bh = 32;
+  let x = clamp((a + b) / 2 - w / 2, 4, Math.max(4, CW - w - 4));
+  let y = bot + 6; if (y + bh > H - 4) y = top - bh - 6;
+  y = clamp(y, RULER + 4, Math.max(RULER + 4, H - BOT - bh - 4));
+  selbar.style.transform = `translate(${Math.round(x)}px,${Math.round(y)}px)`;
+  selbar.classList.toggle('hide', !!drag);
+}
+function clearSel() { if (!msel.size) return; msel.clear(); marq = null; updateBar(); invalidate(); }
+// canvas coordinates of a tick on track row i (UI tests drive real touches with it)
+// page rectangles of parts of the arrangement (the interactive tutorial, js/tutorial.js, spotlights them): the ruler, the clip area, the header
+// column, the "+ Track" button, and track i's header parts (title, mute, solo, arm, volume, pan, sends)
+// scrolls the arrangement vertically so row i (a track, or state.tracks.length + nX() = the "+ Track" row) is in view
+export function revealRow(i) {
+  if (!canvas) return; const LB = LANE_B(), y = rowY(i), hh = rh(i);
+  if (y < RULER) view.y0 += y - RULER - 4; else if (y + hh > LB) view.y0 += y + hh - LB + 8;
+  clampView(); invalidate();
+}
+export const addRowIndex = () => state.tracks.length + nX();
+export function tutorialRects(i = 0) {
+  if (!canvas) return {};
+  const o = canvasOrigin(), at = (r) => (r ? { left: o.left + r.x, top: o.top + r.y, width: r.w, height: r.h } : null), LB = LANE_B(), nn = state.tracks.length + nX();
+  const out = { ruler: at({ x: 0, y: 0, w: CW, h: RULER }), clips: at({ x: 0, y: RULER, w: CW, h: Math.max(0, LB - RULER) }), header: at({ x: CW, y: RULER, w: HEAD, h: Math.max(0, LB - RULER) }) };
+  const ay = rowY(nn); if (ay < LB) out.addTrack = at({ x: CW + 6, y: ay + 8, w: HEAD - METW - 12, h: Math.min(28, rh(nn) - 16) });
+  if (state.tracks[i]) { const r = hdr(i); for (const k of ['title', 'mute', 'solo', 'arm', 'vol', 'pan', 'sa', 'sb']) if (r[k]) out[k] = at(r[k]); out.lane = at({ x: 0, y: r.y, w: CW, h: r.h }); }
+  return out;
+}
+export function probe(tick, i) { return { x: tx(tick), y: rowY(i) + rh(i) / 2, top: rowY(i) }; }
+export const timeSelection = () => (sel && sel.b > sel.a ? { a: sel.a, b: sel.b } : null);   // the ruler time selection (export: Selection)
+export const testState = () => ({ snap: SNAPS[cfg.snap][0], picked: msel.size, sel: sel ? { a: sel.a, b: sel.b } : null, dragging: !!drag });   // UI tests
+export function openEditor() { if (hooks.openEditor) hooks.openEditor(); }   // the selected clip's editor (full screen)
+export function clearSelection() { const had = msel.size > 0; clearSel(); return had; }
+function selAll() {
+  const all = []; for (const t of state.tracks) for (const c of t.clips) all.push(c.id);
+  if (all.length && all.every((id) => msel.has(id))) msel.clear(); else for (const id of all) msel.add(id);
+  updateBar(); invalidate();
+}
+function copyList(L) {
+  if (!L.length) return;
+  const base = Math.min(...L.map((x) => x.c.start)), ti0 = Math.min(...L.map((x) => x.i));
+  clipM = { base, ti0, items: L.map(({ i, c }) => { const copy = JSON.parse(JSON.stringify(c, (k, v) => (k === 'sample' || k === 'dsample' ? undefined : v))); if (c.sample) copy.sample = c.sample; if (c.dsample) copy.dsample = c.dsample; return { dt: i - ti0, kind: state.tracks[i].kind, clip: copy, rel: c.start - base }; }) };
+  toast(`${L.length} klip disalin. Tekan lama di grid kosong lalu pilih Paste.`); updateBar();
+}
+const selCopy = () => copyList(selList());
+// paste the clipboard with its first clip at `at` on track `t0`; the pasted clips become the selection so they can be moved right away
+function pasteClips(t0, at) {
+  if (!clipM) return toast('Belum ada klip yang disalin.');
+  checkpoint();
+  const fresh = [];
+  for (const it of clipM.items) { const c = P.pasteClip(t0 + it.dt, { kind: it.kind, clip: it.clip }, at + it.rel); if (c) fresh.push(c.id); }
+  if (!fresh.length) return toast('Jenis track tidak cocok dengan klip.');
+  msel.clear(); for (const id of fresh) msel.add(id);
+  updateBar(); invalidate();
+}
+function selPaste() { pasteClips(Math.max(0, state.sel.track || 0), Math.max(0, snapT(P.currentTick()))); }
+function selDelete() {
+  const L = selList(); if (!L.length) return;
+  checkpoint(); for (const { i, c } of L) P.removeClip(i, c.id);
+  msel.clear(); updateBar(); invalidate();
+}
+export function deleteSelected() { if (!selList().length) return false; selDelete(); return true; }
+function selDup() {
+  const L = selList(); if (!L.length) return;
+  checkpoint(); const span = Math.max(...L.map((x) => x.c.start + x.c.len)) - Math.min(...L.map((x) => x.c.start)), fresh = [];
+  for (const { i, c } of L) { P.duplicateClip(i, c.id); const d = state.tracks[i].clips.find((x) => x.id === state.sel.clip); if (d) { d.start = c.start + span; P.touchClips(i); fresh.push(d.id); } }
+  msel.clear(); for (const id of fresh) msel.add(id);
+  P.emit('clips'); updateBar(); invalidate();
+}
+// Physical / Bluetooth keyboard (keymap.js): the arrangement's share of the shortcuts. Works on the picked clips, or on the selected clip.
+// Returns false when the action does not apply here, so the caller can let the key through.
+export function keyAction(a) {
+  const L = selList().length ? selList() : (() => { const s = P.selectedClip(); return s ? [{ i: s.track, c: s.clip }] : []; })();
+  switch (a) {
+    case 'copy': if (!L.length) return false; copyList(L); return true;
+    case 'cut': if (!L.length) return false; copyList(L); checkpoint(); for (const { i, c } of L) P.removeClip(i, c.id); msel.clear(); updateBar(); invalidate(); return true;
+    case 'paste': selPaste(); return true;
+    case 'duplicate': if (!L.length) return false; if (selList().length) selDup(); else { checkpoint(); P.duplicateClip(L[0].i, L[0].c.id); invalidate(); } return true;
+    case 'selectAll': selAll(); return true;
+    case 'delete': if (!L.length) return false; if (selList().length) selDelete(); else { checkpoint(); P.removeClip(L[0].i, L[0].c.id); } invalidate(); return true;
+    case 'zoomIn': zoomAt(1.4); return true;
+    case 'zoomOut': zoomAt(1 / 1.4); return true;
+    case 'left': case 'right': { const st = snapTicks() > 0 ? snapTicks() : BEAT; P.seekTo(Math.max(0, snapT(P.currentTick()) + (a === 'left' ? -st : st))); return true; }
+    case 'up': case 'down': { const n = state.tracks.length; if (!n) return false; const i = clamp((state.sel.track >= 0 && state.sel.track < n ? state.sel.track : 0) + (a === 'up' ? -1 : 1), 0, n - 1); state.sel.clip = null; P.selectTrack(i); invalidate(); return true; }
+    case 'escape': return clearSelection() || (sel ? ((sel = null), invalidate(), true) : false);
+    default: return false;
+  }
+}
+function selMute() {
+  const L = selList(); if (!L.length) return;
+  const m = !L.every(({ c }) => c.muted);               // all muted -> unmute, otherwise mute everything picked
+  checkpoint(); P.setClipsMuted(L, m); updateBar(); invalidate();
+}
+function groupMenu(btn) {                                            // the commands for the picked clips (one place, as the single-clip menu)
+  const r = btn.getBoundingClientRect(), L = selList(), allMuted = L.length && L.every(({ c }) => c.muted);
+  menu([
+    { label: 'Copy', fn: selCopy }, { label: 'Duplicate', fn: selDup }, { label: 'Combine', fn: selCombine }, { label: 'Delete', fn: selDelete },
+    { sep: true },
+    { label: allMuted ? 'Activate Clips' : 'Deactivate Clips', fn: selMute }, { label: 'Select All', fn: selAll }, { label: 'Deselect', fn: clearSel },
+  ], r.left, r.bottom + 2);
+}
+function selCombine() {                                                     // v66: FL Studio Mobile "Combine"
+  const L = selList(); if (!L.length) return;
+  const ti = L[0].i;
+  if (!L.every(({ i }) => i === ti)) return toast('Gabung hanya untuk klip di track yang sama.');
+  checkpoint();
+  const r = P.combineClips(ti, L.map(({ c }) => c.id));
+  if (r.error) return toast(r.error);
+  msel.clear(); msel.add(r.id); updateBar(); invalidate(); toast(`${L.length} klip digabung jadi satu.`);
+}
+function buildSelBar(host) {
+  selbar = document.createElement('div'); selbar.className = 'selbar bar';
+  const mk = (a, label, fn, need) => { const b = document.createElement('button'); b.type = 'button'; b.className = 'b'; b.dataset.a = a; if (need) b.dataset.need = need; b.textContent = label; b.addEventListener('click', (e) => { e.stopPropagation(); fn(); }); b.addEventListener('pointerdown', (e) => e.stopPropagation()); return b; };
+  const cnt = document.createElement('span'); cnt.className = 'cnt'; cnt.hidden = true;
+  const more = mk('menu', '\u22EF', () => groupMenu(more), 'sel'); cnt.hidden = false;
+  selbar.append(cnt, more);                                          // only the count + ⋯: every group command lives in one menu
+  host.append(selbar); updateBar();
+}
+// double tap on empty space (FL Studio Mobile): a 1-bar clip starting at the bar under the finger, shortened so it never runs into the
+// next clip. Audio tracks open the sample picker at that bar instead (an audio clip needs a file).
+const dtapMs = () => gestureTiming().dtapMs + 10;               // a little longer than the recogniser's double-tap window (Settings -> Sentuhan)
+let menuWait = 0;
+function newClipAt(i, tick, sub = null) {
+  const tk = state.tracks[i]; if (!tk) return;
+  const inRow = (c) => (c.sub || null) === (sub || null);
+  const at = Math.max(0, P.barFloor(Math.max(0, tick)));
+  if (tk.kind === 'audio') { if (hooks.pickAudio) hooks.pickAudio(at); return; }
+  if (tk.clips.some((c) => inRow(c) && at >= c.start && at < c.start + c.len)) return;
+  const next = tk.clips.reduce((m, c) => (inRow(c) && c.start > at && c.start < m ? c.start : m), Infinity), len = Math.min(P.barLenAt(at), next - at);
+  if (!(len > 0)) return;
+  checkpoint(); const nc = P.addClip(i, at, len); if (sub && nc) P.setClipSub(i, nc, sub); invalidate();
+}
+// long-press on an empty spot (no drag): new clip / paste exactly where the finger was
+function emptyMenu(i, tick, sx, sy, sub = null) {
+  const tk = state.tracks[i], at = Math.max(0, snapT(tick));
+  menu([
+    { label: tk.kind === 'audio' ? 'Tambah sample\u2026' : 'Klip baru (1 bar)', fn: () => { if (tk.kind === 'audio') hooks.pickAudio && hooks.pickAudio(at); else { checkpoint(); const nc = P.addClip(i, at, P.barLenAt(at)); if (sub && nc) P.setClipSub(i, nc, sub); } } },
+    { label: 'Paste', dim: !clipM, fn: () => pasteClips(i, at) },
+    { label: 'Tambah marker di playhead', fn: () => { P.addMarker(Math.round(P.currentTick())); invalidate(); } }, { label: 'Marker sebelumnya', fn: () => P.jumpMarker(-1) }, { label: 'Marker berikutnya', fn: () => P.jumpMarker(1) }, { sep: true }, { label: 'Pilih semua klip', fn: () => selAll() },
+  ], sx, sy);
+}
+function edgeScrollY(y) {
+  if (y > H - BOT - 22) view.y0 += 9; else if (y < RULER + 22 && view.y0 > 0) view.y0 -= 9; else return;
+  clampView();
+}
+
+function zoomMenu() {
+  const o = canvasOrigin(), sc = P.selectedClip(), end = state.tracks.reduce((m, t) => t.clips.reduce((a, c) => Math.max(a, c.start + c.len), m), 0);
+  menu([
+    { label: 'Fit proyek', dim: !end, fn: () => fitTo(0, end) },
+    { label: 'Fit klip terpilih', dim: !sc, fn: () => fitTo(sc.clip.start, sc.clip.start + sc.clip.len) },
+    { label: 'Fit seleksi waktu', dim: !(sel && sel.b > sel.a), fn: () => fitTo(sel.a, sel.b) },
+    { label: 'Reset zoom (1.00x)', fn: () => glideTo(centreTick() - CW / (2 * 0.06), 0.06) },
+    { label: 'Zoom in', fn: () => zoomAt(1.7) },
+    { label: 'Zoom out', fn: () => zoomAt(1 / 1.7) },
+    { sep: true },
+    { label: 'Ikuti playhead', check: cfg.follow, fn: () => { prefs.follow = !prefs.follow; savePrefs(); cfg.follow = prefs.follow; invalidate(); } },
+  ], o.left + CW - 54, o.top + H - BOT);
+}
+
+// ------------------------------------------------------------------ markers
+function markerMenu(m, x, y) {
+  const o = canvasOrigin();
+  menu([
+    { label: 'Lompat ke marker', fn: () => P.seekTo(m.t) },
+    { label: 'Ganti nama\u2026', fn: () => ask('Nama marker', m.name, (v) => { if (String(v).trim()) P.editMarker(m.id, { name: String(v).trim().slice(0, 24) }); invalidate(); }) },
+    { label: 'Warna\u2026', fn: () => menu(P.MARKER_COLORS.map((c) => ({ label: '\u25A0 ' + c, check: m.color === c, fn: () => { P.editMarker(m.id, { color: c }); invalidate(); } })), o.left + x, o.top + y) },
+    { label: 'Pindahkan ke playhead', fn: () => { P.editMarker(m.id, { t: Math.round(P.currentTick()) }); invalidate(); } },
+    { sep: true },
+    { label: 'Hapus marker', fn: () => { P.removeMarker(m.id); invalidate(); } },
+  ], o.left + x, o.top + y);
+}
+function markerRowMenu(tick, x, y) {
+  const o = canvasOrigin();
+  menu([
+    { label: 'Tambah marker di sini', fn: () => { P.addMarker(snapT(tick)); invalidate(); } },
+    { label: 'Tambah marker di playhead', fn: () => { P.addMarker(Math.round(P.currentTick())); invalidate(); } },
+    { sep: true },
+    { label: 'Marker sebelumnya', dim: !state.markers.length, fn: () => P.jumpMarker(-1) },
+    { label: 'Marker berikutnya', dim: !state.markers.length, fn: () => P.jumpMarker(1) },
+    { sep: true },
+    { label: 'Ubah birama di bar ' + (P.barAt(tick) + 1) + '\u2026', fn: () => sigDialog(P.barAt(Math.max(0, tick))) },
+    ...(P.state.sigs.some((c) => c.bar === P.barAt(Math.max(0, tick))) ? [{ label: 'Hapus perubahan birama di bar ' + (P.barAt(tick) + 1), fn: () => { P.removeSigAt(P.barAt(Math.max(0, tick))); invalidate(); } }] : []),
+  ], o.left + x, o.top + y);
+}
+// signature change at a bar (bar 0 = whole project): asks for "5/8" style input
+export function sigDialog(bar) {
+  const cur = P.sigTextAt(P.barStart(bar));
+  ask('Birama mulai bar ' + (bar + 1) + ' (mis. 3/4, 7/8)', cur, (v) => {
+    const m = /^\s*(\d{1,2})\s*\/\s*(1|2|4|8|16)\s*$/.exec(String(v));
+    if (!m || +m[1] < 1 || +m[1] > 32) return toast('Format birama: pembilang 1-32 / penyebut 1, 2, 4, 8, atau 16.');
+    if (P.setSigAt(bar, +m[1], +m[2]) === false) toast('Maksimal ' + P.MAX_SIG_CHANGES + ' perubahan birama.'); invalidate();
+  });
+}
+
+// ------------------------------------------------------------------ gestures
+let drag = null;
+const CLIP_EDITS = new Set(['move', 'resize', 'resizeL', 'stretch', 'gmove', 'gresize', 'fadeIn', 'fadeOut']);   // drags that took a checkpoint
+// the arrangement's grid menu as Live's (Snap to Grid, Adaptive Grid widths, Fixed Grid, Narrow / Widen, Triplet Grid, zoom to fit)
+function fitHeight() { const avail = LANE_B() - RULER - ADD_H - nX() * XROW_H, used = tracksH(); if (used > 0) { for (const tr of state.tracks) animRow(tr); view.rowH = clamp(view.rowH * avail / used, 30, ROW_MAX); view.y0 = 0; clampView(); invalidate(); } }
+function gridMenu() {
+  const set = (k) => { cfg.snap = k; invalidate(); }, fi = FIXED.findIndex(([k]) => k === cfg.snap);
+  const step = (d) => { const i = fi >= 0 ? fi : FIXED.findIndex(([k]) => SNAPS[k][1] <= (snapTicks() || BAR)); const j = clamp((i < 0 ? 3 : i) + d, 0, FIXED.length - 1); set(FIXED[j][0]); };
+  return [{ label: 'Snap to Grid', check: cfg.snap !== SNAP_OFF, fn: () => toggleSnap() }, { sep: true },
+    { label: 'ADAPTIVE GRID', dim: true }, ...ADAPT.map(([n, px]) => ({ label: n, check: cfg.snap === 0 && (prefs.adaptPx || 26) === px, fn: () => { prefs.adaptPx = px; set(0); } })), { sep: true },
+    { label: 'FIXED GRID', dim: true }, ...FIXED.map(([k, n]) => ({ label: n, check: cfg.snap === k, fn: () => set(k) })), { sep: true },
+    { label: 'Narrow Grid', fn: () => step(1) }, { label: 'Widen Grid', fn: () => step(-1) }, { label: 'Triplet Grid', check: !!prefs.tripGrid, fn: () => { prefs.tripGrid = !prefs.tripGrid; savePrefs(); invalidate(); } }, { sep: true },
+    { label: 'Zoom to Fit', fn: () => { const e = songEnd(); if (e) fitTo(0, e); } }, { label: 'Fit Content to View Width (W)', fn: () => { const e = songEnd(); if (e) fitTo(0, e); } },
+    { label: 'Fit Content to View Height (H)', fn: () => fitHeight() }];
+}
+function toggleSnap() {                                   // FL Studio Mobile: tap the Snap switch = on / off (the last grid comes back), long-press = options
+  const OFF = SNAP_OFF;
+  if (cfg.snap !== OFF) { cfg.lastSnap = cfg.snap; cfg.snap = OFF; } else cfg.snap = cfg.lastSnap != null && cfg.lastSnap !== OFF ? cfg.lastSnap : 0;
+  haptic(8); toast('Snap ' + (cfg.snap === OFF ? 'mati' : SNAPS[cfg.snap][0]) + '.', 900); invalidate();
+}
+function setup() {
+  attachGestures(ov, {
+    hit,
+    tap(x, y, t) {
+      touchedAt = performance.now();
+      switch (t.type) {
+        case 'corner': return toggleSnap();
+        case 'locset': { const m = P.addMarker(Math.round(state.playing ? P.currentTick() : snapT(P.currentTick()))); toast('Locator \u201c' + m.name + '\u201d ditambahkan.', 1400); return invalidate(); }
+        case 'lockenv': prefs.lockEnv = !lockEnv(); savePrefs(); toast(lockEnv() ? 'Lock Envelopes nyala: otomasi tetap di posisi lagu saat klip dipindah.' : 'Lock Envelopes mati: otomasi ikut pindah bersama klip.', 1800); return invalidate();
+        case 'automode': prefs.autoMode = !autoMode(); savePrefs(); for (const tr of state.tracks) if (tr.kind === 'auto') animRow(tr); clampView(); toast('Automation Mode ' + (autoMode() ? 'nyala' : 'mati: lane otomasi disembunyikan') + '.', 1300); return invalidate();
+        case 'locprev': P.jumpMarker(-1); return invalidate();
+        case 'locnext': P.jumpMarker(1); return invalidate();
+        case 'wzoom': { const L = [1, 1.5, 2, 3, 4], k = L.indexOf(prefs.waveZoom || 1); prefs.waveZoom = L[(k + 1) % L.length]; savePrefs(); return invalidate(); }   // Waveform Vertical Zoom: display only
+        case 'fitw': { const e = songEnd(); if (e) fitTo(0, e); return; }                              // Live's Optimize Width (W)
+        case 'fith': return fitHeight();   // Optimize Height (H)
+        case 'cornerMenu': return menu([...SNAPS.map((s, k) => ({ label: s[0], check: cfg.snap === k, fn: () => { cfg.snap = k; invalidate(); } })), { sep: true }, { label: 'Ikuti playhead', check: cfg.follow, fn: () => { cfg.follow = !cfg.follow; } }, { label: 'Pilih semua klip', fn: () => selAll() }, { label: 'Batal pilihan', dim: !msel.size, fn: () => clearSel() }, { sep: true }, { label: 'Lipat semua track', fn: () => foldAll(true) }, { label: 'Buka semua track', fn: () => foldAll(false) }], canvasOrigin().left + Math.max(0, CW - 20), canvasOrigin().top + RULER);
+        case 'gridbtn': { const o = canvasOrigin(); return menu(gridMenu(), o.left + CW - 150, o.top + H - BOT); }
+        case 'zoombtn': return zoomMenu();
+        case 'marker': return markerMenu(t.m, x, y);
+        case 'mrow': return markerRowMenu(t.tick, x, y);
+        case 'ruler': case 'tbar': sel = null; P.seekTo(Math.max(0, snapT(t.tick))); return invalidate();
+        case 'loop': case 'loopL': case 'loopR': P.setLoop({ on: !state.loop.on }); toast(state.loop.on ? 'Loop aktif.' : 'Loop mati.', 900); return invalidate();
+        case 'follow': prefs.follow = !cfg.follow; savePrefs(); cfg.follow = prefs.follow; return invalidate();
+        case 'add': return addMenu(x, y);
+        case 'headw': return;
+        case 'xhead':
+          if (t.mute) P.toggleReturnMute(t.x.k); else P.selectTrack(t.x.strip);
+          return invalidate();
+        case 'subhead':
+          if (t.mute) { checkpoint(); const s = P.subsOf(state.tracks[t.i]).find((q) => q.id === t.id); if (s) P.setSub(t.i, t.id, 'mute', !s.mute); }
+          else { P.selectTrack(t.i); subMenu(t.i, t.id, x, y); }
+          return invalidate();
+        case 'head':
+          if (t.btn === 0) P.toggleMute(t.i); else if (t.btn === 1) P.toggleSolo(t.i); else if (t.btn === 2) toggleFold(t.i); else if (t.btn === 5) P.toggleArm(t.i);
+          else if (t.btn === 7) laneMenu(t.i, x, y); else if (t.btn === 10) outMenu(t.i, x, y);
+          else { P.selectTrack(t.i); if (t.btn === undefined && prefs.tapFold !== false) setHeadFull(!full()); }     // a tap on the header body: compact <-> full column
+          return invalidate();
+        case 'clip':
+          if (msel.size) { if (msel.has(t.c.id)) msel.delete(t.c.id); else msel.add(t.c.id); P.selectClip(t.i, t.c.id); updateBar(); return invalidate(); }   // a selection exists: taps add / remove clips
+          if (t.zone === 'menu') { const r = canvasOrigin(); clipMenu(t.i, t.c, t.tick, r.left + x, r.top + y); return invalidate(); }   // its ⋯ = the context menu at once
+          // FL Studio Mobile: a tap selects the clip at once and opens its Clip Controls, held back for the double-tap window (a double tap
+          // opens the editor instead). Settings -> Sentuhan can make the first tap select only (Live: then tap the selected clip again).
+          if (state.sel.clip === t.c.id || prefs.tapClipMenu !== false) {
+            P.selectClip(t.i, t.c.id);
+            const r = canvasOrigin(), sx = r.left + x, sy = r.top + y, { i, c, tick } = t;
+            clearTimeout(menuWait); menuWait = setTimeout(() => { menuWait = 0; if (state.sel.clip === c.id && !drag) clipMenu(i, c, tick, sx, sy); }, dtapMs());
+            return invalidate();
+          }
+          P.selectClip(t.i, t.c.id); return invalidate();                                  // first tap only selects, as in Live
+        case 'empty': if (msel.size) { msel.clear(); updateBar(); } sel = null; if (t.i >= 0 && t.i < state.tracks.length) { state.sel.clip = null; P.selectTrack(t.i); } return invalidate();
+      }
+    },
+    dtap(x, y, t) {
+
+      if (t.type === 'headw') return setHeadW(0);                                                // double-tap the edge: back to the automatic width
+      if (t.type === 'rowh') { const tr = state.tracks[t.i]; if (tr && tr.hx) { animRow(tr); delete tr.hx; invalidate(); } return; }   // double-tap the grip: back to the normal height
+      clearTimeout(menuWait); menuWait = 0;
+      if (t.type === 'clip' && hooks.openEditor) { if (msel.size) { msel.clear(); updateBar(); } P.selectClip(t.i, t.c.id); hooks.openEditor(); return; }   // double tap a clip = its editor, full screen
+      if (t.type === 'empty' && t.i >= 0 && t.i < state.tracks.length && !msel.size) newClipAt(t.i, t.tick, t.sub);            // double tap empty space = a new 1-bar clip there
+    },
+    long(x, y, t) {
+      touchedAt = performance.now();
+      const r = canvasOrigin();
+      if (t.type === 'corner') { this.tap(x, y, { type: 'cornerMenu' }); return false; }      // FL Studio Mobile: long-press Snap = the snap options
+      if (t.type === 'gridbtn' || t.type === 'zoombtn') { this.tap(x, y, t); return false; }
+      if (t.type === 'mrow') { const m = P.addMarker(snapT(t.tick)); toast('Marker \u201c' + m.name + '\u201d ditambahkan.', 1600); invalidate(); return false; }
+      if (t.type === 'marker') { drag = { k: 'marker', id: t.m.id }; return true; }
+      if (t.type === 'xhead') xheadMenu(t.x, x, y);
+      else if (t.type === 'head') headMenu(t.i, x, y);
+      else if (t.type === 'subhead') subMenu(t.i, t.id, x, y);
+      else if (t.type === 'clip') {
+        // long-press a clip = pick it (more clips: just tap them); the floating bar offers copy / cut / paste / delete ...
+        if (msel.has(t.c.id)) msel.delete(t.c.id); else msel.add(t.c.id);
+        P.selectClip(t.i, t.c.id); updateBar(); invalidate();
+      } else if (t.type === 'empty' && t.i >= 0 && t.i < state.tracks.length) {
+        // long-press on empty space: keep the finger as a drag = rubber-band rectangle; lift without moving = new clip / paste menu
+        P.selectTrack(t.i); msel.clear(); updateBar();
+        const tk = xt(x), yw = y - RULER + view.y0;
+        marq = { t0: tk, t1: tk, y0: yw, y1: yw, sx: r.left + x, sy: r.top + y, i: t.i, tick: t.tick, sub: t.sub || null, moved: false };
+        drag = { k: 'marq' }; invalidate();
+        return true;
+      }
+      return false;
+    },
+    dragStart(x0, y0, t, fromLong) {
+      touchedAt = performance.now();
+      if (t.type === 'punchL' || t.type === 'punchR') { drag = { k: t.type }; return true; }
+      if (t.type === 'marker') { drag = { k: 'marker', id: t.m.id }; return true; }
+      if (t.type === 'headw') { drag = { k: 'headw', x0, w0: HEAD }; return true; }
+      if (t.type === 'rowh') { fh.delete(state.tracks[t.i].id); drag = { k: 'rowh', i: t.i, y0, h0: rh(t.i) }; return true; }
+      if (t.type === 'loop' || t.type === 'loopL' || t.type === 'loopR') { drag = { k: t.type, s0: state.loop.start, e0: state.loop.end, t0: t.tick }; return true; }
+      if (t.type === 'head' && (t.btn === 3 || t.btn === 4)) { const rc = hdr(t.i)[t.btn === 3 ? 'vol' : 'pan']; if (rc) { const tr = state.tracks[t.i]; drag = { k: t.btn === 3 ? 'hvol' : 'hpan', i: t.i, rc, x0, y0, u0: t.btn === 3 ? Math.sqrt(clamp(tr.vol / VMAX, 0, 1)) : (clamp(tr.pan, -1, 1) + 1) / 2, fine: false }; return true; } }
+      if (t.type === 'head' && (t.btn === 8 || t.btn === 9)) { const rc = hdr(t.i)[t.btn === 8 ? 'sa' : 'sb']; if (rc) { const tr = state.tracks[t.i]; drag = { k: 'hsend', s: t.btn - 8, i: t.i, rc, x0, y0, u0: (tr.send && tr.send[t.btn - 8]) || 0 }; return true; } }
+      if (t.type === 'ruler') { drag = { k: 'rpend', a: snapT(t.tick), tick0: t.tick, p0: view.ppt }; return true; }   // direction decides: Live zoom (vertical) or time selection (horizontal)
+      if (t.type === 'clip' && msel.has(t.c.id)) {                // group move / group resize of every picked clip
+        checkpoint(); P.selectClip(t.i, t.c.id);
+        if (t.zone === 'right' && stretchMode && state.tracks[t.i].kind === 'audio') { delete t.c.ll; delete t.c.lp; }
+        drag = { ll0: P.patternLen(t.c, state.tracks[t.i].kind), had: t.c.ll > 0, lp0: t.c.lp || 0, looped: !!P.loopOf(t.c), k: t.zone === 'right' ? 'gresize' : 'gmove', t0: t.tick, refStart: t.c.start, refEnd: t.c.start + t.c.len, row0: rowAt(y0), items: selList().map(({ i, c }) => ({ i, cur: i, c, start: c.start, len: c.len, ll0: P.patternLen(c, state.tracks[i].kind), had: c.ll > 0 })) };
+        return true;
+      }
+      if (t.type === 'empty' && fromLong) return !!marq;
+      if (t.type === 'clip' && msel.size) { msel.clear(); updateBar(); }   // dragging a clip outside the selection drops the selection
+      if (t.type === 'clip' && (t.zone === 'fadeIn' || t.zone === 'fadeOut')) { checkpoint(); drag = { k: t.zone, c: t.c, i: t.i }; return true; }
+      if (t.type === 'clip') {
+        checkpoint(); P.selectClip(t.i, t.c.id);
+        if ((t.zone === 'scale' || t.zone === 'right' && stretchMode) && state.tracks[t.i].kind === 'audio') { delete t.c.ll; delete t.c.lp; }
+        drag = { ll0: P.patternLen(t.c, state.tracks[t.i].kind), had: t.c.ll > 0, lp0: t.c.lp || 0, looped: !!P.loopOf(t.c), k: t.zone === 'scale' ? 'stretch' : t.zone === 'right' ? (stretchMode && state.tracks[t.i].kind === 'audio' ? 'stretch' : 'resize') : t.zone === 'left' ? 'resizeL' : 'move', c: t.c, i: t.i, i0: t.i, start: t.c.start, len: t.c.len, off: t.tick - t.c.start, t0: t.tick,
+          offset: t.c.offset || 0, notes: t.c.notes ? t.c.notes.map((n) => ({ ...n })) : null, pts: t.c.pts ? t.c.pts.map((n) => ({ ...n })) : null };
+        return true;
+      }
+      return false;
+    },
+    drag(x, y, dx, dy) {
+      if (!drag) return;
+      const tick = xt(x);
+      if (drag.k === 'hsend' || drag.k === 'hvol' || drag.k === 'hpan') {
+        // relative drag from the value the slider had (no jump under the finger); moving the finger well above / below the slider = fine control (1/5 speed)
+        const fine = Math.abs(y - drag.y0) > 26, u = clamp(drag.u0 + (x - drag.x0) / drag.rc.w / (fine ? 5 : 1), 0, 1);
+        if (fine !== drag.fine) { drag.u0 = drag.k === 'hvol' ? Math.sqrt(clamp(state.tracks[drag.i].vol / VMAX, 0, 1)) : drag.k === 'hpan' ? (clamp(state.tracks[drag.i].pan, -1, 1) + 1) / 2 : ((state.tracks[drag.i].send || [])[drag.s] || 0); drag.x0 = x; drag.fine = fine; return; }
+        if (drag.k === 'hsend') P.setSend(drag.i, drag.s, Math.round(u * 100) / 100);
+        else if (drag.k === 'hvol') { const v = u * u * VMAX; P.setVol(drag.i, Math.abs(v - 1) < 0.015 ? 1 : v); }
+        else { const v = u * 2 - 1; P.setPan(drag.i, Math.abs(v) < 0.03 ? 0 : v); }
+        P.emit('mix'); invalidate(); return;
+      }
+      if (drag.k === 'headw') { const [lo, hi] = headLim(), w = clamp(drag.w0 + (drag.x0 - x), lo, hi); if (w !== HEAD) { prefs[full() ? 'headW' : 'headWc'] = Math.round(w); applyHead(); clampView(); invalidate(); } return; }
+      if (drag.k === 'rowh') { const tr = state.tracks[drag.i]; if (tr) { const nh = clamp(drag.h0 + (y - drag.y0), MIN_ROW, ROW_MAX); tr.hx = nh / view.rowH; clampView(); } invalidate(); return; }
+      if (drag.k === 'loop') { const len = drag.e0 - drag.s0, ns = Math.max(0, snapT(drag.s0 + (tick - drag.t0))); if (ns !== state.loop.start) P.setLoop({ start: ns, end: ns + len }); edgeScroll(x); invalidate(); return; }
+      if (drag.k === 'loopL') { const v = clamp(snapT(tick), 0, state.loop.end - (snapTicks() || BEAT)); if (v !== state.loop.start) P.setLoop({ start: v }); edgeScroll(x); invalidate(); return; }
+      if (drag.k === 'loopR') { const v = Math.max(snapT(tick), state.loop.start + (snapTicks() || BEAT)); if (v !== state.loop.end) P.setLoop({ end: v }); edgeScroll(x); invalidate(); return; }
+      if (drag.k === 'marker') { P.editMarker(drag.id, { t: Math.max(0, snapT(tick)) }); invalidate(); return; }
+      if (drag.k === 'punchL') { P.setPunch({ start: Math.min(snapT(tick), state.punch.end - BEAT) }); invalidate(); return; }
+      if (drag.k === 'punchR') { P.setPunch({ end: Math.max(snapT(tick), state.punch.start + BEAT) }); invalidate(); return; }
+      if (drag.k === 'rpend') {
+        if (Math.abs(dy) > Math.abs(dx) * 1.15) { drag.k = 'rzoom'; stopMotion(); } else { drag.k = 'sel'; sel = { a: drag.a, b: drag.a }; }
+      }
+      if (drag.k === 'rzoom') {                                  // Live's beat ruler: drag down = zoom in, up = zoom out, sideways = scroll; the bar under the finger stays under it
+        view.ppt = clamp(drag.p0 * Math.exp(dy * 0.011), PMIN, PMAX); view.x0 = Math.max(0, drag.tick0 - x / view.ppt); clampView(); invalidate(); return;
+      }
+      if (drag.k === 'sel') { sel = { a: Math.min(drag.a, snapT(tick)), b: Math.max(drag.a, snapT(tick)) }; }
+      else if (drag.k === 'marq') {
+        marq.t1 = xt(clamp(x, 0, CW)); marq.y1 = clamp(y, RULER, H - BOT) - RULER + view.y0;
+        const o = canvasOrigin();
+        if (Math.hypot(x - (marq.sx - o.left), y - (marq.sy - o.top)) > 10) marq.moved = true;
+        const ta = Math.min(marq.t0, marq.t1), tb = Math.max(marq.t0, marq.t1), ya = Math.min(marq.y0, marq.y1), yb = Math.max(marq.y0, marq.y1);
+        msel.clear();
+        let wy = 0;
+        state.tracks.forEach((t, i) => { const ry = wy, rb = wy + rh(i); wy = rb; if (rb < ya || ry > yb) return; for (const c of t.clips) if (c.start + c.len >= ta && c.start <= tb) msel.add(c.id); });
+      } else if (drag.k === 'gmove') {
+        const minS = Math.min(...drag.items.map((it) => it.start));
+        const d = Math.max(snapT(drag.refStart + (tick - drag.t0)) - drag.refStart, -minS), tr = new Set();
+        for (const it of drag.items) { if (it.c.start !== it.start + d) glideClip(it.c); it.c.start = it.start + d; }
+        // vertical drag moves the whole group by the same number of tracks; shrink the step until every clip lands on a track of its own kind
+        let dr = clamp(rowAt(y), 0, state.tracks.length - 1) - drag.row0;
+        const okRow = (n) => drag.items.every((it) => { const t = state.tracks[it.i + n]; return t && t.kind === state.tracks[it.i].kind; });
+        while (dr !== 0 && !okRow(dr)) dr += dr > 0 ? -1 : 1;
+        for (const it of drag.items) {
+          tr.add(it.cur);
+          if (it.i + dr !== it.cur && P.moveClipToTrack(it.cur, it.c.id, it.i + dr)) it.cur = it.i + dr;
+          tr.add(it.cur);
+        }
+        for (const i of tr) P.touchClips(i);
+        P.emit('notes');
+      } else if (drag.k === 'gresize') {
+        const s = snapTicks() || 1, d = snapT(drag.refEnd + (tick - drag.t0)) - drag.refEnd, tr = new Set();
+        for (const it of drag.items) { if (it.c.len !== Math.max(s, it.len + d)) glideClip(it.c); it.c.len = Math.max(s, it.len + d); applyLoop(it.c, it.ll0, it.len, it.had); tr.add(it.i); }
+        for (const i of tr) P.touchClips(i);
+        P.emit('notes');
+      }
+      else if (drag.k === 'fadeIn' || drag.k === 'fadeOut') {          // fade length in seconds, at most half the clip
+        const c = drag.c, spt = 60 / state.bpm / PPQ, half = c.len / 2 * spt, sec = drag.k === 'fadeIn' ? (tick - c.start) * spt : (c.start + c.len - tick) * spt;
+        c[drag.k] = Math.round(clamp(sec, 0, half) * 1000) / 1000;
+        P.touchClips(drag.i); P.emit('notes');
+      }
+      else if (drag.k === 'move') {
+        const ns = Math.max(0, snapT(drag.start + (tick - drag.t0)));
+        if (ns !== drag.c.start) glideClip(drag.c);
+        drag.c.start = ns;
+        const r = clamp(rowAt(y), 0, state.tracks.length - 1);
+        if (r !== drag.i && P.moveClipToTrack(drag.i, drag.c.id, r)) drag.i = r;
+        if (r === drag.i && subN(state.tracks[drag.i])) P.setClipSub(drag.i, drag.c, laneAt(drag.i, y));            // up / down between the track's own row and its sub-tracks
+        P.touchClips(drag.i); P.emit('notes');
+      } else if (drag.k === 'stretch') {
+        const s = snapTicks() || 1, r0 = drag.c.warp ? drag.c.warp.ratio || 1 : 1;
+        let nl = Math.max(s, snapT(drag.start + drag.len + (tick - drag.t0)) - drag.start);
+        nl = clamp(nl, drag.len * 0.25 / r0, drag.len * 4 / r0);          // the stretch engine works between 0.25x and 4x of the original
+        drag.c.len = Math.max(1, Math.round(nl)); drag.newLen = drag.c.len;
+        live.set(drag.c.id, drag.c.len / drag.len);                  // waveform follows the finger (scaled), the real render happens on release
+        P.emit('notes');
+      } else if (drag.k === 'resize') {
+        const s = snapTicks() || 1, nl = Math.max(s, snapT(drag.start + drag.len + (tick - drag.t0)) - drag.start);
+        if (nl !== drag.c.len) glideClip(drag.c);
+        drag.c.len = nl;
+        applyLoop(drag.c, drag.ll0, drag.len, drag.had);
+        P.touchClips(drag.i); P.emit('notes');
+      } else if (drag.k === 'resizeL') {
+        // left edge: the end stays put, the start moves, and the content stays where it is in time (audio: offset into the sample, MIDI: note times)
+        const c = drag.c, s = snapTicks() || 1, end = drag.start + drag.len, isAudio = state.tracks[drag.i].kind === 'audio';
+        const offTicks = drag.offset * state.bpm / 60 * PPQ;           // how far the clip can still be stretched to the left before the sample starts
+        let ns = snapT(drag.start + (tick - drag.t0));
+        ns = Math.max(0, isAudio && !drag.looped ? Math.max(ns, drag.start - offTicks) : ns);
+        ns = Math.min(ns, end - Math.min(s, drag.len));
+        const shift = ns - drag.start;
+        c.start = ns; c.len = end - ns;
+        if (isAudio && drag.looped) c.lp = (((drag.lp0 + shift) % c.ll) + c.ll) % c.ll;          // looped audio: the loop phase moves, the loop keeps repeating to the left
+        else if (isAudio) c.offset = Math.max(0, drag.offset + shift / PPQ * 60 / state.bpm);
+        else if (drag.notes) {                                       // pattern clip: the start moves inside the cycle (c.lp); no note is moved, cut or copied
+          const L = drag.ll0; c.ll = L; c.lp = (((drag.lp0 + shift) % L) + L) % L; c.cm = true; P.normLoop(c);
+        } else if (drag.pts) c.pts = drag.pts.map((p) => ({ ...p, t: p.t - shift })).filter((p) => p.t >= 0 && p.t <= c.len);
+        P.touchClips(drag.i); P.emit('notes');
+      }
+      if (drag.k === 'move' || drag.k === 'resize' || drag.k === 'stretch' || drag.k === 'resizeL' || drag.k === 'gmove' || drag.k === 'gresize' || drag.k === 'marq') { edgeScroll(x); if (drag.k === 'marq') edgeScrollY(y); }
+      invalidate();
+    },
+    dragEnd(x, y, t, cancel) {
+      if (cancel && drag && CLIP_EDITS.has(drag.k)) {           // Escape / the system took the pointer: every clip goes back where it was, no undo step left behind
+        const d = drag; drag = null; if (d.k === 'stretch') live.delete(d.c.id);
+        revertLast(); gl.clear();
+        toast('Dibatalkan.', 900); updateBar(); invalidate(); return;
+      }
+      if (cancel && drag && (drag.k === 'sel' || drag.k === 'marq')) { sel = null; marq = null; drag = null; updateBar(); invalidate(); return; }
+      // Lock Envelopes off (Live's default): the automation of a moved clip's track goes with it (same track only; a clip moved to another track leaves it)
+      if (!cancel && drag && !lockEnv()) {
+        if (drag.k === 'move' && drag.i === drag.i0 && drag.c.start !== drag.start) P.moveEnvelopes(P.stripOf(drag.i), drag.start, drag.c.len, drag.c.start - drag.start);
+        if (drag.k === 'gmove') for (const it of drag.items) if (it.cur === it.i && it.c.start !== it.start) P.moveEnvelopes(P.stripOf(it.i), it.start, it.c.len, it.c.start - it.start);
+      }
+      if (drag && drag.k === 'sel') { if (sel && sel.b - sel.a < BEAT / 4) sel = null; else selMenu(); }
+      if (drag && drag.k === 'marq') {
+        const m = marq; marq = null; drag = null;
+        if (m && !m.moved && !cancel) { msel.clear(); updateBar(); emptyMenu(m.i, m.tick, m.sx, m.sy, m.sub); } else updateBar();
+        invalidate(); return;
+      }
+      if (drag && drag.k === 'stretch') {
+        const d = drag, c = d.c, nl = d.newLen || d.len; drag = null;
+        if (cancel || nl === d.len) { live.delete(c.id); c.len = d.len; P.touchClips(d.i); P.emit('notes'); updateBar(); invalidate(); return; }
+        // the clip keeps the length it was dragged to while the audio renders in the background (no jump back), then the new buffer takes over
+        const r0 = c.warp ? c.warp.ratio || 1 : 1, k = nl / d.len;
+        live.set(c.id, k); c.len = nl;
+        P.restretchClip(d.i, c.id, r0 * k, { len: nl }).then((o) => {
+          live.delete(c.id);
+          if (o.error) { c.len = d.len; P.touchClips(d.i); toast(o.error, 4500); } else toast('Audio diregangkan.', 1200);
+          P.emit('notes'); invalidate();
+        });
+        updateBar(); invalidate(); return;
+      }
+      drag = null; updateBar(); invalidate();
+    },
+    pan(dx, dy) {
+      touchedAt = performance.now();
+      const last = canvas._last;
+      if (!(last && last.type === 'head')) view.x0 -= dx / view.ppt;
+      view.y0 -= dy; clampView(); invalidate();
+    },
+    panEnd(vx, vy) {                                          // finger lifted while moving: keep gliding with friction (fling)
+      touchedAt = performance.now();
+      const last = canvas._last, cap = (v) => clamp(v, -5000, 5000);
+      mo.vx = last && last.type === 'head' ? 0 : cap(vx); mo.vy = cap(vy);
+      if (Math.hypot(mo.vx, mo.vy) < 90 || prefs.reduceMotion) mo.vx = mo.vy = 0;
+    },
+    pinch(cx, cy, sx, sy) {
+      touchedAt = performance.now();
+      const tick = xt(cx); view.ppt = clamp(view.ppt * sx, PMIN / 1.25, PMAX * 1.25); view.x0 = tick - cx / view.ppt;   // a little give past the limits, then it springs back (pinchEnd)
+      const oh = view.rowH; view.rowH = clamp(oh * sy, MIN_ROW, 170); view.y0 = (cy - RULER + view.y0) * (view.rowH / oh) - (cy - RULER);
+      clampView(); invalidate();
+    },
+    pinchEnd() {
+      touchedAt = performance.now();
+      const tp = clamp(view.ppt, PMIN, PMAX);
+      if (tp !== view.ppt) glideTo(centreTick() - CW / (2 * tp), tp);
+    },
+    wheel(e, p) {
+      touchedAt = performance.now();
+      if (e.ctrlKey) { zoomAt(Math.exp(-e.deltaY * 0.002), p.x); return; }
+      stopMotion();
+      if (e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)) view.x0 += (e.shiftKey ? e.deltaY : e.deltaX) / view.ppt; else view.y0 += e.deltaY;
+      clampView(); invalidate();
+    },
+  });
+  const down = new Set();
+  ov.addEventListener('pointerdown', (e) => {
+    const r = ov.getBoundingClientRect(); canvas._last = hit(e.clientX - r.left, e.clientY - r.top);
+    down.add(e.pointerId); touching = true; touchedAt = performance.now(); stopMotion();   // a touch stops any glide or fling right where it is
+    const ty = canvas._last.type; if (ty === 'corner' || ty === 'gridbtn' || ty === 'zoombtn' || ty === 'follow' || ty === 'locset' || ty === 'locprev' || ty === 'locnext' || ty === 'fith' || ty === 'fitw' || ty === 'wzoom' || ty === 'lockenv' || ty === 'automode') { pressed = ty; invalidate(); }
+  }, true);
+  const release = (e) => { down.delete(e.pointerId); if (!down.size) touching = false; if (pressed) { pressed = null; invalidate(); } };
+  ov.addEventListener('pointerup', release, true); ov.addEventListener('pointercancel', release, true);
+}
+
+
+let ov, octx, hostEl;
+function fit() {
+  const r = hostEl.getBoundingClientRect();
+  const nd = Math.min(window.devicePixelRatio || 1, 3), nw = Math.max(1, Math.round(r.width)), nh = Math.max(1, Math.round(r.height));
+  if (nw === W && nh === H && nd === dpr) return;            // nothing changed: do not clear the canvases
+  dpr = nd; W = nw; H = nh; applyHead();
+  for (const c of [canvas, ov]) { c.width = Math.round(W * dpr); c.height = Math.round(H * dpr); c.style.width = W + 'px'; c.style.height = H + 'px'; }
+  clampView();
+  draw(); drawHead(P.currentTick()); dirty = false; headDirty = false;   // redraw in the same frame: no black flash while resizing
+}
+export const fitNow = () => fit();
+// Drop target under a screen point while a browser item is dragged: a track row, a Master / effect row, or the "+" row. Reads layout only.
+export function dropInfo(cx, cy) {
+  if (!canvas) return null;
+  const r = canvas.getBoundingClientRect(), x = cx - r.left, y = cy - r.top;
+  if (x < 0 || y < RULER || x > r.width || y > r.height - BOT) return null;
+  const n = state.tracks.length, i = Math.min(rowAt(y), n + nX()), top = r.top + rowY(i);
+  const base = { i, tick: x < CW ? Math.max(0, xt(x)) : null, top, h: rh(i), left: r.left, width: r.width };
+  if (i < n) return { ...base, kind: 'track' };
+  if (i < n + nX()) return { ...base, kind: 'fx', strip: xInfo(i).strip };
+  return { ...base, kind: 'new' };
+}
+export function initTimeline(host, h) {
+  hooks = h; hostEl = host;
+  const wrap = document.createElement('div'); wrap.className = 'cv-wrap'; wrap.style.cssText = 'position:absolute;inset:0';
+  canvas = document.createElement('canvas'); ov = document.createElement('canvas');
+  wrap.append(canvas, ov); host.append(wrap);
+  ctx = canvas.getContext('2d', { alpha: false }); octx = ov.getContext('2d');
+  new ResizeObserver(fit).observe(host);
+  window.addEventListener('themechange', invalidate); window.addEventListener('applayout', fit);
+  fit(); setup(); buildSelBar(host);
+  P.onChange((w) => { if (w === 'all') { stopMotion(); view.x0 = 0; view.y0 = 0; sel = null; msel.clear(); fh.clear(); gl.clear(); } if (msel.size && !drag) updateBar(); invalidate(); });
+  ov.addEventListener('contextmenu', (e) => {                    // right click (mouse / trackpad): Live's clip context menu
+    const r = canvas.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top, t = hit(x, y);
+    if (t.type !== 'clip') return;
+    e.preventDefault(); P.selectClip(t.i, t.c.id); invalidate(); clipMenu(t.i, t.c, t.tick, e.clientX, e.clientY);
+  });
+}

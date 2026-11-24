@@ -1,0 +1,713 @@
+// Device chain for the selected strip (track, return or master): instrument card, effect cards, "+" card.
+// Long-press a knob to create automation for it. Levelness / Analyzer / Autoduck have live meter views.
+import { C } from './theme.js';
+import { h, knob, menu, modal, fromNorm, toNorm, ask, toast } from './ui.js';
+import * as PRS from './presets.js';
+import { LAYOUT, buildSynth, DISP } from './devviz.js';
+import { FXVIEW } from './fxviz.js';
+import { samplerPanel, wavetablePanel } from './liveinst.js';
+import { INSTRUMENTS, INST_LIST, DEVICES, INST, fmtParam, noteName, FX_GROUPS, NO_WET_FX, WET_PARAMS, MIX_P } from './defs.js';
+import { eng, MASTER, RET0 } from './engine.js';
+import { offerAutomation } from './automate.js';
+import * as BR from './browser.js';
+import * as P from './project.js';
+import * as FW from './floatwin.js';
+import { buildSuite, minimetersView } from './minimeters.js';
+import { kitView, irackView, instKitView, padChainView } from './fxkit.js';
+import { prefs } from './prefs.js';
+import * as DP from './drumpad.js';
+import { reorderGrip } from './reorder.js';
+import { lvTabs } from './liveui.js';
+const { state } = P;
+const VIEWS = { ...FXVIEW, 16: minimetersView };   // MiniMeters has its own view module
+
+let root = null, timers = [];
+const padSel = new Map();
+// Folded cards (Live-style vertical strips): remembered per device id / instrument track, also across reloads
+const FOLD_KEY = 'mobiledaw.fold';
+const folded = new Set((() => { try { return JSON.parse(localStorage.getItem(FOLD_KEY) || '[]'); } catch (_) { return []; } })());
+const isFolded = (k) => folded.has(k);
+function setFolded(k, on) { if (on) folded.add(k); else folded.delete(k); try { localStorage.setItem(FOLD_KEY, JSON.stringify([...folded].slice(-400))); } catch (_) { /* storage unavailable */ } render(); }
+function titleFold(head, k) {                 // Live: double-click a device's title bar folds it; here a double tap on the bar (not on its buttons)
+  let last = 0;
+  head.addEventListener('pointerup', (e) => { if (head._noTap) { head._noTap = false; last = 0; return; } if (e.target.closest && e.target.closest('button') || head.closest('.fw')) return;   // in a floating window a double tap rolls the window up instead
+    const now = performance.now(); if (now - last < 320) { last = 0; setFolded(k, !isFolded(k)); } else last = now; });
+  return head;
+}
+
+const foldBtn = (k, on) => { const b = h('button', { class: 'fold-b', 'aria-label': on ? 'Buka lipatan' : 'Lipat modul', onclick: () => setFolded(k, !on) }, on ? '\u25B8' : '\u25BE'); return b; };
+function foldedCard(k, name, pw) {
+  const c = h('div', { class: 'card fold', 'aria-label': 'Buka ' + name, onclick: (e) => { if (e.target.closest && e.target.closest('.pw')) return; setFolded(k, false); } }, pw || null, h('span', { class: 'fn' }, name), foldBtn(k, true));
+  return c;
+}                                 // selected drum pad per track
+const stripName = (i) => (i === MASTER ? 'Master' : P.tr(i) ? P.tr(i).name : '');
+const live = () => root && root.isConnected && root.dataset.active === '1' && !document.hidden;
+function every(ms, fn) { const t = setInterval(() => { if (live()) fn(); }, ms); timers.push(t); }
+
+function knobGrid(def, count) {
+  const cols = count > 8 ? Math.min(12, Math.ceil(count / 2)) : Math.max(1, Math.min(count, 4));   // many knobs: rows of at most 12
+  return h('div', { class: 'knobs', style: `max-width:${cols * 60}px` });
+}
+
+// ---- Harmor (38): its partial map from a picture (image synthesis) or an audio file (resynthesis), made in a worker (js/harmor/harmor.js)
+function harmorMenu(i, t) {
+  const H = () => import('./harmor/harmor.js'), name = (p) => p.split('/').pop();
+  return [
+    { label: 'Image synthesis: muat gambar\u2026', fn: async () => {
+      const f = await eng.importFiles('image/*,.png,.jpg,.jpeg,.webp,.bmp,.gif'); if (!f.length) return;
+      toast('Membuat peta dari ' + name(f[0]) + '\u2026', 8000); const r = await (await H()).harmorLoadImage(i, f[0]);
+      toast(r.error || 'Gambar menjadi peta partial Harmor (Map Mix 100 %).', r.error ? 5000 : 3000); } },
+    { label: 'Resynthesis: muat audio\u2026', fn: async () => {
+      const f = await eng.importFiles('audio/*,.wav,.mp3,.flac,.ogg,.aif,.aiff,.m4a'); if (!f.length) return;
+      toast('Menganalisis ' + name(f[0]) + '\u2026', 20000);
+      const r = await (await H()).harmorLoadAudio(i, f[0], { quality: 1 }, (x) => toast('Menganalisis ' + name(f[0]) + ' ' + Math.round(x * 100) + ' %', 4000));
+      if (r.error) { toast(r.error, 5000); return; }
+      const rp = r.report;
+      toast(rp ? (rp.pitched ? `Resintesis: nada ${noteName(Math.round(rp.note))} (${rp.hz.toFixed(1)} Hz), ${rp.partials} partial, ${Math.round(rp.voiced * 100)} % bernada.` : `Resintesis tanpa nada: ${rp.why}. Peta spektrum frekuensi dipakai.`) : 'Resintesis dimuat (dari cache).', 5000); } },
+    { label: 'Hapus peta partial', dim: !t.inst.hm, fn: async () => (await H()).harmorClearMap(i) },
+  ];
+}
+
+// ---- sampler zones (DirectWave: one zone, Keystone: up to 16) ----------------------------------
+function zoneEditor(i, k) {
+  const t = state.tracks[i], z = t.inst.zones[k], multi = t.inst.type === INST.KEYSTONE || t.inst.type === INST.FLM_DW;
+  const num = (v, lo, hi) => h('input', { type: 'number', value: v, min: lo, max: hi, step: 1, inputmode: 'numeric', style: 'width:70px;height:32px;margin-left:8px;background:var(--bg);border:1px solid var(--line);color:var(--text);border-radius:2px;padding:0 6px;user-select:text' });
+  const f = { root: num(z.root, 0, 127), lo: num(z.lo, 0, 127), hi: num(z.hi, 0, 127), vlo: num(z.vlo, 1, 127), vhi: num(z.vhi, 1, 127), tune: num(z.tune, -100, 100), vol: num(Math.round((z.vol || 0) * 10) / 10, -60, 12), pan: num(Math.round((z.pan || 0) * 100), -100, 100) };
+  const flm = t.inst.type === INST.FLM_DW; f.vol.step = 0.1;
+  const loop = h('input', { type: 'checkbox', style: 'width:22px;height:22px;margin-left:8px' }); loop.checked = z.loop;
+  const row = (label, el, hint) => h('label', { style: 'display:flex;align-items:center;padding:4px 0' }, h('span', { style: 'flex:1' }, label), el, h('span', { style: 'width:34px;color:var(--dim);font-size:11px;margin-left:6px' }, hint || ''));
+  const hint = (el) => { const v = Math.round(+el.value); return Number.isFinite(v) ? noteName(Math.max(0, Math.min(127, v))) : ''; };
+  const body = h('div', {},
+    h('div', { style: 'padding-bottom:6px;color:var(--dim);word-break:break-all' }, z.sample ? z.sample.name : 'Belum ada sample'),
+    h('button', { class: 'b', style: 'width:100%;margin-bottom:6px', onclick: () => BR.openBrowser('file', { track: i, zone: k }) }, z.sample ? 'Ganti sample\u2026' : 'Pilih sample\u2026'),
+    row('Nada dasar (root)', f.root, hint(f.root)),
+    multi ? row('Tuts terendah', f.lo, hint(f.lo)) : null, multi ? row('Tuts tertinggi', f.hi, hint(f.hi)) : null,
+    multi ? row('Velocity min', f.vlo) : null, multi ? row('Velocity maks', f.vhi) : null,
+    row('Tune (cent)', f.tune), flm ? row('Level lapisan (dB)', f.vol) : null, flm ? row('Pan lapisan', f.pan) : null, row('Loop sample', loop));
+  const acts = [{ label: 'Batal' }];
+  if (multi && t.inst.zones.length > 1) acts.push({ label: 'Hapus zona', fn: () => P.removeZone(i, k) });
+  acts.push({ label: 'Simpan', go: true, fn: () => {
+    const n = (el, lo, hi) => Math.max(lo, Math.min(hi, Math.round(+el.value) || 0));
+    P.setZoneField(i, k, 'root', n(f.root, 0, 127));
+    if (multi) { const lo = n(f.lo, 0, 127), hi = n(f.hi, 0, 127); P.setZoneField(i, k, 'lo', Math.min(lo, hi)); P.setZoneField(i, k, 'hi', Math.max(lo, hi)); const a = n(f.vlo, 1, 127), b = n(f.vhi, 1, 127); P.setZoneField(i, k, 'vlo', Math.min(a, b)); P.setZoneField(i, k, 'vhi', Math.max(a, b)); }
+    P.setZoneField(i, k, 'tune', n(f.tune, -100, 100));
+    if (flm) { P.setZoneField(i, k, 'vol', Math.max(-60, Math.min(12, Math.round((+f.vol.value || 0) * 10) / 10))); P.setZoneField(i, k, 'pan', n(f.pan, -100, 100) / 100); }
+    P.setZoneField(i, k, 'loop', loop.checked);
+  } });
+  modal(multi ? `Zona ${k + 1}` : 'Sample DirectWave', body, acts);
+}
+
+// DirectWave's display (flmpanels.js dwSample) asks for a zone: tap = pick / edit its sample, the Zona button = the zone list
+const zonesMenu = (i, r) => { const t = state.tracks[i]; if (!t || !t.inst) return; const zs = t.inst.zones || [];
+  menu([...zs.map((z, k) => ({ label: `Zona ${k + 1}: ${z.sample ? z.sample.name : '(kosong)'}`, fn: () => zoneEditor(i, k) })), { sep: true },
+    { label: '+ Zona', dim: zs.length >= P.MAX_ZONES, fn: () => { const k = P.addZone(i); if (k !== null) zoneEditor(i, k); } },
+    t.inst.type === INST.FLM_DW ? { label: 'Muat WAV / MP3 / program DWP\u2026', fn: () => dwLoad(i) } : null,
+    t.inst.type === INST.FLM_DW ? { label: 'Buat dari sample (multi-sample)\u2026', fn: () => dwBuilder(i, r) } : null].filter(Boolean), r.left, r.bottom + 1); };
+// DirectWave "New from samples" (FL Studio Mobile's instrument builder; mapping js/tokenmap.js, Honeydew token_map.rs): several audio files
+// (from the device, or a folder of the library) become zones by their names: Piano_C4_v64.wav = root C4, the velocity layer up to 64
+async function dwBuilder(i, r) {
+  const pick = async (paths) => { const a = paths.filter((p) => /\.(wav|mp3|flac|ogg|aif+|m4a)$/i.test(p)); if (!a.length) { toast('Tidak ada file audio.', 2500); return; } dwBuilderDialog(i, a); };
+  const dirs = (eng.allDirs ? [...eng.allDirs('/Samples'), ...eng.allDirs('/FLM'), ...eng.allDirs('/Recordings')] : []).filter((d) => (eng.listDir(d).items || []).some((x) => !x.dir && /\.(wav|mp3|flac|ogg|aif+|m4a)$/i.test(x.name)));
+  menu([{ label: 'File dari perangkat\u2026', fn: async () => pick(await eng.importFiles('.wav,.mp3,.flac,.ogg,.aif,.aiff,.m4a')) },
+    ...(dirs.length ? [{ sep: true }, ...dirs.slice(0, 40).map((d) => ({ label: 'Folder ' + d.replace(/^\//, ''), fn: () => pick((eng.listDir(d).items || []).filter((x) => !x.dir).map((x) => d + '/' + x.name)) }))] : [])], r.left, r.bottom + 1);
+}
+async function dwBuilderDialog(i, paths) {
+  const TM = await import('./tokenmap.js');
+  const names = paths.map((p) => p.split('/').pop());
+  let sep = TM.separatorOf(names[0]), roles = TM.guess(TM.tokens(names[0], sep));
+  const box = h('div', { class: 'dwb' }), table = h('div', { class: 'dwb-t' });
+  const sel = (opts, val, on) => { const e = h('select', { class: 'dwb-s' }, ...opts.map(([v, l]) => { const o = h('option', { value: v }, l); if (v === val) o.selected = true; return o; })); e.onchange = () => on(e.value); return e; };
+  const draw = () => {
+    const toks = TM.tokens(names[0], sep);
+    while (roles.length < toks.length) roles.push('ignore');
+    const rolesRow = h('div', { class: 'dwb-roles' }, ...toks.map((t, k) => h('label', {}, h('span', {}, t || '\u2014'), sel(TM.ROLES.map((x) => [x, TM.ROLE_LABEL[x]]), roles[k], (v) => { roles[k] = v; draw(); }))));
+    const rg = TM.mapNames(names, sep, roles.slice(0, toks.length)); box.rg = rg;
+    table.replaceChildren(h('div', { class: 'dwb-h' }, h('span', {}, 'File'), h('span', {}, 'Root'), h('span', {}, 'Tuts'), h('span', {}, 'Vel')),
+      ...rg.map((x) => h('div', { class: 'dwb-r' + (x.flag ? ' bad' : '') }, h('span', {}, x.file), h('span', {}, noteName(x.root)), h('span', {}, noteName(x.keys[0]) + '\u2013' + noteName(x.keys[1])), h('span', {}, x.vels[0] + '\u2013' + x.vels[1] + (x.seq ? ' RR' + x.seq[0] + '/' + x.seq[1] : '')),
+        x.flag ? h('em', {}, x.flag.unparsed != null ? 'token ' + (x.flag.unparsed + 1) + ' tidak terbaca' : 'tumpang tindih') : null)));
+    box.replaceChildren(h('div', { class: 'dwb-top' }, h('span', {}, 'Pemisah'), sel([...TM.SEPARATORS.map((x) => [x, '\u201c' + x + '\u201d']), ['', '(tanpa)']], sep, (v) => { sep = v; roles = TM.guess(TM.tokens(names[0], sep)); draw(); }),
+      h('span', { class: 'dwb-n' }, names.length + ' file' + (names.length > P.MAX_ZONES ? ' (maks ' + P.MAX_ZONES + ' zona)' : ''))), rolesRow, table);
+  };
+  draw();
+  modal('Buat DirectWave dari sample', box, [{ label: 'Batal' }, { label: 'Buat', go: true, fn: async () => {
+    const rg = box.rg.map((x, k) => ({ ...x, path: paths[k] })).filter((x) => !(x.flag && x.flag.unparsed != null));
+    toast('Memuat sample\u2026', 6000);
+    const res = await P.buildDwFromSamples(i, rg);
+    toast(res.error || res.zones + ' zona dibuat' + (res.dropped ? ', ' + res.dropped + ' file lebih dari 16 dilewati' : '') + (res.failed.length ? ', ' + res.failed.length + ' gagal dimuat' : '') + '.', 4000);
+  } }]);
+}
+// DirectWave: a file from the device. A .dwp = a whole program (its zones replace the track's); WAV / MP3 = the sample of the first empty zone
+// (a new zone when every zone has one, the last zone's when 16 are full)
+async function dwLoad(i) {
+  const f = await eng.importFiles('.wav,.mp3,.dwp'); if (!f.length) return;
+  const dwp = f.find((p) => /\.dwp$/i.test(p));
+  if (dwp) { toast('Memuat program DirectWave\u2026', 6000); const r = await P.loadDwpProgram(i, dwp); if (r.error) { toast(r.error, 5000); return; }
+    toast(`Program "${r.name}": ${r.zones} zona` + (r.missing.length ? `, ${r.missing.length} sample tidak ditemukan` : '') + '.', 4000); return; }
+  const t = state.tracks[i]; let ok = 0;
+  for (const p of f) {
+    const zs = t.inst.zones || []; let k = zs.findIndex((z) => !z.sample);
+    if (k < 0) k = P.addZone(i) ?? zs.length - 1;
+    if (await P.setZoneSample(i, k, p)) ok++;
+  }
+  toast(ok ? ok + ' sample dipasang ke DirectWave.' : 'Sample tidak bisa dimuat (format atau file terlalu panjang).', 3000);
+}
+// Moisture (37): load a wavetable into oscillator A / B, import a Serum preset (.fxp)
+document.addEventListener('mdaw-m2wt', async (e) => { const { i, osc } = e.detail; const f = await eng.importFiles('.wav'); if (!f.length) return;
+  const r = await P.loadMoistureTable(i, osc, f[0]); toast(r.error || 'Wavetable ' + (osc ? 'B' : 'A') + ': ' + r.frames + ' frame dimuat.', r.error ? 4500 : 2200); });
+document.addEventListener('mdaw-m2wtclr', (e) => { P.clearMoistureTable(e.detail.i, e.detail.osc); toast('Wavetable bawaan dipakai lagi.', 1600); });
+document.addEventListener('mdaw-m2fxp', async (e) => { const { i } = e.detail; const f = await eng.importFiles('.fxp'); if (!f.length) return;
+  const r = await P.applySerumPreset(i, f[0]); if (r.error) { toast(r.error, 5000); return; }
+  toast('Preset Serum "' + r.name + '": ' + r.params + ' parameter' + (r.tables ? ', ' + r.tables + ' wavetable' : '') + '. Routing modulasi tidak ikut (format belum terdokumentasi).' + (r.notes.length ? ' ' + r.notes.join(' ') : ''), 7000); });
+document.addEventListener('mdaw-zone', (e) => { const { i, k, list, rect } = e.detail; const t = state.tracks[i]; if (!t || !t.inst) return;
+  if (list) { zonesMenu(i, rect); return; }
+  const z = (t.inst.zones || [])[k]; if (z && z.sample) zoneEditor(i, k); else BR.openBrowser('file', { track: i, zone: k || 0 }); });
+function zonePanel(i, t) {
+  const zs = t.inst.zones || [];
+  const multi = t.inst.type === INST.KEYSTONE || t.inst.type === INST.FLM_DW;   // FLM DirectWave: several layers / zones
+  const list = h('div', { class: 'zones' });
+  zs.forEach((z, k) => list.append(h('button', { class: 'zone b', onclick: () => zoneEditor(i, k) },
+    h('b', {}, multi ? `Zona ${k + 1}` : 'Sample'),
+    h('span', { class: 'zn' }, z.sample ? z.sample.name : '(kosong \u2014 ketuk)'),
+    h('span', { class: 'zr' }, multi ? `${noteName(z.lo)}\u2013${noteName(z.hi)} \u2022 root ${noteName(z.root)}${z.vlo > 1 || z.vhi < 127 ? ` \u2022 vel ${z.vlo}\u2013${z.vhi}` : ''}${z.loop ? ' \u2022 loop' : ''}` : `root ${noteName(z.root)}${z.loop ? ' \u2022 loop' : ''}`))));
+  if (multi && zs.length < P.MAX_ZONES) list.append(h('button', { class: 'b', style: 'height:30px', onclick: () => { const k = P.addZone(i); if (k !== null) zoneEditor(i, k); } }, '+ Zona'));
+  if (multi) list.append(zoneMap(i, zs));
+  return list;
+}
+
+// key map under the zone list (Keystone / DirectWave): the keyboard from C-1 (bottom) to G9 (top), every zone as a bar over its key range
+// (velocity range = bar width share), its root key marked; fills the rest of the sidebar. Tap a bar = edit that zone.
+function zoneMap(i, zs) {
+  const wrap = h('div', { class: 'zmap' }), cv = h('canvas', { class: 'zmap-c' }); wrap.append(cv);
+  let W = 0, H = 0;
+  const draw = () => {
+    const r = wrap.getBoundingClientRect(), dpr = window.devicePixelRatio || 1; W = Math.max(20, Math.round(r.width)); H = Math.max(20, Math.round(r.height));
+    cv.width = W * dpr; cv.height = H * dpr; cv.style.width = W + 'px'; cv.style.height = H + 'px';
+    const g = cv.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.fillStyle = '#262628'; g.fillRect(0, 0, W, H);
+    const kw = 18, ky = (n) => H - 2 - (n + 1) * (H - 4) / 128, kh = (H - 4) / 128;
+    for (let n = 0; n < 128; n++) { const blk = [1, 3, 6, 8, 10].includes(n % 12); g.fillStyle = blk ? '#3a3a3e' : '#d8d8d8'; g.fillRect(2, ky(n), blk ? kw * 0.6 : kw, Math.max(0.5, kh - 0.3)); }
+    g.font = '600 9px ' + getComputedStyle(document.body).fontFamily; g.fillStyle = '#9a9aa0';
+    for (let o = 0; o <= 10; o += 2) { const n = o * 12; if (n < 128) g.fillText('C' + (o - 1), kw + 5, ky(n) + kh + 3); }
+    const x0 = kw + 30, bw = W - x0 - 4, cols = ['#62cffa', '#fdb443', '#9be36b', '#ff8fb1', '#c49bff', '#5fe3d0'];
+    zs.forEach((z, k) => {
+      const y1 = ky(z.hi), y0 = ky(z.lo) + kh, vx = x0 + bw * ((z.vlo || 1) - 1) / 127, vw = Math.max(4, bw * ((z.vhi || 127) - (z.vlo || 1) + 1) / 127);
+      g.fillStyle = cols[k % cols.length] + '55'; g.fillRect(vx, y1, vw, Math.max(2, y0 - y1)); g.strokeStyle = cols[k % cols.length]; g.lineWidth = 1; g.strokeRect(vx + 0.5, y1 + 0.5, vw - 1, Math.max(1, y0 - y1 - 1));
+      const yr = ky(z.root) + kh / 2; g.fillStyle = cols[k % cols.length]; g.fillRect(vx, yr - 1, vw, 2);
+      g.fillStyle = '#e8e8e8'; g.fillText(String(k + 1), vx + 3, Math.min(y0 - 3, Math.max(y1 + 10, yr - 3)));
+    });
+  };
+  const ro = new ResizeObserver(() => requestAnimationFrame(draw)); ro.observe(wrap);
+  cv.addEventListener('click', (e) => { const r = cv.getBoundingClientRect(), n = Math.floor((H - 2 - (e.clientY - r.top)) / ((H - 4) / 128)); const k = zs.findIndex((z) => n >= z.lo && n <= z.hi); if (k >= 0) zoneEditor(i, k); });
+  return wrap;
+}
+
+// Pitch knob (-24..+24 semitones): part of the main controls of every instrument (Volume panel / knob grid / drum row)
+function pitchKnob(i, t) {
+  const p = { ...P.PITCH_PARAM, fmt: 'st' };   // display only: "-7 st" instead of a bare "-7"
+  return knob(p, () => t.inst.pitch || 0, (v) => P.setPitch(i, v), fmtParam, C('#ffa722'),
+    (rect) => offerAutomation(rect, { kind: 5, strip: P.stripOf(i), param: 90, def: p }, `${t.name} \u2022 Pitch`));
+}
+
+// ---- floating windows: the same cards, opened as free windows (drag, resize, shrink, minimise). While a window is open the chain shows a
+// placeholder. Only a LARGE module (def.big, e.g. MiniMeters) auto-opens in a floating window when prefs.floatPlugins is on; modules that
+// fit the rack card stay inline (owner: float big modules, keep small ones below). The pop-out button still floats any module by hand.
+// While a module is floated the chain shows this card:
+//   window minimised -> "Klik Tampilkan untuk menampilkan plugin." + Tampilkan   (the explicit message the owner asked for)
+//   window open & visible -> "Terbuka di jendela mengambang." + Tampilkan (raise) + Tutup
+//   window closed (float-only mode) -> "Plugin tampil di jendela mengambang." + Tampilkan (opens it)
+const swapBtn = (label, pick) => h('button', { class: 'dv-swap', 'aria-label': label, title: label, onclick: (e) => { e.stopPropagation(); pick(e.currentTarget.getBoundingClientRect()); } }, '\u21C4');   // quick swap of the module
+const popBtn = (open) => h('button', { class: 'fw-pop', 'aria-label': 'Buka di jendela mengambang', title: 'Jendela mengambang', onclick: (e) => { e.stopPropagation(); open(); } }, '\u29C9');
+const bigMod = (def) => !!(def && def.big);   // a module large enough to default to a floating window (MiniMeters and the like)
+function floatedCard(key, name, open, o = {}) {
+  const head = o.head || h('h4', {}, h('span', {}, name));
+  const openEx = FW.isOpen(key), min = openEx && FW.isMin(key);
+  const msg = min ? 'Klik Tampilkan untuk menampilkan plugin.' : openEx ? 'Terbuka di jendela mengambang.' : 'Plugin tampil di jendela mengambang.';
+  const btns = [h('button', { class: 'b prim', onclick: open }, 'Tampilkan')];
+  if (openEx) btns.push(h('button', { class: 'b', onclick: () => FW.closeFloat(key) }, 'Tutup'));
+  return h('div', { class: 'card floated' + (min ? ' fl-min' : '') + (o.off ? ' off' : '') }, head,
+    h('div', { class: 'fl-msg' }, msg), h('div', { class: 'fl-btns' }, ...btns));
+}
+function locateDev(devId) {
+  const find = (i) => { const c = P.tr(i); if (!c) return null; const di = c.devices.findIndex((x) => x.id === devId); return di < 0 ? null : { i, di, d: c.devices[di], n: c.devices.length }; };
+  for (let k = 0; k < state.tracks.length; k++) { const r = find(k); if (r) return r; }
+  for (let k = 0; k < state.returns.length; k++) { const r = find(RET0 + k); if (r) return r; }
+  return find(MASTER);
+}
+export function openDeviceWindow(devId) {
+  const L0 = locateDev(devId); if (!L0) return;
+  const mm = L0.d.type === 16, name = DEVICES[L0.d.type].name;
+  FW.openFloat({ id: 'd:' + devId, title: name + ' \u2022 ' + stripName(L0.i), sub: stripName(L0.i), mergeHead: !mm, color: '#7ac5ff', fit: !mm, frameless: mm, w: 560, h: 330, minW: mm ? 240 : undefined, minH: mm ? 120 : undefined,
+    build(api) {
+      const L = locateDev(devId); if (!L) return null;
+      api.setTitle(name + ' \u2022 ' + stripName(L.i), stripName(L.i));
+      if (mm) return buildSuite({ i: L.i, di: L.di, d: L.d, set: (k, v) => P.setDeviceParam(L.i, L.di, k, v) }, api.every);
+      return fxCard(L.i, L.d, L.di, L.n, { every: api.every, floating: true });
+    } });
+}
+export function openInstWindow(trackId) {
+  const idx = () => state.tracks.findIndex((x) => x.id === trackId);
+  const i0 = idx(); if (i0 < 0 || !state.tracks[i0].inst) return;
+  FW.openFloat({ id: 'i:' + trackId, title: INSTRUMENTS[state.tracks[i0].inst.type].name + ' \u2022 ' + state.tracks[i0].name, sub: state.tracks[i0].name, mergeHead: true, color: '#ffa722', fit: true, ...(state.tracks[i0].inst.type === 37 ? { w: 1040, h: 660, color: '#38c8ff', frac: { w: 0.72, h: 0.86 } } : state.tracks[i0].inst.type === 38 ? { w: 1100, h: 720, fit: false, frac: { w: 0.7, h: 0.82 } } : {}),   // Harmor: a big window (the window manager keeps it inside the screen)
+    build(api) {
+      const i = idx(); if (i < 0 || !state.tracks[i].inst) return null;
+      const t = state.tracks[i]; api.setTitle(INSTRUMENTS[t.inst.type].name + ' \u2022 ' + t.name, t.name);
+      return instCard(i, t, { floating: true, every: api.every });   // the window's own timers (displays / meters run while it is open)
+    } });
+}
+
+function instCard(i, t, o = {}) {
+  const def = INSTRUMENTS[t.inst.type];
+  const fk = 'i' + t.id;
+  if (!o.floating && isFolded(fk) && !FW.isOpen('i:' + t.id)) return foldedCard(fk, def.name, null);
+  const head = h('h4', {}, h('i', { class: 'pdot' }));
+  if (t.kind === 'midi') head.append(h('button', { class: 'dv-name', 'aria-label': 'Ganti instrumen', onclick: (e) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    menu(INST_LIST.map((k) => ({ label: INSTRUMENTS[k].name, check: t.inst.type === k, fn: () => P.setInstrument(i, k) })), r.left, r.bottom);
+  } }, h('span', {}, def.name), h('i', { class: 'tri', 'aria-hidden': 'true' })));
+  else head.append(h('span', {}, def.name));
+  titleFold(head, fk);
+  if (t.inst.sub) head.append(h('span', { class: 'dv-miss-chip sub', title: 'Program asli tidak ada di arsip: diganti preset SoundFont General MIDI yang paling mirip' }, 'pengganti ' + (t.inst.sub.from || '') + ' "' + (t.inst.sub.library || '') + '" \u2192 ' + (t.inst.sub.gm || '')));
+  if (t.inst.missing) {                                  // imported instrument whose program / sample is not available: the pattern is kept, the chip says what is missing
+    const x = t.inst.missing, what = x.sample ? 'sample ' + x.sample.split('/').pop() : x.library ? 'program ' + x.library.replace(/^.*\//, '').replace(/\.\w+$/, '') : x.name;
+    head.append(h('span', { class: 'dv-miss-chip', title: 'Muat sample di zona untuk membunyikan pattern ini' }, '\u26a0 ' + (x.name || 'Instrumen') + ': ' + what + ' tidak tersedia'));
+  }
+  if (t.kind === 'midi') {
+    const presets = P.presetsFor(t.inst.type);
+    head.append(h('button', { class: 'pre', 'aria-label': 'Preset', style: 'width:auto;padding:0 6px;font-size:11px', onclick: (e) => {
+      const r = e.currentTarget.getBoundingClientRect();
+      const items = [{ label: 'Simpan preset ke folder\u2026', fn: () => ask('Nama preset', '', (n) => { const x = PRS.saveInstrumentPreset(i, n); toast(x.error || 'Preset tersimpan di Presets/Instruments.'); }) }];
+      const mine = PRS.userInstrumentPresets(t.inst.type);
+      if (mine.length) { items.push({ sep: true }, { label: 'PRESET SAYA', dim: true }); for (const m of mine) items.push({ label: m.name, fn: () => { const x = PRS.applyPresetFile(m.path, i); if (x.error) toast(x.error, 4000); } }); }
+      let cat = null;
+      for (const pr of presets) {
+        if (pr.cat && pr.cat !== cat) { cat = pr.cat; items.push({ sep: true }); items.push({ label: cat.toUpperCase(), dim: true }); }
+        items.push({ label: pr.name, fn: () => P.applyPreset(i, pr) });
+      }
+      menu(items, r.left - 60, r.bottom);
+    } }, 'Preset'));
+  }
+  if (!o.floating && (FW.isOpen('i:' + t.id) || def.floatOnly || (prefs.floatPlugins && bigMod(def)))) return floatedCard('i:' + t.id, def.name, () => openInstWindow(t.id), { head });   // floatOnly (Moisture): never inline
+  const instPick = (r) => menu(INST_LIST.map((k) => ({ label: INSTRUMENTS[k].name, check: t.inst.type === k, fn: () => P.setInstrument(i, k) })), r.left - 60, r.bottom);
+  if (t.kind === 'midi') head.append(swapBtn('Ganti instrumen', instPick));
+  if (!o.floating) head.append(popBtn(() => openInstWindow(t.id)));
+  head.append(h('button', { class: 'dv-more', 'aria-label': 'Menu instrumen', onclick: (e) => { const r = e.currentTarget.getBoundingClientRect();
+    menu([...(o.floating ? [] : [{ label: 'Buka di jendela mengambang', fn: () => openInstWindow(t.id) }, { label: 'Lipat', fn: () => setFolded(fk, true) }, { sep: true }]),
+      ...(t.kind === 'midi' ? [{ label: 'Ganti instrumen\u2026', fn: () => instPick(r) }] : []),
+      ...(def.zones ? [{ label: 'Zona sample\u2026', fn: () => zonesMenu(i, r) }] : []),
+      ...(t.inst.type === 38 ? harmorMenu(i, t) : []),
+      ...(t.kind === 'midi' ? [{ label: 'Simpan preset\u2026', fn: () => ask('Nama preset', '', (n) => { const x = PRS.saveInstrumentPreset(i, n); toast(x.error || 'Preset tersimpan di Presets/Instruments.'); }) }] : [])], r.left - 120, r.bottom); } }, '\u22EF'));
+  if (!o.floating) head.append(foldBtn(fk, false));
+  if (def.view === 'kit') { const kv = instKitView(i, t, o.every || every); if (kv) return h('div', { class: 'card lkcard lvcard' + (def.flm ? ' flm-card flm-t' + t.inst.type : '') }, head, def.zones && t.inst.type !== INST.FLM_DW ? h('div', { class: 'inst-row' }, h('div', { class: 'inst-side' }, zonePanel(i, t)), kv.el) : kv.el); }   // FLM DirectWave: zone list + panel   // Live 12 instruments (fxkit.js VI)
+  if (def.view === 'irack') { const rv = irackView(i, t, o.every || every); return h('div', { class: 'card lkcard lvcard' }, head, rv.el); }   // Instrument Rack (fxkit.js rackPanel)
+  if (def.view === 'lsampler' || def.view === 'lwavetable') {
+    const pn = def.view === 'lsampler' ? samplerPanel(i, t) : wavetablePanel(i, t);
+    return h('div', { class: 'card lvcard' }, head, pn.el);
+  }
+  const body = knobGrid(def, def.params.filter((p) => !p.hidden).length + 1);   // +1 = the Pitch knob, which lives in the same grid; hidden parameters take no cell
+  let envRedraw = null;
+  // Live-style panels (Osc / Filter / Mod Sources / Voice) with displays; instruments without a layout keep the plain knob grid
+  const syn = t.kind === 'midi' && LAYOUT[t.inst.type] ? buildSynth({
+    type: t.inst.type, t, def, h, knob, fmt: fmtParam, fromNorm, toNorm, pitch: () => pitchKnob(i, t),
+    get: (k) => t.inst.params[k] ?? def.params[k].def,
+    set: (k, v) => P.setInstParam(i, k, v),
+    auto: (rect, k) => offerAutomation(rect, { kind: 5, strip: P.stripOf(i), param: k, def: def.params[k] }, `${t.name} \u2022 ${def.params[k].n}`),
+  }) : null;
+  const EM = syn ? null : ({ 1: { a: 2, d: 3, s: 4, r: 5 }, 2: { a: 3, r: 4 } })[t.inst.type];
+  if (EM && t.kind === 'midi') {                     // amp-envelope display (Live shows the same next to its ADSR knobs)
+    const cv = h('canvas', { class: 'envcv', width: 190, height: 56 }), ro = h('div', { class: 'envro' });
+    const val = (k, fb) => (k === undefined ? fb : (t.inst.params[k] ?? def.params[k].def));
+    envRedraw = () => {
+      const a = val(EM.a, 0.01), dd = val(EM.d, 0.001), s = val(EM.s, 1), r = val(EM.r, 0.2);
+      const g = cv.getContext('2d'), w = cv.width, hh = cv.height;
+      g.fillStyle = DISP.bg; g.fillRect(0, 0, w, hh);
+      const wa = Math.sqrt(a), wd = Math.sqrt(dd), wr = Math.sqrt(r), wh = Math.max(0.25, (wa + wd + wr) * 0.35), k = (w - 12) / (wa + wd + wh + wr);
+      const X = [6, 6 + wa * k, 6 + (wa + wd) * k, 6 + (wa + wd + wh) * k, 6 + (wa + wd + wh + wr) * k], sy = 6 + (1 - s) * (hh - 12), Y = [hh - 6, 6, sy, sy, hh - 6];
+      g.beginPath(); X.forEach((x, n) => (n ? g.lineTo(x, Y[n]) : g.moveTo(x, Y[n])));
+      g.strokeStyle = '#5fd0e0'; g.lineWidth = 1.6; g.stroke();
+      g.lineTo(X[0], hh - 6); g.closePath(); g.fillStyle = 'rgba(95,208,224,.16)'; g.fill();
+      g.fillStyle = '#ffa722'; for (const n of [1, 2, 3]) { g.beginPath(); g.arc(X[n], Y[n], 2.8, 0, 6.2832); g.fill(); }
+      const parts = [['A', EM.a, a], ['D', EM.d, dd], ['S', EM.s, s], ['R', EM.r, r]].filter((x) => x[1] !== undefined);
+      ro.textContent = parts.map(([l, kk, v]) => `${l} ${fmtParam(def.params[kk], v)}`).join('   ');
+    };
+    body.prepend(h('div', { class: 'envbox' }, cv, ro)); body.classList.add('wide'); envRedraw();
+  }
+  if (!syn) def.params.forEach((p, k) => p.hidden || body.append(knob(p, () => t.inst.params[k] ?? p.def, (v) => { P.setInstParam(i, k, v); if (envRedraw) envRedraw(); }, fmtParam, C('#ffa722'),
+    (rect) => offerAutomation(rect, { kind: 5, strip: P.stripOf(i), param: k, def: p }, `${t.name} \u2022 ${p.n}`))));
+  if (!syn) body.append(pitchKnob(i, t));
+  if (t.inst.type === INST.DRUM) {
+    // Live 12 Drum Rack: 4 x 4 pads (first pad bottom left), each with its name and M / ▶ / S (mute, play, solo); tap = play + select.
+    // Right: the selected pad (Level, Pan, Pitch, Decay, sample, start / end, reverse) and the rack's Pitch.
+    const PD = P.padsOf(i);
+    let cur = Math.min(padSel.get(t.id) ?? 0, PD.length - 1);
+    const pads = h('div', { class: 'drk-pads' }), side = h('div', { class: 'drk-side' });
+    const PK = [{ n: 'Level', min: -24, max: 6, def: 0, unit: 'dB' }, { n: 'Pitch', min: -12, max: 12, def: 0, unit: 'st' }, { n: 'Decay', min: 0.25, max: 3, def: 1, curve: 'log', unit: 'x' }];
+    const PAN = { n: 'Pan', min: -1, max: 1, def: 0, fmt: 'pan' }, ST = { n: 'Start', min: 0, max: 0.95, def: 0, unit: '%' }, EN = { n: 'End', min: 0.05, max: 1, def: 1, unit: '%' };
+    const col = C('#ffa722');
+    const sbtn = (label, on, fn, cls = '') => { const b = h('button', { class: 'lv-btn drk-b ' + cls + (on ? ' on' : ''), onclick: (e) => { e.stopPropagation(); fn(b); } }, label); b.addEventListener('pointerdown', (e) => e.stopPropagation()); return b; };
+    const showSide = () => {
+      const q = PD[cur], pk = (j) => { const idx = cur * 3 + j, p = PK[j]; return knob(p, () => t.inst.params[idx] ?? p.def, (v) => P.setInstParam(i, idx, v), fmtParam, col, (rect) => offerAutomation(rect, { kind: 5, strip: P.stripOf(i), param: idx, def: p }, `${t.name} • ${q.name} ${p.n}`)); };
+      const pf = (f, p) => knob(p, () => q[f], (v) => P.setPad(i, cur, f, v), fmtParam, col);
+      const pick = () => BR.openBrowser('file', { track: i, pad: cur, done: () => render() });
+      if (q.chain && q.chain.inst) {                 // the pad plays its chain: Level / Pan / Pitch (shifts the note the chain receives) only
+        side.replaceChildren(h('div', { class: 'drk-st' }, h('b', {}, q.name), h('span', {}, noteName(q.pitch))), h('div', { class: 'drk-kn' }, pk(0), pf('pan', PAN), pk(1)),
+          h('div', { class: 'drk-kn drk-note' }, 'Pad ini memainkan chain ' + INSTRUMENTS[q.chain.inst.type].name + ' (C3 + Pitch). Atur suaranya di kolom Chain.'),
+          h('div', { class: 'drk-rack' }, h('span', {}, 'Rack'), pitchKnob(i, t)));
+        return;
+      }
+      side.replaceChildren(
+        h('div', { class: 'drk-st' }, h('b', {}, q.name), h('span', {}, noteName(q.pitch))),
+        h('div', { class: 'drk-kn' }, pk(0), pf('pan', PAN), pk(1), pk(2)),
+        h('div', { class: 'drk-smp' }, h('button', { class: 'lv-btn drk-file', onclick: pick }, q.sample ? q.sample.name : 'Sintetis bawaan • pilih sample…'),
+          q.sample ? sbtn('Rev', q.rev, (b) => { P.setPad(i, cur, 'rev', !q.rev); b.classList.toggle('on', q.rev); }) : null),
+        q.sample ? h('div', { class: 'drk-kn' }, pf('start', ST), pf('end', EN)) : h('div', { class: 'drk-kn drk-note' }, 'Pad sintetis: suara diatur dengan Level, Pitch dan Decay.'),
+        h('div', { class: 'drk-rack' }, h('span', {}, 'Rack'), pitchKnob(i, t)));
+    };
+    const cells = [];
+    for (let k = 0; k < P.MAX_PADS; k++) {
+      const d = PD[k];
+      if (!d) { cells.push(h('button', { class: 'drk-pad empty', 'aria-label': 'Tambah pad', onclick: () => DP.addPad(i) }, h('span', { class: 'drk-n' }, '+'), h('small', {}, 'Drop Sample'))); continue; }
+      const play = sbtn('▶', false, () => {}, 'pl');
+      play.addEventListener('pointerdown', () => P.noteEvent(i, d.pitch, 0.9, true)); ['pointerup', 'pointercancel', 'pointerleave'].forEach((ev) => play.addEventListener(ev, () => P.noteEvent(i, d.pitch, 0, false)));
+      const b = h('div', { class: 'drk-pad' + (k === cur ? ' sel' : '') + (d.mute ? ' mut' : ''), role: 'button', 'aria-label': d.name },
+        h('div', { class: 'drk-top' }, h('span', { class: 'drk-n' }, d.name), h('small', {}, noteName(d.pitch))),
+        h('div', { class: 'drk-ms' }, sbtn('M', d.mute, (x) => { P.setPad(i, k, 'mute', !d.mute); x.classList.toggle('on', d.mute); b.classList.toggle('mut', d.mute); }), play, sbtn('S', d.solo, (x) => { P.setPad(i, k, 'solo', !d.solo); x.classList.toggle('on', d.solo); }, 'so')));
+      const top = b.firstChild;
+      top.addEventListener('pointerdown', (e) => { top.setPointerCapture(e.pointerId); b.classList.add('hit'); const was = cur; cur = k; padSel.set(t.id, k); cells.forEach((x, m) => x.classList.toggle('sel', m === k)); showSide(); P.noteEvent(i, d.pitch, 0.9, true); if (was !== k) setTimeout(render, 0); });
+      const off = () => { b.classList.remove('hit'); P.noteEvent(i, d.pitch, 0, false); };
+      top.addEventListener('pointerup', off); top.addEventListener('pointercancel', off);
+      cells.push(b);
+    }
+    for (let r = 3; r >= 0; r--) for (let c = 0; c < 4; c++) pads.append(cells[r * 4 + c]);   // Live: the first pad is bottom left
+    showSide();
+    const chain = padChainView(i, cur, o.every || every);
+    return h('div', { class: 'card drack drk' }, head, h('div', { class: 'drk-body' }, pads, side, chain.el));
+  }
+  if (def.view === 'soundfont') {
+    const sf = t.inst.sf;
+    const pick = h('button', { class: 'b', style: 'width:100%;margin:6px 0 4px', onclick: () => BR.openBrowser('file', { track: i, sf: true }) }, sf ? sf.path.split('/').pop() : 'Pilih file SoundFont (.sf2)\u2026');
+    const pr = sf ? h('button', { class: 'b', style: 'width:100%;margin-bottom:6px', onclick: (e) => {
+      const r = e.currentTarget.getBoundingClientRect();
+      menu(sf.presets.map((n, k) => ({ label: `${k + 1}. ${n}`, check: k === sf.preset, fn: () => P.setSfPreset(i, k) })), r.left, r.bottom);
+    } }, `Preset: ${sf.presets[sf.preset] || '-'}`) : null;
+    body.classList.add('wide');
+    return h('div', { class: 'card', style: 'min-width:230px' }, head, h('div', { class: 'inst-row' }, h('div', { class: 'inst-side' }, pick, pr), body));
+  }
+  if (def.view === 'sampler' || def.view === 'sampler1') { body.classList.add('wide'); return h('div', { class: 'card' + (syn ? ' syn' : ''), style: syn ? '' : 'min-width:260px' }, head, h('div', { class: 'inst-row' }, h('div', { class: 'inst-side' }, zonePanel(i, t)), syn ? syn.el : body)); }
+  return h('div', { class: 'card' + (syn ? ' syn' : '') }, head, syn ? syn.el : body);
+}
+
+// ---- live views live in fxviz.js (analyzer, loudness, EQ curves, dynamics meters, ...)
+function duckSource(i, di, d) {
+  const name = () => (d.params[0] < 1 ? 'Off' : (state.tracks[d.params[0] - 1] ? state.tracks[d.params[0] - 1].name : 'Track hilang'));
+  const b = h('button', { class: 'b', style: 'width:100%;height:30px;margin:2px 0', onclick: (e) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    const items = [{ label: 'Off', check: d.params[0] < 1, fn: () => { P.setDeviceParam(i, di, 0, 0); b.textContent = 'Sumber: Off'; } }];
+    state.tracks.forEach((t, k) => { if (t.kind !== 'auto' && k !== i) items.push({ label: t.name, check: d.params[0] === k + 1, fn: () => { P.setDeviceParam(i, di, 0, k + 1); b.textContent = 'Sumber: ' + t.name; } }); });
+    menu(items, r.left, r.bottom);
+  } }, 'Sumber: ' + name());
+  return b;
+}
+
+// Effect displays used to stack their buttons under the graph. Here the graph stays on the left and every button row / tab bar moves
+// into a column to its right, so the card is wide instead of tall and fits the fixed Device height without hiding anything.
+function sideLayout(el) {
+  try {
+    if (!(el.classList.contains('fv') || el.classList.contains('loud')) || el.classList.contains('fv-wide')) return;
+    const kids = [...el.children];
+    const isMain = (c) => c.tagName === 'CANVAS' || c.classList.contains('fv-ro') || c.classList.contains('ln-grid');
+    const main = kids.filter(isMain), side = kids.filter((c) => !isMain(c));
+    if (!side.length || !main.length) return;
+    el.replaceChildren(h('div', { class: 'fv-main' }, main), h('div', { class: 'fv-side' }, side));
+    el.classList.add('fv-wide');
+  } catch (e) { console.error('sideLayout', e); }
+}
+
+// module menu helpers: effect picker, device clipboard (Copy / Paste module, Copy All / Paste All), rack preset picker
+let devClip = null;
+function fxPick(r, fn) { menu(FX_GROUPS.flatMap(([, label, ks]) => [{ label: label.toUpperCase(), dim: true }, ...ks.filter((k) => DEVICES[k]).map((k) => ({ label: DEVICES[k].name + (DEVICES[k].flm != null && !DEVICES[k].noteFx ? ' (FLM)' : ''), fn: () => fn(k) }))]), Math.max(8, r.left - 40), Math.max(8, r.top - 120)); }
+const report = (x) => { if (x && x.held && x.held.length) toast(`${x.added} modul ditempel; ${x.held.length} sebagai placeholder (tidak ada di versi ini, data disimpan): ${x.held.join(', ')}.`, 4500); else if (x && x.skipped && x.skipped.length) toast(`${x.added} modul ditempel; ${x.skipped.length} dilewati: ${x.skipped.join(', ')}.`, 4000); else if (x) toast(x.added + ' modul ditempel.', 1200); };
+function pasteDevs(i, at) { if (!devClip) return; report(P.insertDeviceCopies(i, at, devClip)); }
+function presetPick(r, i, mode, at) {
+  const L = PRS.rackPresets();
+  if (!L.length) return toast('Belum ada rack preset. Simpan dulu lewat menu + (Simpan rantai) atau menu modul.', 3500);
+  menu([{ label: mode === 'replace' ? 'MUAT (GANTI RANTAI)' : 'SISIPKAN', dim: true }, ...L.map((p) => ({ label: `${p.name} (${p.n} modul${p.inst ? ' + instrumen' : ''})`, fn: () => { const x = PRS.applyRackPreset(p.path, i, mode, at); toast(x.error || x.msg, 3500); } }))], Math.max(8, r.left - 40), Math.max(8, r.top - 60));
+}
+
+// Mix / Gain of every effect (uniform, FL Studio Mobile style): a chip in the card title; tap = Mix + Gain dials, Reset puts both back.
+// The chip reads "Mix" while both are at their defaults and shows the changed value(s) otherwise.
+function wetLabel(d) { const w = P.wetOf(d), a = []; if (w.mix !== 1) a.push(Math.round(w.mix * 100) + '%'); if (w.gain !== 0) a.push((w.gain > 0 ? '+' : '') + w.gain.toFixed(1) + 'dB'); return a.length ? a.join(' ') : 'Mix'; }
+function wetChip(i, di, d) {
+  if (NO_WET_FX.has(d.type) || d.missing) return null;
+  const b = h('button', { class: 'dv-wet' + (wetLabel(d) === 'Mix' ? '' : ' on'), 'aria-label': 'Mix dan Gain modul' }, wetLabel(d));
+  const upd = () => { b.textContent = wetLabel(d); b.classList.toggle('on', wetLabel(d) !== 'Mix'); };
+  b.addEventListener('pointerdown', (e) => e.stopPropagation());
+  b.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const ks = ['mix', 'gain'].map((k) => knob(WET_PARAMS[k], () => P.wetOf(d)[k], (v) => { P.setDeviceWet(i, di, k, v); upd(); }, fmtParam, C('#7ac5ff'),
+      k === 'mix' ? (rect) => offerAutomation(rect, { kind: 4, strip: P.stripOf(i), devId: d.id, param: MIX_P, def: WET_PARAMS.mix }, `${stripName(i)} \u2022 ${DEVICES[d.type].name} Mix`) : null));   // tekan lama Mix = lane otomasi (engine: devParam 1000)
+    const body = h('div', { class: 'wet-b' }, h('div', { class: 'knobs' }, ...ks), h('p', { class: 'hint' }, 'Mix = campuran suara asli (dry) dan hasil efek (wet). Gain = level keluar modul. Tekan lama Mix untuk lane otomasi.'));
+    modal('Mix & Gain • ' + (DEVICES[d.type] ? DEVICES[d.type].name : 'Modul'), body, [
+      { label: 'Reset', fn: () => { P.HK.group(() => { P.setDeviceWet(i, di, 'mix', 1); P.setDeviceWet(i, di, 'gain', 0); }); upd(); for (const k of ks) if (k.update) k.update(); return false; } },
+      { label: 'Tutup', go: true, fn: () => { P.emit('devices'); } }]);
+  });
+  return b;
+}
+function fxCard(i, d, di, n, o = {}) {
+  const def = DEVICES[d.type];
+  const pw = h('button', { class: 'pw' + (d.bypass ? '' : ' on'), 'aria-label': 'Bypass', onclick: () => P.toggleBypass(i, di) });
+  // device menu (Live: the title bar's context menu): float, fold, move left / right, delete
+  const more = h('button', { class: 'dv-more', 'aria-label': 'Menu device', onclick: (e) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    const full = (P.tr(i) || { devices: [] }).devices.length >= 16;
+    menu([
+      ...(o.floating ? [] : [{ label: 'Buka di jendela mengambang', fn: () => openDeviceWindow(d.id) }, { label: 'Lipat', fn: () => setFolded(d.id, true) }, { sep: true }]),
+      { label: 'Geser ke kiri', dim: di <= 0, fn: () => { if (di > 0) P.moveDevice(i, di, di - 1); } },
+      { label: 'Geser ke kanan', dim: di >= n - 1, fn: () => { if (di < n - 1) P.moveDevice(i, di, di + 1); } },
+      { label: 'Sisip efek di kiri\u2026', dim: full, fn: () => fxPick(r, (ty) => P.insertDeviceAt(i, di, ty)) },
+      { label: 'Sisip efek di kanan\u2026', dim: full, fn: () => fxPick(r, (ty) => P.insertDeviceAt(i, di + 1, ty)) },
+      { label: 'Ganti dengan\u2026', fn: () => fxPick(r, (ty) => P.replaceDevice(i, di, ty)) },
+      { sep: true },
+      { label: 'Copy modul', fn: () => { devClip = P.devicesSnapshot(i, di, di + 1); toast(def.name + ' disalin.', 1200); } },
+      { label: 'Paste di kanan', dim: !devClip || full, fn: () => pasteDevs(i, di + 1) },
+      { label: 'Reset parameter', fn: () => { P.resetDevice(i, di); toast(def.name + ': parameter kembali ke awal.', 1400); } },
+      { label: 'Simpan modul sebagai preset\u2026', fn: () => ask('Nama preset', def.name, (nm) => { const x = PRS.saveRackPreset(i, nm, di, di + 1); toast(x.error || 'Preset tersimpan di Presets/Racks.'); }) },
+      { label: 'Sisip preset di kanan\u2026', dim: full, fn: () => presetPick(r, i, 'insert', di + 1) },
+      { sep: true },
+      { label: d.bypass ? 'Aktifkan' : 'Bypass', fn: () => P.toggleBypass(i, di) },
+      { label: 'Hapus device', fn: () => P.removeDevice(i, di) },
+    ], r.left - 120, r.bottom);
+  } }, '\u22EF');
+  const dname = d.missing ? '[Tidak tersedia] ' + d.missing.name : def.name;
+  if (!o.floating && !d.missing && (FW.isOpen('d:' + d.id) || (prefs.floatPlugins && bigMod(def)))) {
+    const head = h('h4', {}, pw, h('span', {}, dname), wetChip(i, di, d), more);
+    return floatedCard('d:' + d.id, dname, () => openDeviceWindow(d.id), { head, off: d.bypass });
+  }
+  if (!o.floating && isFolded(d.id)) { const c = foldedCard(d.id, dname, pw); if (d.bypass) c.classList.add('off'); return c; }
+
+  let view = null;
+  const ids = () => new Set((P.tr(i) || { devices: [] }).devices.map((x) => String(x.id)));   // the chain's effect cards (dataset keys are strings)
+  const grip = (hd) => (o.floating || o.nested || n < 2 ? hd : reorderGrip(hd, { index: di, siblings: (card) => { const k = ids(); return [...card.parentElement.children].filter((el) => k.has(el.dataset.k)); }, move: (to) => P.moveDevice(i, di, to) }));
+  if (d.missing) {                                     // imported plugin MDAW does not have: a named placeholder (neutral, audio passes through)
+    const x = d.missing, hd = grip(titleFold(h('h4', {}, pw, h('span', {}, '[Plugin tidak tersedia] ' + x.name), more), d.id));
+    return h('div', { class: 'card dv-missing' + (d.bypass ? ' off' : '') }, hd, h('div', { class: 'dvm-b' },
+      h('b', {}, x.name), h('span', {}, x.orig ? 'tipe modul ' + x.orig.type : 'dari ' + (x.app || 'proyek impor') + (x.preset ? ' \u2022 preset ' + x.preset : '')),
+      h('span', {}, x.orig ? 'Modul ini tidak ada di versi MobileDAW ini: audio diteruskan tanpa diproses. Semua datanya disimpan utuh di proyek dan kembali sendiri di versi yang mengenalnya.'
+        : (x.params && x.params.length ? x.params.length + ' nilai parameter asli disimpan. ' : '') + 'Plugin ini tidak ada di MDAW: audio diteruskan tanpa diproses. Ganti dengan efek MDAW lewat menu \u22EF \u2192 Ganti dengan.')));
+  }
+  const knobsDiv = h('div', { class: 'knobs side' });
+  const ctx = { i, di, d, def, every: o.every || every, set: (k, v) => P.setDeviceParam(i, di, k, v), refreshKnobs: () => { for (const c of knobsDiv.children) if (c.update) c.update(); } };
+  if (def.kit) {                                                                   // Live 12 panel (js/fxkit.js): the panel lays out every control itself
+    let kv = null; try { kv = kitView(ctx); } catch (e) { console.error('fxkit', e); }
+    if (kv) return h('div', { class: 'card lkcard' + (d.bypass ? ' off' : '') }, grip(titleFold(h('h4', {}, pw, h('span', {}, def.name), wetChip(i, di, d), o.nested ? null : swapBtn('Ganti modul', (r) => fxPick(r, (ty) => P.replaceDevice(i, di, ty))), o.floating ? null : popBtn(() => openDeviceWindow(d.id)), more, o.floating ? null : foldBtn(d.id, false)), d.id)), kv.el);
+  }
+  if (VIEWS[d.type]) { try { view = VIEWS[d.type](ctx); } catch (e) { console.error('fxviz', e); view = null; } }
+  // knobs sit beside the display and flow in columns (the number of rows follows the panel height), so a half-height panel needs no scrolling
+  // a device may list its knobs band by band (sideOrder, -1 = empty cell) so each column reads Freq / Gain / Q like Live's EQ
+  if (def.sideRows) knobsDiv.style.setProperty('--kr', String(def.sideRows));
+  if (def.sideRows >= 3) knobsDiv.classList.add('r3');                                // v65: three knob rows must fit the 212 px Device panel: tighter rows
+  (def.sideOrder || def.params.map((_, k) => k)).forEach((k) => {
+    if (k < 0) { knobsDiv.append(h('div', { class: 'k-sp', 'aria-hidden': 'true' })); return; }
+    const p = def.params[k];
+    if (p.hidden) return;
+    if (p.fmt === 'src') { knobsDiv.append(duckSource(i, di, d)); return; }
+    knobsDiv.append(knob(p, () => d.params[k], (v) => {
+      P.setDeviceParam(i, di, k, v);
+      if (view && view.draw) view.draw();
+    }, fmtParam, C('#7ac5ff'), (rect) => offerAutomation(rect, { kind: 4, strip: P.stripOf(i), devId: d.id, param: k, def: p }, `${stripName(i)} \u2022 ${def.name} ${p.n}`)));
+  });
+  if (view && view.el) sideLayout(view.el);
+  const body = view ? h('div', { class: 'fxv' }, view.el, knobsDiv.children.length ? knobsDiv : null) : knobsDiv;
+  return h('div', { class: 'card' + (d.bypass ? ' off' : '') }, grip(titleFold(h('h4', {}, pw, h('span', {}, def.name), wetChip(i, di, d), o.nested ? null : swapBtn('Ganti modul', (r) => fxPick(r, (ty) => P.replaceDevice(i, di, ty))), o.floating ? null : popBtn(() => openDeviceWindow(d.id)), more, o.floating ? null : foldBtn(d.id, false)), d.id)), body);
+}
+
+// Device chain of the selected strip. A re-render of the same strip keeps the scroll position, and cards that moved (reorder, fold,
+// delete) glide to their new place while new ones fade in (FLIP); switching to another strip crossfades the chain.
+let lastStrip = null;
+const dur = (ms) => Math.round(ms * Math.max(0, prefs.animScale ?? 1));
+const quiet = () => prefs.reduceMotion || !(prefs.animScale > 0) || (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
+function flip(scroll, before) {
+  if (!before.size || quiet()) return;
+  const ease = 'cubic-bezier(.2,.8,.2,1)';
+  for (const el of scroll.children) {
+    const k = el.dataset.k; if (!k) continue;
+    const x0 = before.get(k), x1 = el.getBoundingClientRect().left;
+    if (x0 === undefined) el.animate([{ opacity: 0, transform: 'translateY(6px) scale(.97)' }, { opacity: 1, transform: 'none' }], { duration: dur(220), easing: ease });
+    else if (Math.abs(x0 - x1) > 1) el.animate([{ transform: `translateX(${x0 - x1}px)` }, { transform: 'none' }], { duration: dur(240), easing: ease });
+  }
+}
+// Live 12 panels (effects, Live instruments) are laid out at one size; in the device panel they are zoomed so they use its height:
+// never cut at the bottom (zoom down to 0.7), and up to 1.15x when the panel is taller than the device (FL Studio Mobile instrument cards
+// adapt on their own). Pointer positions on displays are normalised by the drawn size (liveui lvDrag), so zoom is safe for dragging.
+// A panel larger than the rack (taller than the Device panel or wider than the screen) shows its sections under Live-style tabs instead of
+// shrinking: every control keeps the common size, related controls stay together (Oscillators / Filter / Envelopes / LFO / Global ...), and
+// the floating window (⧉) still shows the whole panel at once. Sections = the panel's top-level blocks (rows of a column panel, columns of a
+// row panel); consecutive blocks share a tab while they fit the width. The tab is remembered per device.
+const TAB_MEM = new Map();
+// a block's name for its tab: an explicit data-tn (fxkit tags the big sections: Osc / Filter / Env / LFO / Global), else its own heading
+const HEADS = ':scope > .lk-st, :scope > .lk-shead, :scope > .lv-st, :scope > .lk-dkh, :scope > h5';
+function blockName(el) {
+  if (el.dataset && el.dataset.tn) return el.dataset.tn;
+  const t = el.querySelector(HEADS) || el.querySelector('.lk-st, .lk-elh, .lv-st, .lk-shead, .lk-dkh, h5'), s = t ? t.textContent.trim().replace(/\s+/g, ' ') : '';
+  return s && s.length <= 14 ? s : '';
+}
+function hoistTabs(card, lk, bar) {
+  const head = card.querySelector(':scope > h4'); if (!head || !bar) return false;
+  const name = head.querySelector('.dv-name') || [...head.children].find((c) => c.tagName === 'SPAN' && c.textContent.trim()), used = [...head.children].reduce((a, c) => a + (c === name ? 0 : c.offsetWidth + 4), 0);
+  const need = [...bar.children].reduce((a, c) => a + c.offsetWidth + 2, 0) + 12;   // the buttons' own width (the strip itself is a full-width flex box)
+  if (head.clientWidth - used - 70 < need) return false;
+  bar.classList.add('lk-htabs'); if (name) name.after(bar); else head.prepend(bar);
+  lk.dataset.htabs = '1'; return true;
+}
+// EVERY tab strip of a panel - its own top strip or one inside a section (Drift LFO / Mod, Poli Modulators / MIDI, Meld A / B / Settings,
+// FLM panels ...) - sits in the card's title bar beside the name, fold arrow and Preset (owner's rule). A placeholder stays where the strip
+// was: a panel that rebuilds a section drops the placeholder, and the stale strip leaves the title bar for the new one.
+function hoistAll(card, lk) {
+  const head = card.querySelector(':scope > h4'); if (!head || !lk) return false;
+  let moved = false;
+  for (const s of [...head.querySelectorAll(':scope > .lk-htabs')]) if (s._ph && !s._ph.isConnected) { s.remove(); moved = true; }
+  const strips = [...lk.querySelectorAll('.lv-tabs, .sp-h:has(> .st + .st)')].filter((t) => !t.classList.contains('lk-htabs') && !t.classList.contains('flm-fxsel') && t.closest('.card') === card && !t.closest('h4'));   // .sp-h: the classic synths' section tabs
+  if (!strips.length) return moved;
+  const first = !lk.dataset.htabs; if (first) lk.style.minWidth = lk.offsetWidth + 'px';
+  const name = head.querySelector('.dv-name') || [...head.children].find((c) => c.tagName === 'SPAN' && c.textContent.trim());
+  let after = [...head.querySelectorAll(':scope > .lk-htabs')].pop() || name;
+  for (const t of strips) {
+    const ph = h('span', { class: 'lk-tabph', hidden: true }); t.replaceWith(ph); t._ph = ph; t.classList.add('lk-htabs');
+    if (after) after.after(t); else head.prepend(t); after = t; moved = true;
+  }
+  lk.dataset.htabs = '1'; return true;
+}
+function tabify(lk, card, maxW, maxH) {
+  if (lk.querySelector(':scope > .lv-tabs') || lk.classList.contains('lk-fdg') || lk.classList.contains('lk-notab') || lk.dataset.htabs || lk.classList.contains('lk-wt')) return;   // .lk-fdg: Filter Delay's one grid is never taken apart (it shrinks a little instead)   // panels with their own tabs (Wavetable, Hybrid Reverb ...)
+  // blocks: the panel's top-level children; a block taller than the rack that is itself a stack (column with 2+ parts) is split into its parts
+  // nothing may be lost: hidden parts (a swap's other face, registration spans) ride along hidden on the first page; a tall column is only opened up
+  // when every child is an element (no loose text) so its contents survive as blocks of their own
+  const keep = [], isSep = (c) => c.classList.contains('lk-sep'), gone = (c) => getComputedStyle(c).display === 'none';
+  const blocks = (list, depth) => list.flatMap((c) => { if (isSep(c)) return []; if (gone(c)) { keep.push(c); return []; }
+    const parts = [...c.children].filter((x) => !isSep(x) && !gone(x)), cs = getComputedStyle(c), col = cs.flexDirection === 'column' || cs.display === 'grid';
+    const loose = [...c.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim());
+    const atom = c._k != null || c.matches('.knob, .lv-btn, .lv-fld, .lv-disp, .lk-d, canvas, svg, .lv-tabs') || c.querySelector(':scope > .k-n, :scope > .k-v');   // a control is never taken apart
+    // a too-tall stack first tries to fold into two columns in its own box (operator rows, a settings column ...): it stays one group;
+    // a heading on top spans both columns. Only when that is still too tall is the stack opened up below.
+    if (!atom && !loose && c.offsetHeight > maxH && parts.length >= 3 && cs.flexDirection === 'column' && cs.display === 'flex') {
+      const hd0 = parts[0].matches('.lk-st, .lk-shead, .lv-st, .lk-dkh, h5') ? parts[0] : null;
+      c.style.display = 'grid'; c.style.gridTemplateColumns = 'repeat(2, auto)'; c.style.columnGap = '10px'; c.style.rowGap = cs.rowGap; c.style.alignItems = 'stretch'; c.style.alignContent = 'stretch'; c.style.gridAutoRows = '1fr'; c.style.justifyItems = 'stretch';
+      if (hd0) hd0.style.gridColumn = '1 / -1';
+      if (c.offsetHeight <= maxH) return [c];
+      c.style.display = c.style.gridTemplateColumns = c.style.columnGap = c.style.rowGap = c.style.alignItems = c.style.alignContent = c.style.justifyItems = c.style.gridAutoRows = ''; if (hd0) hd0.style.gridColumn = '';
+    }
+    if (depth < 3 && !atom && c.offsetHeight > maxH && parts.length >= 2 && col && !loose) {
+      for (const x of c.children) if (!isSep(x) && gone(x)) keep.push(x);
+      const nm = blockName(c), hd = parts[0].matches('.lk-st, .lk-shead, .lv-st, .lk-dkh, h5') && !parts[0].querySelector('*') ? parts.shift() : null;   // the heading becomes the tab's name
+      if (hd) keep.push(Object.assign(hd, { hidden: true }));
+      if (nm) for (const x of parts) if (!x.dataset.tn) x.dataset.tn = nm;
+      return blocks(parts, depth + 1);
+    }
+    return [c]; });
+  const al = lk.style.alignItems; lk.style.alignItems = 'flex-start';   // measure every block at its own height, not stretched to the row's
+  const kids = blocks([...lk.children], 0);
+  if (kids.length < 2) { lk.style.alignItems = al; return; }
+  const vertical = getComputedStyle(lk).flexDirection === 'column' || lk.classList.contains('lk-col');
+  const groups = []; let cur = [], w = 0;
+  for (const c of kids) {
+    const cw = c.offsetWidth;
+    if (cur.length && (vertical || w + cw > maxW)) { groups.push(cur); cur = []; w = 0; }
+    cur.push(c); w += cw + 6;
+  }
+  if (cur.length) groups.push(cur);
+  const gw = (g) => g.reduce((a, c) => a + c.offsetWidth + 6, 0);
+  if (!vertical && groups.length >= 2 && gw(groups[groups.length - 1]) < 150 && groups[groups.length - 1].every((c) => c.offsetHeight <= maxH)) groups[groups.length - 2].push(...groups.pop());   // a lone small block (Dry, a level knob) stays with its neighbours
+  lk.style.alignItems = al;
+  if (groups.length < 2) {                                            // everything fits side by side once a tall stack is opened up: one row, no tabs
+    if (kids.length === [...lk.children].filter((c) => !isSep(c) && !gone(c)).length) return;
+    const pg = h('div', { class: 'lk-row lk-tabpg' }, ...kids, ...keep); lk.replaceChildren(pg); lk.classList.add('lk-tabbed'); lk.dataset.tabbed = '1'; return;
+  }
+  const key = card.dataset.k || card.querySelector('h4')?.textContent || '', pages = groups.map((g) => { const pg = h('div', { class: 'lk-row lk-tabpg' }); for (const c of g) pg.append(c); return pg; });
+  pages[0].append(...keep);
+  const names = groups.map((g, n) => { const u = [...new Set(g.map(blockName).filter(Boolean))]; return u.length ? u.slice(0, 2).join(' / ') + (u.length > 2 ? ' …' : '') : n ? 'More' + (groups.length > 2 ? ' ' + n : '') : 'Main'; });
+  // the panel keeps the width of its widest page, so the card does not jump when another tab is picked
+  let wmax = 0; for (const pg of pages) { lk.append(pg); wmax = Math.max(wmax, pg.offsetWidth); }
+  const sel = (j) => { TAB_MEM.set(key, j); pages.forEach((p, q) => { p.style.display = q === j ? '' : 'none'; }); };
+  const bar = lvTabs(names.map((n) => ({ label: n })), Math.min(TAB_MEM.get(key) || 0, pages.length - 1), (j) => { sel(j); requestAnimationFrame(fitKit); }, { cls: 'lk-autotabs' });
+  lk.replaceChildren(bar, ...pages); lk.classList.add('lk-tabbed'); lk.dataset.tabbed = '1'; for (const pg of pages) pg.style.minWidth = wmax + 'px'; hoistTabs(card, lk, bar);
+  sel(Math.min(TAB_MEM.get(key) || 0, pages.length - 1));
+}
+function fitKit() {
+  if (!root) return;
+  const sc = root.querySelector(':scope > .dev-scroll'); if (!sc) return;
+  const cs = getComputedStyle(sc), avail0 = sc.clientHeight - parseFloat(cs.paddingTop || 0) - parseFloat(cs.paddingBottom || 0);
+  // ONE zoom for every panel (Live: every device has the same text and knob size): the panel height against the design height of a full
+  // panel (DESIGN_H). A panel taller than that shrinks a little more on its own (never below 0.7); a shorter one keeps the common zoom and
+  // spreads its controls over the height (lk-fill) instead of being blown up, so text and knobs stay the same size in every device.
+  const DESIGN_H = 250, cards = [...sc.querySelectorAll(':scope > .card.lkcard:not(.flm-card), :scope > .card.lvcard:not(.flm-card)')];
+  for (const c of sc.querySelectorAll(':scope > .card.flm-card, :scope > .card.syn')) hoistAll(c, c.querySelector('.lk, .lv-dev, .sps, .inst-row') || c);
+  for (const card of cards) {
+    const lk = card.querySelector(':scope > .lk, :scope > .lv-dev'); if (!lk) continue;
+    lk.style.zoom = ''; lk.style.minHeight = ''; lk.classList.remove('lk-fill', 'lk-roomy', 'lk-roomy2', 'lk-roomy3');
+    hoistAll(card, lk);
+    const head = card.querySelector(':scope > h4'), avail = avail0 - (head ? head.offsetHeight : 0) - 4, Z0 = Math.max(0.6, Math.min(1, avail / DESIGN_H));
+    if (!globalThis.__noTabify && avail > 80 && sc.clientWidth > 200 && (lk.offsetHeight * Z0 > avail * 1.12 || lk.offsetWidth * Z0 > sc.clientWidth - 24) && !lk.dataset.tabbed) tabify(lk, card, Math.max(260, (sc.clientWidth - 40) / Z0), avail / Z0);
+    const need = lk.offsetHeight;
+    if (!(need > 0) || !(avail > 40)) continue;
+    const Z = Math.max(0.6, Math.min(1, avail / DESIGN_H)), z = need * Z > avail ? Math.max(0.6, avail / need) : Z;
+    if (Math.abs(z - 1) > 0.01) lk.style.zoom = z.toFixed(3);
+    const need2 = need;
+    if (need2 * z < avail - 6) { lk.style.minHeight = Math.floor(avail / z) + 'px'; lk.classList.add('lk-fill'); }
+    const over = lk.offsetHeight * (parseFloat(lk.style.zoom) || 1) - avail; if (over > 1) lk.style.zoom = Math.max(0.6, (parseFloat(lk.style.zoom) || 1) * avail / (avail + over)).toFixed(3);   // never taller than the rack
+  }
+}
+let fitRO = null, fitLate = 0, tabMO = null;
+export function render() {
+  if (!root) return;
+  if (!fitRO && typeof ResizeObserver !== 'undefined') { fitRO = new ResizeObserver(() => requestAnimationFrame(fitKit)); fitRO.observe(root); }
+  if (!tabMO && typeof MutationObserver !== 'undefined') {
+    let q = 0; tabMO = new MutationObserver(() => { if (q) return; q = requestAnimationFrame(() => { q = 0; if (root && root.querySelector('.card .lv-tabs:not(.lk-htabs), .card.syn .sp-h:has(> .st + .st):not(.lk-htabs)')) fitKit(); }); });
+    tabMO.observe(root, { childList: true, subtree: true });
+  }
+  for (const t of timers) clearInterval(t);
+  timers = [];
+  const i = state.sel.track, t = P.tr(i);
+  const old = root.firstElementChild && root.firstElementChild.classList.contains('dev-scroll') ? root.firstElementChild : null;
+  const same = old && lastStrip === i && t, sl = same ? old.scrollLeft : 0, before = new Map();
+  if (same) for (const el of old.children) if (el.dataset.k) before.set(el.dataset.k, el.getBoundingClientRect().left);
+  const scroll = h('div', { class: 'dev-scroll' });
+  scroll.style.setProperty('--sc', root.clientWidth >= 1150 ? '3' : '2');   // synth panels per row
+  const put = (el, k) => { el.dataset.k = k; scroll.append(el); };
+  lastStrip = i;
+  if (!t) { scroll.append(h('div', { class: 'hint' }, 'Tambahkan track lewat tombol + di arrangement.')); root.replaceChildren(scroll); return; }
+  if (t.kind === 'auto') {
+    scroll.append(h('div', { class: 'hint' }, 'Ini track otomasi untuk ', h('b', {}, P.autoLabel(t)), '. Ketuk-ganda klipnya untuk mengedit titik.'));
+    root.replaceChildren(scroll); return;
+  }
+  if (i < MASTER && t.inst) put(instCard(i, t), 'i' + t.id);
+  else if (i < MASTER) put(h('div', { class: 'card dev-src' }, h('h4', {}, h('i', { class: 'pdot' }), h('span', {}, 'Audio')), h('div', { class: 'dev-src-b' }, h('b', {}, 'Klip audio'), 'diputar lalu lewat rantai efek di kanan')), 'src');
+  t.devices.forEach((d, di) => put(fxCard(i, d, di, t.devices.length), d.id));
+  const full = t.devices.length >= 16;
+  const add = h('button', { class: 'card addcard dev-drop b', 'aria-label': 'Tambah efek', onclick: (e) => {
+    const r = e.currentTarget.getBoundingClientRect(), n = t.devices.length;
+    menu([
+      { label: 'RACK PRESET', dim: true },
+      { label: 'Simpan rantai sebagai Rack Preset\u2026', dim: !n && !(t.inst && t.kind === 'midi'), fn: () => ask('Nama rack preset', '', (nm) => { const x = PRS.saveRackPreset(i, nm); toast(x.error || `Rack preset tersimpan (${x.n} modul${t.inst && t.kind === 'midi' ? ' + instrumen' : ''}).`); }) },
+      { label: 'Muat Rack Preset (ganti rantai)\u2026', fn: () => presetPick(r, i, 'replace', 0) },
+      { label: 'Sisip Rack Preset di akhir\u2026', dim: full, fn: () => presetPick(r, i, 'insert', n) },
+      { label: 'Copy semua modul', dim: !n, fn: () => { devClip = P.devicesSnapshot(i); toast(n + ' modul disalin.', 1200); } },
+      { label: 'Paste semua (ganti rantai)\u2026', dim: !devClip, fn: () => modal('Ganti rantai efek?', `${n} modul di rantai ini diganti dengan ${devClip.length} modul yang disalin. Bisa dibatalkan dengan Urungkan.`, [{ label: 'Batal' }, { label: 'Ganti', go: true, fn: () => { const x = P.replaceChain(i, devClip); report(x); } }]) },
+      { label: 'Paste di akhir', dim: !devClip || full, fn: () => pasteDevs(i, n) },
+      ...(full ? [{ label: 'Rantai penuh (16 efek)', dim: true }] : FX_GROUPS.flatMap(([, label, ks]) => [{ label: label.toUpperCase(), dim: true }, ...ks.filter((k) => DEVICES[k]).map((k) => ({ label: DEVICES[k].name + (DEVICES[k].flm != null && !DEVICES[k].noteFx ? ' (FLM)' : ''), fn: () => P.addDevice(i, k) }))])),
+    ], Math.max(8, r.left - 40), Math.max(8, r.top - 120));
+  } }, h('b', { 'aria-hidden': 'true' }, '+'), h('span', {}, full ? 'Rantai penuh (16 efek)' : 'Ketuk untuk menambah efek'), h('small', {}, 'atau seret efek dari Browser ke sini'));
+  put(add, 'add');
+  root.replaceChildren(scroll);
+  requestAnimationFrame(fitKit); clearTimeout(fitLate); fitLate = setTimeout(fitKit, 350);   // again once fill displays and fonts have their final size (a card could stay taller than the rack)
+  if (same) { scroll.scrollLeft = sl; flip(scroll, before); }
+  else if (old && !quiet()) scroll.animate([{ opacity: 0.25 }, { opacity: 1 }], { duration: dur(170), easing: 'ease-out' });
+  const title = document.getElementById('dtitle');
+  if (title) title.textContent = stripName(i);
+}
+
+export function initDevices(container) {
+  root = container;
+  const rows = () => { const hh = root.clientHeight; if (hh > 0) root.style.setProperty('--kr', String(Math.max(1, Math.min(5, Math.floor((hh - 24 - 16) / 68))))); };
+  if (typeof ResizeObserver !== 'undefined') new ResizeObserver(rows).observe(root); rows();
+  P.onChange((w) => { if (['devices', 'tracks', 'all', 'sel'].includes(w) && root.isConnected && root.dataset.active === '1') render(); });
+  P.onChange((w) => { if (['devices', 'tracks', 'all'].includes(w)) FW.refreshAll(); });          // open windows follow undo / redo / structure changes
+  FW.onFloatChange(() => { if (root.isConnected && root.dataset.active === '1') render(); });
+}

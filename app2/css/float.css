@@ -1,0 +1,122 @@
+/* Floating plug-in windows (js/floatwin.js) and the MiniMeters suite (js/minimeters.js). Colours come from the theme variables. */
+#fwlayer { position: absolute; inset: 0; z-index: 60; pointer-events: none; overflow: hidden; }
+#fwlayer > * { pointer-events: auto; }
+.fw { position: absolute; display: flex; flex-direction: column; background: var(--panel2); border: 1px solid rgba(255,255,255,.08); border-radius: 8px;  overflow: hidden; contain: layout paint; }
+.fw.focus { box-shadow: 0 12px 40px rgba(0,0,0,.65); }           /* focus = deeper shadow only: no coloured border */
+.fw[hidden] { display: none !important; }
+.fw-bar { height: var(--ctl-m); flex: none; display: flex; align-items: center; gap: 0; padding: 0 4px 0 10px; background: var(--raise); touch-action: none; cursor: grab; user-select: none; -webkit-user-select: none; }
+.fw.focus .fw-bar { background: var(--raise2); }
+.fw-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); margin-right: 8px; opacity: .9; }
+.fw-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; font-weight: var(--fw-sb); letter-spacing: .01em; color: var(--dim); pointer-events: none; }
+.fw.focus .fw-title { color: var(--text); }
+.fw-b { flex: none; width: 30px; height: 26px; padding: 0; border: 0; background: transparent; border-radius: var(--r-4); color: var(--dim); display: flex; align-items: center; justify-content: center; }
+.fw.focus .fw-b { color: var(--text); }
+.fw-b svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+.fw-b:active { background: rgba(255,255,255,.12); }
+.fw-b.fw-x:active { background: var(--rec); color: #fff; }
+.fw.shade .fw-sh svg { transform: rotate(180deg); }
+.fw.max .fw-sh { opacity: .35; }
+/* frameless (MiniMeters): slim bar, no border, the meters fill the rest edge to edge */
+.fw.frameless { border: 0; border-radius: var(--r-4); background: #000; }
+.fw.frameless .fw-bar { height: 22px; padding-left: 8px; background: #0c0c0e; }
+.fw.frameless.focus .fw-bar { background: #121215; }
+.fw.frameless .fw-title { font-size: 10.5px; font-weight: var(--fw-m); }
+.fw.frameless .fw-b { width: 26px; height: var(--ctl-xs); }
+.fw.frameless .fw-b svg { width: 14px; height: 14px; }
+.fw.frameless .fw-dot { width: 6px; height: 6px; margin-right: 6px; }
+.fw-body { position: relative; flex: 1; min-height: 0; overflow: hidden; background: var(--panel2); }
+.fw.shade .fw-body, .fw.shade .fw-rz, .fw.shade .fw-grip { display: none; }
+.fw-fit { position: absolute; left: 0; top: 0; width: max-content; height: max-content; transform-origin: 0 0; --kr: 3; --sc: 2; will-change: transform; }
+.fw-fit > .card { margin: 0; }
+.fw-fit .card.syn { max-width: none; }
+.fw-fit > .card.fold { display: none; }
+.fw-fill { position: absolute; inset: 0; overflow: hidden; }
+/* resize handles: thin on the edges, bigger on the corners so a finger can find them */
+.fw-rz { position: absolute; z-index: 3; touch-action: none; }
+.fw-rz.n, .fw-rz.s { left: 14px; right: 14px; height: 6px; cursor: ns-resize; } .fw-rz.n { top: -3px; } .fw-rz.s { bottom: -3px; }
+.fw-rz.e, .fw-rz.w { top: 14px; bottom: 14px; width: 10px; cursor: ew-resize; } .fw-rz.e { right: -3px; } .fw-rz.w { left: -3px; }
+.fw-rz.se, .fw-rz.sw { width: 22px; height: 22px; }
+.fw-rz.ne, .fw-rz.nw { width: 10px; height: 8px; }   /* small on top: the title bar buttons sit right below */
+.fw-rz.ne { top: -3px; right: -3px; cursor: nesw-resize; } .fw-rz.nw { top: -3px; left: -3px; cursor: nwse-resize; }
+.fw-rz.se { bottom: -4px; right: -4px; cursor: nwse-resize; } .fw-rz.sw { bottom: -4px; left: -4px; cursor: nesw-resize; }
+.fw-grip { position: absolute; right: 3px; bottom: 3px; width: 11px; height: 11px; pointer-events: none; z-index: 2; opacity: .4;
+  background: linear-gradient(135deg, transparent 0 46%, var(--dim) 46% 54%, transparent 54% 66%, var(--dim) 66% 74%, transparent 74% 86%, var(--dim) 86% 94%, transparent 94%); }
+.fw.max .fw-grip, .fw.max .fw-rz { display: none; }
+/* tray of minimised windows */
+.fw-tray { position: absolute; left: 6px; bottom: calc(var(--sab, 0px) + 6px); right: 6px; display: flex; flex-wrap: wrap; gap: var(--sp-2); pointer-events: none !important; z-index: 2; }
+.fw-tray[hidden] { display: none !important; }
+.fw-chip { pointer-events: auto; max-width: calc(var(--vw, 100vw) * .46); height: 26px; padding: 0 12px 0 10px; border: 1px solid rgba(255,255,255,.08); border-radius: 13px; box-shadow: inset 3px 0 0 var(--c, var(--accent)); background: var(--raise); color: var(--text); font-size: var(--fs-3); font-weight: var(--fw-sb); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-shadow: 0 3px 12px var(--shadow, rgba(0,0,0,.5)); }
+.fw-chip:active { background: var(--raise2); }
+/* pop-out button in the card headers, and the placeholder left in the chain */
+.card h4 .fw-pop { width: 24px; }
+.card.floated { min-width: 150px; opacity: .92; }
+.card.floated .fl-msg { padding: 8px 10px; color: var(--dim); font-size: var(--fs-3); line-height: 1.35; max-width: 200px; }
+.card.floated .fl-btns { display: flex; gap: var(--sp-2); padding: 0 8px 8px; }
+.card.floated .fl-btns .b { flex: 1; height: 26px; min-width: 0; padding: 0 6px; font-size: var(--fs-3); }
+.card.floated .fl-btns .b.prim { background: var(--accent); color: #0a0a0c; border-color: transparent; font-weight: var(--fw-sb); }
+/* minimised: the card is the cue to bring the plugin back (owner's rule) — brighter, accent edge, pulse once */
+.card.floated.fl-min { opacity: 1; box-shadow: inset 2px 0 0 var(--accent); }
+.card.floated.fl-min .fl-msg { color: var(--text); }
+
+/* ====================================================================================================
+   MiniMeters
+   ==================================================================================================== */
+.mm { --mm-bg: #101012; --mm-panel: #17171a; --mm-line: #26262b; --mm-ink: #b8b8c0; --mm-dim: #6d6d76; --mm-a: #5fd0e0; --mm-b: #ff9d3d; --mm-c: #c9a0ff; --mm-ok: #5fd08a; --mm-warn: #e8d040; --mm-bad: #e5484d;
+  position: relative; display: flex; flex-direction: column; width: 100%; height: 100%; background: var(--mm-bg); color: var(--mm-ink); font-size: 10.5px; overflow: hidden; }
+.mm-tool { position: absolute; left: 0; right: 0; top: 0; z-index: 8; height: var(--ctl); display: flex; align-items: center; gap: 3px; padding: 0 30px 0 5px; background: linear-gradient(rgba(8,8,10,.92), rgba(8,8,10,.78)); overflow: hidden; opacity: 0; pointer-events: none; transform: translateY(-6px); transition: opacity var(--d3) var(--e-std), transform var(--d3) var(--e-std); }
+.mm.ui .mm-tool { opacity: 1; pointer-events: auto; transform: none; }
+.mm-more { position: absolute; right: 2px; top: 2px; z-index: 9; width: 24px; height: 22px; padding: 0; border: 0; border-radius: 11px; background: rgba(0,0,0,.35); color: #fff; font-size: var(--fs-6); line-height: 1; opacity: .3; }
+.mm.ui .mm-more { opacity: .9; background: rgba(255,255,255,.14); }
+.mm-tool .mm-logo { font-weight: var(--fw-b); letter-spacing: .04em; color: #e9e9ee; padding: 0 5px 0 2px; font-size: var(--fs-3); }
+.mm-tool .mm-logo b { color: var(--mm-a); font-weight: var(--fw-b); }
+.mm-tool .mm-sp { flex: 1; }
+.mm-btn { flex: none; height: var(--ctl-xs); min-width: 22px; padding: 0 7px; border: 1px solid var(--mm-line); border-radius: var(--r-2); background: #1f1f24; color: var(--mm-ink); font-size: 10.5px; display: inline-flex; align-items: center; justify-content: center; gap: var(--sp-2); white-space: nowrap; }
+.mm-btn:active { background: #2c2c33; }
+.mm-btn.on { background: var(--mm-a); border-color: var(--mm-a); color: #06181b; }
+.mm-btn.rec.on { background: var(--mm-bad); border-color: var(--mm-bad); color: #fff; }
+.mm-btn.ps { max-width: 130px; overflow: hidden; text-overflow: ellipsis; }
+.mm-grid { position: absolute; inset: 0; display: grid; gap: 0; background: var(--mm-bg); }
+.mm-mod { position: relative; min-width: 0; min-height: 0; background: var(--mm-bg); overflow: hidden; }
+.mm-mod canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; }
+.mm:not(.ui) .mm-nm, .mm:not(.ui) .mm-gear { display: none; }
+.mm-mod + .mm-mod { box-shadow: -1px 0 0 rgba(255,255,255,.05); }
+.mm-mod .mm-nm { position: absolute; left: 5px; top: 31px; z-index: 2; font-size: 9.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--mm-dim); pointer-events: none; }
+.mm-mod .mm-gear { position: absolute; right: 2px; top: 31px; z-index: 3; width: 22px; height: 18px; padding: 0; border: 0; border-radius: var(--r-2); background: transparent; color: var(--mm-dim); font-size: var(--fs-4); }
+.mm-mod .mm-gear:active, .mm-mod .mm-gear.on { background: #26262c; color: #fff; }
+.mm-opt { position: absolute; right: 2px; top: 52px; z-index: 4; min-width: 150px; max-width: calc(100% - 6px); max-height: calc(100% - 26px); overflow: auto; padding: 5px; display: grid; gap: var(--sp-2); background: rgba(18,18,22,.97); border: 1px solid var(--mm-line); border-radius: var(--r-3); box-shadow: 0 6px 20px rgba(0,0,0,.6); touch-action: pan-y; }
+.mm-opt .row { display: flex; align-items: center; gap: 3px; flex-wrap: wrap; }
+.mm-opt .row > label { flex: none; min-width: 52px; color: var(--mm-dim); font-size: 9.5px; text-transform: uppercase; letter-spacing: .04em; }
+.mm-opt .mm-btn { height: var(--ctl-xs); padding: 0 6px; }
+.mm-opt input[type=range] { flex: 1; min-width: 70px; height: 18px; accent-color: var(--mm-a); }
+.mm-tabs { position: absolute; left: 0; right: 0; bottom: 0; z-index: 8; display: flex; gap: 1px; padding: 0 3px; height: var(--ctl-s); align-items: center; background: rgba(8,8,10,.85); overflow-x: auto; }
+.mm:not(.ui) .mm-tabs { display: none; }
+.mm-tabs .mm-btn { height: 18px; padding: 0 7px; }
+.mm-pop { position: absolute; z-index: 20; min-width: 150px; max-height: 70%; overflow-y: auto; background: #1b1b20; border: 1px solid #34343c; border-radius: var(--r-3); box-shadow: 0 8px 24px rgba(0,0,0,.65); touch-action: pan-y; }
+.mm-pop .mi { height: var(--ctl); padding: 0 12px; display: flex; align-items: center; gap: var(--sp-4); white-space: nowrap; }
+.mm-pop .mi:active { background: #2a2a31; }
+.mm-pop .mi.ck::after { content: "\2713"; margin-left: auto; color: var(--mm-a); }
+.mm-pop .mi.hd { height: var(--ctl-xs); color: var(--mm-dim); font-size: var(--fs-1); text-transform: uppercase; letter-spacing: .06em; pointer-events: none; }
+.mm-pop .mi.sep { height: 1px; padding: 0; background: #2a2a30; }
+/* the in-chain card of the MiniMeters device: compact preview that opens the full window */
+
+.mmbox { width: 250px; height: 124px; position: relative; }
+
+.fw-fit .card h4 .fold-b, .fw-fit .card h4 .fw-pop { display: none; }
+.fw-fit .card h4 [aria-label="Geser ke kiri"], .fw-fit .card h4 [aria-label="Geser ke kanan"], .fw-fit .card h4 [aria-label="Hapus device"] { display: none; }
+
+/* Live 12 device window: one title bar = the device's own header (power, name, preset, menu) + the track name + the window buttons
+   as one joined group of framed squares (roll up, minimise, maximise, close) */
+.fw-head { display: none; }
+.fw.merged .fw-head { display: flex; flex: 1; min-width: 0; align-items: center; }
+.fw.merged .fw-title, .fw.merged .fw-dot { display: none; }
+.fw-head > h4 { flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--sp-2); margin: 0; padding: 0; height: auto !important; background: none !important; border: 0 !important; }
+.fw-head > h4 > span, .fw-head > h4 button.dv-name span { font: var(--fw-b) var(--fs-4)/1 var(--font) !important; color: var(--lv-ink); }
+.fw-sub { display: none; }
+.fw.merged .fw-sub { display: block; flex: none; max-width: 30%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin: 0 var(--sp-3); font: var(--fw-sb) var(--fs-2)/1 var(--font); color: var(--lv-dim); pointer-events: none; }
+.fw-bs { flex: none; display: flex; gap: 1px; padding: 1px; background: var(--lv-edge); border-radius: var(--r-1); }
+.fw-bs .fw-b { width: 24px; height: 20px; border-radius: 0; background: var(--lv-ctl, #3a3a3e); color: var(--lv-ink); }
+.fw-bs .fw-b:first-child { border-radius: var(--r-1) 0 0 var(--r-1); } .fw-bs .fw-b:last-child { border-radius: 0 var(--r-1) var(--r-1) 0; }
+.fw-bs .fw-b svg { width: 13px; height: 13px; stroke-width: 1.6; }
+.fw-bs .fw-b:active { background: var(--lv-ctl2); } .fw-bs .fw-b.fw-x:active { background: var(--rec); color: #fff; }
+.fw.frameless .fw-bs { background: transparent; } .fw.frameless .fw-bs .fw-b { background: transparent; height: var(--ctl-xs); }
+.fw-head > h4 button.dv-name { background: none !important; border: 0 !important; padding: 0 2px; }

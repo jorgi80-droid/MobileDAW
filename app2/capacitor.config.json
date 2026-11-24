@@ -1,0 +1,11 @@
+{
+  "appId": "com.mobiledaw.app2",
+  "appName": "MobileDAW 2",
+  "webDir": "www",
+  "backgroundColor": "#1b1b1c",
+  "android": {
+    "allowMixedContent": false,
+    "captureInput": false,
+    "webContentsDebuggingEnabled": true
+  }
+}

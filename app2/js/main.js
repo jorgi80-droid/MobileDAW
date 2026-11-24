@@ -1,0 +1,606 @@
+// Boot + wiring: transport, views, detail tabs, resizable panel, main frame loop.
+import { shouldDraw, recordCost } from './fps.js';
+import { $, h, setIcon, menu, ask, modal, toast, closeAll, clamp } from './ui.js';
+import { eng, MASTER, hasNative, backend, backendError } from './engine.js';
+import { prefs, savePrefs } from './prefs.js';
+import { initLayout } from './layout.js';
+import { initFloat } from './floatwin.js';
+import { initEdgeGuard } from './edgeguard.js';
+import { applyTheme, setThemeAdjust, C } from './theme.js';
+import { enableMidi } from './midi.js';
+import { openSettings, toggleFullscreen, initAutoFullscreen, initUiPrefs } from './settingsui.js';
+import { initLog, log } from './log.js';
+import * as FS from './storage.js';
+import { initPwa, isStandalone } from './pwa.js';
+import { isNativeApp, initNative, setAwake } from './native.js';
+import * as P from './project.js';
+import { checkpoint, clearHistory, canUndo, canRedo, undoOp, redoOp } from './history.js';
+import * as TL from './timeline.js';
+import * as ED from './editor.js';
+import * as DV from './devices.js';
+import * as KB from './keys.js';
+import * as MX from './mixer.js';
+import * as BR from './browser.js';
+import { initTopbar, topbarUpdate } from './topbar.js';
+import { startAutosave, restore, saveNow } from './autosave.js';
+import { makeZip } from './zip.js';
+import * as Tempo from './tempo.js';
+import { exportMidi, importMidi } from './midiio.js';
+import * as QS from './quicksave.js';
+import * as PM from './projects.js';
+import * as IMP from './import/ui.js';
+import * as KM from './keymap.js';
+import { cancelGestures, gestureTiming } from './gesture.js';
+import { initTouchHit } from './touchhit.js';
+import { setOctaveNaming } from './defs.js';
+import * as UI2 from './ui2/shell.js';
+import * as M2 from './ui2/mixer2.js';
+setOctaveNaming(prefs.midC);
+const { state } = P;
+
+let view = 'arr', tab = 'dev';
+const panes = {};
+
+// ------------------------------------------------------------------ transport + readouts
+function icons() {
+  for (const [id, n] of [['browser', 'panel'], ['play', 'play'], ['stop', 'stop'], ['rew', 'rew'], ['rec', 'rec'], ['metro', 'metro'], ['loop', 'loopic'], ['undo', 'undo'], ['redo', 'redo'], ['menu', 'menu']]) setIcon($('#btn-' + id), n);
+}
+function tapTempo() { const b = openTapChip(); return b; }
+function openTapChip() { const b = Tempo.tapPress(); if (b) toast(b.toFixed(1) + ' BPM', 900); return b; }
+function wireTransport() {
+  $('#btn-play').onclick = () => P.togglePlay();
+  // Live's control bar fields: position (tap = back to the start of the bar under it... here: the Tempo window's position), loop start / length and the
+  // loop switch, the time signature (tap = Tempo window, where tempo / signature / tap live)
+  $('#btn-loop').onclick = () => P.setLoop({ on: !state.loop.on });
+  $('#rd-sig2').onclick = Tempo.openTempo;
+  const nudgeLoop = (e, key) => { const r = e.currentTarget.getBoundingClientRect(), L = state.loop, bar = P.barLenAt(L.start), mv = (d) => { if (key === 'start') { const s = Math.max(0, L.start + d * bar); P.setLoop({ start: s, end: s + (L.end - L.start) }); } else P.setLoop({ end: Math.max(L.start + bar, L.end + d * bar) }); };
+    menu([{ label: key === 'start' ? 'Awal loop +1 bar' : 'Panjang loop +1 bar', fn: () => mv(1) }, { label: key === 'start' ? 'Awal loop -1 bar' : 'Panjang loop -1 bar', fn: () => mv(-1) }, { label: 'Loop ke seleksi / klip terpilih', fn: () => { const c = P.selectedClip(); if (c) P.setLoop({ start: c.clip.start, end: c.clip.start + c.clip.len, on: true }); } }], r.left, r.bottom + 2); };
+  $('#rd-lst').onclick = (e) => nudgeLoop(e, 'start'); $('#rd-llen').onclick = (e) => nudgeLoop(e, 'len');
+  $('#rd-pos2').onclick = () => P.seekTo(0);
+  $('#btn-stop').onclick = async () => { if (P.rec.on) { await toggleRec(); return; } if (!state.playing) P.seekTo(0); P.stop(); };
+  $('#btn-rew').onclick = () => P.seekTo(0);
+  $('#btn-rec').onclick = toggleRec;
+  {   // tap = metronome on/off, hold = count-in, record in loop, punch in/out
+    const b = $('#btn-metro'); let tmr = 0, long = false;
+    const openMenu = () => {
+      long = true; const r = b.getBoundingClientRect(), q = state.punch;
+      menu([
+        ...[[0, 'Count-in: mati'], [1, 'Count-in: 1 bar'], [2, 'Count-in: 2 bar'], [4, 'Count-in: 4 bar']].map(([n, label]) => ({ label, check: state.countIn === n, fn: () => P.setCountIn(n) })),
+        { sep: true },
+        { label: 'Punch-in/out', check: q.on, fn: () => P.setPunch({ on: !q.on }) },
+      ], r.left, r.bottom + 4);
+    };
+    b.addEventListener('pointerdown', () => { long = false; clearTimeout(tmr); tmr = setTimeout(openMenu, gestureTiming().longMs); });
+    for (const ev of ['pointerup', 'pointerleave', 'pointercancel']) b.addEventListener(ev, () => clearTimeout(tmr));
+    b.addEventListener('contextmenu', (e) => e.preventDefault());
+    b.onclick = () => { if (long) { long = false; return; } P.toggleMetro(); };
+  }
+  $('#btn-undo').onclick = undoOp;
+  $('#btn-redo').onclick = redoOp;
+  $('#btn-browser').onclick = BR.toggleBrowser;
+  $('#btn-menu').onclick = (e) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    const nm = state.projectName || '', short = nm.length > 16 ? nm.slice(0, 15) + '\u2026' : nm;
+    // Live-style project menu: short rows in groups, imports / exports in submenus (FLM module replacement is offered by the FLM import)
+    menu([
+      { label: 'Urungkan', dim: !canUndo(), fn: undoOp },
+      { label: 'Ulangi', dim: !canRedo(), fn: redoOp },
+      { label: 'Ke awal', fn: () => P.seekTo(0) },
+      { sep: true },
+      { label: 'Simpan\u2026' + (QS.isDirty() ? ' \u2022' : ''), fn: () => QS.saveAs(), swipe: () => QS.quickSave(), swipeLabel: 'geser \u21E2' },   // FL Studio Mobile: swipe = Quick Save
+      { label: 'Simpan cepat' + (QS.hasName() && short ? ' (' + short + ')' : ''), fn: () => QS.quickSave() },
+      { label: 'Buka proyek / demo\u2026', fn: () => BR.openBrowser('proj') },
+      { label: 'Proyek baru\u2026', fn: () => PM.newProjectDialog() },
+      { sep: true },
+      { label: 'Impor', sub: [
+        { label: 'Proyek FLM / FLP / Ableton\u2026', fn: () => IMP.importDialog() },
+        { label: 'MIDI (.mid)\u2026', fn: importMidi }] },
+      { label: 'Ekspor', sub: [
+        { label: 'Audio (WAV / MP3 / stem)\u2026', fn: exportWav },
+        { label: 'MIDI (.mid)', fn: exportMidi },
+        { label: 'Proyek (.mdaw)', fn: exportMdaw },
+        { label: 'ZIP (proyek + sample)\u2026', fn: exportZip }] },
+      { sep: true },
+      { label: 'Tempo\u2026', fn: Tempo.openTempo },
+      { label: 'Nama proyek\u2026', fn: () => ask('Nama proyek', state.projectName, (v) => { if (v && v.trim()) state.projectName = v.trim(); }) },
+      { sep: true },
+      { label: 'Pengaturan\u2026', fn: openSettings },
+      { label: 'Tutorial interaktif\u2026', fn: () => import('./tutorial.js').then((m) => m.tutorialMenu()) },
+      ...(isStandalone() ? [] : [{ label: 'Layar penuh', fn: toggleFullscreen }]),
+    ], r.right - 200, r.bottom + 2);
+  };
+  // BPM: drag vertically to change, tap for options
+  const bpm = $('#rd-bpm');
+  let d = null;
+  bpm.addEventListener('pointerdown', (e) => { bpm.setPointerCapture(e.pointerId); d = { y: e.clientY, b: state.bpm, moved: false }; });
+  bpm.addEventListener('pointermove', (e) => { if (!d) return; const dy = d.y - e.clientY; if (!d.moved && Math.abs(dy) > 12) { d.moved = true; d.y = e.clientY; } if (d.moved) P.setBpm(Math.round((d.b + (d.y - e.clientY) * 0.1) * 100) / 100); });   // a deliberate drag only (12 px), 0.1 BPM per px: a tap or a scroll that brushes the field no longer changes the tempo
+  bpm.addEventListener('pointerup', (e) => {
+    if (d && !d.moved) Tempo.openTempo();
+    d = null;
+  });
+  bpm.addEventListener('pointercancel', () => { d = null; });
+}
+
+
+// ------------------------------------------------------------------ recording (audio from the microphone, MIDI from keys/pads/controller)
+function recMsg(r) {
+  if (r.error) return r.error;
+  if (r.empty) return r.kind === 'audio' ? 'Tidak ada audio yang terekam.' : 'Tidak ada not yang direkam.';
+  const k = r.kind === 'audio' ? 'audio' : 'MIDI';
+  return r.takes > 1 ? `${r.takes} take ${k} ditambahkan (hanya take terakhir yang bunyi).` : `Rekaman ${k} ditambahkan sebagai klip.`;
+}
+async function toggleRec() {
+  if (P.rec.on) {
+    const r = await P.stopRecording();
+    if (!r) return;
+    toast(recMsg(r), r.error ? 5000 : 3000);
+    return;
+  }
+  const r = await P.startRecording();
+  if (r && r.error) toast(r.error, 5000); else toast('Merekam\u2026 tekan REC lagi atau Stop untuk selesai.', 3000);
+}
+
+// ------------------------------------------------------------------ project export: .mdaw (project file) and .zip (project + every sample / SoundFont it uses)
+const fileStem = () => (state.projectName || 'Untitled').replace(/[^\w\- ]+/g, '').trim() || 'Untitled';
+function exportMdaw() {
+  const n = fileStem(), path = eng.home() + '/Projects/' + n + '.mdaw';
+  eng.writeText(path, P.serialize()); saveNow();
+  if (backend === 'web') setTimeout(() => eng.download(path), 80);
+  toast('Proyek diekspor: ' + n + '.mdaw');
+}
+function usedFiles() {
+  const set = new Set();
+  for (const t of state.tracks) {
+    for (const c of t.clips || []) if (c.sample && c.sample.path) set.add(c.sample.path);
+    if (t.inst) { if (t.inst.sf && t.inst.sf.path) set.add(t.inst.sf.path); for (const z of t.inst.zones || []) if (z.sample && z.sample.path) set.add(z.sample.path); if (t.inst.hm && t.inst.hm.path) set.add(t.inst.hm.path); for (const x of Object.values(t.inst.hmI || {})) if (x && x.path) set.add(x.path); }   // Harmor: the image / audio its map is made from
+    for (const q of (t.kind === 'drum' && t.inst && t.inst.pads) || []) { if (q.sample && q.sample.path) set.add(q.sample.path); const ci = q.chain && q.chain.inst; if (ci && ci.sample && ci.sample.path) set.add(ci.sample.path); }   // drum pads + pad chains
+  }
+  return [...set];
+}
+async function exportZip() {
+  if (backend !== 'web') return toast('Ekspor ZIP tersedia di versi web. Di aplikasi Android, salin folder MobileDAW.');
+  const n = fileStem(), files = [{ name: n + '.mdaw', data: P.serialize() }], missing = [];
+  toast('Membuat ZIP\u2026', 1500);
+  for (const p of usedFiles()) {
+    const d = await eng.readBytes(p);
+    if (d && typeof d !== 'string') files.push({ name: p.replace(/^\/+/, ''), data: d }); else missing.push(p);
+  }
+  eng.downloadBlob(makeZip(files), n + '.zip');
+  toast(missing.length ? `ZIP dibuat. ${missing.length} file tidak ditemukan dan dilewati.` : `ZIP dibuat (${files.length} file).`, 3500);
+}
+
+// ------------------------------------------------------------------ WAV export (offline render in the native engine)
+function projectEnd() {
+  let e = 0;
+  for (const t of state.tracks) for (const c of t.clips) if (!c.muted) e = Math.max(e, c.start + c.len);
+  return e > 0 ? P.barCeil(e) : 0;
+}
+const clean = (n) => (n || '').trim().replace(/[^\w\- ]+/g, '') || 'Export';
+function exportWav() {
+  const full = projectEnd();
+  if (!full) return toast('Belum ada klip untuk diekspor.');
+  const name = h('input', { type: 'text', value: state.projectName });
+  const bars = Math.max(1, P.barAt(full - 1) + 1);
+  const from = h('input', { type: 'number', value: 1, min: 1, max: bars, class: 'nbx' }), to = h('input', { type: 'number', value: bars, min: 1, max: 999, class: 'nbx' });
+  const manual = h('span', { class: 'xd-man', style: 'display:none' }, 'bar', from, 's/d', to);
+  const info = h('div', { class: 'hint xd-info' });
+  const o = {
+    fmt: prefs.exportFmt === 'mp3' ? 'mp3' : 'wav', bits: [16, 24, 32].includes(prefs.exportBits) ? prefs.exportBits : 16, kbps: [128, 192, 256, 320].includes(prefs.exportKbps) ? prefs.exportKbps : 320,
+    stems: !!prefs.exportStems, ret: prefs.exportRet !== false, master: !!prefs.exportMaster, range: ['all', 'loop', 'manual', 'sel'].includes(prefs.exportRange) ? (prefs.exportRange === 'sel' && !TL.timeSelection() ? 'all' : prefs.exportRange) : (TL.timeSelection() ? 'sel' : 'all'), tailMode: ['leave', 'wrap', 'cut'].includes(prefs.exportTailMode) ? prefs.exportTailMode : 'leave', trim: !!prefs.exportTrim, tail: [0, 3, 10].includes(prefs.exportTail) ? prefs.exportTail : 3, norm: !!prefs.exportNorm,
+    ch: prefs.exportCh === 1 ? 1 : 2, rate: [0, 44100, 48000, 88200, 96000].includes(prefs.exportRate) ? prefs.exportRate : 0,
+  };
+  const devRate = (eng.info && eng.info().sampleRate) || 48000;
+  const rows = [];
+  const seg = (label, opts, get, set) => {
+    const box = h('div', { class: 'seg segc' });
+    const draw = () => { box.replaceChildren(...opts.map(([v, t]) => h('button', { class: 'b' + (get() === v ? ' on' : ''), onclick: () => { set(v); draw(); refresh(); } }, t))); };
+    draw(); const row = h('div', { class: 'xd-row' }, h('div', { class: 'xd-l' }, label), box); row.draw = draw; rows.push(row); return row;
+  };
+  const tog = (label, key, text) => { const b = h('button', { class: 'b sw' + (o[key] ? ' on' : ''), onclick: () => { o[key] = !o[key]; b.classList.toggle('on', o[key]); refresh(); } }, text); return h('div', { class: 'xd-row' }, h('div', { class: 'xd-l' }, label), b); };
+  const fmtRow = seg('Format', [['w16', 'WAV 16'], ['w24', 'WAV 24'], ['w32', 'WAV 32f'], ['mp3', 'MP3']], () => (o.fmt === 'mp3' ? 'mp3' : 'w' + o.bits), (v) => { if (v === 'mp3') o.fmt = 'mp3'; else { o.fmt = 'wav'; o.bits = +v.slice(1); } });
+  const kbpsRow = seg('Kualitas', [[128, '128'], [192, '192'], [256, '256'], [320, '320 kbps']], () => o.kbps, (v) => { o.kbps = v; });
+  const mp3RateRow = seg('Sample rate', [[0, 'Otomatis'], [44100, '44,1'], [48000, '48 kHz']], () => ([44100, 48000].includes(o.rate) ? o.rate : 0), (v) => { o.rate = v; });
+  // presets: the usual delivery formats (CD-quality WAV, MP3 at the highest bitrate), both at 44.1 kHz stereo
+  const presetRow = h('div', { class: 'xd-row' }, h('div', { class: 'xd-l' }, 'Preset'), h('div', { class: 'seg segc' },
+    ...[['WAV 16-bit \u00b7 44,1 kHz', { fmt: 'wav', bits: 16 }], ['MP3 320 kbps \u00b7 44,1 kHz', { fmt: 'mp3', kbps: 320 }]].map(([t, v]) => h('button', { class: 'b', onclick: () => { Object.assign(o, v, { rate: 44100, ch: 2, norm: false }); rows.forEach((r) => r.draw && r.draw()); normRow.querySelector('.sw').classList.toggle('on', o.norm); refresh(); } }, t))));
+  const rateRow = seg('Sample rate', [[0, 'Perangkat'], [44100, '44,1'], [48000, '48'], [88200, '88,2'], [96000, '96 kHz']], () => o.rate, (v) => { o.rate = v; });
+  const chRow = seg('Kanal', [[2, 'Stereo'], [1, 'Mono']], () => o.ch, (v) => { o.ch = v; });
+  const modeRow = seg('Mode', [[false, 'Mixdown'], [true, 'Stem per track']], () => o.stems, (v) => { o.stems = v; });
+  const stemOpts = h('div', { class: 'xd-row xd-ind' });
+  const retB = h('button', { class: 'b sw' + (o.ret ? ' on' : ''), onclick: () => { o.ret = !o.ret; retB.classList.toggle('on', o.ret); refresh(); } }, 'Sertakan Return'), mstB = h('button', { class: 'b sw' + (o.master ? ' on' : ''), onclick: () => { o.master = !o.master; mstB.classList.toggle('on', o.master); refresh(); } }, 'Sertakan Master');
+  stemOpts.append(retB, mstB);
+  const rangeRow = seg('Rentang', [['all', 'Seluruh lagu'], ...(TL.timeSelection() ? [['sel', 'Seleksi']] : []), ['loop', 'Area loop'], ['manual', 'Manual']], () => o.range, (v) => { o.range = v; });
+  rangeRow.append(manual);
+  const tailModeRow = seg('Sisa ekor', [['leave', 'Leave'], ['wrap', 'Wrap'], ['cut', 'Cut']], () => o.tailMode, (v) => { o.tailMode = v; });
+  const tailRow = seg('Ekor efek', [[3, '3 dtk'], [10, '10 dtk'], [0, '0 dtk']], () => o.tail, (v) => { o.tail = v; });
+  const trimRow = tog('Trim Silence', 'trim', 'Buang hening di awal');
+  const normRow = tog('Normalisasi', 'norm', 'Puncak ke \u22120,1 dBFS');
+  const span = () => {
+    if (o.range === 'sel') { const q = TL.timeSelection(); return q ? [q.a, q.b] : null; }
+    if (o.range === 'loop') return state.loop.on && state.loop.end > state.loop.start ? [state.loop.start, state.loop.end] : null;
+    if (o.range === 'manual') { const a = Math.max(1, Math.floor(+from.value) || 1), b = Math.max(a, Math.floor(+to.value) || a); return [P.barStart(a - 1), P.barStart(b)]; }
+    return [0, full];
+  };
+  const itemsOf = () => {
+    if (!o.stems) return [{ name: clean(name.value), kind: 'mix' }];
+    const it = state.tracks.map((t, i) => ({ name: t.name || 'Track ' + (i + 1), kind: 'track', idx: i })).filter((x) => state.tracks[x.idx].clips.length);
+    if (o.ret) state.returns.forEach((r, k) => { if ((r.devices || []).length && state.tracks.some((t) => (t.send && t.send[k] > 0) || t.out === k)) it.push({ name: r.name || 'Return ' + (k + 1), kind: 'return', idx: k }); });
+    if (o.master) it.push({ name: 'Master', kind: 'mix' });
+    return it;
+  };
+  function refresh() {
+    kbpsRow.style.display = mp3RateRow.style.display = o.fmt === 'mp3' ? 'flex' : 'none'; rateRow.style.display = o.fmt === 'mp3' ? 'none' : 'flex'; stemOpts.style.display = o.stems ? 'flex' : 'none'; manual.style.display = o.range === 'manual' ? 'inline-flex' : 'none';
+    const sp = span(), n = itemsOf().length;
+    tailRow.style.display = o.tailMode === 'cut' ? 'none' : 'flex';
+    if (!sp) { info.textContent = o.range === 'sel' ? 'Belum ada seleksi waktu: seret di ruler arrangement.' : 'Area loop belum aktif: nyalakan Loop dan atur rentangnya di ruler.'; return; }
+    const tl = o.tailMode === 'leave' ? o.tail : 0, sec = P.tickToSec(sp[1]) - P.tickToSec(sp[0]) + tl, mb = (sec * (o.fmt === 'mp3' ? o.kbps * 125 : (o.rate || devRate) * o.ch * (o.bits / 8)) * n) / 1048576;
+    info.textContent = `${((P.barAt(sp[1]) - P.barAt(sp[0]) + (sp[1] - P.barStart(P.barAt(sp[1]))) / P.barLenAt(sp[1]) - (sp[0] - P.barStart(P.barAt(sp[0]))) / P.barLenAt(sp[0]))).toFixed(1).replace('.', ',')} bar${o.tailMode === 'leave' ? ' + ekor ' + o.tail + ' dtk' : o.tailMode === 'wrap' ? ', ekor dibungkus ke awal (loop mulus)' : ', berhenti tepat di akhir'}${o.trim ? ', hening di awal dibuang' : ''}, ${n} file (\u00b1${mb < 10 ? mb.toFixed(1).replace('.', ',') : Math.round(mb)} MB). ${o.fmt === 'wav' && o.bits === 16 ? '16-bit memakai dither. ' : ''}${o.rate && o.rate !== devRate && (o.fmt === 'wav' || [44100, 48000].includes(o.rate)) ? `Dirender di ${devRate / 1000} kHz lalu di-resample (filter sinc Kaiser). ` : ''}${o.fmt === 'mp3' ? `MP3 CBR ${o.kbps} kbps dengan model masking + bit reservoir. ` : ''}${o.ch === 1 ? 'Mono = (L + R) / 2. ' : ''}${o.stems ? (o.master ? 'Stem dikemas dalam satu ZIP; tiap stem tanpa rantai master (efek Master hanya ada di file Master). ' : 'Stem dikemas dalam satu ZIP; tiap stem tanpa rantai master. ') : ''}${hasNative || FS.isDevice() ? 'Disimpan di folder MobileDAW/Exports.' : isNativeApp() ? 'Disimpan di Documents/MobileDAW/Exports lalu bisa dibagikan.' : 'Diunduh ke perangkat dan tersimpan di File \u2192 Exports.'}`;
+  }
+  from.oninput = to.oninput = refresh;
+  const body = h('div', { class: 'xdlg' }, name, presetRow, fmtRow, kbpsRow, mp3RateRow, rateRow, chRow, modeRow, stemOpts, rangeRow, tailModeRow, tailRow, trimRow, normRow, info);
+  refresh();
+  const close = modal('Ekspor audio', body, [{ label: 'Batal' }, { label: 'Ekspor', go: true, fn: () => {
+    const sp = span(), items = itemsOf();
+    if (!sp) { toast('Area loop belum aktif.'); return false; }
+    if (!items.length) { toast('Tidak ada track untuk diekspor.'); return false; }
+    Object.assign(prefs, { exportFmt: o.fmt, exportBits: o.bits, exportKbps: o.kbps, exportStems: o.stems, exportRet: o.ret, exportMaster: o.master, exportRange: o.range, exportTail: o.tail, exportTailMode: o.tailMode, exportTrim: o.trim, exportNorm: o.norm, exportCh: o.ch, exportRate: o.rate }); savePrefs();
+    runExport({ name: clean(name.value), items, sp, o });
+  } }]);
+  body.parentNode && body.parentNode.classList.add('big');
+}
+async function runExport({ name, items, sp, o }) {
+  if (!hasNative && backend !== 'web') { toast('Ekspor butuh browser dengan AudioWorklet.'); return; }
+  const ext = o.fmt === 'mp3' ? 'mp3' : 'wav';
+  const msg = h('div', {}, 'Merender\u2026 0%');
+  const overlay = h('div', { class: 'scrim', style: 'background:var(--scrim)' },
+    h('div', { class: 'modal' }, h('h3', {}, 'Mengekspor ' + (o.stems ? name + ' (stem)' : name + '.' + ext)), msg,
+      h('div', { class: 'acts' }, h('button', { class: 'b', onclick: () => { eng.cancelExport(); msg.textContent = 'Membatalkan\u2026'; } }, 'Batal'))));
+  document.getElementById('layer').append(overlay);   // tidak bisa ditutup: edit saat render mengubah hasil
+  window.onExport = (p, label) => { msg.textContent = `${label ? label + ': ' : 'Merender: '}${p}%`; };
+  window.onExportDone = (r) => {
+    overlay.remove(); window.onExport = null; window.onExportDone = null;
+    eng.loop(state.loop.on, state.loop.start, state.loop.end); eng.metro(state.metro); P.seekTo(0);
+    toast(r.ok ? 'Tersimpan: ' + r.path : (r.cancelled ? 'Ekspor dibatalkan.' : 'Ekspor gagal: ' + r.error), r.ok ? 5000 : 4000);
+  };
+  msg.textContent = 'Menyiapkan audio\u2026';
+  await P.ensureBakes();                                   // audio clips on a tempo map / with swing must be rendered before the export copies the sample bank
+  P.stop();
+  const job = { dir: `${eng.home()}/Exports`, name, format: ext, bits: o.bits, kbps: o.kbps, startTick: sp[0], endTick: sp[1], bpm: state.bpm, secs: P.tickToSec(sp[1]) - P.tickToSec(sp[0]), tailSec: o.tailMode === 'cut' ? 0 : o.tail, tailMode: o.tailMode, trimStart: !!o.trim, normalize: o.norm, channels: o.ch, rate: o.rate, zip: o.stems, items };
+  if (eng.exportJob(job) !== true) { overlay.remove(); window.onExport = null; window.onExportDone = null; toast('Ekspor lain masih berjalan atau tidak didukung.'); }
+}
+
+let lastPos = '', lastBpm = '';
+let lastLoopTxt = '';
+function readouts() {
+  const p = Math.max(0, state.pos), bi = P.barAt(p), bar = bi + 1, bt = P.beatLenAt(p), off = p - P.barStart(bi), beat = Math.floor(off / bt) + 1, six = Math.floor((off % bt) / Math.max(60, bt / 4)) + 1;
+  const s = `${bar}.${beat}.${six}`;
+  if (s !== lastPos) { $('#rd-pos').textContent = s; $('#rd-pos2').textContent = s.split('.').join('. '); lastPos = s; }
+  { const L = state.loop, f = (t) => { const bi = P.barAt(t), bt = P.beatLenAt(t), off = t - P.barStart(bi); return `${bi + 1}. ${Math.floor(off / bt) + 1}. ${Math.floor((off % bt) / Math.max(60, bt / 4)) + 1}`; };
+    const len = L.end - L.start, bl = P.barLenAt(L.start), bt = P.beatLenAt(L.start), lt = `${Math.floor(len / bl)}. ${Math.floor((len % bl) / bt)}. ${Math.floor((len % bt) / Math.max(60, bt / 4))}`;   // Live: loop start as a position, length as bars. beats. sixteenths
+    const k = f(L.start) + '|' + lt + '|' + L.on + '|' + P.sigTextAt(Math.max(0, state.pos));
+    if (k !== lastLoopTxt) { lastLoopTxt = k; $('#rd-lst').textContent = f(L.start); $('#rd-llen').textContent = lt; $('#btn-loop').classList.toggle('on', !!L.on); $('#rd-sig2').textContent = P.sigTextAt(Math.max(0, state.pos)).replace('/', ' / '); } }
+  const b = P.bpmAt(Math.max(0, state.pos)).toFixed(2);
+  if (b !== lastBpm) { $('#rd-bpm').textContent = b; lastBpm = b; }
+  { const pb = $('#btn-play'); if (pb.classList.contains('on') !== !!state.playing) { pb.classList.toggle('on', !!state.playing); setIcon(pb, state.playing ? 'pause' : 'play'); } }   // one button: play / pause
+  $('#btn-rec').classList.toggle('on', P.rec.on);
+  $('#btn-metro').classList.toggle('on', state.metro);
+  { const ci = state.countIn ? String(state.countIn) : ''; if ($('#btn-metro').dataset.ci !== ci) { if (ci) $('#btn-metro').dataset.ci = ci; else delete $('#btn-metro').dataset.ci; } $('#btn-metro').classList.toggle('pun', !!(state.punch.on || state.recLoop)); }
+  $('#btn-undo').disabled = !canUndo(); $('#btn-redo').disabled = !canRedo();
+  topbarUpdate();
+  setAwake(state.playing || !!prefs.keepAwake);       // Android app: screen stays on during playback (no-op in the browser)
+  const cpu = $('#cpu i'); cpu.style.width = clamp(state.cpu * 100, 0, 100) + '%'; cpu.style.background = state.cpu > 0.8 ? C('#e5484d') : state.cpu > 0.55 ? C('#e8d040') : C('#7ac555');
+}
+
+// ------------------------------------------------------------------ views + tabs
+function showView(v) {
+  view = v;
+  $('#view-arr').hidden = v !== 'arr'; $('#view-mix').hidden = true; M2.show(v === 'mix');   // MobileDAW 2: one mixer view (ui2/mixer2.js)
+  for (const b of document.querySelectorAll('.seg .b')) b.classList.toggle('on', b.dataset.view === v);
+  if (v === 'mix') MX.update();
+  TL.invalidate();
+}
+// Device tab: "maximize" opens the panel to half of the arrangement (the arrangement stays visible above it).
+// Clip / Keys tabs (piano roll, audio editor, drum step): maximize still covers the whole arrangement.
+let halfPrev = '';
+const HALF = 0.5;
+const halfPx = () => Math.round($('#view-arr').getBoundingClientRect().height * HALF);
+// Device tab: FIXED height (57% of the arrangement area, measured from the reference screenshot) so no effect panel is ever cut off.
+// Clip / Keys keep their own height (the one the person dragged to).
+const DEVH = 0.7;
+let otherH = '';
+const devPx = () => Math.round($('#view-arr').getBoundingClientRect().height * DEVH);
+function applyDevHeight() {
+  const v = $('#view-arr');
+  if (tab !== 'dev' || v.classList.contains('max') || v.classList.contains('shut')) return;
+  const px = devPx() + 'px', d = $('#detail');
+  if (d.style.height !== px) { d.style.height = px; TL.fitNow(); ED.fitNow(); }
+}
+function leaveHalf() {
+  const v = $('#view-arr');
+  if (!v.classList.contains('half')) return;
+  v.classList.remove('half'); $('#detail').style.height = halfPrev; halfPrev = '';
+}
+function setMax(on) {
+  const v = $('#view-arr'), d = $('#detail');
+  if (!on && v.classList.contains('edfull')) { closeEditor(); return; }   // the editor is always full screen: "un-maximise" = close it
+  if (on) { setShut(false); leaveHalf(); }
+  v.classList.toggle('max', on);
+  if (on) { if (tab === 'dev') d.style.height = ''; }   // maximised: the panel takes the whole area (CSS), the fixed height returns afterwards
+  setIcon($('#btn-max'), on ? 'collapse' : 'expand');
+  if (!on) applyDevHeight();
+  TL.fitNow(); ED.fitNow();
+}
+function setShut(on) {
+  const v = $('#view-arr');
+  if (v.classList.contains('shut') === on) return;
+  v.classList.toggle('shut', on);
+  if (on) { v.classList.remove('max'); leaveHalf(); }
+  setIcon($('#btn-shut'), on ? 'up' : 'down');
+  setIcon($('#btn-max'), 'expand');
+  if (!on) applyDevHeight();
+  TL.fitNow(); ED.fitNow();
+}
+// Clip editor (piano roll / drum step / audio editor / automation): no tab button any more. It opens with a double tap on a clip
+// (or "Edit" in the clip menu), always full screen, and closes with its ✕, the back button, or the Device / Keys tab.
+let edBack = 'dev', edWasShut = false;
+function openEditor() {
+  if (!P.selectedClip()) return;
+  const v = $('#view-arr');
+  if (!v.classList.contains('edfull')) { edBack = tab === 'clip' ? 'dev' : tab; edWasShut = v.classList.contains('shut'); }
+  showTab('clip');
+  v.classList.add('edfull'); $('#btn-edclose').hidden = false;
+  setMax(true);
+}
+function leaveEditor() {
+  const v = $('#view-arr');
+  if (!v.classList.contains('edfull')) return false;
+  v.classList.remove('edfull', 'max'); $('#btn-edclose').hidden = true; setIcon($('#btn-max'), 'expand');
+  return true;
+}
+function closeEditor() {
+  if (!$('#view-arr').classList.contains('edfull')) return false;
+  showTab(edBack);                                       // showTab leaves the full-screen editor
+  if (edWasShut) setShut(true);
+  return true;
+}
+function showTab(t) {
+  if (t !== 'clip') leaveEditor();
+  setShut(false);
+  { const d = $('#detail'); if (tab !== 'dev' && t === 'dev') otherH = d.style.height; }    // remember the editor height while Device is open
+  const wasDev = tab === 'dev';
+  tab = t;
+  if (t !== 'dev' && wasDev && !$('#view-arr').classList.contains('max')) { $('#detail').style.height = otherH; TL.fitNow(); ED.fitNow(); }
+  { const v = $('#view-arr');
+    if (t === 'dev' && v.classList.contains('max')) { v.classList.remove('max'); setIcon($('#btn-max'), 'expand'); TL.fitNow(); ED.fitNow(); }
+    if (t !== 'dev' && v.classList.contains('half')) { leaveHalf(); setIcon($('#btn-max'), 'expand'); TL.fitNow(); ED.fitNow(); } }
+  for (const [k, el] of Object.entries(panes)) { el.style.display = k === t ? '' : 'none'; el.dataset.active = k === t ? '1' : '0'; }
+  for (const b of document.querySelectorAll('#dtabs .b[data-tab]')) b.classList.toggle('on', b.dataset.tab === t);
+  if (t === 'dev') { applyDevHeight(); DV.render(); } else if (t === 'keys') KB.render(); else ED.refresh();
+  const title = $('#dtitle');
+  if (t === 'clip') { const c = P.selectedClip(); title.textContent = c ? (c.clip.name || state.tracks[c.track].name) : ''; }
+  else if (t === 'keys') title.textContent = state.tracks[state.sel.track] ? state.tracks[state.sel.track].name : '';
+}
+function wireSplit() {
+  const split = $('#split'), body = $('#view-arr'), detail = $('#detail'), tabs = $('#dtabs');
+  let on = false, moved = false, y0 = 0, raf = 0, nextH = 0, shut = false, h0 = 0, onPill = false;
+  const apply = () => {
+    raf = 0;
+    if (shut) { setShut(true); return; }
+    setShut(false); detail.style.height = nextH + 'px'; TL.fitNow(); ED.fitNow();   // one resize + redraw per frame
+  };
+  // The handle is relative: the panel follows the finger by the distance moved, so grabbing it anywhere works
+  // (the thin grip, the tall invisible zone around it, or the empty part of the tab bar next to Device / Clip / Keys).
+  const down = (e) => {
+    if (e.target.closest && e.target.closest('#dtabs .b')) return;      // real buttons keep their own tap
+    if (body.classList.contains('edfull')) return;                     // the full-screen editor has no height to drag
+    onPill = e.target === split; try { tabs.setPointerCapture(e.pointerId); } catch (_) { /* pointer already gone */ }
+    on = true; moved = false; y0 = e.clientY; h0 = detail.getBoundingClientRect().height; shut = body.classList.contains('shut'); if (shut) h0 = 0;
+    split.classList.add('grab');
+  };
+  const move = (e) => {
+    if (!on) return;
+    if (Math.abs(e.clientY - y0) > 6) moved = true;
+    if (!moved) return;
+    const r = body.getBoundingClientRect();
+    const h = h0 + (y0 - e.clientY);
+    shut = tab === 'dev' ? h < h0 - 40 : h < 56;                // dragged down: shut the panel completely (Device: a clear downward drag)
+    nextH = tab === 'dev' ? devPx() : clamp(h, 90, r.height - 70);   // the Device panel has a fixed height (it can only be shut); editors may be resized
+    if (!raf) raf = requestAnimationFrame(apply);
+  };
+  const end = (e) => {
+    if (on && !moved) { if (onPill) setShut(!body.classList.contains('shut')); }   // a plain tap on the handle toggles; the tab bar keeps its own taps
+    on = false; onPill = false; split.classList.remove('grab');
+  };
+  // The pill now lives inside the tab bar (behind the buttons), so one set of listeners on the bar covers the pill, the empty bar and the title.
+  tabs.addEventListener('pointerdown', down); tabs.addEventListener('pointermove', move);
+  tabs.addEventListener('pointerup', end); tabs.addEventListener('pointercancel', end);
+}
+
+// ------------------------------------------------------------------ frame loop
+let lastPoll = 0;
+let errAt = 0;
+function guard(fn) { try { fn(); } catch (e) { if (performance.now() - errAt > 3000) { errAt = performance.now(); toast('Kesalahan tampilan: ' + (e && e.message), 4000); } console.error(e); } }
+function loop(ts) {
+  if (document.hidden) { requestAnimationFrame(loop); return; }
+  if (ts - lastPoll > 32) { lastPoll = ts; guard(() => { P.applyPoll(eng.poll()); readouts(); UI2.readouts(); }); }
+  if (!shouldDraw(ts)) { requestAnimationFrame(loop); return; }      // frame pacing: Auto / 60 Hz / 120 Hz
+  const t0 = performance.now();
+  guard(() => { if (view === 'arr') { TL.frame(); if (tab === 'clip') ED.frame(); } else { MX.frame(); M2.frame(); } UI2.frame(); });
+  recordCost(performance.now() - t0);
+  requestAnimationFrame(loop);
+}
+// Anything that slips through (a failing promise, an error in a pointer handler) is logged and shown at most once per 3 s instead of
+// silently breaking the app or flooding the screen.
+window.addEventListener('error', (ev) => { if (performance.now() - errAt > 3000) { errAt = performance.now(); toast('Kesalahan: ' + ((ev.error && ev.error.message) || ev.message || ''), 4000); } console.error(ev.error || ev.message); });
+window.addEventListener('unhandledrejection', (ev) => { if (performance.now() - errAt > 3000) { errAt = performance.now(); toast('Kesalahan: ' + ((ev.reason && ev.reason.message) || ev.reason || ''), 4000); } console.error(ev.reason); });
+globalThis.onEngineError = (e) => {
+  log('error', 'engine', e && (e.kind || ''), e && e.msg);
+  if (e.kind === 'dev') { const t = P.tr(e.strip); if (t && t.devices[e.dev]) { t.devices[e.dev].bypass = true; P.emit('devices'); } toast(`Efek dimatikan karena error: ${e.msg || ''}. Audio tetap berjalan.`, 5000); }
+  else if (e.kind === 'inst') toast(`Instrumen di track ${e.strip + 1} dimatikan karena error: ${e.msg || ''}`, 5000);
+  else toast('Error engine audio: ' + (e.msg || ''), 5000);
+};
+
+// ------------------------------------------------------------------ keyboard (external keyboards) + back button
+const PIANO = { KeyZ: 0, KeyS: 1, KeyX: 2, KeyD: 3, KeyC: 4, KeyV: 5, KeyG: 6, KeyB: 7, KeyH: 8, KeyN: 9, KeyJ: 10, KeyM: 11, Comma: 12,
+  KeyQ: 12, Digit2: 13, KeyW: 14, Digit3: 15, KeyE: 16, KeyR: 17, Digit5: 18, KeyT: 19, Digit6: 20, KeyY: 21, Digit7: 22, KeyU: 23, KeyI: 24 };
+const heldKeys = new Map();
+// one place for every keyboard action: the open editor gets editing keys first, then the arrangement
+const editorOpen = () => tab === 'clip' && $('#view-arr').classList.contains('edfull');
+function runKey(a, e) {
+  const edit = (name) => (view === 'arr' && editorOpen() && ED.keyAction(name)) || (view === 'arr' && !editorOpen() && TL.keyAction(name));
+  switch (a) {
+    case 'play': P.togglePlay(); return true;
+    case 'home': P.seekTo(0); return true;
+    case 'save': QS.quickSave(); return true;
+    case 'saveAs': QS.saveAs(); return true;
+    case 'undo': undoOp(); return true;
+    case 'redo': redoOp(); return true;
+    case 'escape': if (cancelGestures() || closeAll() || UI2.back()) return true; return !!edit('escape') || closeEditor();
+    case 'tab': showView(view === 'arr' ? 'mix' : 'arr'); return true;
+    case 'metro': P.toggleMetro(); return true;
+    case 'rec': toggleRec(); return true;
+    case 'browser': BR.toggleBrowser(); return true;
+    case 'fullscreen': toggleFullscreen(); return true;
+    default: if (e.repeat && (a === 'delete' || a === 'cut' || a === 'paste')) return true; return !!edit(a);   // a held Delete / Ctrl+V does not repeat
+  }
+}
+function keys() {
+  window.addEventListener('keydown', (e) => {
+    if (KM.isTyping(e.target)) return;                                 // a shortcut never cuts into typing
+    const mod = e.ctrlKey || e.metaKey;
+    if (!mod && tab === 'keys' && view === 'arr' && e.code in PIANO) {   // typing keyboard as piano
+      e.preventDefault();
+      if (e.repeat || heldKeys.has(e.code)) return;
+      const i = state.sel.track, t = state.tracks[i];
+      if (!t || (t.kind !== 'midi' && t.kind !== 'drum')) return;
+      const pitch = 48 + PIANO[e.code];
+      heldKeys.set(e.code, { i, pitch });
+      P.noteEvent(i, pitch, 0.8, true);
+      return;
+    }
+    const combo = KM.comboOf(e), act = combo && KM.actionFor(combo);   // Settings -> Pintasan: the user's keymap (optional; touch stays the main route)
+    if (!act) return;
+    if (runKey(act, e)) e.preventDefault();
+  });
+  window.addEventListener('keyup', (e) => {
+    const h = heldKeys.get(e.code);
+    if (h) { heldKeys.delete(e.code); P.noteEvent(h.i, h.pitch, 0, false); }
+  });
+  window.onBack = () => {
+    if (closeAll()) return true;
+    if (UI2.back()) return true;
+    if (BR.isOpen()) { BR.closeBrowser(); return true; }
+    if (closeEditor()) return true;
+    if ($('#view-arr').classList.contains('max')) { setMax(false); return true; }
+    if (view === 'mix') { showView('arr'); return true; }
+    if (tab === 'keys') { showTab('dev'); return true; }
+    return false;
+  };
+}
+
+// ------------------------------------------------------------------ boot
+function boot() {
+  initLog(prefs.logLevel);
+  initNative(toast);                                   // Android app (Capacitor): back button, html.native-app; nothing in the browser
+  if (prefs.themeAdj) setThemeAdjust(prefs.themeAdj);
+  applyTheme(prefs.theme);
+  initEdgeGuard(); initTouchHit();   // taps on empty panel surface next to a small button reach it (44 px touch areas)
+  initLayout();
+  initFloat();
+  icons(); wireTransport(); wireSplit(); keys();
+  window.addEventListener('themechange', () => { try { MX.build(); DV.render(); } catch (_) { /* views not ready yet */ } });   // knobs/strips take their colours when built
+  document.addEventListener('gesturestart', (e) => e.preventDefault());
+  document.addEventListener('contextmenu', (e) => e.preventDefault());
+  const dbody = $('#dbody');
+  for (const k of ['dev', 'clip', 'keys']) { const el = h('div', { class: k === 'clip' ? 'ed-root' : 'pane', style: 'position:absolute;inset:0' }); dbody.append(el); panes[k] = el; }
+  DV.initDevices(panes.dev); KB.initKeys(panes.keys); ED.initEditor(panes.clip);
+  MX.initMixer($('#view-mix'));
+  M2.initMixer2($('#main'));
+  BR.initBrowser($('#browser'));
+  initTopbar({ tap: tapTempo });
+  TL.initTimeline($('#arr'), {
+    openEditor,
+    pickAudio: (at) => BR.openBrowser('file', { track: state.sel.track, at }),
+    clipTap: (i, c, tick) => UI2.clipTap(i, c, tick),
+    emptyTap: (i, tick, sub) => UI2.emptyTap(i, tick, sub),
+  });
+  UI2.initUi2({   // MobileDAW 2: the touch frame (js/ui2/shell.js) around the arrangement, editors and devices
+    showView, getView: () => view, showTab, getTab: () => tab, setShut, isShut: () => $('#view-arr').classList.contains('shut'), openEditor,
+    toggleRec, exportWav, exportMidi, exportMdaw, exportZip, importDialog: () => IMP.importDialog(), openSettings,
+    tutorial: () => import('./tutorial.js').then((m) => m.tutorialMenu()), about: openSettings, sampleRate: () => (eng.info() || {}).sampleRate,
+  });
+  $('#btn-max').onclick = () => { const c = $('#view-arr').classList; setMax(!(c.contains('max') || c.contains('half'))); };
+  window.addEventListener('applayout', () => { applyDevHeight(); });
+  setIcon($('#btn-max'), 'expand'); setIcon($('#btn-shut'), 'down'); setIcon($('#btn-edclose'), 'close');
+  $('#btn-edclose').onclick = () => closeEditor();
+  $('#btn-shut').onclick = () => setShut(!$('#view-arr').classList.contains('shut'));
+  for (const b of document.querySelectorAll('.seg .b')) b.onclick = () => showView(b.dataset.view);
+  for (const b of document.querySelectorAll('#dtabs .b[data-tab]')) b.onclick = () => { if (b.dataset.tab === tab && !$('#view-arr').classList.contains('shut') && !$('#view-arr').classList.contains('max') && !$('#view-arr').classList.contains('half')) setShut(true); else showTab(b.dataset.tab); };   // tapping the open tab folds the panel away
+  // tapping the arrangement while the drawer is open closes it
+  $('#main').addEventListener('pointerdown', () => { if (BR.isOpen() && !BR.isPinned()) BR.closeBrowser(); }, true);
+  P.onChange((w) => { if (w === 'autorec') toast('Otomasi direkam: gerakan kontrol saat merekam ditulis ke track otomasinya (bisa diedit setelahnya).', 3500); });
+  P.onChange((w) => {
+    if (w === 'recend' && P.rec.last) toast(recMsg(P.rec.last), P.rec.last.error ? 5000 : 3000);
+    if (w === 'all') clearHistory();   // track edits are undoable now, so only loading a project starts a fresh history
+    if ((w === 'sel' || w === 'all' || w === 'clips') && tab === 'clip' && !P.selectedClip()) closeEditor();   // the edited clip is gone (deleted, undo, new project)
+    if (w === 'sel' || w === 'all' || w === 'clips') { if (tab === 'clip') { ED.refresh(); const c = P.selectedClip(); $('#dtitle').textContent = c ? (c.clip.name || state.tracks[c.track].name) : ''; } else if (tab === 'dev') DV.render(); else if (tab === 'keys') KB.render(); }
+    if (w === 'sel') MX.update();
+  });
+  showTab('dev'); if (UI2.active()) setShut(true);        // 2.0: the arrangement gets the whole screen (Rack / keyboard open the panel)
+  // the device panel is drawn at once (it redraws when the project is in), never a black area
+  Promise.resolve(eng.start()).catch((e) => showFatal(e));
+  if (backendError()) showFatal(backendError());
+  Promise.resolve(eng.init ? eng.init() : null).catch(() => {}).then(() => {
+    eng.setLatencyMs(prefs.latencyMs); eng.metroVol(prefs.metroVol ?? 1); eng.masterLimit(prefs.masterLimit !== false); if (eng.pdc) eng.pdc(prefs.pdc !== false);
+    restore().then((ok) => { if (!ok) P.newProject(true); }).catch(() => P.newProject(true)).then(() => { startAutosave(); QS.initSaveState(); QS.onSaveState((d) => $('#btn-menu').classList.toggle('unsaved', d)); });
+    if (prefs.midiOn && !isNativeApp()) enableMidi(true);   // no Web MIDI in the Android WebView
+    if (isNativeApp() && eng.setEngine) {                 // Android: the native C++ engine (Oboe) unless Pengaturan -> Audio chose the WebView (falls back to it by itself)
+      addEventListener('enginechange', (e) => engineToast(e.detail));
+      if (prefs.engine !== 'web') eng.setEngine('native');   // the native C++ engine by default (prefs v8)
+    }
+    initAutoFullscreen();
+    initUiPrefs();
+    askFolder();
+    initPwa(backend === 'native' || isNativeApp());
+    registerServiceWorker();
+  });
+  requestAnimationFrame(loop);
+  window.__dawBooted = true;
+}
+// First start: ask once for a place to keep MobileDAW/ (samples, exports, presets...). The system picker needs a tap, so this is a dialog with a button.
+// When the folder was chosen earlier but the browser asks for write access again, the first tap re-confirms it.
+function askFolder() {
+  if (backend !== 'web') return;
+  const i = FS.info();
+  if (i.mode === 'opfs' || (i.mode === 'device' && i.perm === 'granted')) return;
+  if (i.mode === 'device') {   // saved folder, permission has to be confirmed again
+    const again = async () => { removeEventListener('pointerup', again, true); if (await FS.regrant()) { await eng.syncFolder(); toast('Akses folder ' + i.name + ' aktif.', 2500); } };
+    addEventListener('pointerup', again, true);
+    return;
+  }
+  if (prefs.folderAsked || !FS.canPick()) return;
+  const msg = h('div', { class: 'hint', style: 'padding:0 0 4px' }, 'MobileDAW menyimpan sample, hasil ekspor, proyek, dan preset di folder MobileDAW. Pilih lokasinya sekali dan beri izin menulis; aplikasi membuat folder MobileDAW beserta sub-foldernya, jadi tidak perlu impor file lagi.');
+  modal('Izin penyimpanan', msg, [
+    { label: 'Nanti', fn: () => { prefs.folderAsked = true; savePrefs(); } },
+    { label: 'Pilih folder', go: true, fn: () => { prefs.folderAsked = true; savePrefs(); FS.chooseFolder().then(async (r) => { if (r.error) toast(r.error, 5000); else if (r.ok) { const s = await eng.syncFolder(); toast('Folder ' + r.name + ' siap' + (s && s.added ? `, ${s.added} file ditemukan.` : '.'), 3500); } }); } },
+  ]);
+}
+let lastEngine = null;
+function engineToast(i) {
+  if (i.active === lastEngine) return;
+  const first = lastEngine === undefined || lastEngine === null; lastEngine = i.active;
+  if (first && i.active === 'native') return;                         // the default: no toast at every start
+  toast(i.active === 'native' ? 'Engine audio: Native (C++)' : i.want === 'native' ? 'Engine audio: WebView (proyek ini memakai sesuatu yang belum bisa diputar engine native)' : 'Engine audio: WebView (C++ WebAssembly)', 3500);
+}
+function showFatal(e) {
+  const d = document.createElement('div');
+  d.style.cssText = 'position:fixed;inset:0;z-index:9999;background:var(--bg,#1b1b1c);color:var(--text,#eee);padding:24px;font:15px/1.5 system-ui';
+  d.innerHTML = '<h2>MobileDAW tidak bisa memulai mesin audio</h2><p></p>';
+  d.querySelector('p').textContent = (e && e.message) || String(e);
+  document.body.append(d);
+}
+function registerServiceWorker() {
+  if (backend === 'native' || isNativeApp() || !('serviceWorker' in navigator) || location.protocol === 'file:') return;   // the APK carries every file itself
+  navigator.serviceWorker.register('sw.js').catch(() => { /* offline caching unavailable (private mode or insecure origin) */ });
+}
+boot();

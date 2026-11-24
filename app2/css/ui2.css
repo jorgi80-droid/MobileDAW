@@ -1,0 +1,1423 @@
+/* MobileDAW 2 (js/ui2/shell.js): the frame around the arrangement. Warm, quiet surfaces from the theme (Studio by default), the accent for
+   what is on, round transport, text tabs, pill tools. Every value comes from the theme tokens, so the other themes work too. */
+html.ui2 { --b2-h: 56px; --tc-w: 116px; --tc-ww: 370px; --u2-r: 10px; --u2-pill: 999px; }
+html.ui2.tc-wide { --tc-cur: var(--tc-ww); }
+html.ui2:not(.tc-wide) { --tc-cur: var(--tc-w); }
+html.ui2 #top { display: none; }
+html.ui2 #body { padding-bottom: 0; }
+html.ui2 #arr { margin-left: var(--tc-cur); transition: margin-left calc(var(--t-med, .2s) * var(--anim, 1)) var(--ease, ease); }
+html.ui2 #view-arr.shut #detail { display: none; }
+html.ui2 #view-arr.edfull :is(#tcol2, #bub2, #ins2) { display: none; }
+
+/* ---- shared button */
+.u2b { display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; min-width: 40px; height: 44px; padding: 0 8px;
+  background: transparent; border: 0; border-radius: var(--u2-r); color: var(--text); font: var(--fw-m, 500) 11px/1 var(--font); cursor: pointer;
+  -webkit-tap-highlight-color: transparent; touch-action: manipulation; transition: background calc(.12s * var(--anim, 1)), color calc(.12s * var(--anim, 1)); }
+.u2b svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+.u2b svg.f { fill: currentColor; stroke: none; }
+.u2b .lb { color: inherit; white-space: nowrap; }
+.u2b:active { background: color-mix(in srgb, var(--text) 10%, transparent); }
+.u2b:disabled { opacity: .32; }
+
+/* ---- left track column: icon tiles (narrow) or icon + name + on / solo / pan / volume (wide); the colours are the clips' colours */
+#tcol2 { position: absolute; left: 0; top: 0; width: var(--tc-cur); z-index: 2; background: var(--panel); border-right: 1px solid color-mix(in srgb, var(--line) 80%, transparent); overflow: hidden;
+  transition: width calc(var(--t-med, .2s) * var(--anim, 1)) var(--ease, ease); }
+#tcol2 .tc-top { background: var(--panel); border-bottom: 1px solid color-mix(in srgb, var(--line) 80%, transparent); }
+#tcol2 .tc-rows { position: absolute; left: 0; right: 0; bottom: 0; top: var(--tc-top, 38px); touch-action: none; }
+.tc-row { position: absolute; left: 0; right: 0; top: 0; display: flex; align-items: stretch; --tc: #888; border-bottom: 1px solid color-mix(in srgb, var(--line) 70%, transparent); }
+.tc-tile { flex: none; width: var(--tc-w); border: 0; padding: 0; background: var(--tc); color: rgba(0, 0, 0, .78); box-shadow: inset 0 -1px 0 rgba(0, 0, 0, .25); display: flex; align-items: center; justify-content: center; cursor: pointer;
+  -webkit-tap-highlight-color: transparent; transition: background calc(.15s * var(--anim, 1)); }
+.tc-tile svg { width: 26px; height: 26px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+.tc-tile:active svg { transform: scale(.92); }
+.tc-row.sel .tc-tile { box-shadow: inset 0 0 0 2px rgba(255, 255, 255, .9); }
+.tc-row.muted .tc-tile { background: color-mix(in srgb, var(--tc) 35%, var(--panel)); }
+.tc-row.xrow .tc-tile { background: var(--raise2); color: var(--text); }
+.tc-row.xrow.sel .tc-tile { background: var(--raise2); color: var(--text); }
+.tc-row.fold .tc-tile svg { width: 17px; height: 17px; }
+.tc-nm { display: none; }
+.tc-name, .tc-ctl { display: none; }
+html.tc-wide .tc-row:not(.xrow) .tc-name { display: flex; }
+html.tc-wide .tc-row:not(.xrow):not(.fold) .tc-ctl { display: flex; }
+html.tc-wide .tc-row { flex-wrap: wrap; align-content: center; row-gap: 4px; padding-right: 10px; }
+html.tc-wide .tc-row .tc-tile { position: absolute; left: 0; top: 0; bottom: 0; }
+html.tc-wide .tc-row.sel { background: color-mix(in srgb, var(--tc) 6%, var(--panel)); }
+.tc-name { width: calc(100% - var(--tc-w) - 10px); margin-left: calc(var(--tc-w) + 10px); height: 22px; align-items: center; justify-content: space-between; gap: 6px; border: 0; background: none; padding: 0; cursor: pointer; }
+.tc-name .nm { flex: 1; min-width: 0; text-align: left; color: var(--text); font: var(--fw-sb, 600) 12.5px/18px var(--font); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tc-ctl .db { flex: none; width: 46px; text-align: right; color: var(--dim); font: var(--fw-m, 500) 10.5px/22px var(--font); font-variant-numeric: tabular-nums; }
+.tc-ctl { width: calc(100% - var(--tc-w) - 10px); margin-left: calc(var(--tc-w) + 10px); align-items: center; gap: 6px; height: 22px; }
+/* on / off: a small switch in the track colour; solo: a word that lights up */
+.tc-name .tc-on { flex: none; width: 26px; min-width: 26px; height: 16px; padding: 0; border-radius: 999px; background: color-mix(in srgb, var(--text) 14%, transparent); position: relative; }
+.tc-name .tc-on svg { display: none; }
+.tc-name .tc-on::after { content: ""; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: var(--dim); transition: left calc(.15s * var(--anim, 1)); }
+.tc-name .tc-on.on { background: color-mix(in srgb, var(--tc) 40%, transparent); }
+.tc-name .tc-on.on::after { left: 12px; background: var(--tc); }
+.tc-name .tc-solo { flex: none; flex-direction: row; gap: 0; min-width: 0; width: auto; height: 20px; padding: 0 7px; border-radius: 6px; background: none; color: var(--dim); font: var(--fw-m, 500) 11.5px/1 var(--font); white-space: nowrap; }
+.tc-name .tc-solo::after { content: "olo"; }
+.tc-name .tc-solo.on { background: var(--tc); color: rgba(0, 0, 0, .8); }
+/* pan and volume: a line with a round thumb in the track colour (volume filled from the left, pan from the centre) */
+.tc-pan, .tc-vol { position: relative; height: 22px; touch-action: none; cursor: ew-resize; --u: .5; }
+.tc-pan { flex: none; width: 40px; }
+.tc-vol { flex: 1; min-width: 70px; }
+.tc-pan::before, .tc-vol::before { content: ""; position: absolute; left: 6px; right: 6px; top: 50%; height: 4px; margin-top: -2px; border-radius: 2px; background: color-mix(in srgb, var(--text) 13%, transparent); }
+.tc-vol i { position: absolute; left: 6px; top: 50%; height: 4px; margin-top: -2px; width: calc((100% - 12px) * var(--u)); border-radius: 2px; background: var(--tc); }
+.tc-pan i, .tc-vol em { position: absolute; top: 50%; left: calc(6px + (100% - 12px) * var(--u)); width: 14px; height: 14px; margin: -7px 0 0 -7px; border-radius: 50%; background: var(--tc); box-shadow: 0 1px 3px rgba(0, 0, 0, .45); }
+.tc-pan i { width: 10px; height: 10px; margin: -5px 0 0 -5px; }
+
+/* ---- clip bubbles (above the clip) and the insert menu: round light chips with a word, as on a touch DAW */
+#bub2, #ins2 { position: absolute; left: 0; top: 0; z-index: 5; display: flex; gap: 8px; padding: 0; will-change: transform; animation: u2pop calc(.14s * var(--anim, 1)) var(--ease, ease); }
+#bub2[hidden], #ins2[hidden] { display: none; }
+#bub2 .bub, #ins2 .bub, html.ui2 .bar .b, html.ui2 .selbar .b { min-width: 54px; width: auto; height: 46px; padding: 0 12px; border: 0; border-radius: 999px; background: #e3e5ea; color: #1d2026;
+  font: var(--fw-sb, 600) 12px/1 var(--font); box-shadow: 0 4px 12px rgba(0, 0, 0, .4); }
+#bub2 .bub svg, #ins2 .bub svg { display: none; }
+#bub2 .bub:active, #ins2 .bub:active, html.ui2 .bar .b:active { background: var(--accent); color: var(--accent-ink); }
+#ins2 .bub:disabled { opacity: .55; }
+html.ui2 .bar { gap: 8px; padding: 0; background: none; border: 0; box-shadow: none; overflow: visible; }
+html.ui2 .selbar { gap: 8px; background: none; border: 0; box-shadow: none; }
+@keyframes u2pop { from { opacity: 0; transform: scale(.94); } }
+
+/* ---- logo button + main menu */
+#mm2 { position: fixed; inset: 0; z-index: 40; pointer-events: none; }
+#mm2 .u2m-scrim { position: absolute; inset: 0; background: rgba(0, 0, 0, .5); opacity: 0; transition: opacity calc(.2s * var(--anim, 1)); }
+#mm2 .u2m-pan { position: absolute; top: 0; right: 0; bottom: 0; width: min(620px, 62vw); background: var(--panel); display: flex; flex-direction: column;
+  transform: translateX(102%); transition: transform calc(.24s * var(--anim, 1)) var(--ease, ease); padding: var(--sat) var(--sar) var(--sab) 0; box-shadow: -14px 0 34px rgba(0, 0, 0, .45); }
+html[data-w="xs"] #mm2 .u2m-pan, html[data-w="s"] #mm2 .u2m-pan { width: 100vw; }
+#mm2.open { pointer-events: auto; }
+#mm2.open .u2m-scrim { opacity: 1; }
+#mm2.open .u2m-pan { transform: none; }
+.u2m-hd { display: flex; align-items: center; gap: 12px; padding: 14px 12px 10px 22px; }
+.u2m-hd img { width: 36px; height: 36px; border-radius: 10px; }
+.u2m-hd div { flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.u2m-hd b { font: var(--fw-sb, 600) 19px/1.1 var(--font); color: var(--text); }
+.u2m-hd span { font: 12px/1.3 var(--font); color: var(--dim); }
+.u2m-x { width: 40px; min-width: 40px; height: 40px; border-radius: 50%; }
+.u2m-tabs { display: flex; gap: 4px; padding: 0 16px 10px; overflow-x: auto; scrollbar-width: none; border-bottom: 1px solid color-mix(in srgb, var(--text) 8%, transparent); }
+.u2m-t { flex: none; height: 32px; padding: 0 14px; border: 0; border-radius: var(--u2-pill); background: none; color: var(--dim); font: var(--fw-m, 500) 12.5px/1 var(--font); letter-spacing: .02em; cursor: pointer; }
+.u2m-t.on { color: var(--accent-ink); background: var(--accent); }
+.u2m-body { flex: 1; overflow-y: auto; padding: 16px 22px 28px; -webkit-overflow-scrolling: touch; }
+.u2m-body h3 { margin: 22px 0 6px; font: var(--fw-sb, 600) 13px/1.2 var(--font); letter-spacing: .06em; text-transform: uppercase; color: var(--dim); }
+.u2m-dim { color: var(--dim); font: 13px/1.45 var(--font); }
+.u2m-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
+.u2m-grid.one { grid-template-columns: 1fr; margin-top: 18px; }
+.u2m-big { min-height: 50px; padding: 8px 14px; border-radius: 12px; border: 0; background: color-mix(in srgb, var(--text) 8%, transparent); color: var(--text); font: var(--fw-m, 500) 14px/1.25 var(--font); cursor: pointer; text-align: left; }
+.u2m-grid .u2m-big:first-child { background: var(--accent); color: var(--accent-ink); }
+.u2m-big:active { filter: brightness(1.15); }
+.u2m-big.sq { min-height: 38px; min-width: 44px; padding: 0; font-size: 20px; text-align: center; background: color-mix(in srgb, var(--text) 8%, transparent) !important; color: var(--text) !important; }
+.u2m-row { display: flex; align-items: center; gap: 10px; min-height: 48px; border-bottom: 1px solid color-mix(in srgb, var(--text) 7%, transparent); }
+.u2m-k { flex: none; width: 34%; color: var(--dim); font: 13.5px/1.3 var(--font); }
+.u2m-v { color: var(--text); font: 14px/1.35 var(--font); }
+.u2m-fld { flex: 1; min-height: 38px; border-radius: 10px; border: 0; background: color-mix(in srgb, var(--text) 7%, transparent); color: var(--text); font: var(--fw-m, 500) 14px/1 var(--font); cursor: pointer; padding: 0 12px; }
+.u2m-seg { flex: 1; display: flex; gap: 3px; padding: 3px; border-radius: var(--u2-pill); background: color-mix(in srgb, var(--text) 6%, transparent); }
+.u2m-seg button { flex: 1; min-height: 32px; border: 0; border-radius: var(--u2-pill); background: none; color: var(--dim); font: var(--fw-m, 500) 13px/1 var(--font); cursor: pointer; }
+.u2m-seg button.on { background: var(--accent); color: var(--accent-ink); }
+.u2m-list { display: flex; flex-direction: column; }
+.u2m-song { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 50px; padding: 0 6px; border: 0; border-bottom: 1px solid color-mix(in srgb, var(--text) 7%, transparent); background: none; color: var(--text); text-align: left; cursor: pointer; }
+.u2m-song b { font: var(--fw-m, 500) 16px/1.2 var(--font); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.u2m-song span { font: 11.5px/1 var(--font); color: var(--accent); flex: none; }
+.u2m-song:active { background: color-mix(in srgb, var(--text) 6%, transparent); }
+
+/* ---- the two bars: fixed places, left / centre / right, the same height and padding */
+#top2, #bar2 { flex: none; display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 12px; background: var(--panel); position: relative; z-index: 4; }
+#top2 { height: calc(44px + var(--sat)); padding: var(--sat) max(12px, var(--sar)) 0 max(12px, var(--sal)); border-bottom: 1px solid color-mix(in srgb, var(--line) 70%, transparent); }
+#bar2 { height: calc(44px + var(--sab)); padding: 0 max(12px, var(--sar)) var(--sab) max(12px, var(--sal)); border-top: 1px solid color-mix(in srgb, var(--line) 70%, transparent); }
+:is(#top2, #bar2) > div, #bar2 > nav { display: flex; align-items: center; gap: 4px; min-width: 0; }
+:is(#top2, #bar2) > :last-child { justify-content: flex-end; }
+#top2 .t2-c { gap: 12px; }
+/* left: menu, song name, undo / redo */
+#logo2 { position: relative; }
+#logo2.unsaved::after { content: ""; position: absolute; right: -2px; top: -2px; width: 9px; height: 9px; border-radius: 50%; background: var(--accent); border: 2px solid var(--panel); }
+#title2 { min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 0 8px; border: 0; background: none; color: var(--text); cursor: pointer; text-align: left; }
+#title2 b { max-width: 100%; font: var(--fw-sb, 600) 13px/1.15 var(--font); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#title2 span { font: 10.5px/1 var(--font); color: var(--dim); }
+#top2 .sep { flex: none; width: 1px; height: 22px; margin: 0 4px; background: color-mix(in srgb, var(--text) 12%, transparent); }
+#top2 .ic { width: 32px; min-width: 32px; height: 32px; padding: 0; border-radius: 10px; color: var(--text); }
+#top2 .ic svg { width: 18px; height: 18px; }
+#top2 .save.unsaved { color: var(--accent); }
+/* centre: the transport pill and the clock */
+#top2 .tpill { display: flex; align-items: center; gap: 4px; padding: 3px; border-radius: 999px; background: color-mix(in srgb, var(--text) 7%, transparent); }
+#top2 .tp { width: 32px; min-width: 32px; height: 32px; padding: 0; border-radius: 50%; color: var(--text); }
+#top2 .tp svg { width: 17px; height: 17px; }
+#top2 .rec { color: var(--rec); }
+#top2 .rec svg { width: 13px; height: 13px; }
+#top2 .rec.on { background: var(--rec); color: #fff; animation: u2rec 1.1s ease-in-out infinite; }
+@keyframes u2rec { 50% { filter: brightness(1.3); } }
+#top2 .play { width: 50px; min-width: 50px; border-radius: 999px; background: var(--accent); color: var(--accent-ink); }
+#top2 .play svg { width: 18px; height: 18px; }
+#top2 .play.on { box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 22%, transparent); }
+#top2 .clock { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; min-width: 64px; padding: 0; border: 0; background: none; color: var(--text); cursor: pointer; font-variant-numeric: tabular-nums; }
+#top2 .clock b { font: var(--fw-sb, 600) 14px/1 var(--font); }
+#top2 .clock span { font: 10.5px/1 var(--font); color: var(--dim); }
+/* right: the tools as one segmented pill, the tempo, save */
+#top2 .tg { display: flex; padding: 3px; gap: 2px; border-radius: 999px; background: color-mix(in srgb, var(--text) 7%, transparent); }
+#top2 .pill { flex-direction: row; gap: 5px; height: 26px; min-width: 30px; padding: 0 10px; border-radius: 999px; color: var(--dim); font: var(--fw-m, 500) 12px/1 var(--font); }
+#top2 .pill svg { width: 15px; height: 15px; }
+#top2 .pill.on { background: var(--accent); color: var(--accent-ink); }
+#top2 .bpm { flex-direction: row; align-items: baseline; gap: 5px; height: 32px; padding: 0 12px; border-radius: 999px; background: color-mix(in srgb, var(--text) 7%, transparent); }
+#top2 .bpm b { font: var(--fw-sb, 600) 14px/32px var(--font); font-variant-numeric: tabular-nums; color: var(--text); }
+#top2 .bpm .lb { font-size: 10px; letter-spacing: .08em; color: var(--dim); }
+/* bottom: the views, equal widths, the open one in the accent */
+#bar2 .b2-c { gap: 3px; padding: 3px; border-radius: 12px; background: color-mix(in srgb, var(--text) 5%, transparent); }
+#bar2 .tab { flex-direction: row; gap: 6px; width: 104px; height: 32px; padding: 0 10px; border-radius: 9px; color: var(--dim); font: var(--fw-m, 500) 13px/1 var(--font); position: relative; }
+#bar2 .tab svg { width: 16px; height: 16px; }
+#bar2 .b2-c .tab.on { background: var(--accent); color: var(--accent-ink); }
+#bar2 .add { width: auto; padding: 0 14px; color: var(--text); border: 1px dashed color-mix(in srgb, var(--text) 22%, transparent); }
+#bar2 .tab .bdg { font-style: normal; min-width: 15px; height: 15px; padding: 0 4px; border-radius: 4px; background: var(--accent); color: var(--accent-ink); font: var(--fw-sb, 600) 10px/15px var(--font); text-align: center; }
+#bar2 .tab.on .bdg { background: var(--accent-ink); color: var(--accent); }
+#bar2 .tab .bdg[data-k="solo"] { background: #4fa3e0; color: #08131c; }
+#bar2 .tab .bdg[hidden] { display: none; }
+.u2cpu { display: flex; flex-direction: column; align-items: flex-end; justify-content: center; gap: 2px; min-width: 64px; height: 32px; padding: 0 8px; border: 0; border-radius: 9px; background: none; cursor: pointer;
+  font: var(--fw-m, 500) 10.5px/1.15 var(--font); color: var(--dim); font-variant-numeric: tabular-nums; }
+.u2cpu:active { background: color-mix(in srgb, var(--text) 8%, transparent); }
+.u2cpu b { color: var(--text); font-weight: var(--fw-sb, 600); border-radius: 4px; padding: 0 4px; }
+.u2cpu.warm b { background: #c99a1e; color: #1a1300; }
+.u2cpu.hot b { background: var(--rec); color: #fff; }
+/* narrower screens: the words go first, then the clock's time, then the CPU */
+html[data-w="m"] #bar2 .tab { width: 96px; }
+html[data-w="m"] #top2 .pill .lb { display: none; }
+html[data-w="s"] #bar2 .tab, html[data-w="xs"] #bar2 .tab { width: 48px; padding: 0; }
+html[data-w="s"] :is(#bar2 .tab .lb, #top2 .pill .lb, #title2), html[data-w="xs"] :is(#bar2 .tab .lb, #top2 .pill .lb, #title2, #top2 .clock span, .u2cpu, #top2 .sep, #top2 .bpm .lb) { display: none; }
+
+/* ---- floating panels (Tempo, Performa): a card over a dimmed screen */
+.u2p { position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center; }
+.u2p-scrim { position: absolute; inset: 0; background: rgba(0, 0, 0, .5); opacity: 0; transition: opacity calc(.18s * var(--anim, 1)); }
+.u2p-card { position: relative; min-width: 340px; max-width: min(560px, 92vw); max-height: 92vh; overflow: auto; padding: 14px 18px 18px; border-radius: 20px; background: var(--panel);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, .55), 0 0 0 1px color-mix(in srgb, var(--text) 9%, transparent); transform: scale(.96); opacity: 0; transition: transform calc(.18s * var(--anim, 1)) var(--ease, ease), opacity calc(.18s * var(--anim, 1)); }
+.u2p.in .u2p-scrim { opacity: 1; }
+.u2p.in .u2p-card { transform: none; opacity: 1; }
+.u2p-card > header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.u2p-card > header b { font: var(--fw-sb, 600) 15px/1 var(--font); color: var(--text); }
+.u2p-x { width: 30px; height: 30px; border: 0; border-radius: 50%; background: color-mix(in srgb, var(--text) 8%, transparent); color: var(--text); cursor: pointer; display: flex; align-items: center; justify-content: center; }
+.u2p-x svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+/* tempo: steps on both sides of the ring, the chips under it */
+.tp2 { display: grid; grid-template-columns: auto 220px auto; align-items: center; gap: 18px; justify-content: center; }
+.tp2-side { display: flex; flex-direction: column; gap: 12px; }
+.tp2-step { width: 58px; height: 40px; border: 0; border-radius: 999px; background: color-mix(in srgb, var(--text) 9%, transparent); color: var(--text); font: var(--fw-sb, 600) 15px/1 var(--font); cursor: pointer; }
+.tp2-step:active { background: var(--accent); color: var(--accent-ink); }
+.tp2-dial { position: relative; width: 220px; height: 220px; touch-action: none; cursor: grab; }
+.tp2-dial svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.tp2-dial .trk, .tp2-dial .val { fill: none; stroke-width: 10; stroke-linecap: round; }
+.tp2-dial .trk { stroke: color-mix(in srgb, var(--text) 10%, transparent); }
+.tp2-dial .val { stroke: var(--accent); }
+.tp2-dial .dot { fill: var(--text); stroke: var(--panel); stroke-width: 3; }
+.tp2-mid { position: absolute; inset: 40px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; pointer-events: none; }
+.tp2-bpm { font: var(--fw-sb, 600) 40px/1 var(--font); color: var(--text); font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+.tp2-mid span { font: var(--fw-m, 500) 11px/1 var(--font); letter-spacing: .12em; color: var(--dim); }
+.tp2-sig { pointer-events: auto; margin-top: 8px; height: 26px; padding: 0 12px; border: 0; border-radius: 999px; background: color-mix(in srgb, var(--text) 8%, transparent); color: var(--text); font: var(--fw-m, 500) 12px/1 var(--font); cursor: pointer; }
+.tp2-row { grid-column: 1 / -1; display: flex; justify-content: center; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+.tp2-chip { height: 34px; padding: 0 16px; border: 0; border-radius: 999px; background: color-mix(in srgb, var(--text) 8%, transparent); color: var(--text); font: var(--fw-m, 500) 13px/1 var(--font); cursor: pointer; }
+.tp2-chip.on, .tp2-chip.tap:active { background: var(--accent); color: var(--accent-ink); }
+.tp2-chip.tap { min-width: 72px; font-weight: var(--fw-sb, 600); letter-spacing: .06em; }
+/* performance */
+.pf2 { display: flex; flex-direction: column; gap: 10px; width: min(460px, 86vw); }
+.pf2-top { display: flex; align-items: baseline; justify-content: space-between; }
+.pf2-top span { color: var(--dim); font: 13px/1 var(--font); }
+.pf2-top b { font: var(--fw-sb, 600) 30px/1 var(--font); color: var(--text); font-variant-numeric: tabular-nums; }
+.pf2-bar { height: 6px; border-radius: 3px; background: color-mix(in srgb, var(--text) 9%, transparent); overflow: hidden; }
+.pf2-bar i { display: block; height: 100%; width: 0; border-radius: 3px; background: var(--accent); transition: width .25s; }
+.pf2-bar i.warm { background: #c99a1e; }
+.pf2-bar i.hot { background: var(--rec); }
+.pf2-graph { width: 100%; height: 110px; border-radius: 12px; background: color-mix(in srgb, var(--text) 4%, transparent); }
+.pf2-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.pf2-cell { display: flex; flex-direction: column; gap: 5px; padding: 10px 12px; border-radius: 12px; background: color-mix(in srgb, var(--text) 5%, transparent); }
+.pf2-cell span { font: 11px/1 var(--font); color: var(--dim); }
+.pf2-cell b { font: var(--fw-sb, 600) 14px/1.1 var(--font); color: var(--text); font-variant-numeric: tabular-nums; }
+
+/* ---- the piano roll's More... panel: two columns of commands, the transpose stepper on the right */
+.mg { display: grid; grid-template-columns: 1fr 1fr auto; gap: 4px 22px; align-items: center; }
+.mg-col { display: flex; flex-direction: column; }
+.mg-it { height: 38px; padding: 0 4px; border: 0; background: none; color: var(--text); text-align: left; font: var(--fw-m, 500) 14px/1 var(--font); cursor: pointer; border-radius: 8px; white-space: nowrap; }
+.mg-it:active { background: color-mix(in srgb, var(--text) 8%, transparent); }
+.mg-it.dim { opacity: .35; }
+.mg-step { display: flex; flex-direction: column; align-items: center; gap: 14px; padding-left: 8px; }
+.mg-arr { width: 54px; height: 54px; border-radius: 50%; border: 1.5px solid color-mix(in srgb, var(--text) 30%, transparent); background: none; color: var(--text); cursor: pointer; display: flex; align-items: center; justify-content: center; }
+.mg-arr svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.mg-arr:active { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.mg-val { font: var(--fw-sb, 600) 22px/1 var(--font); color: var(--text); font-variant-numeric: tabular-nums; min-width: 40px; text-align: center; }
+
+/* ---- the other views in MobileDAW 2's colours and shapes: menus, dialogs, settings, browser, mixer */
+html.ui2 .menu { border-radius: 14px; padding: 6px; background: var(--menu); border: 0; box-shadow: 0 14px 34px rgba(0, 0, 0, .5), 0 0 0 1px color-mix(in srgb, var(--text) 8%, transparent); }
+html.ui2 .menu .mi { border-radius: 8px; min-height: 36px; padding: 0 14px; font: var(--fw-m, 500) 13.5px/36px var(--font); }
+html.ui2 .menu .mi:active, html.ui2 .menu .mi:hover { background: color-mix(in srgb, var(--text) 9%, transparent); }
+html.ui2 .menu .mi.sep { min-height: 0; height: 1px; margin: 4px 8px; padding: 0; background: color-mix(in srgb, var(--text) 9%, transparent); }
+html.ui2 .modal, html.ui2 .dlg { border-radius: 18px !important; background: var(--panel) !important; border: 0 !important; box-shadow: 0 20px 50px rgba(0, 0, 0, .55), 0 0 0 1px color-mix(in srgb, var(--text) 8%, transparent) !important; }
+html.ui2 .modal h3, html.ui2 .modal > header { font: var(--fw-sb, 600) 15px/1.2 var(--font); }
+html.ui2 .modal .b, html.ui2 .settings .b { border-radius: 999px; border: 0; background: color-mix(in srgb, var(--text) 9%, transparent); color: var(--text); box-shadow: none; }
+html.ui2 .modal .b.pri, html.ui2 .modal .b.primary { background: var(--accent); color: var(--accent-ink); }
+html.ui2 .settings { font-family: var(--font); }
+html.ui2 .settings section, html.ui2 .settings .sec { border-radius: 14px; background: color-mix(in srgb, var(--text) 4%, transparent); border: 0; }
+html.ui2 #browser { background: var(--panel); border-right: 1px solid color-mix(in srgb, var(--line) 80%, transparent); box-shadow: 10px 0 30px rgba(0, 0, 0, .35); }
+html.ui2 #browser .b { border-radius: 999px; border: 0; box-shadow: none; }
+html.ui2 #view-mix { background: var(--bg); }
+html.ui2 #detail { background: var(--panel); border-top: 1px solid color-mix(in srgb, var(--line) 80%, transparent); }
+html.ui2 #dtabs .b { border-radius: 999px; border: 0; box-shadow: none; }
+html.ui2 #dtabs .b.on { background: var(--accent); color: var(--accent-ink); }
+
+/* ---- the clip editor (piano roll / drum steps) full screen: the properties panel only on request, the toolbar as pills */
+html.ui2 .ed-root:not(.props-on) .cp { display: none !important; }
+html.ui2 #app .ed-tools { background: var(--panel); border-bottom: 1px solid color-mix(in srgb, var(--line) 80%, transparent); gap: 6px; }
+html.ui2 #app .ed-tools .b, html.ui2 #app .ed-tools .ed-g .b { height: 28px; padding: 0 12px; border: 0; border-radius: 999px !important; background: color-mix(in srgb, var(--text) 8%, transparent); color: var(--text); font: var(--fw-m, 500) 12px/1 var(--font); }
+html.ui2 #app .ed-tools .ed-g { gap: 2px; padding: 2px; border: 0; border-radius: 999px; background: color-mix(in srgb, var(--text) 6%, transparent); }
+html.ui2 #app .ed-tools .ed-g .b + .b { border-left: 0; }
+html.ui2 #app .ed-tools .b.on, html.ui2 #app .ed-tools .ed-g .b.on { background: var(--accent) !important; color: var(--accent-ink) !important; }
+html.ui2 #app .ed-tools .b.on::before { display: none; }
+html.ui2 #app .ed-tools .ed-sep { background: none; width: 4px; }
+html.ui2 #dtabs { background: var(--panel); border-bottom: 1px solid color-mix(in srgb, var(--line) 80%, transparent); }
+
+/* ---- the editor in MobileDAW 2: only the grid, the keys and the ruler; three small buttons at the top right */
+html.ui2 #view-arr.edfull #dtabs, html.ui2 #view-arr.edfull .ed-tools { display: none !important; }
+#edf2 { position: absolute; top: 50%; right: max(10px, var(--sar)); transform: translateY(-50%); z-index: 7; display: flex; flex-direction: column; gap: 8px; }
+#edf2[hidden] { display: none; }
+#edf2 .ef { flex-direction: column; gap: 2px; width: 46px; height: 46px; min-width: 46px; padding: 0; border-radius: 999px; background: color-mix(in srgb, var(--panel) 92%, transparent); color: var(--text);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, .35), 0 0 0 1px color-mix(in srgb, var(--text) 10%, transparent); font: var(--fw-m, 500) 12px/1 var(--font); }
+#edf2 .ef svg { width: 16px; height: 16px; }
+#edf2 .ef.on { background: var(--accent); color: var(--accent-ink); }
+#edf2 .ef.shut { background: var(--accent); color: var(--accent-ink); }
+#edf2 .ef[hidden] { display: none; }
+
+/* ---- the browser in MobileDAW 2's surfaces: the sidebar on the panel colour, the open section in the accent */
+html.ui2 #browser { background: var(--panel); }
+html.ui2 #browser .bside { background: var(--bg); border-right: 1px solid color-mix(in srgb, var(--line) 80%, transparent); padding: 8px 6px; }
+html.ui2 #browser .bs-i { border-radius: 10px; margin: 1px 0; height: 36px; color: var(--text); }
+html.ui2 #browser .bs-i.on { background: var(--accent); color: var(--accent-ink); }
+html.ui2 #browser .bs-i:active { background: color-mix(in srgb, var(--text) 9%, transparent); }
+html.ui2 #browser .bs-h { color: var(--dim); }
+html.ui2 #browser input { border-radius: 999px; border: 0; background: color-mix(in srgb, var(--text) 8%, transparent); color: var(--text); }
+html.ui2 #browser .b.on { background: var(--accent); color: var(--accent-ink); }
+
+/* ---- device cards (Rack), the mixer and the keys in MobileDAW 2's shapes: rounded cards, pill buttons, no hard outlines */
+html.ui2 #app .card, html.ui2 .fw-body .card { border-radius: 14px; border: 0 !important; overflow: hidden; box-shadow: 0 0 0 1px color-mix(in srgb, var(--text) 7%, transparent); }
+html.ui2 #app .card > h4, html.ui2 .fw-body .card > h4 { background: var(--raise); border: 0; }
+html.ui2 #app .card :is(.lv-btn, .fv-b, .fv-t, .lv-tab, .lv-fld, .st), html.ui2 .fw-body .card :is(.lv-btn, .fv-b, .fv-t, .lv-tab, .lv-fld, .st) { border-radius: 7px; border-color: transparent; }
+html.ui2 #app .card .lv-btn.on, html.ui2 #app .card .fv-b.on { background: var(--accent); color: var(--accent-ink); }
+html.ui2 #dbody { background: var(--bg); }
+html.ui2 #dbody .pane { padding: 8px; gap: 8px; }
+html.ui2 #view-mix .strip, html.ui2 #view-mix .mx-strip { border-radius: 12px; margin: 4px 2px; overflow: hidden; }
+html.ui2 #view-mix { padding: 4px 6px; }
+html.ui2 .keys-bar, html.ui2 .kb-bar { background: var(--panel); }
+html.ui2 #app .b { border-radius: 8px; }
+
+/* ---- MobileDAW 2's mixer: strips with a tall fader, the meter beside it, a pan ring, on / solo, the kind icon (selected strip filled) */
+#mix2 { position: absolute; inset: 0; display: flex; flex-direction: column; background: var(--bg); }
+#mix2[hidden] { display: none; }
+#mix2 .m2-list { flex: 1; min-height: 0; display: flex; gap: 6px; padding: 8px; overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; }
+.m2-strip { --tc: #888; flex: none; width: 96px; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 8px 6px 6px; border-radius: 14px; background: var(--panel); }
+.m2-strip.bus { background: color-mix(in srgb, var(--panel) 80%, var(--bg)); }
+.m2-strip.sel { box-shadow: inset 0 0 0 2px var(--tc); }
+.m2-name { width: 100%; text-align: center; color: var(--tc); font: var(--fw-sb, 600) 12.5px/1.2 var(--font); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+.m2-mid { flex: 1; min-height: 80px; width: 100%; display: flex; justify-content: center; gap: 8px; }
+.m2-fad { position: relative; width: 34px; touch-action: none; cursor: ns-resize; --u: .8; }
+.m2-fad .trk { position: absolute; left: 50%; top: 10px; bottom: 10px; width: 6px; margin-left: -3px; border-radius: 3px; background: color-mix(in srgb, var(--text) 12%, transparent); }
+.m2-fad .fill { position: absolute; left: 50%; bottom: 10px; width: 6px; margin-left: -3px; height: calc((100% - 20px) * var(--u)); border-radius: 3px; background: var(--tc); }
+.m2-fad em { position: absolute; left: 50%; bottom: calc(10px + (100% - 20px) * var(--u)); width: 30px; height: 18px; margin: 0 0 -9px -15px; border-radius: 6px; background: var(--tc); box-shadow: 0 2px 6px rgba(0, 0, 0, .45), inset 0 -2px 0 rgba(0, 0, 0, .2); }
+.m2-met { display: flex; gap: 2px; padding: 10px 0; }
+.m2-met i { width: 4px; height: 0; border-radius: 2px; background: #5bd876; }
+.m2-met { position: relative; height: 100%; align-items: flex-end; }
+.m2-db { color: var(--dim); font: var(--fw-m, 500) 11px/1 var(--font); font-variant-numeric: tabular-nums; }
+.m2-pan { position: relative; width: 40px; height: 40px; border-radius: 50%; border: 3px solid color-mix(in srgb, var(--text) 14%, transparent); touch-action: none; cursor: ew-resize; }
+.m2-pan i { position: absolute; left: 50%; top: 50%; width: 3px; height: 14px; margin-left: -1.5px; background: var(--tc); border-radius: 2px; transform-origin: 50% 100%; transform: translateY(-100%) rotate(var(--a, 0deg)); }
+.m2-row { display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; min-height: 22px; }
+.m2-on { width: 28px; height: 16px; border: 0; border-radius: 999px; background: color-mix(in srgb, var(--text) 14%, transparent); position: relative; cursor: pointer; }
+.m2-on::after { content: ""; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: var(--dim); transition: left calc(.15s * var(--anim, 1)); }
+.m2-on.on { background: color-mix(in srgb, var(--tc) 40%, transparent); }
+.m2-on.on::after { left: 14px; background: var(--tc); }
+.m2-solo { height: 20px; padding: 0 7px; border: 0; border-radius: 6px; background: none; color: var(--dim); font: var(--fw-m, 500) 11px/1 var(--font); cursor: pointer; }
+.m2-solo.on { background: var(--tc); color: rgba(0, 0, 0, .8); }
+.m2-kind { width: 100%; height: 34px; border: 0; border-radius: 10px; background: color-mix(in srgb, var(--text) 6%, transparent); color: var(--tc); cursor: pointer; display: flex; align-items: center; justify-content: center; }
+.m2-kind svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.m2-strip.sel .m2-kind { background: var(--tc); color: rgba(0, 0, 0, .8); }
+.m2-strip.muted :is(.m2-fad, .m2-name) { opacity: .45; }
+.m2-full { flex: none; align-self: flex-end; margin: 0 10px 8px; height: 30px; padding: 0 14px; border: 0; border-radius: 999px; background: color-mix(in srgb, var(--text) 8%, transparent); color: var(--text); font: var(--fw-m, 500) 12px/1 var(--font); cursor: pointer; }
+
+/* ======================================================================================================================================
+   Material You (Material 3): big rounded corners, tonal surfaces, pill buttons, filled-tonal controls, the primary colour for what is on.
+   Shapes: extra-large 28 px (sheets, dialogs), large 24 px (cards, strips), medium 16 px (tiles, FABs), full (buttons, chips, sliders).
+   ====================================================================================================================================== */
+html.ui2 { --m3-xl: 28px; --m3-l: 24px; --m3-m: 16px; --m3-s: 12px; --m3-tonal: color-mix(in srgb, var(--accent) 16%, var(--raise)); }
+/* bars: a surface, the views as a tonal segmented pill */
+html.ui2 #top2 { background: var(--bg); border-bottom: 0; }
+html.ui2 #bar2 { background: var(--bg); border-top: 0; }
+html.ui2 #top2 .tpill, html.ui2 #top2 .tg, html.ui2 #top2 .bpm, html.ui2 #bar2 .b2-c { background: var(--panel2); }
+html.ui2 #bar2 .b2-c { border-radius: 999px; padding: 4px; }
+html.ui2 #bar2 .tab { border-radius: 999px; }
+html.ui2 #bar2 .b2-c .tab.on { background: var(--m3-tonal); color: var(--text); }
+html.ui2 #bar2 .b2-c .tab.on svg { color: var(--accent); }
+html.ui2 #bar2 .add { border-radius: var(--m3-m); border: 0; background: var(--m3-tonal); color: var(--text); }
+html.ui2 #top2 .play { background: var(--accent); color: var(--accent-ink); border-radius: var(--m3-m); }
+html.ui2 #top2 .pill.on { background: var(--m3-tonal); color: var(--text); }
+html.ui2 #top2 .pill.on svg { color: var(--accent); }
+/* the arrangement sits on a rounded surface between the two bars */
+html.ui2 #body { background: var(--bg); padding: 0 6px; }
+html.ui2 #main { border-radius: var(--m3-l); overflow: hidden; background: var(--panel); }
+/* track tiles: rounded tonal tiles inside the column */
+html.ui2 #tcol2 { background: var(--panel); border-right: 0; }
+html.ui2 .tc-row { border-bottom: 0; }
+/* the channel header stays square (owner's choice): a full-width tile with a 1 px line between rows, the selection as an inner ring */
+html.ui2 .tc-tile { margin: 0; width: var(--tc-w); border-radius: 0; box-shadow: inset 0 -1px 0 rgba(0, 0, 0, .3); }
+html.ui2.tc-wide .tc-row .tc-tile { top: 0; bottom: 0; left: 0; }
+html.ui2 .tc-row.sel .tc-tile { box-shadow: inset 0 0 0 3px var(--accent); }
+html.ui2.tc-wide .tc-row.sel { background: none; }
+/* bubbles, insert menu, note bar: tonal pills */
+html.ui2 #bub2 .bub, html.ui2 #ins2 .bub, html.ui2 .bar .b, html.ui2 .selbar .b { height: 44px; padding: 0 18px; background: var(--m3-tonal); color: var(--text); font: var(--fw-m, 500) 13px/1 var(--font); box-shadow: 0 3px 8px rgba(0, 0, 0, .35); }
+html.ui2 #bub2 .bub[aria-label="Edit"] { background: var(--accent); color: var(--accent-ink); }
+/* menus and dialogs: extra-large corners, tonal surface */
+html.ui2 .menu { border-radius: 20px; padding: 8px; background: var(--raise); box-shadow: 0 12px 30px rgba(0, 0, 0, .45); }
+html.ui2 .menu .mi { border-radius: 999px; padding: 0 18px; }
+html.ui2 .modal, html.ui2 .dlg, html.ui2 .u2p-card { border-radius: var(--m3-xl) !important; background: var(--panel2) !important; }
+html.ui2 #mm2 .u2m-pan { border-radius: var(--m3-xl) 0 0 var(--m3-xl); background: var(--panel2); }
+html.ui2 .u2m-big { border-radius: var(--m3-l); background: var(--raise); }
+html.ui2 .u2m-grid .u2m-big:first-child { background: var(--accent); color: var(--accent-ink); }
+html.ui2 .u2m-t.on, html.ui2 .u2m-seg button.on { background: var(--m3-tonal); color: var(--text); }
+html.ui2 .u2m-fld, html.ui2 .u2m-seg { border-radius: 999px; background: var(--raise); }
+/* the device panel (Rack / Keys): a rounded sheet with tonal tabs */
+html.ui2 #detail { margin: 6px 0 0; border-radius: var(--m3-l) var(--m3-l) 0 0; background: var(--panel2); border-top: 0; overflow: hidden; }
+html.ui2 #dtabs { background: transparent; border-bottom: 0; padding: 6px 10px 2px; }
+html.ui2 #dtabs .b { border-radius: 999px; height: 32px; padding: 0 16px; }
+html.ui2 #dtabs .b.on { background: var(--m3-tonal); color: var(--text); }
+html.ui2 #dbody { background: transparent; }
+
+/* ---- FX modules and instruments as Material 3 cards ---- */
+html.ui2 #app .card, html.ui2 .fw-body .card { border-radius: var(--m3-l) !important; background: var(--raise) !important; box-shadow: none !important; padding-bottom: 8px; }
+html.ui2 #app .card > h4, html.ui2 .fw-body .card > h4 { height: 44px !important; padding: 0 10px 0 14px !important; background: transparent !important; gap: 8px; }
+html.ui2 #app .card > h4 > span, html.ui2 #app .card > h4 button.dv-name span, html.ui2 .fw-body .card > h4 button.dv-name span { font: var(--fw-sb, 600) 15px/44px var(--font) !important; color: var(--text); }
+html.ui2 #app .card > h4 .b, html.ui2 #app .card > h4 button, html.ui2 .fw-body .card > h4 button { border-radius: 999px !important; border: 0 !important; background: color-mix(in srgb, var(--text) 8%, transparent) !important; box-shadow: none !important; }
+html.ui2 #app .card > h4 .pw, html.ui2 #app .card > h4 .dv-on { border-radius: 999px !important; }
+html.ui2 #app .card :is(.lv-btn, .fv-b, .fv-t, .lv-tab, .lv-fld, .st, .b), html.ui2 .fw-body .card :is(.lv-btn, .fv-b, .fv-t, .lv-tab, .lv-fld, .st, .b) { border-radius: 999px !important; border: 0 !important; background-color: color-mix(in srgb, var(--text) 8%, transparent); box-shadow: none !important; }
+html.ui2 #app .card :is(.lv-btn, .fv-b, .fv-t, .lv-tab, .b).on, html.ui2 .fw-body .card :is(.lv-btn, .fv-b, .fv-t, .lv-tab, .b).on { background: var(--m3-tonal) !important; color: var(--text) !important; }
+html.ui2 #app .card :is(.lv-tabs, .lv-tabbar) { gap: 4px; padding: 4px; border-radius: 999px; background: var(--panel2); border: 0; }
+html.ui2 #app .card :is(.lv-disp, .lv-well, canvas) { border-radius: var(--m3-m); }
+html.ui2 #app .card :is(.lv-sec, .lk-sec, section) { border: 0 !important; }
+/* knobs: a thick arc with round ends on a tonal dial, the needle in the primary colour */
+html.ui2 .knob svg path { stroke-width: 4.6px !important; stroke-linecap: round !important; }
+html.ui2 .knob svg circle { fill: var(--panel2) !important; }
+html.ui2 .knob svg line { stroke: var(--accent) !important; stroke-width: 2.6px !important; }
+html.ui2 .knob .k-v { color: var(--text); font-weight: var(--fw-m, 500); }
+/* sliders and switches in the cards */
+html.ui2 #app .card input[type=range], html.ui2 .u2m-body input[type=range] { accent-color: var(--accent); }
+html.ui2 #app .card .lv-sw, html.ui2 #app .card .sw { border-radius: 999px !important; }
+/* add-effect slot: a dashed rounded area */
+html.ui2 #app .add-slot, html.ui2 #app .dv-add, html.ui2 #app .fx-add { border-radius: var(--m3-l) !important; }
+
+/* mixer strips, panels and FABs */
+html.ui2 .m2-strip { border-radius: var(--m3-l); background: var(--raise); }
+html.ui2 .m2-strip.sel { box-shadow: inset 0 0 0 2px var(--accent); }
+html.ui2 .m2-kind { border-radius: var(--m3-m); }
+html.ui2 .m2-fad em { border-radius: 999px; height: 16px; }
+html.ui2 .m2-full { background: var(--m3-tonal); }
+html.ui2 #mix2 { background: var(--panel); }
+html.ui2 #mix2 .m2-list { padding: 10px; gap: 8px; }
+html.ui2 #edf2 .ef { border-radius: var(--m3-m); width: 52px; height: 52px; min-width: 52px; background: var(--m3-tonal); }
+html.ui2 #edf2 .ef.shut, html.ui2 #edf2 .ef.on { background: var(--accent); color: var(--accent-ink); }
+html.ui2 .mg-arr { border-radius: var(--m3-m); border: 0; background: var(--m3-tonal); }
+html.ui2 .tp2-step, html.ui2 .tp2-chip { background: var(--m3-tonal); }
+html.ui2 .pf2-cell, html.ui2 .pf2-graph { border-radius: var(--m3-m); background: var(--raise); }
+html.ui2 #browser { border-radius: 0 var(--m3-l) var(--m3-l) 0; overflow: hidden; }
+html.ui2 #browser .bs-i { border-radius: 999px; }
+html.ui2 #browser .bs-i.on { background: var(--m3-tonal); color: var(--text); }
+/* the panel's own Device / Keys tabs are gone: Rack and Keys in the bottom bar switch the panel (owner's request) */
+html.ui2 #dtabs .b[data-tab] { display: none !important; }
+
+/* ---- the channel header as in the owner's reference: a square block in the track colour, a fold ring and the name at its top left */
+html.ui2 .tc-tile { flex-direction: row; align-items: flex-start; justify-content: flex-start; gap: 7px; padding: 7px 8px; color: rgba(0, 0, 0, .82); }
+html.ui2 .tc-tile svg { width: auto; height: auto; }
+html.ui2 .tc-tile .tc-fold { flex: none; display: flex; width: 20px; height: 20px; margin: -1px 0 0; }
+html.ui2 .tc-tile .tc-fold svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; }
+html.ui2 .tc-tile .tc-fold svg path { fill: currentColor; stroke: none; }
+html.ui2 .tc-tile .tc-nm { display: block; min-width: 0; flex: 1; text-align: left; color: rgba(0, 0, 0, .85); font: var(--fw-m, 500) 13px/18px var(--font); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+html.ui2 .tc-row.xrow .tc-tile .tc-nm { color: var(--text); padding-left: 2px; }
+html.ui2 .tc-row.sel .tc-tile { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .9); }   /* the selected track: a 1 px light edge (owner's request) */
+html.ui2 .tc-row.fold .tc-tile { padding-top: 2px; padding-bottom: 2px; align-items: center; }
+html.ui2.tc-wide .tc-row:not(.xrow) .tc-nm { display: block; }
+html.ui2.tc-wide .tc-name .nm { visibility: hidden; }
+/* the arrangement and the panel under it are two rounded surfaces with a gap between them (owner's request) */
+html.ui2 #main { background: var(--bg); }
+html.ui2 #view-arr:not(.shut):not(.edfull) #arr { border-bottom-right-radius: var(--m3-l); overflow: hidden; }
+html.ui2 #view-arr:not(.shut):not(.edfull) #tcol2 { border-bottom-left-radius: var(--m3-l); }
+html.ui2 #view-arr:not(.shut) #detail { margin-top: 8px; }
+
+/* ---- one background everywhere behind the surfaces (the marked spots showed #app's panel colour), the bottom bar's items on one centre line */
+html.ui2 #app, html.ui2 #body, html.ui2 #main, html.ui2 #view-arr { background: var(--bg); }
+html.ui2 #bar2 { height: calc(60px + var(--sab)); align-items: center; }
+html.ui2 #bar2 > div, html.ui2 #bar2 > nav { height: 44px; align-self: center; }
+html.ui2 #bar2 .b2-c { height: 44px; box-sizing: border-box; padding: 4px; }
+html.ui2 #bar2 .b2-c .tab { height: 36px; }
+html.ui2 #bar2 .add { height: 44px; padding: 0 18px; }
+html.ui2 #bar2 .b2-l, html.ui2 #bar2 .b2-r { align-items: center; }
+/* the track rows never show above the column's top area (the coloured block in the corner) */
+#tcol2 .tc-rows { overflow: hidden; }
+
+/* ===== MobileDAW 2 module cards (js/ui2/cards.js): Material You, one look for every effect and instrument ===== */
+html.ui2 #app .dev-scroll > .card.u2c, html.ui2 .dev-scroll > .card.u2c { display: flex; flex-direction: column; flex: 0 0 auto; width: 340px; min-width: 300px; max-width: 360px; height: 100%; min-height: 0 !important; padding: 0 0 10px !important; border-radius: var(--m3-l) !important; background: var(--raise) !important; overflow: hidden; }
+.u2c.off .u2c-b, .u2c.off .u2c-cta { opacity: .45; }
+.u2c-h { display: flex; align-items: center; gap: 8px; height: 56px; flex: none; padding: 0 8px 0 14px; }
+.u2c-name { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; height: 40px; padding: 0 10px; margin-left: -4px; border: 0; border-radius: 999px; background: transparent; color: var(--text); font: 600 16px/1 var(--font); text-align: left; }
+.u2c-name span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+button.u2c-name:active { background: color-mix(in srgb, var(--text) 10%, transparent); }
+.u2c .car { flex: none; width: 0; height: 0; border-left: 4.5px solid transparent; border-right: 4.5px solid transparent; border-top: 5px solid var(--dim); }
+.u2c-ic { flex: none; width: 32px; height: 32px; border-radius: 12px; background: var(--m3-tonal); position: relative; }
+.u2c-ic::after { content: ''; position: absolute; inset: 9px; border-radius: 3px; background: linear-gradient(90deg, var(--accent) 0 2px, transparent 2px 5px, var(--accent) 5px 7px, transparent 7px 10px, var(--accent) 10px 12px, transparent 12px); }
+.u2c-ic.au::after { background: linear-gradient(90deg, var(--accent) 0 2px, transparent 2px 4px, var(--accent) 4px 6px, transparent 6px 8px, var(--accent) 8px 10px, transparent 10px 12px, var(--accent) 12px); clip-path: polygon(0 35%, 17% 35%, 17% 0, 50% 0, 50% 100%, 67% 100%, 67% 20%, 100% 20%, 100% 80%, 0 80%); }
+.u2chip { flex: none; height: 32px; padding: 0 14px; border-radius: 10px; border: 1px solid color-mix(in srgb, var(--text) 22%, transparent); background: transparent; color: var(--text); font: 500 13px/1 var(--font); }
+.u2c-more { flex: none; width: 40px; height: 40px; border: 0; border-radius: 999px; background: transparent; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; }
+.u2c-more i { width: 4px; height: 4px; border-radius: 50%; background: var(--dim); }
+.u2c-more:active { background: color-mix(in srgb, var(--text) 10%, transparent); }
+/* switch (M3: 52 x 32 track, a thumb that grows when on) */
+.u2sw { position: relative; flex: none; display: block; width: 46px; height: 28px; border-radius: 999px; box-sizing: border-box; border: 2px solid color-mix(in srgb, var(--text) 45%, transparent); background: var(--panel2); transition: background .18s, border-color .18s; }
+.u2sw::after { content: ''; position: absolute; left: 5px; top: 50%; width: 14px; height: 14px; margin-top: -7px; border-radius: 50%; background: color-mix(in srgb, var(--text) 55%, transparent); transition: left .18s cubic-bezier(.2, 0, 0, 1), width .18s, height .18s, margin .18s, background .18s; }
+:is(.on, [aria-checked=true]) > .u2sw { background: var(--accent); border-color: var(--accent); }
+:is(.on, [aria-checked=true]) > .u2sw::after { left: 20px; width: 20px; height: 20px; margin-top: -10px; background: var(--accent-ink, #1b1b1f); }
+.u2sw-b { flex: none; padding: 0; border: 0; background: transparent; height: 40px; display: flex; align-items: center; }
+/* tabs: a row of chips (scrolls sideways when there are many) */
+.u2c-b { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.u2c-tabs { flex: none; display: flex; gap: 6px; padding: 0 12px 8px; overflow-x: auto; scrollbar-width: none; }
+.u2c-tabs::-webkit-scrollbar { display: none; }
+.u2c-tabs button { flex: none; height: 32px; padding: 0 14px; border-radius: 10px; border: 1px solid color-mix(in srgb, var(--text) 20%, transparent); background: transparent; color: var(--dim); font: 500 13px/1 var(--font); white-space: nowrap; transition: background .15s, color .15s; }
+.u2c-tabs button.on { background: var(--m3-tonal); border-color: transparent; color: var(--text); }
+.u2c-g { flex: 1; min-height: 0; overflow-y: auto; padding: 2px 12px 4px; display: flex; flex-direction: column; gap: 8px; scrollbar-width: thin; }
+.u2c-dials { display: grid; grid-template-columns: repeat(auto-fill, minmax(72px, 1fr)); gap: 6px 4px; }
+/* dial */
+.u2d { display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 6px 0 4px; border-radius: 16px; touch-action: none; user-select: none; -webkit-user-select: none; cursor: ns-resize; }
+.u2d svg { width: 48px; height: 48px; overflow: visible; }
+.u2d .disc { fill: var(--panel2); }
+.u2d .trk { fill: none; stroke: color-mix(in srgb, var(--text) 14%, transparent); stroke-width: 4.5; stroke-linecap: round; }
+.u2d .val { fill: none; stroke: var(--accent); stroke-width: 4.5; stroke-linecap: round; }
+.u2d .dot { fill: var(--accent); }
+.u2d .v { font: 600 12px/1.2 var(--font); color: var(--text); font-variant-numeric: tabular-nums; white-space: nowrap; max-width: 76px; overflow: hidden; text-overflow: ellipsis; }
+.u2d .n { font: 500 11px/1.2 var(--font); color: var(--dim); white-space: nowrap; max-width: 76px; overflow: hidden; text-overflow: ellipsis; }
+.u2d.act, .u2d:focus-visible { background: color-mix(in srgb, var(--accent) 12%, transparent); outline: none; }
+/* on / off row */
+.u2t { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 44px; padding: 0 6px 0 14px; border: 0; border-radius: 14px; background: var(--panel2); color: var(--text); font: 500 14px/1.2 var(--font); text-align: left; }
+/* segmented buttons */
+.u2seg-f { display: flex; flex-direction: column; gap: 6px; }
+.u2seg-f > .n, .u2dd > .n { font: 500 12px/1 var(--font); color: var(--dim); }
+.u2seg { display: flex; height: 36px; border-radius: 999px; border: 1px solid color-mix(in srgb, var(--text) 22%, transparent); overflow: hidden; }
+.u2seg button { flex: 1; min-width: 0; border: 0; border-left: 1px solid color-mix(in srgb, var(--text) 22%, transparent); background: transparent; color: var(--text); font: 500 12.5px/1 var(--font); padding: 0 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.u2seg button:first-child { border-left: 0; }
+.u2seg button.on { background: var(--m3-tonal); font-weight: 600; }
+/* drop-down field */
+.u2dd { display: grid; grid-template-columns: 1fr auto; grid-template-rows: auto auto; align-items: center; gap: 4px 8px; min-height: 52px; padding: 8px 16px; border: 0; border-radius: 14px; background: var(--panel2); color: var(--text); text-align: left; }
+.u2dd > .n { grid-column: 1; grid-row: 1; }
+.u2dd > b { grid-column: 1; grid-row: 2; font: 600 14px/1.2 var(--font); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.u2dd > .car { grid-column: 2; grid-row: 1 / 3; }
+/* envelope drawing */
+.u2env { flex: none; width: 100%; height: 64px; border-radius: 16px; background: var(--panel2); }
+.u2env .l { fill: none; stroke: var(--accent); stroke-width: 2.2; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.u2env .f { fill: color-mix(in srgb, var(--accent) 18%, transparent); stroke: none; }
+/* buttons, actions, notes */
+.u2c-acts { flex: none; display: flex; flex-wrap: wrap; gap: 8px; padding: 0 12px 10px; }
+.u2btn { height: 40px; padding: 0 18px; border-radius: 999px; border: 1px solid color-mix(in srgb, var(--text) 22%, transparent); background: transparent; color: var(--accent); font: 600 13.5px/1 var(--font); }
+.u2btn.tonal { background: var(--m3-tonal); border-color: transparent; color: var(--text); }
+.u2btn.fill { background: var(--accent); border-color: transparent; color: var(--accent-ink, #1b1b1f); }
+.u2c-cta { flex: none; display: flex; flex-direction: column; align-items: flex-start; gap: 10px; margin: 0 12px 10px; padding: 14px 16px; border-radius: 16px; background: var(--panel2); }
+.u2c-cta p { margin: 0; font: 400 13px/1.4 var(--font); color: var(--dim); }
+.u2c-empty { margin: 0 12px; padding: 16px; border-radius: 16px; background: var(--panel2); font: 400 13px/1.4 var(--font); color: var(--dim); }
+.u2c-warn { flex: none; margin: 0 12px 10px; padding: 10px 14px; border-radius: 12px; background: color-mix(in srgb, #ffb4ab 18%, transparent); color: var(--text); font: 500 12.5px/1.3 var(--font); }
+/* the add card next to the chain */
+html.ui2 .dev-scroll > .card.addcard { flex: 0 0 auto; width: 160px; height: 100%; border-radius: var(--m3-l) !important; background: transparent !important; box-shadow: none !important; border: 2px dashed color-mix(in srgb, var(--text) 18%, transparent) !important; color: var(--dim); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 12px; text-align: center; }
+html.ui2 .dev-scroll > .card.addcard > b { width: 56px; height: 56px; border-radius: 18px; background: var(--m3-tonal); color: var(--text); display: grid; place-items: center; font: 400 30px/1 var(--font); }
+html.ui2 .dev-scroll > .card.addcard > span { font: 600 13px/1.3 var(--font); color: var(--text); }
+html.ui2 .dev-scroll > .card.addcard > small { font: 400 11.5px/1.3 var(--font); }
+html.ui2 .dev-scroll { gap: 10px; padding: 10px 12px; align-items: stretch; }
+/* compact for the short rack: a 48 px header, controls in two columns */
+.u2c-h { height: 50px; }
+.u2c-tabs { padding-bottom: 6px; }
+.u2c-tabs button { height: 30px; padding: 0 12px; }
+.u2c-rows { display: grid; grid-template-columns: repeat(auto-fill, minmax(146px, 1fr)); gap: 6px; }
+.u2t { min-height: 40px; font-size: 13px; padding-left: 12px; }
+.u2t .u2sw { transform: scale(.86); transform-origin: right center; }
+.u2dd { min-height: 46px; padding: 6px 12px; }
+.u2seg-f { grid-column: 1 / -1; }
+.u2d svg { width: 44px; height: 44px; }
+.u2d { padding: 4px 0 2px; }
+.u2env { height: 52px; }
+.u2c-acts { padding-bottom: 8px; }
+.u2c-acts .u2btn { height: 36px; }
+.u2c-dials { grid-template-columns: repeat(4, minmax(0, 1fr)); align-items: center; }
+.u2c-dials > :is(.u2dd, .u2t) { grid-column: span 2; }
+.u2c-dials > .u2seg-f { grid-column: 1 / -1; }
+/* the bottom panel is one surface: its title strip (grip, track name, maximise) and the rack share the app background */
+html.ui2 #detail, html.ui2 #view-arr:not(.shut) #detail { background: var(--bg) !important; border-radius: 0; margin-top: 0; }
+html.ui2 #dtabs, html.ui2 #dbody, html.ui2 #dbody .dev-scroll { background: transparent !important; border: 0 !important; box-shadow: none !important; }
+html.ui2 #dtabs { padding: 4px 12px 0; }
+
+/* module cards never cut a control off: the controls fill as many rows as the rack is tall and the card grows sideways */
+html.ui2 #app .dev-scroll > .card.u2c, html.ui2 .dev-scroll > .card.u2c { width: max-content; min-width: 300px; max-width: none; }
+.u2c-tabs { width: 0; min-width: 100%; box-sizing: border-box; }
+.u2c-g { overflow: hidden; display: block; padding: 0 12px; }
+.u2c-g > .u2c-dials { display: grid; grid-auto-flow: column dense; grid-template-rows: repeat(var(--rows, 1), 78px); grid-template-columns: none; grid-auto-columns: 78px; gap: 6px; align-items: center; height: auto; }
+.u2c-dials > :is(.u2dd, .u2t) { grid-column: span 2; }
+.u2c-dials > .u2seg-f, .u2c-dials > .u2env { grid-column: span 3; }
+.u2c-dials > .u2env { height: 70px; align-self: center; }
+.u2c-dials > .u2d { padding: 2px 0; }
+/* + Track: a pill like the nav bar next to it */
+html.ui2 #bar2 .add { border-radius: 999px !important; }
+
+/* module cards: every control is a tile of one size (one row = 78 px, a field two cells, a choice three), so a page reads as an even grid */
+.u2c-g > .u2c-dials { gap: 8px; align-items: stretch; }
+.u2c-dials > * { box-sizing: border-box; height: 100%; margin: 0; border-radius: 16px !important; background: var(--panel2); }
+.u2c-dials > .u2d { justify-content: center; padding: 4px 0; gap: 0; }
+.u2c-dials > .u2d svg { width: 40px; height: 40px; }
+.u2d .disc { fill: color-mix(in srgb, var(--text) 7%, transparent); }
+.u2c-dials > .u2dd { min-height: 0; align-content: center; padding: 0 14px; }
+.u2c-dials > .u2t { min-height: 0; padding: 0 8px 0 14px; }
+.u2c-dials > .u2seg-f { justify-content: center; gap: 6px; padding: 0 10px; }
+.u2c-dials > .u2seg-f > .n { padding-left: 4px; }
+.u2c-dials > .u2seg-f .u2seg { height: 34px; }
+.u2c-dials > .u2env { padding: 0; }
+
+/* ===== tidy pass: no blur behind bubbles / menus (only a dialog dims the screen) ===== */
+html.ui2 .scrim:not(:has(+ .modal)) { -webkit-backdrop-filter: none !important; backdrop-filter: none !important; background: transparent !important; }
+
+/* ===== Settings: a Material You dialog, a rail of pill tabs on the left ===== */
+html.ui2 .modal.prefsw { border-radius: var(--m3-xl) !important; overflow: hidden; display: flex; flex-direction: column; }
+html.ui2 .modal.prefsw > h3 { padding: 18px 24px 8px; font: 500 22px/1.2 var(--font); letter-spacing: 0; text-transform: none; color: var(--text); border: 0; background: transparent; }
+html.ui2 .prefs { grid-template-columns: 176px minmax(0, 1fr); gap: 4px; padding: 0 12px; }
+html.ui2 .prefs > .btabs { background: transparent !important; border: 0 !important; gap: 4px; padding: 4px 0; overflow-y: auto; }
+html.ui2 .prefs > .btabs .b { height: 44px !important; border-radius: 999px !important; border: 0 !important; padding: 0 18px !important; background: transparent !important; color: var(--dim) !important; font: 500 14px/1 var(--font) !important; text-transform: none; box-shadow: none !important; }
+html.ui2 .prefs > .btabs .b.on { background: var(--m3-tonal) !important; color: var(--text) !important; font-weight: 600 !important; }
+html.ui2 .prefs > .settings { padding: 4px 12px 16px; gap: 12px; }
+html.ui2 .prefs .set { background: var(--raise); border-radius: var(--m3-m); padding: 14px 16px 12px; }
+html.ui2 .prefs .set h4 { border: 0 !important; padding: 0 !important; margin: 0 0 8px !important; font: 600 13px/1.2 var(--font) !important; letter-spacing: 0 !important; text-transform: none !important; color: var(--accent) !important; }
+html.ui2 .prefs .sline { min-height: 40px; border-bottom: 1px solid color-mix(in srgb, var(--text) 6%, transparent); font-size: 14px; }
+html.ui2 .prefs .sline:last-child { border-bottom: 0; }
+html.ui2 .prefs .sv { font-size: 12.5px; line-height: 1.45; color: var(--dim); max-width: 62ch; }
+html.ui2 .prefs .sline .sv { color: var(--text); font-weight: 600; max-width: none; }
+html.ui2 .prefs .segc { display: inline-flex; gap: 0; border: 1px solid color-mix(in srgb, var(--text) 22%, transparent); border-radius: 999px; background: transparent; overflow: hidden; margin: 6px 0 8px; }
+html.ui2 .prefs .segc .b { height: 36px !important; margin: 0 !important; border-radius: 0 !important; border: 0 !important; border-left: 1px solid color-mix(in srgb, var(--text) 22%, transparent) !important; background: transparent !important; color: var(--text) !important; padding: 0 16px !important; font: 500 13px/1 var(--font) !important; }
+html.ui2 .prefs .segc .b:first-child { border-left: 0 !important; }
+html.ui2 .prefs .segc .b.on { background: var(--m3-tonal) !important; font-weight: 600 !important; }
+html.ui2 .prefs .set .b:not(.segc .b) { height: 36px !important; border-radius: 999px !important; border: 1px solid color-mix(in srgb, var(--text) 22%, transparent) !important; background: transparent !important; color: var(--accent) !important; padding: 0 16px !important; font: 600 13px/1 var(--font) !important; margin: 4px 6px 4px 0 !important; box-shadow: none !important; }
+html.ui2 .prefs .set .b.on:not(.segc .b) { background: var(--m3-tonal) !important; color: var(--text) !important; border-color: transparent !important; }
+html.ui2 .prefs input[type=range] { accent-color: var(--accent); }
+html.ui2 .modal.prefsw .acts { padding: 8px 20px 16px; border: 0; background: transparent; }
+html.ui2 .modal .acts .b { height: 40px; border-radius: 999px !important; padding: 0 22px; border: 0; font: 600 14px/1 var(--font); }
+html.ui2 .modal .acts .b.go { background: var(--accent) !important; color: var(--accent-ink, #1b1b1f) !important; }
+html.ui2 .modal .acts .b:not(.go) { background: transparent !important; color: var(--accent) !important; }
+
+/* ===== Browser: rounded list rows, headings as labels, the hint as a quiet line ===== */
+html.ui2 #browser .blist { padding: 4px 8px 12px; display: flex; flex-direction: column; gap: 2px; }
+html.ui2 #browser .blist > .row { min-height: 44px; border-radius: 14px; border: 0 !important; background: transparent !important; padding: 0 12px; gap: 10px; }
+html.ui2 #browser .blist > .row:nth-child(odd), html.ui2 #browser .blist > .row:nth-child(even) { background: transparent !important; }
+html.ui2 #browser .blist > .row:not([style*="pointer-events"]):active, html.ui2 #browser .blist > .row.sel { background: var(--m3-tonal) !important; }
+html.ui2 #browser .blist > .row[style*="pointer-events"] { min-height: 32px !important; padding-top: 8px; font: 600 12px/1 var(--font) !important; color: var(--accent) !important; letter-spacing: .02em; }
+html.ui2 #browser .blist > .row .nm { font: 500 14px/1.2 var(--font); }
+html.ui2 #browser .blist > .row .sub { font-size: 11.5px; color: var(--dim); }
+html.ui2 #browser .blist > .row .pv { width: 32px; height: 32px; border-radius: 50%; border: 0; background: var(--m3-tonal); color: var(--text); flex: none; }
+html.ui2 #browser .blist > .hint { margin: 2px 4px 6px; padding: 10px 14px; border-radius: 14px; background: var(--raise); font-size: 12px; line-height: 1.4; color: var(--dim); }
+html.ui2 #browser .sbar { height: 48px; border-radius: 999px !important; margin: 8px 8px 4px; background: var(--raise) !important; border: 0 !important; padding: 0 14px; }
+html.ui2 #browser .chips { padding: 4px 8px 6px; gap: 6px; }
+html.ui2 #browser .chip { height: 32px; border-radius: 10px !important; padding: 0 14px; border: 1px solid color-mix(in srgb, var(--text) 20%, transparent) !important; background: transparent !important; color: var(--dim) !important; font: 500 13px/1 var(--font); }
+html.ui2 #browser .chip.on { background: var(--m3-tonal) !important; border-color: transparent !important; color: var(--text) !important; }
+
+/* ===== Keys: drum pads as rounded tonal tiles in the track colour, a compact bar ===== */
+html.ui2 #dbody .kb-bar { height: 40px; padding: 0 14px; background: transparent !important; border: 0 !important; }
+html.ui2 #dbody .kb-t { font: 600 14px/1 var(--font); text-transform: none; letter-spacing: 0; color: var(--text); }
+html.ui2 #dbody .padgrid { gap: 8px; padding: 4px 12px 12px; background: transparent; }
+html.ui2 #dbody .bigpad { border-radius: var(--m3-m) !important; border: 0 !important; box-shadow: none !important; background: color-mix(in srgb, var(--tc, var(--accent)) 22%, var(--raise)) !important; color: var(--text); padding: 10px 14px; text-align: left; display: flex; flex-direction: column; justify-content: center; gap: 2px; }
+html.ui2 #dbody .bigpad::before, html.ui2 #dbody .bigpad::after { display: none !important; }
+html.ui2 #dbody .bigpad .pn { font: 600 14px/1.2 var(--font); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+html.ui2 #dbody .bigpad small { font: 500 11px/1 var(--font); color: var(--dim); }
+html.ui2 #dbody .bigpad:active, html.ui2 #dbody .bigpad.on { background: var(--tc, var(--accent)) !important; color: #111 !important; }
+/* short pads: name on the left, note on the right, both on one line (never squeezed away) */
+html.ui2 #dbody .bigpad { flex-direction: row !important; align-items: center !important; justify-content: space-between !important; padding: 0 16px !important; gap: 8px; }
+html.ui2 #dbody .bigpad .pn, html.ui2 #dbody .bigpad small { flex: 0 1 auto; min-height: auto; }
+html.ui2 #dbody .bigpad small { flex: none; }
+/* settings title: room above it */
+html.ui2 .modal.prefsw > h3 { padding-top: 22px; }
+/* action bubbles (clip / note / range): Material You pills */
+html.ui2 .bar { gap: 6px; padding: 6px; border-radius: 999px !important; background: var(--panel2) !important; border: 0 !important; box-shadow: 0 6px 20px rgba(0, 0, 0, .4) !important; }
+html.ui2 .bar .b { height: 40px; padding: 0 18px; border-radius: 999px !important; border: 0 !important; background: transparent !important; color: var(--text) !important; font: 600 14px/1 var(--font) !important; box-shadow: none !important; }
+html.ui2 .bar .b:active { background: var(--m3-tonal) !important; }
+
+/* ===== rounding pass: every control in MobileDAW 2 has round corners ===== */
+/* (zero specificity, so the pill / segment rules above still win; the channel header tile stays square, piano keys stay keys) */
+html.ui2 :where(button, .b, select, input[type=text], input[type=number], input[type=search], input:not([type]), .vbox, .lv-fld, .fv-b, .fv-t, .lv-btn, .chip, .st)
+  :where(:not(.tc-tile, .wk, .bk, .u2seg button, .segc .b, .fw-b)) { border-radius: 12px !important; }
+html.ui2 :where(.u2seg button, .segc .b) { border-radius: 0 !important; }
+html.ui2 .u2seg, html.ui2 .segc { border-radius: 999px !important; }
+/* top bar: clock and menu */
+html.ui2 #top2 button { border-radius: 999px !important; }
+
+/* full mixer: each channel a rounded card with a gap, the name a pill in the track colour */
+html.ui2 #view-mix .mxs { gap: 6px; padding: 6px 8px; background: var(--bg) !important; }
+html.ui2 #view-mix .mx-ch { border-radius: var(--m3-m) !important; overflow: hidden; border: 0 !important; background: var(--raise) !important; box-shadow: none !important; }
+html.ui2 #view-mix .mx-title { margin: 6px 6px 2px; height: 28px; border-radius: 999px !important; border: 0 !important; font: 600 12.5px/28px var(--font) !important; }
+html.ui2 #view-mix select, html.ui2 #view-mix .mx-sec .b, html.ui2 #view-mix .vbox { border: 0 !important; background: var(--panel2) !important; }
+html.ui2 #view-mix .mx-btns .b { border-radius: 999px !important; }
+html.ui2 #view-mix .mx-fader { border-radius: 999px; }
+
+/* floating windows: a rounded sheet, the title bar part of it, round window buttons */
+html.ui2 .fw { border-radius: var(--m3-l) !important; overflow: hidden; border: 0 !important; background: var(--panel2) !important; box-shadow: 0 18px 48px rgba(0, 0, 0, .55) !important; }
+html.ui2 .fw .fw-bar { height: 40px !important; background: transparent !important; border: 0 !important; padding: 0 8px 0 14px !important; }
+html.ui2 .fw .fw-b { width: 28px !important; height: 28px !important; border-radius: 50% !important; border: 0 !important; background: color-mix(in srgb, var(--text) 10%, transparent) !important; }
+html.ui2 .fw .fw-b::before, html.ui2 .fw .fw-b::after { border-radius: 2px; }
+html.ui2 .fw-body .card { border-radius: 0 !important; background: transparent !important; }
+html.ui2 .fw-body :is(.lv-disp, .lv-well, .sp, .lk-sec, canvas) { border-radius: 14px !important; }
+html.ui2 #view-mix .mx-vals .vbox { border-radius: 10px !important; }
+html.ui2 .card > h4 :is(.dv-name, .pw, .dv-on) { border-radius: 999px !important; }
+html.ui2 .fw :is(.dv-name, .pw, .dv-on, .pre, .dv-wet, .dv-swap, .dv-more) { border-radius: 999px !important; }
+/* floating window buttons: round tonal icon buttons (minimise, maximise, close last) instead of coloured lights */
+html.ui2 .fw .fw-bs { gap: 6px; }
+html.ui2 .fw .fw-bs .fw-b::before { display: none !important; }
+html.ui2 .fw .fw-bs .fw-b { width: 32px !important; height: 32px !important; border-radius: 50% !important; background: color-mix(in srgb, var(--text) 9%, transparent) !important; color: var(--text) !important; display: grid; place-items: center; }
+html.ui2 .fw .fw-bs .fw-b svg { opacity: 1 !important; width: 12px; height: 12px; }
+html.ui2 .fw .fw-bs .fw-x { order: 9; }
+html.ui2 .fw .fw-bs .fw-b:active { background: var(--m3-tonal) !important; }
+/* full mixer: the name pill must not push the buttons off the strip */
+html.ui2 #view-mix .mx-title { margin: 4px 6px 0; height: 24px; line-height: 24px !important; }
+html.ui2 #view-mix .mxs { padding: 0 6px; }
+html.ui2 #view-mix .mx-title { margin: 2px 4px 0; height: 22px; line-height: 22px !important; font-size: 12px !important; }
+html.ui2 #view-mix .mxs { gap: 0 !important; padding: 0 0 4px !important; margin: 4px 3px; min-height: calc(100% - 8px); border-radius: var(--m3-m); border-right: 0 !important; background: var(--raise) !important; overflow: hidden; }
+html.ui2 #view-mix .mx-fader { min-height: 96px; }
+
+/* ===== Mute / Solo / Rekam: round buttons, the same in the track column and the mixer ===== */
+.tc-bs { display: flex; gap: 4px; flex: none; }
+.tc-b, .m2-b { flex: none; width: 26px; height: 26px; padding: 0; border: 0; border-radius: 50% !important; display: grid; place-items: center; background: color-mix(in srgb, var(--text) 10%, transparent); color: var(--dim); font: 700 11.5px/1 var(--font); cursor: pointer; }
+:is(.tc-b, .m2-b) > i { width: 10px; height: 10px; border-radius: 50%; background: currentColor; }
+:is(.tc-m, .m2-m).on { background: #f2b8b5; color: #601410; }
+:is(.tc-solo, .m2-s).on { background: var(--tc); color: rgba(0, 0, 0, .82); }
+:is(.tc-rec, .m2-r).on { background: #ff5449; color: #fff; }
+:is(.tc-b, .m2-b):disabled { opacity: .3; cursor: default; }
+html.tc-wide .tc-row .tc-name { height: 28px; }
+.tc-ctl .tc-pl { flex: none; color: var(--dim); font: 500 10.5px/22px var(--font); }
+.tc-ctl .tc-pan { flex: 1; width: auto; min-width: 60px; }
+.tc-ctl .db { width: 30px; }
+.m2-row { gap: 4px; }
+.m2-strip.muted :is(.m2-fad, .m2-name, .m2-pan) { opacity: .45; }
+.tc-name .tc-b.tc-solo { width: 26px; height: 26px; padding: 0; border-radius: 50% !important; font: 700 11.5px/1 var(--font); color: var(--dim); background: color-mix(in srgb, var(--text) 10%, transparent); }
+.tc-name .tc-b.tc-solo::after { content: none !important; }
+.tc-name .tc-b.tc-solo.on { background: var(--tc); color: rgba(0, 0, 0, .82); }
+.tc-name .tc-b.tc-m.on { background: #f2b8b5; color: #601410; }
+.tc-name .tc-b.tc-rec.on { background: #ff5449; color: #fff; }
+/* pan in the wide column: a small ring with a needle (as the mixer's), next to M / S / R */
+.tc-bs .tc-pan.tc-ring { flex: none; width: 26px; height: 26px; border-radius: 50%; box-sizing: border-box; border: 2.5px solid color-mix(in srgb, var(--text) 16%, transparent); margin-right: 2px; --a: 0deg; }
+.tc-bs .tc-pan.tc-ring::before { display: none; }
+.tc-bs .tc-pan.tc-ring i { position: absolute; left: 50%; top: 50%; width: 2.5px; height: 9px; margin: 0 0 0 -1.25px; border-radius: 2px; background: var(--tc); box-shadow: none; transform-origin: 50% 0; transform: rotate(calc(180deg + var(--a))); }
+.tc-ctl .tc-vol { flex: 1; min-width: 60px; }
+.tc-ctl .db { width: 46px; }
+
+/* volume fader in the track column: a Material You slider - a thick rounded track, the active part in the track colour,
+   a tall thin handle with a small gap on each side (no thin line with a dot) */
+html.tc-wide .tc-ctl { height: 28px; }
+.tc-ctl .tc-vol { height: 28px; --x: calc(6px + (100% - 12px) * var(--u)); }
+.tc-ctl .tc-vol::before { left: calc(var(--x) + 6px); right: 0; height: 12px; margin-top: -6px; border-radius: 2px 6px 6px 2px; background: color-mix(in srgb, var(--tc) 22%, color-mix(in srgb, var(--text) 8%, transparent)); }
+.tc-ctl .tc-vol i { left: 0; width: max(0px, calc(var(--x) - 6px)); height: 12px; margin-top: -6px; border-radius: 6px 2px 2px 6px; background: var(--tc); }
+.tc-ctl .tc-vol em { left: var(--x); width: 4px; height: 26px; margin: -13px 0 0 -2px; border-radius: 2px; background: var(--tc); box-shadow: none; }
+.tc-ctl .tc-vol:active em { width: 3px; margin-left: -1.5px; }
+.tc-ctl .db { font-size: 11px; color: var(--text); opacity: .8; }
+
+/* ===== floating toolbars (Material You): the bottom navigation and the top tools share one design =====
+   an elevated pill container (44 px), items as 36 px pills with an icon and a label, the selected / switched-on item filled in the
+   accent colour; the icon-only items (metronome) are 36 px circles. The transport pill and BPM use the same container. */
+html.ui2 #bar2 .b2-c, html.ui2 #top2 .tg, html.ui2 #top2 .tpill, html.ui2 #top2 .bpm {
+  height: 44px !important; box-sizing: border-box; padding: 4px !important; gap: 2px !important; border-radius: 999px !important;
+  background: var(--panel2) !important; border: 1px solid color-mix(in srgb, var(--text) 8%, transparent) !important;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, .28), 0 1px 3px rgba(0, 0, 0, .2) !important; align-items: center; }
+html.ui2 #bar2 .b2-c .tab, html.ui2 #top2 .tg > button {
+  height: 34px !important; min-width: 0; padding: 0 14px 0 12px !important; gap: 7px !important; border: 0 !important; border-radius: 999px !important;
+  background: transparent !important; color: color-mix(in srgb, var(--text) 82%, transparent) !important; box-shadow: none !important;
+  display: inline-flex !important; flex-direction: row !important; align-items: center; justify-content: center;
+  font: 600 13px/1 var(--font) !important; letter-spacing: 0; transition: background calc(.18s * var(--anim, 1)), color calc(.18s * var(--anim, 1)); }
+html.ui2 #bar2 .b2-c .tab svg, html.ui2 #top2 .tg > button svg { width: 18px !important; height: 18px !important; color: var(--dim); flex: none; }
+html.ui2 #bar2 .b2-c .tab:active, html.ui2 #top2 .tg > button:active { background: color-mix(in srgb, var(--text) 10%, transparent) !important; }
+html.ui2 #bar2 .b2-c .tab.on, html.ui2 #top2 .tg > button.on { background: var(--accent) !important; color: var(--accent-ink, #1b1b1f) !important; }
+html.ui2 #bar2 .b2-c .tab.on svg, html.ui2 #top2 .tg > button.on svg { color: var(--accent-ink, #1b1b1f) !important; }
+/* icon-only items: a circle */
+html.ui2 #top2 .tg > button:not(:has(.lb)):not(:has(span)) { width: 34px; padding: 0 !important; }
+/* badges sit on the icon */
+html.ui2 #bar2 .b2-c .tab { position: relative; }
+html.ui2 #bar2 .b2-c .tab .bdg { position: static; margin-left: 2px; }
+/* + Track and the performance chip: same height as the toolbars */
+html.ui2 #bar2 .add { height: 44px !important; box-shadow: 0 4px 14px rgba(0, 0, 0, .28) !important; }
+html.ui2 #top2 .tpill button { height: 34px !important; }
+html.ui2 #top2 .bpm { width: auto !important; min-width: 0 !important; padding: 0 16px !important; gap: 5px !important; display: inline-flex !important; flex-direction: row !important; align-items: baseline !important; justify-content: center; }
+html.ui2 #top2 .bpm b { font: 700 15px/1 var(--font) !important; }
+html.ui2 #top2 .bpm .lb { font: 600 10.5px/1 var(--font) !important; color: var(--dim); letter-spacing: .04em; }
+html.ui2 #top2 .bpm { padding-top: 0 !important; line-height: 34px; }
+html.ui2 #top2 .bpm { align-items: center !important; line-height: 1 !important; padding-top: 4px !important; padding-bottom: 4px !important; }
+html.ui2 #top2 .bpm > * { display: block; margin: 0 !important; position: static !important; transform: none !important; }
+
+/* ===== module cards v2: an identity per module family (colour --cc + icon badge), a two-line title, the accent of the controls in --cc ===== */
+.u2c { --cc: var(--accent); }
+html.ui2 .dev-scroll > .card.u2c { background: linear-gradient(180deg, color-mix(in srgb, var(--cc) 13%, var(--raise)) 0, var(--raise) 92px) !important; }
+.u2c-h { height: 60px; gap: 10px; padding: 0 8px 0 12px; }
+.u2c-badge { flex: none; width: 38px; height: 38px; border-radius: 13px; display: grid; place-items: center; background: color-mix(in srgb, var(--cc) 26%, transparent); color: var(--cc); }
+.u2c-badge svg { width: 21px; height: 21px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+.u2c-tt { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; gap: 1px; }
+.u2c-tt .u2c-name { height: auto; padding: 0; margin: 0; font: 650 16px/1.2 var(--font); background: none !important; align-self: flex-start; max-width: 100%; }
+.u2c-tt small { font: 500 11.5px/1.2 var(--font); color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.u2c .u2sw-b { margin-left: 2px; }
+:is(.on, [aria-checked=true]) > .u2sw { background: var(--cc, var(--accent)); border-color: var(--cc, var(--accent)); }
+:is(.on, [aria-checked=true]) > .u2sw::after { background: #15161a; }
+.u2c-tabs button.on { background: color-mix(in srgb, var(--cc) 28%, transparent) !important; color: var(--text); border-color: transparent; }
+.u2c .u2d .val, .u2c .u2d .dot { stroke: var(--cc); }
+.u2c .u2d .dot { fill: var(--cc); stroke: none; }
+.u2c .u2d .n { order: 0; font: 600 10.5px/1.2 var(--font); letter-spacing: .02em; color: var(--dim); margin-bottom: 1px; }
+.u2c .u2d .v { font: 700 12.5px/1.2 var(--font); color: var(--text); margin-top: 1px; }
+.u2c .u2seg button.on { background: color-mix(in srgb, var(--cc) 30%, transparent); }
+.u2c .u2env .l { stroke: var(--cc); }
+.u2c .u2env .f { fill: color-mix(in srgb, var(--cc) 20%, transparent); }
+.u2c .u2chip { border-color: color-mix(in srgb, var(--cc) 45%, transparent); }
+.u2c .u2btn.tonal { background: color-mix(in srgb, var(--cc) 24%, transparent); }
+html.ui2 .dev-scroll > .card.u2c.off { background: var(--raise) !important; }
+.u2c.off .u2c-badge { filter: grayscale(1); opacity: .6; }
+/* the header's controls follow the title (a wide card never pushes them off screen) */
+.u2c-tt { flex: 0 1 auto; max-width: 240px; margin-right: 6px; }
+.u2c-h > .u2chip { margin-left: 2px; }
+
+/* ===== module cards, compact: a 44 px title row (badge, small name, switch, menu, then the tabs), dense control cells ===== */
+.u2c-h { height: 46px; gap: 8px; padding: 0 10px; }
+.u2c-badge { width: 28px; height: 28px; border-radius: 9px; }
+.u2c-badge svg { width: 17px; height: 17px; }
+.u2c-tt { max-width: 150px; margin-right: 0; }
+.u2c-tt .u2c-name { font: 600 13.5px/1.15 var(--font) !important; gap: 4px; }
+.u2c-tt small { font-size: 10.5px; }
+.u2c .u2sw-b { height: 32px; }
+.u2c .u2sw { transform: scale(.82); }
+.u2c-more { width: 30px; height: 32px; }
+.u2c .u2chip { height: 28px; padding: 0 11px; font-size: 12px; border-radius: 9px; }
+.u2c-h > .u2c-tabs { flex: 1 1 auto; width: auto; min-width: 0; padding: 0 0 0 4px; margin-left: 2px; border-left: 1px solid color-mix(in srgb, var(--text) 10%, transparent); }
+.u2c-h > .u2c-tabs button { height: 28px; padding: 0 11px; font-size: 12px; border-radius: 9px; }
+html.ui2 .dev-scroll > .card.u2c { background: linear-gradient(180deg, color-mix(in srgb, var(--cc) 12%, var(--raise)) 0, var(--raise) 60px) !important; padding-bottom: 6px !important; }
+/* control cells: 64 px columns, 70 px rows, 6 px gaps */
+.u2c-g { padding: 0 10px; }
+.u2c-g > .u2c-dials { gap: 6px; grid-auto-columns: 64px; grid-template-rows: repeat(var(--rows, 1), 70px); }
+.u2c-dials > .u2d { padding: 3px 0; }
+.u2c-dials > .u2d svg { width: 36px; height: 36px; }
+.u2c .u2d .n { font-size: 10px; max-width: 60px; }
+.u2c .u2d .v { font-size: 11.5px; max-width: 62px; }
+/* a switch takes one cell: name on top, switch under it */
+.u2c-dials > .u2t { grid-column: span 1 !important; flex-direction: column; justify-content: center; align-items: center; gap: 6px; padding: 4px !important; font-size: 11px; text-align: center; }
+.u2c-dials > .u2t > span { max-width: 58px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--dim); font-weight: 600; font-size: 10.5px; }
+.u2c-dials > .u2t .u2sw { transform: scale(.8); transform-origin: center; }
+.u2c-dials > .u2dd { padding: 0 10px; gap: 2px 6px; }
+.u2c-dials > .u2dd > b { font-size: 13px; }
+.u2c-dials > .u2seg-f { padding: 0 8px; gap: 5px; }
+.u2c-dials > .u2seg-f .u2seg { height: 30px; }
+.u2c-dials > .u2seg-f .u2seg button { font-size: 11.5px; padding: 0 3px; }
+.u2c-acts { padding: 0 10px 6px; gap: 6px; }
+.u2c-acts .u2btn { height: 30px; padding: 0 12px; font-size: 12px; }
+html.ui2 #app .dev-scroll > .card.u2c, html.ui2 .dev-scroll > .card.u2c { min-width: 0; }
+/* the card is as tall as its controls (no empty band under them); the tab row scrolls instead of widening the card */
+html.ui2 #app .dev-scroll > .card.u2c, html.ui2 .dev-scroll > .card.u2c { height: auto !important; align-self: flex-start; max-height: 100%; }
+.u2c-g { flex: none; overflow: visible; }
+.u2c-b { flex: none; }
+.u2c-h > .u2c-tabs { max-width: 330px; }
+html.ui2 .dev-scroll { align-items: flex-start !important; }
+html.ui2 .dev-scroll > .card.addcard { height: 150px; align-self: flex-start; }
+/* 60 px cells: two rows fit a phone's rack */
+.u2c-g > .u2c-dials { grid-template-rows: repeat(var(--rows, 1), 60px); grid-auto-columns: 62px; }
+.u2c-dials > .u2d { padding: 2px 0; }
+.u2c-dials > .u2d svg { width: 32px; height: 32px; }
+.u2c .u2d .n { font-size: 9.5px; line-height: 1.15; }
+.u2c .u2d .v { font-size: 11px; line-height: 1.15; }
+.u2c-dials > .u2t { gap: 4px; }
+.u2c-dials > .u2dd > .n, .u2c-dials > .u2seg-f > .n { font-size: 10.5px; }
+.u2c-dials > .u2seg-f .u2seg { height: 28px; }
+/* cells share the card's width when the title row is wider than the controls (no empty space on the right) */
+.u2c-g > .u2c-dials { grid-auto-columns: minmax(62px, 1fr); }
+
+/* ===== smaller toolbar buttons: everything stays inside its pill, also on a narrow phone ===== */
+html.ui2 #bar2 .b2-c, html.ui2 #top2 .tg, html.ui2 #top2 .tpill, html.ui2 #top2 .bpm { height: 40px !important; padding: 3px !important; gap: 1px !important; }
+html.ui2 #bar2 .b2-c .tab, html.ui2 #top2 .tg > button { height: 32px !important; padding: 0 11px 0 9px !important; gap: 5px !important; font-size: 12.5px !important; flex: 0 1 auto; min-width: 0; overflow: hidden; }
+html.ui2 #bar2 .b2-c .tab svg, html.ui2 #top2 .tg > button svg { width: 16px !important; height: 16px !important; }
+html.ui2 #top2 .tg > button:not(:has(.lb)):not(:has(span)) { width: 32px; }
+html.ui2 #top2 .tpill button { height: 32px !important; }
+html.ui2 #bar2 .b2-c { min-width: 0; max-width: 100%; overflow: hidden; }
+html.ui2 #bar2 .add { height: 40px !important; padding: 0 16px !important; font-size: 13px !important; }
+html.ui2 #top2 .bpm { padding: 3px 14px !important; }
+/* narrow phones: the bottom navigation shows the label of the selected tab only */
+@media (max-width: 1000px) {
+  html.ui2 #bar2 .b2-c .tab:not(.on) .lb, html.ui2 #bar2 .b2-c .tab:not(.on) > span:not(.bdg) { display: none; }
+  html.ui2 #bar2 .b2-c .tab:not(.on) { padding: 0 10px !important; }
+}
+/* the instrument's action chips in the title row */
+.u2c-h > .u2c-acts { padding: 0; flex: none; }
+.u2c-h > .u2c-acts .u2btn { height: 28px; padding: 0 11px; font-size: 12px; white-space: nowrap; }
+html.ui2 #top2 .bpm { gap: 4px !important; }
+html.ui2 #bar2 .b2-c .tab { width: auto !important; flex: 0 0 auto !important; }
+@media (max-width: 1000px) { html.ui2 #bar2 .b2-c .tab:not(.on) { width: 40px !important; padding: 0 !important; } }
+
+/* ===== effect graphic: a display panel at the left of the controls, over every row ===== */
+.u2c-dials > .u2fx { grid-row: 1 / -1; grid-column: span 4; position: relative; min-width: 248px; height: 100%; box-sizing: border-box; border-radius: 16px !important; background: color-mix(in srgb, var(--cc) 7%, #0f1013) !important; overflow: hidden; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cc) 16%, transparent); }
+.u2fx-cv { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.u2fx-l { position: absolute; right: 8px; top: 6px; padding: 2px 8px; border-radius: 999px; background: rgba(0, 0, 0, .45); color: var(--text); font: 600 10.5px/1.4 var(--font); font-variant-numeric: tabular-nums; pointer-events: none; }
+.u2c-dials.hero > .u2fx { grid-row: 1 / span var(--rows, 1); }
+.u2fx-l:empty { display: none; }
+
+/* ===== module cards v3: a screen on the left (graphic + name, switch, menu on it), tabs and controls on the right ===== */
+html.ui2 #app .dev-scroll > .card.u2c.v3, html.ui2 .dev-scroll > .card.u2c.v3 {
+  flex-direction: row !important; height: 100% !important; align-self: stretch !important; max-height: none; padding: 6px !important; gap: 8px;
+  background: var(--raise) !important; }
+html.ui2 .dev-scroll { align-items: stretch !important; }
+html.ui2 .dev-scroll > .card.addcard { height: auto; align-self: stretch; }
+.u2c.v3 .u2s { position: relative; flex: none; width: 236px; border-radius: 18px; overflow: hidden; background: color-mix(in srgb, var(--cc) 8%, #0e0f12); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cc) 18%, transparent); }
+.u2c.v3 .u2s > .u2fx { position: absolute; inset: 0; width: auto; height: auto; min-width: 0; border-radius: 0 !important; background: transparent !important; box-shadow: none; }
+.u2c.v3 .u2s > .u2fx .u2fx-l { top: auto; bottom: 8px; right: 8px; }
+/* the title bar on the screen */
+.u2c.v3 .u2s > .u2c-h { position: absolute; left: 0; right: 0; top: 0; height: 44px; padding: 0 4px 0 8px; gap: 7px; z-index: 2;
+  background: linear-gradient(180deg, rgba(8, 9, 12, .82), rgba(8, 9, 12, .0)); }
+.u2c.v3 .u2s .u2c-badge { width: 26px; height: 26px; border-radius: 8px; background: color-mix(in srgb, var(--cc) 30%, transparent); }
+.u2c.v3 .u2s .u2c-badge svg { width: 16px; height: 16px; }
+.u2c.v3 .u2s .u2c-tt { flex: 1 1 auto; max-width: none; min-width: 0; }
+.u2c.v3 .u2s .u2c-tt .u2c-name { font: 650 13px/1.15 var(--font) !important; color: #fff; }
+.u2c.v3 .u2s .u2c-tt small { font-size: 10px; color: rgba(255, 255, 255, .6); }
+.u2c.v3 .u2s .u2c-more i { background: rgba(255, 255, 255, .75); }
+.u2c.v3 .u2s .u2sw-b { height: 30px; }
+/* the instrument's buttons at the foot of the screen */
+.u2c.v3 .u2s-foot { position: absolute; left: 8px; right: 8px; bottom: 8px; display: flex; gap: 6px; z-index: 2; flex-wrap: wrap; }
+.u2c.v3 .u2s-foot .u2chip { height: 26px; padding: 0 10px; font-size: 11.5px; background: rgba(8, 9, 12, .6); color: #fff; border-color: color-mix(in srgb, var(--cc) 50%, transparent); }
+.u2c.v3 .u2s-foot .u2chip.fill { background: var(--cc); color: #15161a; border-color: transparent; font-weight: 700; }
+.u2c.v3.inst .u2s > .u2fx .u2fx-l { bottom: auto; top: 48px; }
+.u2fx.blank { position: absolute; inset: 0; }
+/* the right side: tabs on top, controls under them */
+.u2c.v3 .u2c-p { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.u2c.v3 .u2c-b { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 6px; }
+.u2c.v3 .u2c-tabs { width: 0; min-width: 100%; padding: 0; max-width: none; flex: none; }
+.u2c.v3 .u2c-tabs button { height: 28px; padding: 0 11px; font-size: 12px; border-radius: 9px; }
+.u2c.v3 .u2c-g { flex: 1; min-height: 0; padding: 0; overflow: hidden; }
+.u2c.v3 .u2c-g > .u2c-dials { grid-auto-columns: 62px; }
+.u2c.v3 .u2c-dials > * { background: color-mix(in srgb, var(--text) 4.5%, transparent); }
+.u2c.v3.off .u2s { filter: grayscale(.85) brightness(.75); }
+.u2c.v3.off .u2c-p { opacity: .5; }
+
+/* ===== module cards: motion and finish ===== */
+/* cards of a newly chosen track rise in one after another */
+@keyframes u2cIn { from { opacity: 0; transform: translateY(10px) scale(.985); } to { opacity: 1; transform: none; } }
+html.ui2 .dev-scroll.enter > .card { animation: u2cIn calc(.34s * var(--anim, 1)) cubic-bezier(.2, 0, 0, 1) both; }
+html.ui2 .dev-scroll.enter > .card:nth-child(2) { animation-delay: calc(45ms * var(--anim, 1)); }
+html.ui2 .dev-scroll.enter > .card:nth-child(3) { animation-delay: calc(90ms * var(--anim, 1)); }
+html.ui2 .dev-scroll.enter > .card:nth-child(4) { animation-delay: calc(135ms * var(--anim, 1)); }
+html.ui2 .dev-scroll.enter > .card:nth-child(n+5) { animation-delay: calc(180ms * var(--anim, 1)); }
+/* a new tab's controls fade and slide in */
+@keyframes u2swap { from { opacity: 0; transform: translateX(8px); } to { opacity: 1; transform: none; } }
+.u2c .u2c-dials.swap > * { animation: u2swap calc(.24s * var(--anim, 1)) cubic-bezier(.2, 0, 0, 1) both; }
+.u2c .u2c-dials.swap > :nth-child(2n) { animation-delay: calc(25ms * var(--anim, 1)); }
+.u2c .u2c-dials.swap > :nth-child(3n) { animation-delay: calc(50ms * var(--anim, 1)); }
+/* tiles: a gentle press, a lit dial while it turns */
+.u2c-dials > * { transition: transform calc(.14s * var(--anim, 1)) cubic-bezier(.2, 0, 0, 1), background calc(.18s * var(--anim, 1)); }
+.u2c-dials > *:active { transform: scale(.965); }
+.u2c .u2d.act { background: color-mix(in srgb, var(--cc) 16%, transparent) !important; }
+.u2c .u2d.act svg .val { filter: drop-shadow(0 0 5px var(--cc)); }
+.u2c .u2d.act .v { color: var(--cc); }
+.u2c .u2d svg .dot { transition: r calc(.15s * var(--anim, 1)); }
+.u2c .u2d.act svg .dot { r: 4.2; }
+.u2c .u2d .trk { stroke: color-mix(in srgb, var(--text) 11%, transparent); }
+.u2c .u2d .disc { fill: color-mix(in srgb, var(--text) 6%, transparent); }
+/* the switch moves with a little spring */
+.u2sw::after { transition: left calc(.28s * var(--anim, 1)) cubic-bezier(.3, 1.6, .5, 1), width calc(.2s * var(--anim, 1)), height calc(.2s * var(--anim, 1)), margin calc(.2s * var(--anim, 1)), background calc(.2s * var(--anim, 1)) !important; }
+.u2sw-b:active .u2sw::after { width: 24px !important; }
+/* tabs: the active one slides its colour in */
+.u2c.v3 .u2c-tabs button { transition: background calc(.2s * var(--anim, 1)), color calc(.2s * var(--anim, 1)), border-color calc(.2s * var(--anim, 1)); }
+/* the card: a fine light edge, the screen with depth; bypass fades */
+html.ui2 .dev-scroll > .card.u2c.v3 { box-shadow: inset 0 1px 0 rgba(255, 255, 255, .05), 0 6px 18px rgba(0, 0, 0, .22) !important; transition: opacity calc(.25s * var(--anim, 1)); }
+.u2c.v3 .u2s { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cc) 22%, transparent), inset 0 10px 24px rgba(0, 0, 0, .35); transition: filter calc(.3s * var(--anim, 1)); }
+.u2c.v3 .u2c-p { transition: opacity calc(.3s * var(--anim, 1)); }
+.u2c.v3 .u2s > .u2fx .u2fx-l { right: 14px; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+.u2c.v3 .u2s .u2c-badge { box-shadow: 0 0 0 1px color-mix(in srgb, var(--cc) 35%, transparent), 0 0 14px color-mix(in srgb, var(--cc) 30%, transparent); }
+html.reduce-motion .u2c *, html.reduce-motion .dev-scroll.enter > .card { animation: none !important; transition: none !important; }
+@media (prefers-reduced-motion: reduce) { .u2c *, .dev-scroll.enter > .card { animation: none !important; } }
+.u2c.v3.inst .u2s > .u2fx .u2fx-l { top: auto; bottom: 10px; right: 14px; }
+
+/* ===== module controls: physical, quiet (no neon) ===== */
+/* family colours toned down everywhere on the card */
+.u2c { --ccm: color-mix(in srgb, var(--cc) 62%, #8b8d94); }
+/* dials: no tile, a real knob */
+.u2c.v3 .u2c-dials > .u2d { background: transparent !important; box-shadow: none; }
+.u2c.v3 .u2c-dials > .u2d svg { width: 40px !important; height: 40px !important; overflow: visible; }
+.u2c .u2d .trk { stroke: rgba(255, 255, 255, .09) !important; stroke-width: 2.6 !important; stroke-linecap: round; }
+.u2c .u2d .val { stroke: var(--ccm) !important; stroke-width: 2.6 !important; filter: none !important; }
+.u2c .u2d .shadow { fill: rgba(0, 0, 0, .45); filter: blur(1.6px); }
+.u2c .u2d .rim { fill: none; stroke: rgba(255, 255, 255, .10); stroke-width: .8; }
+.u2c .u2d .dot { stroke: #ececef; stroke-width: 2.2; stroke-linecap: round; fill: none !important; r: 0 !important; }
+.u2c .u2d .disc { display: none; }
+.u2c .u2d.act { background: transparent !important; }
+.u2c .u2d.act svg .val { filter: none !important; stroke: color-mix(in srgb, var(--cc) 80%, #fff) !important; }
+.u2c .u2d.act .v { color: var(--text) !important; }
+.u2c .u2d.act svg .cap { filter: brightness(1.12); }
+.u2c .u2d .n { color: color-mix(in srgb, var(--text) 58%, transparent); font-weight: 500 !important; letter-spacing: .01em; }
+.u2c .u2d .v { font-weight: 600 !important; color: color-mix(in srgb, var(--text) 88%, transparent); font-variant-numeric: tabular-nums; }
+/* fields and switches: a recessed well, a quiet border */
+.u2c.v3 .u2c-dials > :is(.u2dd, .u2t, .u2seg-f) { background: rgba(0, 0, 0, .22) !important; box-shadow: inset 0 1px 2px rgba(0, 0, 0, .35), inset 0 0 0 1px rgba(255, 255, 255, .04); }
+.u2c .u2seg { border-color: rgba(255, 255, 255, .10) !important; background: rgba(255, 255, 255, .02); }
+.u2c .u2seg button { border-left-color: rgba(255, 255, 255, .08) !important; color: color-mix(in srgb, var(--text) 78%, transparent); }
+.u2c .u2seg button.on { background: rgba(255, 255, 255, .12) !important; color: var(--text); }
+.u2c :is(.on, [aria-checked=true]) > .u2sw { background: var(--ccm) !important; border-color: transparent !important; }
+.u2c .u2sw { background: rgba(0, 0, 0, .35); border-color: rgba(255, 255, 255, .22); }
+/* tabs, badge, screen, header switch: no glow, muted colour */
+.u2c.v3 .u2c-tabs button { border-color: rgba(255, 255, 255, .10) !important; color: color-mix(in srgb, var(--text) 66%, transparent) !important; }
+.u2c.v3 .u2c-tabs button.on { background: rgba(255, 255, 255, .10) !important; color: var(--text) !important; }
+.u2c.v3 .u2s .u2c-badge { box-shadow: none !important; background: rgba(255, 255, 255, .08) !important; color: var(--ccm); }
+.u2c.v3 .u2s { background: #121316 !important; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .06), inset 0 8px 18px rgba(0, 0, 0, .4) !important; }
+.u2c.v3 .u2s-foot .u2chip { border-color: rgba(255, 255, 255, .16); }
+.u2c.v3 .u2s-foot .u2chip.fill { background: rgba(255, 255, 255, .88); color: #17181b; }
+html.ui2 .dev-scroll > .card.u2c.v3 { box-shadow: inset 0 1px 0 rgba(255, 255, 255, .04) !important; }
+.u2c.v3 .u2c-dials > .u2d svg { width: 34px !important; height: 34px !important; }
+.u2c.v3 .u2c-dials > .u2d { gap: 1px; padding: 1px 0 !important; justify-content: center; }
+.u2c .u2d .n, .u2c .u2d .v { line-height: 1.1 !important; }
+.u2c.v3.inst .u2s > .u2fx .u2fx-l { display: none; }
+
+/* ===== cards: a clear border; nothing hidden (tabs wrap, choices fit), the rack stops at a card's start ===== */
+html.ui2 .dev-scroll > .card.u2c.v3 { border: 1px solid rgba(255, 255, 255, .12) !important; box-shadow: 0 1px 0 rgba(255, 255, 255, .04) inset, 0 4px 14px rgba(0, 0, 0, .25) !important; }
+.u2c.v3 .u2s { border: 1px solid rgba(255, 255, 255, .10); box-shadow: inset 0 8px 18px rgba(0, 0, 0, .4) !important; }
+.u2c.v3 .u2s > .u2c-h { border-bottom: 1px solid rgba(255, 255, 255, .06); }
+.u2c.v3 .u2c-p { border-left: 0; }
+.u2c.v3 .u2c-tabs { flex-wrap: wrap; overflow: visible; row-gap: 5px; }
+.u2c.v3 .u2c-tabs button { height: 26px; padding: 0 10px; font-size: 11.5px; }
+.u2c.v3 .u2c-dials > .u2seg-f .u2seg button { font-size: 11px; padding: 0 2px; letter-spacing: -.01em; text-overflow: clip; }
+.u2c.v3 .u2c-dials > .u2seg-f { padding: 0 6px; }
+html.ui2 .dev-scroll { scroll-snap-type: x proximity; scroll-padding-left: 12px; }
+html.ui2 .dev-scroll > .card { scroll-snap-align: start; }
+html.ui2 .dev-scroll > .card.addcard { border: 2px dashed rgba(255, 255, 255, .16) !important; }
+@media (max-width: 1000px) { .u2c.v3 .u2s { width: 196px; } }
+
+/* ===== rack: cards one under the other (full width, the rack scrolls up / down), never side by side ===== */
+html.ui2 #dbody .dev-scroll { flex-direction: column !important; flex-wrap: nowrap !important; overflow-x: hidden !important; overflow-y: auto !important;
+  align-items: stretch !important; gap: 10px !important; scroll-snap-type: y proximity; scroll-padding-top: 8px; padding: 8px 12px 12px !important; }
+html.ui2 #dbody .dev-scroll > .card { flex: none !important; width: auto !important; max-width: none !important; min-width: 0 !important; scroll-snap-align: start; }
+html.ui2 #dbody .dev-scroll > .card.u2c.v3 { height: auto !important; min-height: 150px; align-self: stretch !important; }
+.u2c.v3 .u2s { min-height: 138px; align-self: stretch; }
+/* the controls wrap into rows inside the card's width */
+.u2c.v3 .u2c-g { overflow: visible; }
+.u2c.v3 .u2c-g > .u2c-dials { grid-auto-flow: row dense !important; grid-template-rows: none !important; grid-auto-rows: 60px; grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)) !important; grid-auto-columns: auto !important; }
+.u2c.v3 .u2c-dials > :is(.u2dd, .u2t) { grid-column: span 2; }
+.u2c.v3 .u2c-dials > .u2t { grid-column: span 1 !important; }
+.u2c.v3 .u2c-dials > .u2seg-f { grid-column: span 3 !important; }
+/* the add card: a slim full-width bar */
+html.ui2 #dbody .dev-scroll > .card.addcard { flex-direction: row !important; height: 56px !important; min-height: 56px; gap: 12px; justify-content: flex-start; padding: 0 16px; align-self: stretch !important; }
+html.ui2 #dbody .dev-scroll > .card.addcard > b { width: 34px; height: 34px; border-radius: 11px; font-size: 22px; }
+html.ui2 #dbody .dev-scroll > .card.addcard > small { margin-left: auto; }
+html.ui2 #dbody .dev-scroll > .card.u2c.src { height: 56px !important; min-height: 0; flex-direction: row; align-items: center; }
+html.ui2 #dbody .dev-scroll > .card.u2c.src .u2c-empty { background: none; padding: 0 12px; margin: 0; }
+
+/* ===== Snap in the corner above the track column, next to the ruler ===== */
+#tcol2 .tc-top { display: flex; align-items: center; justify-content: center; padding: 0 6px; box-sizing: border-box; }
+#tcol2 .tc-top > .u2b { height: 28px; max-width: 100%; padding: 0 10px 0 8px; gap: 5px; border: 0; border-radius: 999px; display: inline-flex; align-items: center;
+  background: color-mix(in srgb, var(--text) 8%, transparent); color: var(--text); font: 600 12px/1 var(--font); white-space: nowrap; overflow: hidden; }
+#tcol2 .tc-top > .u2b svg { width: 15px; height: 15px; flex: none; }
+#tcol2 .tc-top > .u2b.on { background: var(--accent); color: var(--accent-ink, #1b1b1f); }
+@media (max-width: 1000px) { .u2c.v3 .u2s { width: 250px !important; } }
+.u2c.v3 .u2s { width: 250px; }
+.u2c.v3 .u2s .u2c-tt .u2c-name span { overflow: visible; text-overflow: clip; }
+#tcol2 .tc-top > .u2b { flex-direction: row !important; min-width: 0; width: auto !important; }
+#tcol2 .tc-top > .u2b .lb { display: inline !important; font-size: 12px; }
+html.ui2 #dbody .dev-scroll > .card.u2c.v3 { min-height: 0; }
+.u2c.v3 .u2s { min-height: 118px; }
+
+/* ===== rack back to side by side; each card styled like the floating bottom bar; dense controls that never overlap or clip ===== */
+html.ui2 #dbody .dev-scroll { flex-direction: row !important; overflow-x: auto !important; overflow-y: hidden !important; align-items: stretch !important;
+  gap: 10px !important; padding: 8px 12px 10px !important; scroll-snap-type: x proximity; scroll-padding-left: 12px; }
+html.ui2 #dbody .dev-scroll > .card { width: auto !important; flex: 0 0 auto !important; scroll-snap-align: start; }
+html.ui2 #dbody .dev-scroll > .card.u2c.v3 { height: 100% !important; min-height: 0 !important; align-self: stretch !important;
+  background: var(--panel2) !important; border: 1px solid color-mix(in srgb, var(--text) 8%, transparent) !important; border-radius: 22px !important;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, .28), 0 1px 3px rgba(0, 0, 0, .2) !important; padding: 5px !important; gap: 7px; }
+.u2c.v3 .u2s { width: 214px !important; min-height: 0 !important; height: auto; border-radius: 17px; }
+/* controls: columns of 56 px, rows of 58 px, as many rows as the rack holds (ui2/cards.js fit) */
+.u2c.v3 .u2c-g { overflow: hidden; }
+.u2c.v3 .u2c-g > .u2c-dials { grid-auto-flow: column dense !important; grid-template-rows: repeat(var(--rows, 1), 58px) !important; grid-auto-rows: 58px;
+  grid-template-columns: none !important; grid-auto-columns: 56px !important; gap: 4px 3px !important; }
+.u2c.v3 .u2c-dials > .u2d svg { width: 31px !important; height: 31px !important; }
+.u2c.v3 .u2c-dials > .u2d .n { max-width: 54px; font-size: 9.5px !important; }
+.u2c.v3 .u2c-dials > .u2d .v { max-width: 56px; font-size: 10.5px !important; }
+.u2c.v3 .u2c-dials > :is(.u2dd) { grid-column: span 2 !important; padding: 0 9px; }
+.u2c.v3 .u2c-dials > .u2t { grid-column: span 1 !important; }
+.u2c.v3 .u2c-dials > .u2seg-f { grid-column: span 3 !important; }
+.u2c.v3 .u2c-dials > .u2dd > b { font-size: 12px; }
+.u2c.v3 .u2c-tabs { max-width: 420px; }
+.u2c.v3 .u2c-tabs button { height: 25px; padding: 0 9px; font-size: 11px; }
+html.ui2 #dbody .dev-scroll > .card.addcard { flex-direction: column !important; height: auto !important; min-height: 0; width: 150px !important; justify-content: center; padding: 10px; border-radius: 22px !important; }
+html.ui2 #dbody .dev-scroll > .card.addcard > small { margin-left: 0; }
+html.ui2 #dbody .dev-scroll > .card.u2c.src { height: auto !important; width: 220px !important; flex-direction: column; }
+/* the panel is at least as wide as its tabs (up to 420 px), so the tab rows never depend on the number of control columns */
+.u2c.v3 .u2c-tabs { width: max-content !important; min-width: 0 !important; max-width: 420px !important; }
+.u2c.v3 .u2c-p { min-width: min-content; }
+.u2c.v3 .u2c-g > .u2c-dials { grid-auto-columns: minmax(56px, 1fr) !important; }
+.u2c.v3 .u2c-g > .u2c-dials { grid-auto-columns: minmax(60px, 1fr) !important; }
+.u2c.v3 .u2c-dials > .u2d .n { max-width: 60px !important; }
+.u2c.v3 .u2c-dials > .u2seg-f .u2seg button { font-size: 10.5px !important; }
+/* fill row by row in a fixed number of columns (from the controls and the rows that fit) */
+.u2c.v3 .u2c-g > .u2c-dials { grid-auto-flow: row dense !important; grid-template-columns: repeat(var(--cols, 4), minmax(60px, 1fr)) !important; grid-template-rows: none !important; grid-auto-rows: 58px !important; }
+
+/* ===== dialogs: a Material You title (sentence case, larger), no ruled bands ===== */
+html.ui2 .modal { padding: 0 !important; overflow: hidden; border: 1px solid color-mix(in srgb, var(--text) 8%, transparent) !important; box-shadow: 0 18px 48px rgba(0, 0, 0, .5) !important; }
+html.ui2 .modal > h3 { margin: 0 !important; height: auto !important; padding: 22px 24px 10px !important; background: transparent !important; border: 0 !important;
+  font: 500 20px/1.25 var(--font) !important; letter-spacing: 0 !important; text-transform: none !important; color: var(--text) !important; }
+html.ui2 .modal > :not(h3):not(.acts) { padding-left: 24px; padding-right: 24px; }
+html.ui2 .modal .acts { background: transparent !important; border: 0 !important; padding: 14px 18px 18px !important; gap: 8px; justify-content: flex-end; }
+html.ui2 .modal input[type=text], html.ui2 .modal input:not([type]), html.ui2 .modal input[type=number] { height: 48px; border-radius: 12px !important; border: 1px solid color-mix(in srgb, var(--text) 24%, transparent) !important; background: transparent !important; padding: 0 14px; font: 400 16px/1 var(--font); color: var(--text); box-sizing: border-box; width: 100%; }
+html.ui2 .modal input:focus { outline: none; border: 2px solid var(--accent) !important; }
+/* main menu tabs: sentence case */
+html.ui2 .u2m-t { text-transform: none !important; letter-spacing: 0 !important; font: 500 13.5px/1 var(--font) !important; }
+
+/* ===== virtual keyboard: pill controls, rounded keys with depth, soft wheels ===== */
+html.ui2 #dbody .kb-bar { gap: 8px; }
+html.ui2 #dbody .kb-oct { display: inline-flex; align-items: center; gap: 2px; height: 32px; padding: 2px; border-radius: 999px; background: var(--panel2); border: 1px solid color-mix(in srgb, var(--text) 8%, transparent); }
+html.ui2 #dbody .kb-oct .kb-a { width: 28px; height: 28px; border-radius: 50% !important; border: 0 !important; background: transparent !important; color: var(--text); font-size: 16px; }
+html.ui2 #dbody .kb-oct .kb-a:active { background: color-mix(in srgb, var(--text) 12%, transparent) !important; }
+html.ui2 #dbody .kb-oct .kb-v { padding: 0 8px; font: 600 12.5px/1 var(--font); background: none !important; border: 0 !important; }
+html.ui2 #dbody .kb-seg { display: inline-flex; height: 32px; padding: 2px; gap: 2px; border-radius: 999px; background: var(--panel2); border: 1px solid color-mix(in srgb, var(--text) 8%, transparent); }
+html.ui2 #dbody .kb-seg > * { height: 26px !important; border-radius: 999px !important; border: 0 !important; background: transparent !important; color: var(--dim) !important; padding: 0 12px !important; font: 500 12px/1 var(--font) !important; box-shadow: none !important; }
+html.ui2 #dbody .kb-seg > *::before { display: none !important; }
+html.ui2 #dbody .kb-seg > .on { background: var(--m3-tonal) !important; color: var(--text) !important; }
+html.ui2 #dbody .kb-sub { color: var(--dim); font-size: 11.5px; }
+html.ui2 #dbody .piano { padding: 0 8px 8px; gap: 0; }
+html.ui2 #dbody .piano .wk { border-radius: 0 0 10px 10px !important; border: 0 !important; margin: 0 1.5px; background: linear-gradient(180deg, #d9d9de 0, #f2f2f5 18%, #ececf0 100%) !important; box-shadow: inset 0 -4px 0 rgba(0, 0, 0, .12), 0 1px 2px rgba(0, 0, 0, .35) !important; }
+html.ui2 #dbody .piano .wk span { color: #6a6a72; font: 600 10.5px/1 var(--font); }
+html.ui2 #dbody .piano .wk:active, html.ui2 #dbody .piano .wk.on { background: linear-gradient(180deg, #c9c9cf, #dcdce2) !important; box-shadow: inset 0 -1px 0 rgba(0, 0, 0, .12) !important; }
+html.ui2 #dbody .piano .bk { border-radius: 0 0 7px 7px !important; border: 0 !important; background: linear-gradient(180deg, #2b2c31 0, #1d1e22 85%, #34353b 100%) !important; box-shadow: 0 2px 3px rgba(0, 0, 0, .5), inset 0 -3px 0 rgba(255, 255, 255, .06) !important; }
+html.ui2 #dbody .piano .bk:active, html.ui2 #dbody .piano .bk.on { background: linear-gradient(180deg, #3a3b42, #2a2b30) !important; }
+html.ui2 #dbody .piano .wk.out { background: linear-gradient(180deg, #b9b9bf, #cfcfd4) !important; }
+html.ui2 #dbody .pbw { border-radius: 14px !important; border: 1px solid color-mix(in srgb, var(--text) 8%, transparent) !important; background: var(--panel2) !important; box-shadow: inset 0 2px 6px rgba(0, 0, 0, .35); overflow: hidden; }
+html.ui2 #dbody .pbw .pbw-slot { border-radius: 10px !important; background: rgba(0, 0, 0, .3) !important; border: 0 !important; }
+html.ui2 #dbody .pbw .pbw-thumb { border-radius: 8px !important; border: 0 !important; background: linear-gradient(180deg, #55565c, #303136) !important; box-shadow: 0 2px 4px rgba(0, 0, 0, .45), inset 0 1px 0 rgba(255, 255, 255, .12) !important; }
+html.ui2 #dbody .pbw .pbw-thumb * { display: none; }
+html.ui2 #dbody .pbw-l { color: var(--dim); font: 500 11px/1 var(--font); }
+html.ui2 .modal .acts { padding-right: 22px !important; }
+html.ui2 .u2m-body h3 { text-transform: none !important; letter-spacing: 0 !important; font: 600 14px/1.2 var(--font) !important; color: var(--accent) !important; }
+
+/* ===== mixer strips: the floating bar's look (panel colour, thin border, soft shadow), quiet colours ===== */
+html.ui2 #mix2 .m2-list { gap: 8px; padding: 8px 12px 10px; }
+html.ui2 .m2-strip { background: var(--panel2) !important; border: 1px solid color-mix(in srgb, var(--text) 8%, transparent); border-radius: 22px !important;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, .28), 0 1px 3px rgba(0, 0, 0, .2); padding: 10px 6px 6px !important; }
+html.ui2 .m2-strip.sel { box-shadow: 0 0 0 2px color-mix(in srgb, var(--tc) 70%, #888), 0 4px 14px rgba(0, 0, 0, .28) !important; }
+html.ui2 .m2-strip.bus { background: color-mix(in srgb, var(--panel2) 85%, var(--bg)) !important; }
+html.ui2 .m2-fad .trk { background: rgba(0, 0, 0, .35); box-shadow: inset 0 1px 2px rgba(0, 0, 0, .5); }
+html.ui2 .m2-fad em { width: 34px !important; height: 20px !important; margin: 0 0 -10px -17px !important; border-radius: 7px !important;
+  background: linear-gradient(180deg, #5a5b61, #2f3035) !important; box-shadow: 0 3px 6px rgba(0, 0, 0, .5), inset 0 1px 0 rgba(255, 255, 255, .15) !important; }
+html.ui2 .m2-fad em::after { content: ''; position: absolute; left: 6px; right: 6px; top: 50%; height: 2px; margin-top: -1px; border-radius: 1px; background: var(--tc); }
+html.ui2 .m2-fad .fill { background: color-mix(in srgb, var(--tc) 70%, #777) !important; }
+html.ui2 .m2-pan { background: radial-gradient(circle at 50% 35%, #4a4b51, #26272b 70%); border-color: rgba(255, 255, 255, .08) !important; box-shadow: 0 2px 4px rgba(0, 0, 0, .45); }
+html.ui2 .m2-pan i { background: #ececef !important; }
+html.ui2 .m2-kind { background: rgba(0, 0, 0, .22) !important; border-radius: 14px !important; }
+html.ui2 .m2-strip.sel .m2-kind { background: color-mix(in srgb, var(--tc) 75%, #888) !important; }
+html.ui2 .m2-met i { background: linear-gradient(0deg, #7bd88f 0, #7bd88f 70%, #e8d25a 85%, #ef6a5a 100%) !important; background-size: 100% 100px; background-position: bottom; }
+
+/* ===== audio editor: the info bar as quiet chips ===== */
+html.ui2 .ae-info { display: flex; align-items: center; gap: 6px; padding: 6px 10px !important; overflow-x: auto; scrollbar-width: none; background: transparent !important; border: 0 !important; }
+html.ui2 .ae-info > b { flex: none; font: 600 13px/1 var(--font); color: var(--text); margin-right: 4px; }
+html.ui2 .ae-info > span { flex: none; display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px; border-radius: 999px;
+  background: var(--panel2); border: 1px solid color-mix(in srgb, var(--text) 8%, transparent); font: 500 11px/1 var(--font) !important; text-transform: none !important; letter-spacing: 0 !important; color: var(--dim); }
+html.ui2 .ae-info > span > i { font-style: normal; font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; }
+html.ui2 .ae-info > span.hot { border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+html.ui2 .ae-info > span { margin: 0 !important; }
+
+/* ===== drum kit card: pads on the left of the panel, the chosen pad's controls on the right ===== */
+.u2c.v3 .u2drum { flex-direction: row !important; gap: 10px; align-items: stretch; }
+.u2pads { flex: none; display: grid; grid-template-columns: repeat(4, 64px); grid-auto-rows: minmax(30px, 1fr); gap: 5px; align-content: start; max-height: 100%; overflow-y: auto; scrollbar-width: none; }
+.u2pad { position: relative; height: 34px; padding: 0 8px; border: 1px solid rgba(255, 255, 255, .07); border-radius: 10px; background: rgba(0, 0, 0, .25);
+  color: color-mix(in srgb, var(--text) 80%, transparent); font: 600 11px/1 var(--font); text-align: left; overflow: hidden; touch-action: none;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .04); transition: background calc(.12s * var(--anim, 1)), transform calc(.1s * var(--anim, 1)); }
+.u2pad span { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.u2pad::before { content: ''; position: absolute; left: 0; top: 7px; bottom: 7px; width: 3px; border-radius: 0 2px 2px 0; background: color-mix(in srgb, var(--cc) 60%, #888); opacity: .5; }
+.u2pad.on { background: rgba(255, 255, 255, .10); border-color: color-mix(in srgb, var(--cc) 45%, transparent); color: var(--text); }
+.u2pad.on::before { opacity: 1; }
+.u2pad.hit { background: color-mix(in srgb, var(--cc) 35%, #2a2b30); transform: scale(.96); }
+.u2pad.mute { opacity: .45; }
+.u2pad.solo::after { content: 'S'; position: absolute; right: 5px; top: 4px; font-size: 8.5px; color: var(--cc); }
+.u2padctl { display: grid !important; grid-auto-flow: row !important; grid-template-columns: repeat(5, 60px) !important; grid-template-rows: none !important; grid-auto-rows: 58px !important; gap: 4px 3px !important; align-content: start; }
+.u2padhead { grid-column: 1 / -1; display: flex; align-items: center; gap: 6px; height: 32px !important; background: none !important; box-shadow: none !important; }
+.u2padhead > b { font: 600 13px/1 var(--font); color: var(--text); margin-right: 4px; white-space: nowrap; }
+.u2padbs { display: flex; gap: 4px; }
+.u2padb { height: 26px; min-width: 26px; padding: 0 8px; border: 1px solid rgba(255, 255, 255, .12); border-radius: 999px; background: transparent; color: var(--dim); font: 700 11px/1 var(--font); }
+.u2padb.on { background: rgba(255, 255, 255, .14); color: var(--text); }
+.u2padb.wide { font-weight: 500; max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+.u2pads { grid-auto-rows: 34px !important; grid-template-columns: repeat(4, 76px) !important; align-self: flex-start; }
+
+/* ===== full editor in a floating window: the same quiet language as the cards ===== */
+html.ui2 .fw-body { --lv-or: #e4e4e8; --lv-orink: #17181b; --lv-arc: color-mix(in srgb, var(--accent) 62%, #8b8d94); --lv-trk: rgba(255, 255, 255, .10);
+  --lv-sel: color-mix(in srgb, var(--accent) 62%, #8b8d94); --lv-well: #141518; --lv-ctl: #2a2b30; }
+html.ui2 .fw-body :is(.lv-disp, .lv-well, .flm-ds, .lk-dk, .sp, .flm-dt) { background: #121316 !important; border: 1px solid rgba(255, 255, 255, .08) !important; border-radius: 14px !important; box-shadow: inset 0 6px 14px rgba(0, 0, 0, .35) !important; }
+html.ui2 .fw-body :is(.lv-sec, .lk-sec, .flm-sec) { background: rgba(0, 0, 0, .14) !important; border: 1px solid rgba(255, 255, 255, .05) !important; border-radius: 14px !important; }
+html.ui2 .fw-body :is(.lv-fld, .fv-b, .flm-c .v, .lk-num, .num) { background: rgba(0, 0, 0, .28) !important; color: var(--text) !important; border: 0 !important; border-radius: 9px !important; box-shadow: inset 0 1px 2px rgba(0, 0, 0, .45); font-variant-numeric: tabular-nums; }
+html.ui2 .fw-body :is(.lv-fld, .lk-num) * { color: inherit !important; }
+html.ui2 .fw-body .knob svg path:last-of-type { stroke-width: 2.6 !important; }
+html.ui2 .fw-body .knob svg path { stroke-linecap: round !important; stroke-width: 2.6 !important; }
+html.ui2 .fw-body .knob .k-n, html.ui2 .fw-body .k-n, html.ui2 .fw-body .lk-lb, html.ui2 .fw-body .lv-lb { color: color-mix(in srgb, var(--text) 62%, transparent) !important; font-weight: 500 !important; }
+html.ui2 .fw-body .knob .k-v { color: var(--text) !important; font-weight: 600 !important; }
+html.ui2 .fw-body :is(.lv-tab, .lv-btn).on, html.ui2 .fw .lv-tabs .on { background: rgba(255, 255, 255, .12) !important; color: var(--text) !important; }
+html.ui2 .fw-body :is(.lv-tab, .lv-btn) .led, html.ui2 .fw .lv-tab::before { background: color-mix(in srgb, var(--accent) 55%, #888) !important; box-shadow: none !important; }
+
+/* the bottom bar matches the top bar: 52 px (plus the phone's safe area), the pills centred in the 52 px */
+html.ui2 #bar2 { height: calc(52px + var(--sab, 0px)) !important; min-height: 0 !important; padding-top: 0 !important; padding-bottom: var(--sab, 0px) !important; box-sizing: border-box; align-items: center !important; }
+html.ui2 #bar2 > div, html.ui2 #bar2 > nav { align-self: center !important; }
+html.ui2 #bar2 { height: calc(52px + max(0px, var(--sab, 0px) - 10px)) !important; padding-bottom: max(0px, calc(var(--sab, 0px) - 10px)) !important; }
+html.ui2 #top2 .bpm { touch-action: none; } html.ui2 #top2 .bpm > * { pointer-events: none; }
+
+/* the module's own display on the card's screen: between the title bar and the foot */
+.u2c.v3 .u2s > .u2real { position: absolute; left: 6px; right: 6px; top: 46px; bottom: 6px; overflow: hidden; border-radius: 12px; }
+.u2c.v3.inst .u2s > .u2real { bottom: 40px; }
+.u2c.v3 .u2s > .u2real > * { display: block; }
+.u2c.v3 .u2s > .u2real canvas { display: block; border-radius: 12px; }
+.u2c.v3 .u2s-foot .u2chip.prog { max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ===== wide track column at any zoom: nothing spills into the next row ===== */
+html.tc-wide .tc-row { overflow: hidden; }
+.tc-ctl .db { white-space: nowrap; width: 54px !important; flex: none; }
+/* short rows: one line, the fader on the left, pan + M / S / R on the right */
+html.tc-wide .tc-row.short { flex-wrap: nowrap; align-content: center; }
+html.tc-wide .tc-row.short .tc-name { width: auto; flex: none; order: 2; margin-left: 4px; height: 28px; }
+html.tc-wide .tc-row.short .tc-name .nm { display: none; }
+html.tc-wide .tc-row.short .tc-ctl { order: 1; flex: 1; width: auto; min-width: 0; }
+html.tc-wide .tc-row.short .tc-ctl .db { width: 46px !important; font-size: 10px; }
+html.tc-wide .tc-row.short .tc-b, html.tc-wide .tc-row.short .tc-bs .tc-pan.tc-ring { width: 24px !important; height: 24px !important; }
+/* tiny rows: no controls (the name is on the tile) */
+html.tc-wide .tc-row.tiny .tc-name, html.tc-wide .tc-row.tiny .tc-ctl { display: none !important; }
+
+/* ===== mixer v3: name on a colour line, a dB scale + fader + stereo meter, the value pill, a pan slider, M / S / R ===== */
+html.ui2 #mix2 .m2-list { gap: 8px !important; padding: 8px 12px 10px !important; align-items: stretch; }
+html.ui2 .m2-strip { width: 92px !important; padding: 0 0 8px !important; gap: 6px !important; overflow: hidden; position: relative; }
+html.ui2 .m2-strip::before { content: ''; position: absolute; left: 0; right: 0; top: 0; height: 4px; background: var(--tc); opacity: .9; }
+.m2-head { width: 100%; display: flex; align-items: center; gap: 4px; padding: 10px 8px 0; box-sizing: border-box; }
+.m2-ic { flex: none; width: 18px; height: 18px; color: color-mix(in srgb, var(--tc) 75%, #999); display: grid; place-items: center; }
+.m2-ic svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+html.ui2 .m2-name { flex: 1; min-width: 0; border: 0; background: none; padding: 0; color: var(--text) !important; font: 600 12px/1.2 var(--font) !important; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+html.ui2 .m2-mid { flex: 1; min-height: 70px; width: 100%; display: flex; justify-content: center; align-items: stretch; gap: 3px; padding: 0 6px; box-sizing: border-box; }
+.m2-scale { position: relative; width: 20px; flex: none; }
+.m2-scale span { position: absolute; right: 0; bottom: calc(10px + (100% - 20px) * var(--u)); transform: translateY(50%); font: 500 8.5px/1 var(--font); color: color-mix(in srgb, var(--text) 45%, transparent); font-variant-numeric: tabular-nums; }
+html.ui2 .m2-fad { width: 30px; }
+html.ui2 .m2-fad .trk { width: 6px !important; margin-left: -3px !important; border-radius: 3px; background: rgba(0, 0, 0, .4) !important; box-shadow: inset 0 1px 2px rgba(0, 0, 0, .6); }
+html.ui2 .m2-fad .fill { width: 6px !important; margin-left: -3px !important; }
+html.ui2 .m2-fad em { width: 28px !important; height: 18px !important; margin: 0 0 -9px -14px !important; }
+html.ui2 .m2-met { padding: 10px 0 !important; gap: 2px; }
+html.ui2 .m2-met i { width: 4px !important; background-color: rgba(0, 0, 0, .35); }
+html.ui2 .m2-db { padding: 3px 10px; border-radius: 999px; background: rgba(0, 0, 0, .28); box-shadow: inset 0 1px 2px rgba(0, 0, 0, .45); color: var(--text) !important; font: 600 11px/1.2 var(--font) !important; font-variant-numeric: tabular-nums; min-width: 40px; text-align: center; }
+.m2-panrow { width: 100%; display: flex; align-items: center; gap: 4px; padding: 0 8px; box-sizing: border-box; }
+.m2-pan2 { position: relative; flex: 1; height: 20px; touch-action: none; cursor: ew-resize; --p: .5; }
+.m2-pan2 .mid { position: absolute; left: 50%; top: 4px; bottom: 4px; width: 1px; background: rgba(255, 255, 255, .25); }
+.m2-pan2::before { content: ''; position: absolute; left: 0; right: 0; top: 50%; height: 4px; margin-top: -2px; border-radius: 2px; background: rgba(0, 0, 0, .4); }
+.m2-pan2 .val { position: absolute; top: 50%; height: 4px; margin-top: -2px; border-radius: 2px; background: color-mix(in srgb, var(--tc) 70%, #888);
+  left: min(50%, calc(100% * var(--p))); width: calc(100% * (var(--p) - .5) * (var(--p) > .5 ? 1 : -1)); width: max(calc(100% * var(--p) - 50%), calc(50% - 100% * var(--p))); }
+.m2-pan2 em { position: absolute; top: 50%; left: calc(100% * var(--p)); width: 10px; height: 14px; margin: -7px 0 0 -5px; border-radius: 4px; background: linear-gradient(180deg, #5a5b61, #303136); box-shadow: 0 1px 3px rgba(0, 0, 0, .5); }
+.m2-pv { flex: none; width: 22px; text-align: right; font: 600 9.5px/1 var(--font); color: var(--dim); }
+html.ui2 .m2-row { gap: 4px !important; }
+html.ui2 .m2-b { width: 24px !important; height: 24px !important; font-size: 10.5px !important; }
+.m2-out { font: 500 10.5px/24px var(--font); color: var(--dim); }
+html.ui2 .m2-strip.sel { box-shadow: 0 0 0 2px color-mix(in srgb, var(--tc) 60%, #777), 0 4px 14px rgba(0, 0, 0, .28) !important; }
+html.ui2 .m2-strip.muted .m2-mid { opacity: .45; }
+
+/* ===== no gaps: tab rows fill their width, the controls fill the panel's height and width (cells grow, knobs grow with them) ===== */
+.u2c.v3 .u2c-tabs { width: auto !important; max-width: 420px !important; }
+.u2c.v3 .u2c-tabs button { flex: 1 1 auto; justify-content: center; text-align: center; }
+.u2c.v3 .u2c-b { flex: 1 1 auto; min-height: 0; }
+.u2c.v3 .u2c-g { flex: 1 1 auto; min-height: 0; display: flex !important; flex-direction: column; }
+.u2c.v3 .u2c-g > .u2c-dials { flex: 1 1 auto; min-height: 0; grid-template-rows: repeat(var(--rows, 1), minmax(58px, 1fr)) !important; grid-auto-rows: minmax(58px, 1fr) !important; align-content: stretch; }
+.u2c.v3 .u2c-dials > .u2d { container-type: size; }
+.u2c.v3 .u2c-dials > .u2d svg { width: clamp(31px, calc(100cqh - 30px), 52px) !important; height: clamp(31px, calc(100cqh - 30px), 52px) !important; }
+.u2c.v3 .u2c-dials > :is(.u2t, .u2dd, .u2seg-f) { align-self: stretch; }
+
+/* a divider under every track header row (tile and controls), as the lanes have */
+#tcol2 .tc-row { box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--text) 12%, transparent); }
+html.tc-wide #tcol2 .tc-row::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 1px; background: color-mix(in srgb, var(--text) 12%, transparent); pointer-events: none; }
+/* long names: two lines in the taller cells instead of an ellipsis */
+.u2c.v3 .u2c-dials > .u2t > span, .u2c.v3 .u2c-dials > .u2d .n { white-space: normal !important; overflow: hidden; text-overflow: clip; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.15 !important; text-align: center; max-width: 100% !important; word-break: break-word; }
+.u2c.v3 .u2c-dials > .u2d { padding: 2px 3px !important; }
+.u2c.v3 .u2c-dials > .u2d svg { width: clamp(28px, calc(100cqh - 40px), 52px) !important; height: clamp(28px, calc(100cqh - 40px), 52px) !important; }
+
+/* horizontal slider (levels, mixes, amounts): two cells wide */
+.u2c.v3 .u2c-dials > .u2sl { grid-column: span 2; display: flex; flex-direction: column; justify-content: center; gap: 8px; padding: 0 12px; border-radius: 14px !important;
+  background: rgba(0, 0, 0, .22) !important; box-shadow: inset 0 1px 2px rgba(0, 0, 0, .35), inset 0 0 0 1px rgba(255, 255, 255, .04); touch-action: none; cursor: ew-resize; --n: .5; }
+.u2sl .hd { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; }
+.u2sl .n { font: 500 10.5px/1.1 var(--font); color: color-mix(in srgb, var(--text) 60%, transparent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.u2sl .v { font: 600 12px/1 var(--font); color: var(--text); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.u2sl .tr { position: relative; height: 6px; border-radius: 3px; background: rgba(0, 0, 0, .4); box-shadow: inset 0 1px 2px rgba(0, 0, 0, .55); }
+.u2sl .f { position: absolute; left: 0; top: 0; bottom: 0; width: calc(100% * var(--n)); border-radius: 3px; background: var(--ccm, var(--accent)); }
+.u2sl em { position: absolute; top: 50%; left: calc(100% * var(--n)); width: 14px; height: 18px; margin: -9px 0 0 -7px; border-radius: 5px; background: linear-gradient(180deg, #5a5b61, #303136); box-shadow: 0 2px 4px rgba(0, 0, 0, .5), inset 0 1px 0 rgba(255, 255, 255, .15); }
+.u2sl.act em { background: linear-gradient(180deg, #6a6b72, #3a3b40); }
+/* long module names never run under the switch */
+.u2c.v3 .u2s .u2c-tt { flex: 1 1 auto !important; min-width: 0 !important; }
+.u2c.v3 .u2s .u2c-tt .u2c-name { max-width: 100%; }
+.u2c.v3 .u2s .u2c-tt .u2c-name span { overflow: hidden !important; text-overflow: ellipsis !important; white-space: nowrap; }
+
+/* ===== use the space: 50 px rows (two fit a phone's rack), tabs as wide as the panel, the panel at least 300 px ===== */
+.u2c.v3 .u2c-p { min-width: 300px; }
+.u2c.v3 .u2c-tabs { width: 100% !important; max-width: none !important; min-width: 0 !important; }
+.u2c.v3 .u2c-g > .u2c-dials { grid-template-rows: repeat(var(--rows, 1), minmax(50px, 1fr)) !important; grid-auto-rows: minmax(50px, 1fr) !important; }
+.u2c.v3 .u2c-dials > .u2d svg { width: clamp(26px, calc(100cqh - 36px), 52px) !important; height: clamp(26px, calc(100cqh - 36px), 52px) !important; }
+.u2c.v3 .u2c-dials > .u2t { gap: 4px; padding: 3px 4px !important; }
+.u2c.v3 .u2c-dials > .u2t > span { font-size: 10px !important; }
+.u2c.v3 .u2c-dials > .u2sl { gap: 6px; }
+
+/* ===== browser v3: a quiet list of rows with a leading icon by kind, the name and its detail, the audition button round ===== */
+html.ui2 #browser { background: var(--bg) !important; }
+html.ui2 #browser .bside { background: transparent !important; border: 0 !important; padding: 10px 6px; gap: 4px; }
+html.ui2 #browser .bs-h { font: 600 11px/1 var(--font) !important; letter-spacing: .04em; color: var(--dim); text-transform: none !important; padding: 4px 12px 8px; }
+html.ui2 #browser .bs-i { height: 40px !important; border-radius: 999px !important; padding: 0 14px !important; font: 500 13px/1 var(--font) !important; color: var(--dim) !important; background: transparent !important; }
+html.ui2 #browser .bs-i.on { background: var(--m3-tonal) !important; color: var(--text) !important; font-weight: 600 !important; }
+html.ui2 #browser .bmain { background: var(--panel2) !important; border-radius: 22px !important; border: 1px solid color-mix(in srgb, var(--text) 8%, transparent) !important; margin: 6px 8px 8px 0; overflow: hidden; box-shadow: 0 4px 14px rgba(0, 0, 0, .25); }
+html.ui2 #browser .sbar { height: 44px !important; margin: 10px 10px 4px !important; background: rgba(0, 0, 0, .25) !important; box-shadow: inset 0 1px 2px rgba(0, 0, 0, .4); }
+html.ui2 #browser .blist { padding: 4px 8px 10px !important; gap: 2px !important; }
+html.ui2 #browser .blist > .row:not([style*="pointer-events"]) { position: relative; min-height: 52px !important; padding: 6px 12px 6px 56px !important; border-radius: 14px !important;
+  display: flex; flex-direction: column; justify-content: center; align-items: flex-start; gap: 2px; }
+html.ui2 #browser .blist > .row:not([style*="pointer-events"])::before { content: ''; position: absolute; left: 10px; top: 50%; width: 34px; height: 34px; margin-top: -17px; border-radius: 11px;
+  background: rgba(255, 255, 255, .07); }
+html.ui2 #browser .blist > .row:not([style*="pointer-events"])::after { content: ''; position: absolute; left: 18px; top: 50%; width: 18px; height: 18px; margin-top: -9px; background: color-mix(in srgb, var(--accent) 70%, #999);
+  -webkit-mask: var(--bri) center / contain no-repeat; mask: var(--bri) center / contain no-repeat; }
+html.ui2 #browser[data-tab=instr] { --bri: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A//www.w3.org/2000/svg%27%20viewBox%3D%270%200%2024%2024%27%20fill%3D%27none%27%20stroke%3D%27black%27%20stroke-width%3D%271.9%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27%3E%3Cpath%20d%3D%27M4%205h16v14H4zM8%205v14M12%205v14M16%205v14%27/%3E%3Cpath%20d%3D%27M6.6%205v7M10.6%205v7M14.6%205v7M18.2%205v7%27%20stroke-width%3D%272.4%27/%3E%3C/svg%3E"); }
+html.ui2 #browser[data-tab=fx] { --bri: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A//www.w3.org/2000/svg%27%20viewBox%3D%270%200%2024%2024%27%20fill%3D%27none%27%20stroke%3D%27black%27%20stroke-width%3D%271.9%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27%3E%3Cpath%20d%3D%27M3%2012c2-6%204-6%206%200s4%206%206%200%204-6%206%200%27/%3E%3C/svg%3E"); }
+html.ui2 #browser[data-tab=file] { --bri: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A//www.w3.org/2000/svg%27%20viewBox%3D%270%200%2024%2024%27%20fill%3D%27none%27%20stroke%3D%27black%27%20stroke-width%3D%271.9%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27%3E%3Cpath%20d%3D%27M4%2012h2M8%208v8M12%205v14M16%208v8M20%2011v2%27/%3E%3C/svg%3E"); }
+html.ui2 #browser[data-tab=preset] { --bri: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A//www.w3.org/2000/svg%27%20viewBox%3D%270%200%2024%2024%27%20fill%3D%27none%27%20stroke%3D%27black%27%20stroke-width%3D%271.9%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27%3E%3Cpath%20d%3D%27M5%204v16M12%204v16M19%204v16%27/%3E%3Ccircle%20cx%3D%275%27%20cy%3D%2714%27%20r%3D%272%27/%3E%3Ccircle%20cx%3D%2712%27%20cy%3D%278%27%20r%3D%272%27/%3E%3Ccircle%20cx%3D%2719%27%20cy%3D%2716%27%20r%3D%272%27/%3E%3C/svg%3E"); }
+html.ui2 #browser[data-tab=proj] { --bri: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A//www.w3.org/2000/svg%27%20viewBox%3D%270%200%2024%2024%27%20fill%3D%27none%27%20stroke%3D%27black%27%20stroke-width%3D%271.9%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27%3E%3Cpath%20d%3D%27M6%203h8l4%204v14H6z%27/%3E%3Cpath%20d%3D%27M14%203v4h4%27/%3E%3C/svg%3E"); }
+html.ui2 #browser .blist > .row.dir { --bri: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A//www.w3.org/2000/svg%27%20viewBox%3D%270%200%2024%2024%27%20fill%3D%27none%27%20stroke%3D%27black%27%20stroke-width%3D%271.9%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27%3E%3Cpath%20d%3D%27M3%207h6l2%202h10v10H3z%27/%3E%3C/svg%3E"); }
+html.ui2 #browser .blist > .row:not([style*="pointer-events"]):active { background: rgba(255, 255, 255, .08) !important; }
+html.ui2 #browser .blist > .row .nm { font: 500 14px/1.25 var(--font) !important; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+html.ui2 #browser .blist > .row .sub { font: 400 11.5px/1.2 var(--font) !important; color: var(--dim) !important; position: static !important; margin: 0 !important; }
+html.ui2 #browser .blist > .row .pv { position: absolute; right: 10px; top: 50%; margin-top: -16px; }
+html.ui2 #browser .blist > .row:has(.pv) { padding-right: 52px !important; }
+html.ui2 #browser .blist > .row[style*="pointer-events"] { padding: 12px 12px 4px !important; font: 600 12px/1 var(--font) !important; color: var(--accent) !important; text-transform: none !important; }
+html.ui2 #browser .chips { padding: 2px 10px 6px !important; }
+
+/* ===== instrument screen: display, a two-octave keyboard, then the buttons ===== */
+.u2c.v3 .u2s.haskb > .u2real { bottom: 70px !important; }
+.u2c.v3 .u2s.haskb > .u2fx:not(.u2real), .u2c.v3 .u2s.haskb > .u2sf { bottom: 70px; }
+.u2kb { position: absolute; left: 6px; right: 6px; bottom: 40px; height: 28px; display: flex; align-items: stretch; gap: 4px; z-index: 2; }
+.u2kb-a { flex: none; width: 20px; border: 0; border-radius: 7px; background: rgba(255, 255, 255, .08); color: var(--text); font: 600 14px/1 var(--font); padding: 0; }
+.u2kb-o { position: absolute; right: 30px; top: -14px; font: 600 9px/1 var(--font); color: rgba(255, 255, 255, .45); pointer-events: none; }
+.u2kb-keys { position: relative; flex: 1; display: flex; gap: 1px; border-radius: 6px; overflow: hidden; touch-action: none; }
+.u2kb-keys .wk { flex: 1; background: linear-gradient(180deg, #d9d9de, #f0f0f3); border-radius: 0 0 3px 3px; }
+.u2kb-keys .bk { position: absolute; top: 0; width: calc(100% / 20); height: 60%; background: linear-gradient(180deg, #2b2c31, #18191c); border-radius: 0 0 3px 3px; z-index: 1; }
+.u2kb-keys .wk.on { background: color-mix(in srgb, var(--cc) 55%, #ddd); }
+.u2kb-keys .bk.on { background: color-mix(in srgb, var(--cc) 60%, #222); }
+/* SoundFont: its real state as rows */
+.u2sf { position: absolute; left: 8px; right: 8px; top: 48px; bottom: 40px; display: flex; flex-direction: column; justify-content: center; gap: 2px; }
+.u2sf .r { display: flex; justify-content: space-between; gap: 8px; padding: 3px 4px; border-bottom: 1px solid rgba(255, 255, 255, .06); }
+.u2sf .r:last-child { border-bottom: 0; }
+.u2sf span { font: 500 10.5px/1.3 var(--font); color: rgba(255, 255, 255, .55); }
+.u2sf b { font: 600 11.5px/1.3 var(--font); color: #ececef; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 70%; }
+/* tabs: Material secondary tabs - text with an underline for the open one */
+.u2c.v3.inst .u2c-tabs { gap: 0 !important; border-bottom: 1px solid rgba(255, 255, 255, .08); row-gap: 0 !important; }
+.u2c.v3.inst .u2c-tabs button { height: 30px !important; border: 0 !important; border-radius: 0 !important; background: transparent !important; color: color-mix(in srgb, var(--text) 60%, transparent) !important;
+  font: 500 12px/1 var(--font) !important; padding: 0 10px !important; box-shadow: inset 0 -2px 0 transparent; transition: color .15s, box-shadow .15s; }
+.u2c.v3.inst .u2c-tabs button.on { color: var(--text) !important; font-weight: 600 !important; background: transparent !important; box-shadow: inset 0 -2px 0 var(--ccm, var(--accent)) !important; }
+/* instrument: chips under the name, the display between the title bar and the keyboard, the keyboard at the foot */
+.u2c.v3 .u2s.haskb > .u2c-h { height: 56px; align-items: flex-start; padding-top: 8px; }
+.u2c-chips { display: flex; gap: 4px; margin-top: 4px; flex-wrap: nowrap; overflow: hidden; }
+.u2c-chips .u2chip { height: 20px !important; padding: 0 8px !important; font: 600 10px/1 var(--font) !important; border-radius: 999px !important; background: rgba(255, 255, 255, .08) !important; color: #ececef !important; border: 0 !important; white-space: nowrap; }
+.u2c-chips .u2chip.fill { background: rgba(255, 255, 255, .85) !important; color: #17181b !important; }
+.u2c.v3 .u2s.haskb > .u2real, .u2c.v3 .u2s.haskb > .u2fx:not(.u2real) { top: 60px !important; bottom: 40px !important; }
+.u2c.v3 .u2s.haskb > .u2sf { top: 60px; bottom: 40px; }
+.u2c.v3 .u2s.haskb > .u2kb { bottom: 6px; height: 30px; }
+.u2c.v3 .u2s.haskb .u2kb-o { top: -13px; }
+.u2c.v3 .u2s.haskb .u2kb-o { top: auto !important; bottom: 3px; right: auto; left: 30px; color: rgba(0, 0, 0, .55); font-size: 8.5px; z-index: 2; }
+.u2c-chips { overflow-x: auto; scrollbar-width: none; max-width: 150px; }
+.u2c-chips::-webkit-scrollbar { display: none; }
+.u2sf b { font-size: 10.5px; }
+
+/* ===== mixer gain meter: always-visible slots, level, peak line, clip light ===== */
+html.ui2 .m2-met { position: relative; display: flex !important; gap: 2px !important; padding: 10px 0 !important; align-items: stretch !important; }
+.m2-met .ch { position: relative; width: 5px; border-radius: 3px; background: rgba(0, 0, 0, .45); box-shadow: inset 0 1px 2px rgba(0, 0, 0, .6); overflow: hidden; }
+.m2-met .ch i { position: absolute; left: 0; right: 0; bottom: 0; height: 0; border-radius: 3px; background: linear-gradient(0deg, #6fcf8a 0, #6fcf8a 62%, #d9c95a 80%, #e2725f 100%) !important; background-size: 100% var(--mh, 160px) !important; background-position: bottom !important; width: auto !important; }
+.m2-met .ch b { position: absolute; left: 0; right: 0; height: 2px; bottom: 0; margin-bottom: -1px; background: #ececef; opacity: 0; }
+.m2-met .clip { position: absolute; left: 0; right: 0; top: 2px; height: 5px; border-radius: 2px; background: rgba(255, 255, 255, .08); }
+.m2-met .clip.on { background: #e2725f; }
+/* ===== Material You sliders ===== */
+/* mixer fader: a thick rounded track, the active part in the track colour below a thin handle line with a gap */
+html.ui2 .m2-fad { width: 34px !important; --gap: 5px; }
+html.ui2 .m2-fad .trk { width: 14px !important; margin-left: -7px !important; border-radius: 7px !important; background: color-mix(in srgb, var(--tc) 18%, rgba(255, 255, 255, .06)) !important; box-shadow: none !important;
+  top: 10px !important; bottom: calc(10px + (100% - 20px) * var(--u) + var(--gap)) !important; height: auto !important; }
+html.ui2 .m2-fad .fill { width: 14px !important; margin-left: -7px !important; border-radius: 7px 7px 7px 7px !important; height: calc((100% - 20px) * var(--u) - var(--gap)) !important; background: var(--tc) !important; }
+html.ui2 .m2-fad em { width: 30px !important; height: 4px !important; margin: 0 0 -2px -15px !important; border-radius: 2px !important; background: var(--tc) !important; box-shadow: 0 0 0 2px var(--panel2) !important; }
+html.ui2 .m2-fad em::after { display: none !important; }
+/* mixer pan: a slim M3 track, the active part from the centre, a handle line */
+.m2-pan2::before { height: 8px !important; margin-top: -4px !important; border-radius: 4px !important; background: color-mix(in srgb, var(--tc) 16%, rgba(255, 255, 255, .06)) !important; }
+.m2-pan2 .val { height: 8px !important; margin-top: -4px !important; border-radius: 4px !important; background: var(--tc) !important; }
+.m2-pan2 .mid { display: none; }
+.m2-pan2 em { width: 4px !important; height: 18px !important; margin: -9px 0 0 -2px !important; border-radius: 2px !important; background: #ececef !important; box-shadow: 0 0 0 2px var(--panel2) !important; }
+/* card slider: a 14 px rounded track, the active part in the family colour, a thin tall handle with gaps */
+.u2sl .tr { height: 14px !important; border-radius: 7px !important; background: color-mix(in srgb, var(--ccm, var(--accent)) 18%, rgba(255, 255, 255, .06)) !important; box-shadow: none !important; overflow: visible; }
+.u2sl .f { border-radius: 7px !important; width: max(0px, calc(100% * var(--n) - 6px)) !important; background: var(--ccm, var(--accent)) !important; }
+.u2sl em { width: 4px !important; height: 26px !important; margin: -13px 0 0 -2px !important; border-radius: 2px !important; background: var(--ccm, var(--accent)) !important; box-shadow: 0 0 0 3px var(--panel2) !important; }
+.u2c.v3 .u2c-dials > .u2sl em { box-shadow: 0 0 0 3px #1d1e22 !important; }
+.u2sl.act em { width: 3px !important; margin-left: -1.5px !important; }
+
+/* ===== consistent, tight control panel (instruments; the effects keep their own grid) =====
+   columns of 64 px (never stretched), rows in order without slotting (a new kind starts a new row), the panel as wide as its controls
+   (300 px at least) and the tabs wrapping inside that width */
+.u2c.v3.inst .u2c-g > .u2c-dials { grid-template-columns: repeat(var(--cols, 4), 64px) !important; grid-auto-flow: row !important; justify-content: start !important; }
+.u2c.v3.inst .u2c-dials > .brk { grid-column-start: 1 !important; }
+.u2c.v3.inst .u2c-p { width: max-content; min-width: 300px !important; max-width: none; }
+.u2c.v3.inst .u2c-tabs { width: 0 !important; min-width: 100% !important; max-width: none !important; flex-wrap: wrap !important; }
+.u2c.v3.inst .u2c-tabs button { flex: 1 1 auto !important; }
+.u2c.v3.inst .u2c-dials > .brk.u2sl, .u2c.v3.inst .u2c-dials > .brk.u2dd { grid-column: 1 / span 2 !important; }
+.u2c.v3.inst .u2c-dials > .brk.u2seg-f { grid-column: 1 / span 3 !important; }
+/* labels on one line (the full name stays in the tooltip), the same height in every row; tabs that wrap start at the left */
+.u2c.v3.inst .u2c-dials > .u2t > span, .u2c.v3.inst .u2c-dials > .u2d .n { display: block !important; white-space: nowrap !important; text-overflow: ellipsis !important; overflow: hidden !important; -webkit-line-clamp: none !important; max-width: 60px !important; }
+.u2c.v3.inst .u2c-dials > .u2d svg { width: 34px !important; height: 34px !important; }
+.u2c.v3.inst .u2c-g > .u2c-dials { grid-template-rows: repeat(var(--rows, 1), minmax(56px, 1fr)) !important; grid-auto-rows: minmax(56px, 1fr) !important; }
+.u2c.v3.inst .u2c-tabs { justify-content: flex-start !important; }
+.u2c.v3.inst .u2c-tabs button { flex: 0 1 auto !important; padding-left: 10px !important; padding-right: 10px !important; }
+/* tabs on one line that scrolls sideways: their height never changes with the panel's width (no back-and-forth between rows and columns) */
+.u2c.v3.inst .u2c-tabs { flex-wrap: nowrap !important; overflow-x: auto !important; overflow-y: hidden; scrollbar-width: none; overscroll-behavior-x: contain; }
+.u2c.v3.inst .u2c-tabs::-webkit-scrollbar { display: none; }
+.u2c.v3.inst .u2c-tabs button { flex: 0 0 auto !important; }
+.u2c.v3.inst .u2c-tabs { -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent); }
+
+/* ===== instrument panel in columns (switches | lists | knobs | sliders), filling the panel's whole height and width =====
+   the knobs grow with their cell, the envelope stages and levels are vertical Material You sliders, a list is a stepper */
+.u2c.v3.inst .u2cols { display: flex; align-items: stretch; gap: 6px; min-width: 440px; box-sizing: border-box; }
+.u2cols > * { flex: 1 1 0; min-width: 0; box-sizing: border-box; }
+.u2cols > .u2st, .u2cols > .u2vs, .u2cols .u2d, .u2cols .u2t, .u2cols > .u2dd, .u2cols > .u2seg-f, .u2cols > .u2sl { border-radius: 16px; background: var(--panel2); margin: 0; }
+.u2col.kn { display: grid; grid-template-rows: repeat(var(--kr, 1), minmax(0, 1fr)); grid-auto-flow: column; grid-auto-columns: minmax(60px, 1fr); gap: 6px; }
+.u2cols .u2d { container-type: size; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding: 4px 2px; min-height: 0; }
+.u2cols .u2d svg { width: clamp(26px, min(100cqw - 12px, 100cqh - 34px), 84px); height: clamp(26px, min(100cqw - 12px, 100cqh - 34px), 84px); flex: none; }
+.u2cols .u2d .n, .u2cols .u2d .v { max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.u2cols .u2d .n { font-size: 10px !important; }
+.u2cols .u2d .v { font-size: 11px !important; }
+.u2col.tg { display: grid; grid-template-rows: repeat(var(--tr, 1), minmax(0, 1fr)); grid-auto-flow: column; grid-auto-columns: minmax(122px, 1fr); gap: 6px; }
+.u2cols .u2t { display: flex; align-items: center; gap: 6px; padding: 0 8px 0 12px; min-height: 0; text-align: left; font-size: 11px; }
+.u2cols .u2t > span { flex: 1 1 0; width: 0; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--dim); font-weight: 600; }
+.u2cols .u2t .u2sw { flex: none; transform: scale(.8); transform-origin: right center; }
+/* stepper */
+.u2st { flex: .9 1 0 !important; min-width: 74px !important; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding: 6px 4px; }
+.u2st .n { font: 500 10px/1.1 var(--font); color: color-mix(in srgb, var(--text) 58%, transparent); max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.u2st .sa { width: 40px; height: 22px; border: 0; border-radius: 11px; background: transparent; color: var(--ccm, var(--accent)); display: grid; place-items: center; padding: 0; }
+.u2st .sa::before { content: ''; width: 9px; height: 9px; border: solid currentColor; border-width: 2.5px 2.5px 0 0; border-radius: 1px; transform: translateY(2px) rotate(-45deg); }
+.u2st .sa.dn::before { transform: translateY(-2px) rotate(135deg); }
+.u2st .sa:disabled { color: color-mix(in srgb, var(--text) 22%, transparent); }
+.u2st .sa:not(:disabled):active { background: color-mix(in srgb, var(--ccm, var(--accent)) 18%, transparent); }
+.u2st .sv { max-width: 100%; border: 0; background: none; color: var(--text); font: 600 12.5px/1.2 var(--font); padding: 2px 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border-radius: 8px; }
+/* vertical slider (Material You: a thick rounded track, the active part below a thin handle with a gap) */
+.u2vs { flex: .75 1 0 !important; min-width: 54px !important; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 6px 2px; touch-action: none; cursor: ns-resize; }
+.u2vs .n { font: 500 10px/1.1 var(--font); color: color-mix(in srgb, var(--text) 58%, transparent); max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.u2vs .v { font: 600 11px/1.1 var(--font); color: color-mix(in srgb, var(--text) 88%, transparent); font-variant-numeric: tabular-nums; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.u2vs .tr { position: relative; flex: 1 1 auto; min-height: 30px; width: 14px; margin: 6px 0; border-radius: 7px; background: color-mix(in srgb, var(--ccm, var(--accent)) 18%, rgba(255, 255, 255, .06)); }
+.u2vs .f { position: absolute; left: 0; right: 0; bottom: 0; height: max(0px, calc(100% * var(--n) - 6px)); border-radius: 7px; background: var(--ccm, var(--accent)); }
+.u2vs em { position: absolute; left: 50%; bottom: calc(100% * var(--n)); width: 26px; height: 4px; margin: 0 0 -2px -13px; border-radius: 2px; background: var(--ccm, var(--accent)); box-shadow: 0 0 0 3px var(--panel2); }
+.u2vs.act em { height: 3px; margin-bottom: -1.5px; }
+.u2vs:focus-visible { outline: 2px solid var(--ccm, var(--accent)); outline-offset: -2px; }
+/* switches as compact chips (a light that is on, the name), packed top-down in a narrow column: they leave the room to the knobs and faders */
+.u2c.v3.inst .u2col.tg { flex: 0 0 auto !important; grid-template-rows: repeat(var(--tr, 1), 28px); grid-auto-columns: 92px; align-content: center; gap: 5px; }
+.u2c.v3.inst .u2cols .u2t { height: 28px; padding: 0 8px !important; gap: 6px; border-radius: 9px; background: rgba(255, 255, 255, .06); justify-content: flex-start; }
+.u2c.v3.inst .u2cols .u2t .u2sw { display: none; }
+.u2c.v3.inst .u2cols .u2t::before { content: ''; flex: none; width: 7px; height: 7px; border-radius: 50%; background: rgba(255, 255, 255, .22); transition: background .15s, box-shadow .15s; }
+.u2c.v3.inst .u2cols .u2t > span { font: 600 10.5px/1 var(--font) !important; color: color-mix(in srgb, var(--text) 62%, transparent) !important; }
+.u2c.v3.inst .u2cols .u2t.on { background: color-mix(in srgb, var(--ccm, var(--accent)) 22%, rgba(255, 255, 255, .04)); }
+.u2c.v3.inst .u2cols .u2t.on::before { background: var(--ccm, var(--accent)); box-shadow: 0 0 0 2px color-mix(in srgb, var(--ccm, var(--accent)) 30%, transparent); }
+.u2c.v3.inst .u2cols .u2t.on > span { color: var(--text) !important; }
+.u2c.v3.inst .u2cols .u2t:active { transform: scale(.97); }
+/* short rack: the keyboard steps aside, the instrument's display fills the screen under the title bar */
+.u2c.v3 .u2s.haskb.kbhide > .u2kb { display: none !important; }
+.u2c.v3 .u2s.haskb.kbhide > .u2real, .u2c.v3 .u2s.haskb.kbhide > .u2fx:not(.u2real), .u2c.v3 .u2s.haskb.kbhide > .u2sf { bottom: 6px !important; }
+/* faders that fit a short panel: tight label / value, the track takes the rest */
+.u2vs { padding: 3px 2px !important; gap: 2px !important; }
+.u2vs .tr { margin: 4px 0 !important; min-height: 22px !important; }
+.u2st { padding: 3px 4px !important; gap: 0 !important; }
+.u2st .sa { height: 18px !important; }
+.u2kb-tg { display: none; }
+.u2c.v3 .u2s.haskb.kbhide > .u2kb-tg { display: grid; place-items: center; position: absolute; right: 8px; bottom: 10px; z-index: 3; width: 26px; height: 22px; padding: 0; border: 0; border-radius: 7px;
+  background: rgba(20, 21, 24, .72); color: rgba(255, 255, 255, .8); backdrop-filter: blur(4px); }
+.u2c.v3 .u2s.haskb.kbhide > .u2kb-tg::before { content: ''; width: 14px; height: 9px; border: 1.5px solid currentColor; border-radius: 2px;
+  background: linear-gradient(90deg, transparent 3px, currentColor 3px 4.5px, transparent 4.5px 7px, currentColor 7px 8.5px, transparent 8.5px) top / 100% 5px no-repeat; }
+.u2c.v3 .u2s.haskb.kbhide.kbshow > .u2kb { display: flex !important; }
+.u2c.v3 .u2s.haskb.kbhide.kbshow > :is(.u2real, .u2fx, .u2sf) { visibility: hidden; }
+.u2c.v3 .u2s.haskb.kbhide.kbshow > .u2kb-tg { color: var(--ccm, var(--accent)); bottom: auto; top: 62px; }
+/* a narrower instrument panel: it grows in height (the rack is taller), not sideways */
+.u2c.v3.inst .u2cols { min-width: 340px !important; }
+.u2c.v3.inst .u2vs { flex: 0 0 50px !important; min-width: 50px !important; }
+.u2c.v3.inst .u2st { flex: 0 0 76px !important; min-width: 76px !important; }
+.u2c.v3.inst .u2col.kn { grid-auto-columns: minmax(60px, 74px); flex-grow: 0 !important; }
+/* effects: faders among the knobs, two rows tall when the card has two rows */
+.u2c.v3 .u2c-dials.vs2 > .u2vs { grid-row: span 2; }
+.u2c.v3 .u2c-dials > .u2vs { min-width: 0 !important; flex: none !important; padding: 4px 2px !important; }
+.u2c.v3:not(.inst) .u2c-dials > .u2vs .tr { min-height: 14px !important; }
+/* effects: a knob as large as its cell allows (no more tiny knobs in a roomy cell) */
+.u2c.v3:not(.inst) .u2c-dials > .u2d { container-type: size; min-height: 0; justify-content: center !important; gap: 2px !important; padding: 3px 2px !important; }
+.u2c.v3:not(.inst) .u2c-dials > .u2d svg { width: clamp(30px, min(100cqw - 14px, 100cqh - 30px), 64px) !important; height: clamp(30px, min(100cqw - 14px, 100cqh - 30px), 64px) !important; flex: none; }
+.u2c.v3:not(.inst) .u2c-dials > .u2d .n, .u2c.v3:not(.inst) .u2c-dials > .u2d .v { max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

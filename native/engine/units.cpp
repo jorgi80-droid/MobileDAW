@@ -1,0 +1,80 @@
+// Registry of ported instruments and effects. Grows one entry at a time as ports pass their golden tests.
+#include "units.h"
+#include "os.h"
+#include "instruments.h"
+#include "inst_live.h"
+#include "poli.h"
+#include "drift.h"
+#include "operator.h"
+#include "analog.h"
+#include "meld.h"
+#include "simpler.h"
+#include "inst_classic.h"
+#include "live.h"
+#include "fx.h"
+#include "fx2.h"
+#include "fx4.h"
+#include "fxu.h"
+#include "fx6.h"
+#include "fx7.h"
+#include "fx5.h"
+#include "fxm.h"
+#include "flmsyn.h"
+#include "hdsaw.h"
+#include "hdmini.h"
+#include "hdgms.h"
+#include "hddw.h"
+#include "fx8.h"
+#include "hdfx.h"
+#include "hdtb.h"
+#include "hdslicer.h"
+#include "hd3osc.h"
+#include "moist2.h"
+#include "harmor.h"
+#include "harmor.h"
+
+namespace mdaw {
+
+Instrument* makeInstrument(int type, double sr, Bank* bank) {
+  switch (type) {
+    case 1: return new MiniSynth(sr);
+    case 2: return new SuperSaw(sr);
+    case 3: return new DrumSynth(sr, bank); case 4: case 9: return new Sampler(sr, bank); case 6: return new SfPlayer(sr, bank); case 10: return new LiveSampler(sr, bank); case 12: return new InstrumentRack(sr); case 11: return new LiveWavetable(sr); case 5: return new Gms(sr); case 7: return new Moisture(sr); case 8: return new Osphere(sr);
+    case 13: return new Drift(sr); case 14: return new Operator(sr); case 15: return new Analog(sr); case 17: return new Meld(sr); case 18: return new Simpler(sr, bank); case 16: return new Poli(sr);
+    case 19: return new DsKick(sr); case 20: return new DsSnare(sr); case 21: return new DsTom(sr);
+    case 22: return new DsHH(sr); case 23: return new DsClap(sr); case 24: return new DsFm(sr);
+    case 25: return new Electric(sr); case 26: return new Tension(sr); case 27: return new Collision(sr);
+    case 28: return new Impulse(sr, bank); case 29: return new Granulator(sr, bank);
+    case 30: return new HdDirectWave(sr, bank); case 31: return new HdGms(sr); case 32: return new HdMiniSynth(sr); case 33: return new HdSuperSaw(sr); case 34: return makeTransistorBass(sr); case 35: return makeSlicer(sr, bank); case 36: return makeThreeOsc(sr); case 37: return makeMoist2(sr, bank); case 38: return makeHarmor(sr, bank);
+    default: return nullptr;
+  }
+}
+static Device* makeDeviceAt(int type, double sr, float* sidechain);
+// nonlinear effects run 4x oversampled (os.h): the inner effect is made at 4 x the rate
+Device* makeDevice(int type, double sr, float* sidechain) {
+  if (osType(type)) { Device* d = makeDeviceAt(type, sr * OS_K, sidechain); return d ? new Oversampled(d) : nullptr; }
+  return makeDeviceAt(type, sr, sidechain);
+}
+static Device* makeDeviceAt(int type, double sr, float* sidechain) {
+  if (type >= HDFX_BASE && type < HDFX_BASE + 100) return makeHdFx(type - HDFX_BASE, sr);   // FL Studio Mobile modules (hdfx.cpp)
+  switch (type) {
+    case 10: return new Autoduck(sr, sidechain); case 14: return new Stereolizer(sr); case 15: return new Spacer(sr);
+    case 0: return new Utility(sr); case 1: return new AutoFilter(sr); case 6: return new Echo(sr); case 9: return new Roar(sr); case 2: return new Eq3(sr); case 3: return new Saturator(sr); case 4: return new Compressor(sr);
+    case 5: return new Limiter(sr); case 7: return new Reverb(sr); case 8: return new ParametricEq(sr);
+    case 17: return new Delay3(sr); case 18: return new FilterDelay(sr); case 19: return new BeatRepeat(sr); case 20: return new ChorusEnsemble(sr);
+    case 21: return new PhaserFlanger(sr); case 22: return new AutoPan(sr); case 23: return new Gate(sr); case 24: return new GlueComp(sr); case 25: return new ChannelEq(sr);
+    case 26: return new Erosion(sr); case 27: return new Redux(sr); case 28: return new VinylDist(sr); case 29: return new DrumBuss(sr); case 30: return new Tuner(sr); case 31: return new EqEight(sr); case 32: return new Spectrum(sr);
+    case 33: return new Amp(sr); case 34: return new Cabinet(sr); case 35: return new Overdrive(sr); case 36: return new Pedal(sr); case 37: return new DynTube(sr);
+    case 38: return new MultibandDyn(sr); case 39: return new Resonators(sr); case 40: return new Corpus(sr);
+    case 12: return new Levelness(sr); case 13: return new Analyzer(sr); case 16: return new MiniMeters(sr);
+    case 51: return new AudioEffectRack(sr); case 46: return new SpectralTime(sr); case 47: return new SpectralResonator(sr);
+    case 52: return new TapeStop(sr);
+    case 48: return new LfoMod(sr); case 49: return new ShaperMod(sr); case 50: return new EnvFollower(sr);
+    case 41: return new Vocoder(sr); case 42: return new Shifter(sr); case 43: return new GrainDelay(sr); case 44: return new HybridReverb(sr); case 45: return new Looper(sr);
+    default: return nullptr;
+  }
+}
+bool instPorted(int type) { return type == 38 || type == 37 || type == 1 || type == 2 || type == 3 || type == 4 || type == 5 || type == 6 || type == 7 || type == 8 || type == 9 || type == 10 || type == 11 || type == 12 || type == 13 || type == 14 || type == 15 || type == 17 || type == 18 || type == 16 || (type >= 19 && type <= 29) || type == 30 || type == 31 || type == 32 || type == 33 || type == 34 || type == 35 || type == 36; }
+bool devPorted(int type) { return (type >= 17 && type <= 45) || (type >= 46 && type <= 51) || type == 12 || type == 13 || type == 16 || type == 1 || type == 6 || type == 9 || type == 0 || type == 2 || type == 3 || type == 4 || type == 5 || type == 7 || type == 8 || type == 10 || type == 14 || type == 15 || type == 52 || (type >= HDFX_BASE && type < HDFX_BASE + 100 && hdfxParamCount(type - HDFX_BASE) > 0); }
+
+}  // namespace mdaw

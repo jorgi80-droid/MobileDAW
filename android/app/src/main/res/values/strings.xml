@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">MobileDAW</string>
+    <string name="title_activity_main">MobileDAW</string>
+    <string name="package_name">com.mobiledaw.app</string>
+    <string name="custom_url_scheme">com.mobiledaw.app</string>
+</resources>

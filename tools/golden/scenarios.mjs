@@ -1,0 +1,583 @@
+// Golden test scenarios. Each one drives an engine `e` (the JS engine behind a recorder) exactly like the app does: engine commands,
+// and e.render(frames) to produce audio. Everything is deterministic (synthetic samples from a fixed LCG seed).
+import fs from 'node:fs'; import path from 'node:path'; import { fileURLToPath } from 'node:url';
+const D = await import(path.join(path.dirname(fileURLToPath(import.meta.url)), '../../js/defs.js'));
+
+const PPQ = 960, BAR = PPQ * 4;
+const PARAM_SYNTHS = [13, 14, 15, 17, 18, 16, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 31, 32, 33];   // + FL Studio Mobile GMS / MiniSynth / SuperSaw (C++ port)   // Live 12 instruments with a min / max sweep of every parameter
+const FX_PORTED = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 52];   // effects with a min / max sweep scenario (fx-<name>)
+const SYNTHS = [1, 2, 5, 7, 8, 11, 13, 14, 15, 17, 16, 19, 20, 21, 22, 23, 24, 25, 26, 27, 31, 32, 33];   // instruments with golden scenarios (presets + playing)
+function lcg(seed) { let s = seed >>> 0; return () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 4294967296 * 2 - 1; }; }
+function tone(sec, hz, sr = 48000, amp = 0.5) { const n = Math.round(sec * sr), a = new Float32Array(n); for (let i = 0; i < n; i++) a[i] = Math.sin(2 * Math.PI * hz * i / sr) * amp * Math.min(1, (n - i) / 2000); return a; }
+function noise(sec, seed, sr = 48000, amp = 0.3) { const r = lcg(seed), n = Math.round(sec * sr), a = new Float32Array(n); for (let i = 0; i < n; i++) a[i] = r() * amp; return a; }
+function chirp(sec, f0, f1, sr = 48000) { const n = Math.round(sec * sr), a = new Float32Array(n); let ph = 0; for (let i = 0; i < n; i++) { ph += (f0 + (f1 - f0) * i / n) / sr; a[i] = Math.sin(2 * Math.PI * ph) * 0.4; } return a; }
+// render `sec` seconds in 128-frame blocks (the AudioWorklet quantum), or in the given repeating sizes
+function play(e, sec, sizes = [128]) { let left = Math.round(sec * 48000), k = 0; while (left > 0) { const n = Math.min(left, sizes[k++ % sizes.length]); e.render(n); left -= n; } }
+function samples(e) {
+  e.loadSample(0, tone(2, 220), tone(2, 330));      // stereo
+  e.loadSample(1, noise(1.5, 7));                     // mono
+  e.loadSample(2, chirp(3, 80, 2000), chirp(3, 100, 1800));
+}
+// clips: [start, len, sample, gain, offset s, fade in s, fade out s]
+const clipsA = [0, BAR, 0, 0.8, 0, 0, 0, BAR * 1.5, BAR, 0, 1, 0.25, 0.05, 0.3, BAR * 3, BAR * 2, 2, 0.7, 0, 0.5, 0.5];
+const clipsB = [PPQ / 3, PPQ * 2, 1, 1, 0, 0, 0, PPQ * 5.5, BAR, 1, 0.6, 0.2, 0.01, 0.01, BAR * 2 + 7, BAR * 2, 2, 0.5, 1.1, 0, 0];
+
+export const SCENARIOS = [
+  { name: 'core-clips', info: 'audio clips: gain, offset, fades, overlaps, vol/pan',
+    run(e) {
+      samples(e); e.tempo(128);
+      e.trackClips(0, clipsA, 3); e.trackClips(1, clipsB, 3); e.trackVol(0, 0.7); e.trackPan(0, -0.4); e.trackVol(1, 0.9); e.trackPan(1, 0.65);
+      e.play(); play(e, 9);
+    } },
+  { name: 'core-mixer', info: 'mute / solo during playback, sends A/B, group routing, return + master volume / pan',
+    run(e) {
+      samples(e); e.tempo(110);
+      e.trackClips(0, clipsA, 3); e.trackClips(1, clipsB, 3); e.trackClips(2, [0, BAR * 4, 2, 1, 0, 0, 0], 1);
+      e.trackSend(0, 0, 0.5); e.trackSend(1, 1, 0.8); e.trackOut(2, 1); e.trackVol(65, 0.6); e.trackPan(65, 0.3); e.trackVol(66, 1.2); e.trackPan(66, -0.5);
+      e.trackVol(64, 0.8);
+      e.play(); play(e, 1.5);
+      e.trackSolo(1, true); play(e, 1); e.trackSolo(1, false); e.trackMute(0, true); play(e, 1); e.trackMute(0, false);
+      e.trackMute(66, true); play(e, 1); e.trackMute(66, false); e.trackPan(64, 0.5); e.trackVol(64, 0.4); play(e, 2);
+      e.trackOut(2, -1); e.trackSend(0, 0, 1.4); play(e, 2.5);
+    } },
+  { name: 'core-transport', info: 'loop, seek while playing, tempo changes, stop/play, odd render sizes',
+    run(e) {
+      samples(e); e.tempo(97.5);
+      e.trackClips(0, clipsA, 3); e.trackClips(1, clipsB, 3);
+      e.loop(true, BAR / 2 + 13, BAR * 2 + PPQ / 4); e.play(); play(e, 5, [37, 500, 128, 1000, 1]);
+      e.seek(BAR * 3 + 101); play(e, 1, [128, 77]); e.tempo(143.25); play(e, 1.5, [300]); e.loop(false, 0, 0);
+      e.stop(); play(e, 0.5); e.seek(PPQ * 1.5); e.play(); play(e, 2, [64]); e.tempo(60); play(e, 2);
+    } },
+  { name: 'core-tempomap', info: 'tempo map ramps / jumps, time signature changes, metronome, count-in',
+    run(e) {
+      samples(e); e.tempo(120);
+      e.trackClips(0, clipsA, 3);
+      e.tempoMap(true, [0, 90, BAR * 2, 150, BAR * 2, 70, BAR * 4, 120, BAR * 6, 133]);
+      e.setMeter([0, 4, 4, 2, 7, 8, 4, 3, 4]); e.setMetro(true); e.setMetroVol(0.8);
+      e.playCountIn(4); play(e, 10);
+      e.stop(); e.setSig(PPQ / 2, 6); e.tempoMap(false, []); e.seek(0); e.playCountIn(3); play(e, 4, [128, 93]);
+    } },
+  { name: 'core-automation', info: 'automation lanes (volume, pan, sends) and MIDI CC lanes (volume, pan, expression)',
+    run(e) {
+      samples(e); e.tempo(120);
+      e.trackClips(0, clipsA, 3); e.trackClips(1, clipsB, 3); e.trackSend(1, 0, 0.3);
+      // lane = kind, track, dev, param, n, (tick, value) * n
+      e.automation([0, 0, 0, 0, 3, 0, 0.1, BAR * 2, 1, BAR * 4, 0.3, 1, 1, 0, 0, 2, 0, -1, BAR * 5, 1, 2, 1, 0, 0, 2, 0, 0, BAR * 3, 1.2, 0, 64, 0, 0, 2, BAR, 1, BAR * 3, 0.2]);
+      e.trackCC(0, [0, 1, 127, BAR * 2, 1, 20, 0, 2, 0, BAR * 3, 2, 127, BAR, 3, 100, BAR * 4, 3, 30], 6);
+      e.play(); play(e, 6);
+      e.seek(BAR); play(e, 2); e.trackCC(0, [], 0); e.automation([], 0); play(e, 2);
+    } },
+  ...instScenarios(),
+  ...paramScenarios(),
+  { name: 'core-limiter', info: 'master safety limiter: three loud SuperSaw tracks drive the master ~ +10 dB over 0 dBFS (limiter on), then off (hard clip), then on again',
+    run(e) {
+      e.tempo(128);
+      for (let t = 0; t < 3; t++) { e.trackInst(t, 2); e.trackVol(t, 1.4); const f = []; for (let k = 0; k < 24; k++) f.push(k * PPQ / 2 + t * 40, PPQ * 0.45, 40 + t * 7 + ((k * 5) % 12), 1, 0); e.trackNotes(t, f, f.length / 5); }
+      e.trackVol(64, 2.2); e.play(); play(e, 2, [128, 96, 256]);
+      e.masterLimit(false); play(e, 1); e.masterLimit(true); play(e, 1.5, [128, 77]);
+      e.stop(); play(e, 0.5);
+    } },
+  { name: 'core-mute-fade', info: 'mute / unmute / solo / send jumps while notes sound: the mute ramp and the smoothed send levels',
+    run(e) {
+      e.tempo(120); for (let t = 0; t < 3; t++) { e.trackInst(t, t === 1 ? 2 : 1); e.trackNotes(t, [0, PPQ * 32, 52 + t * 5, 0.8, 0, PPQ * 2, PPQ * 8, 64 + t, 0.7, 0], 2); }
+      e.insertDevice(65, 0, 7); e.trackSend(0, 0, 0.2); e.play(); play(e, 0.4, [128, 50]);
+      e.trackMute(0, true); play(e, 0.3, [128, 33]); e.trackMute(0, false); play(e, 0.3); e.trackSolo(2, true); play(e, 0.4, [77]); e.trackSolo(2, false);
+      e.trackSend(0, 0, 1.2); e.trackSend(1, 1, 0.8); play(e, 0.4); e.trackSend(0, 0, 0); play(e, 0.6, [128, 200]); e.trackMute(1, true); play(e, 0.2); e.stop(); play(e, 0.5);
+    } },
+  { name: 'core-retrigger', info: 'the same pitch retriggered while it still sounds (long release) and voices stolen: the envelope restarts from its current level',
+    run(e) {
+      e.tempo(140); e.trackInst(0, 1); e.trackInst(1, 2); e.instParam(0, 6, 0.8);
+      const f = []; for (let k = 0; k < 48; k++) f.push(k * PPQ / 4, PPQ * 0.6, 60 + (k % 3 === 0 ? 0 : 7), 0.9, 0); e.trackNotes(0, f, f.length / 5);
+      const g = []; for (let k = 0; k < 40; k++) g.push(k * PPQ / 8, PPQ * 2, 48 + (k % 20), 0.8, 0); e.trackNotes(1, g, g.length / 5);
+      e.play(); play(e, 3, [128, 64, 200]); e.stop(); play(e, 0.5);
+    } },
+  { name: 'core-pdc', info: 'plugin delay compensation: Limiter / Saturator / Compressor look-ahead on tracks, a send return, a group return and the master; latency changes (bypass, Lookahead, insert / remove) while playing, metronome + count-in, loop seam, mute, PDC off / on',
+    run(e) {
+      samples(e); e.tempo(126); e.setMetro(true); e.setMetroVol(0.6);
+      e.trackClips(0, clipsA, 3); e.trackClips(1, clipsB, 3); e.trackInst(2, 1); const f = []; for (let k = 0; k < 32; k++) f.push(k * PPQ / 2, PPQ * 0.4, 48 + ((k * 7) % 24), 0.8, 0); e.trackNotes(2, f, f.length / 5);
+      e.insertDevice(0, 0, 5); e.insertDevice(1, 0, 3); e.devParam(1, 0, 0, 12);                     // track 0 Limiter (72), track 1 Saturator (37)
+      e.insertDevice(2, 0, 4); [-24, 4, 2, 80].forEach((v, k) => e.devParam(2, 0, k, v)); e.devParam(2, 0, 9, 1);   // track 2 Compressor, Lookahead 1 ms
+      e.trackSend(0, 0, 0.6); e.trackSend(2, 0, 0.3); e.insertDevice(65, 0, 3); e.devParam(65, 0, 1, 0.5);   // Return A: Saturator
+      e.trackOut(1, 1); e.insertDevice(66, 0, 4); e.devParam(66, 0, 9, 2);                         // track 1 grouped into Return B: Compressor 10 ms
+      e.insertDevice(64, 0, 3); e.devParam(64, 0, 1, 0.3);                                          // master: Saturator
+      e.playCountIn(4); play(e, 2.4, [128, 96, 256]);
+      e.devParam(2, 0, 9, 2); play(e, 0.6); e.devBypass(0, 0, true); play(e, 0.5, [128, 77]); e.devBypass(0, 0, false); play(e, 0.5);
+      e.trackMute(1, true); play(e, 0.4); e.trackMute(1, false); play(e, 0.4);
+      e.setPdc(false); play(e, 0.5); e.setPdc(true); play(e, 0.5);
+      e.removeDevice(66, 0); play(e, 0.4); e.insertDevice(3, 0, 5); e.trackClips(3, [0, BAR * 8, 2, 0.6, 0, 0, 0], 1); play(e, 0.4);
+      e.loop(true, BAR, BAR * 2); e.seek(BAR); play(e, 4.5, [128, 333]); e.loop(false, 0, 0);
+      e.stop(); play(e, 0.6);
+    } },
+  { name: 'fx-modulators', info: 'LFO / Shaper / Envelope Follower (fx6): remap and mod mode, bipolar, log target, synced rates, hold, steps, jitter, retrigger; targets: device on the same strip, the instrument, a device on another (silent) strip',
+    run(e) {
+      e.tempo(118); e.trackInst(0, 2); e.trackInst(1, 1);
+      const f = []; for (let k = 0; k < 24; k++) f.push(k * PPQ / 2, PPQ * 0.45, 48 + ((k * 5) % 17), 0.8, 0); e.trackNotes(0, f, f.length / 5); e.trackNotes(1, f.map((v, i) => (i % 5 === 2 ? v + 12 : v)), f.length / 5);
+      const map = (t, d, o, tgt) => tgt.forEach((v, k) => e.devParam(t, d, o + k, v));
+      // track 0: Auto Filter (cutoff, log) <- LFO (remap); Utility (gain) <- Shaper (mod, bipolar)
+      e.insertDevice(0, 0, 1); e.insertDevice(0, 1, 48); e.insertDevice(0, 2, 0); e.insertDevice(0, 3, 49);
+      map(0, 1, 14, [0, 0, 0.5, 0.1, 0.9, 0, 0, 1, 20, 20000, 1, 20000]); e.devParam(0, 1, 5, 3.5); e.devParam(0, 1, 0, 3);
+      map(0, 3, 35, [1, 1, 0.8, 0, 1, 0, 2, 0, -60, 24, 0, 0]); e.devParam(0, 3, 1, 1); e.devParam(0, 3, 2, 2);
+      // track 1: Envelope Follower (of track 1) -> its instrument cutoff (param 1, d = -1)
+      e.insertDevice(1, 0, 50); map(1, 0, 6, [0, 0, 0.5, 0.2, 1, 1, -1, 1, 60, 18000, 1, 2000]); e.devParam(1, 0, 0, 6);
+      // track 5 (no instrument: skips its chain) carries an LFO that drives Return A's Reverb mix
+      e.insertDevice(65, 0, 7); e.trackSend(0, 0, 0.5); e.insertDevice(5, 0, 48); map(5, 0, 14, [0, 0, 0.5, 0, 1, 65, 0, 2, 0, 1, 0, 0.3]); e.devParam(5, 0, 6, 1); e.devParam(5, 0, 7, 2);
+      e.play(); play(e, 2, [128, 77, 256]);
+      [[0, 1], [0, 2], [0, 4], [0, 5], [0, 6]].forEach(([d], k) => { e.devParam(0, 1, 0, k + 1); play(e, 0.3); });           // every LFO waveform
+      e.devParam(0, 1, 2, 4); e.devParam(0, 1, 3, 0.4); e.devParam(0, 1, 4, 0.6); e.devParam(0, 1, 1, 0.5); play(e, 0.6);    // steps, jitter, smooth, shape
+      e.devParam(0, 1, 12, 1); play(e, 0.3); e.devParam(0, 1, 12, 0); e.devParam(0, 1, 13, 1); play(e, 0.3);                // hold, retrigger
+      e.devParam(0, 1, 6, 1); e.devParam(0, 1, 7, 4); e.devParam(0, 1, 9, 0.6); e.devParam(0, 1, 10, -0.3); play(e, 0.6);  // synced, depth, offset
+      e.devParam(0, 3, 6, 0.5); e.devParam(0, 3, 7, 0.4); e.devParam(0, 3, 10, 6); e.devParam(0, 3, 28, 0.7); play(e, 0.6); // Shaper jitter / smooth / more points
+      e.devParam(1, 0, 4, 1); e.devParam(1, 0, 5, 3); e.devParam(1, 0, 1, 0.6); e.devParam(1, 0, 2, 0.9); play(e, 0.8);    // EnvFollower synced delay, rise / fall
+      e.devBypass(0, 1, true); play(e, 0.3); e.devBypass(0, 1, false); e.devParam(0, 1, 19, -1); play(e, 0.3);              // bypass, unmap
+      e.trackMute(1, true); play(e, 0.5); e.stop(); play(e, 0.5);
+    } },
+  { name: 'fx-rack', info: 'Audio Effect Rack (fx7): 3 parallel chains (Saturator / Compressor 10 ms look-ahead + Auto Filter / Delay), chain volume, pan, activator, solo, selector zones, macros (linear + log), bypass / remove inside, reset; PDC between the chains',
+    run(e) {
+      samples(e); e.tempo(124); e.trackInst(0, 2); e.trackClips(1, clipsA, 3);
+      const f = []; for (let k = 0; k < 24; k++) f.push(k * PPQ / 2, PPQ * 0.4, 50 + ((k * 7) % 15), 0.8, 0); e.trackNotes(0, f, f.length / 5);
+      const R = (t, op, c, j, a, b) => e.rackCmd(t, 0, op, c, j, a, b);
+      for (const t of [0, 1]) {
+        e.insertDevice(t, 0, 51); e.devParam(t, 0, 32, 3);
+        R(t, 0, 0, 0, 0, 0);
+        R(t, 1, 0, 0, 3, 0); R(t, 2, 0, 0, 0, 14);                                   // chain 0: Saturator drive 14 dB
+        R(t, 1, 1, 0, 4, 0); [-20, 6, 2, 60].forEach((v, k) => R(t, 2, 1, 0, k, v)); R(t, 2, 1, 0, 9, 2); R(t, 1, 1, 1, 1, 0); R(t, 2, 1, 1, 1, 1200);   // chain 1: Compressor (10 ms) -> Auto Filter
+        R(t, 1, 2, 0, 17, 0);                                                         // chain 2: Delay
+        e.devParam(t, 0, 0, -6); e.devParam(t, 0, 5, -0.6); e.devParam(t, 0, 9, 0.4);  // chain volume / pan
+        [1, 0, 1, 1, 20000, 1, 0, 1].forEach((v, k) => e.devParam(t, 0, 41 + k, v));    // macro 0 -> chain 1 Auto Filter cutoff (log)
+        [0, 0, 0, 0, 36, 0, 0.2, 0.9].forEach((v, k) => e.devParam(t, 0, 49 + k, v));   // macro 1 -> chain 0 Saturator drive (linear, Min / Max)
+      }
+      e.play(); play(e, 1.5, [128, 77, 256]);
+      for (let k = 0; k <= 4; k++) { e.devParam(0, 0, 33, k / 4); e.devParam(1, 0, 34, 1 - k / 4); play(e, 0.25); }
+      e.devParam(0, 0, 3, 1); play(e, 0.4); e.devParam(0, 0, 3, 0); e.devParam(0, 0, 6, 0); play(e, 0.4); e.devParam(0, 0, 6, 1);   // solo, activator
+      e.devParam(0, 0, 105, 90); e.devParam(0, 0, 108, 64); e.devParam(0, 0, 109, 127); play(e, 0.4); e.devParam(0, 0, 105, 0); // selector zones
+      R(0, 3, 1, 0, 1, 0); play(e, 0.4); R(0, 3, 1, 0, 0, 0); R(1, 4, 2, 0, 0, 0); play(e, 0.4);                                  // bypass the look-ahead Compressor, remove the Delay
+      e.devParam(1, 0, 32, 1); play(e, 0.4); R(0, 0, 0, 0, 0, 0); play(e, 0.4);                                                   // fewer chains, reset (empty chains)
+      e.stop(); play(e, 0.5);
+    } },
+  { name: 'fx-spectral-midi', info: 'Spectral Resonator in MIDI mode: notes of its own track and of another track (MIDI From), mono / poly, unison, all modulation types; Spectral Time freezer retrigger + delay modes',
+    run(e) {
+      e.tempo(122); e.trackInst(0, 2); e.trackInst(1, 1);
+      const f = []; for (let k = 0; k < 20; k++) f.push(k * PPQ / 2, PPQ * 0.6, 48 + ((k * 3) % 14), 0.5 + (k % 3) * 0.2, 0); e.trackNotes(0, f, f.length / 5);
+      const g = []; for (let k = 0; k < 10; k++) g.push(k * PPQ, PPQ * 0.9, 60 + ((k * 5) % 12), 0.9, 0); e.trackNotes(1, g, g.length / 5);
+      e.insertDevice(0, 0, 47); e.devParam(0, 0, 0, 1); e.devParam(0, 0, 1, 0); e.devParam(0, 0, 18, 0.7);   // MIDI mode, own track
+      e.insertDevice(1, 0, 46); e.devParam(1, 0, 3, 1); e.devParam(1, 0, 1, 1); e.devParam(1, 0, 2, 0);       // freezer on, retrigger on onsets
+      e.play(); play(e, 1.5, [128, 77, 256]);
+      e.devParam(0, 0, 1, 2); play(e, 0.8); e.devParam(0, 0, 13, 0); play(e, 0.5); e.devParam(0, 0, 13, 1); e.devParam(0, 0, 14, 3); e.devParam(0, 0, 15, 2); e.devParam(0, 0, 16, 0.6); play(e, 0.6);
+      for (let m = 1; m <= 3; m++) { e.devParam(0, 0, 9, m); e.devParam(0, 0, 11, 2); play(e, 0.5); }
+      e.devParam(1, 0, 2, 1); e.devParam(1, 0, 4, 1); e.devParam(1, 0, 5, 1); play(e, 0.8); e.devParam(1, 0, 8, 1); play(e, 0.5);
+      for (const m of [1, 2, 3, 4]) { e.devParam(1, 0, 14, m); e.devParam(1, 0, 17, 0.5); e.devParam(1, 0, 20, 30); play(e, 0.4); }
+      e.devParam(0, 0, 0, 0); play(e, 0.4); e.stop(); play(e, 0.6);
+    } },
+  { name: 'inst-sampler', info: 'DirectWave / Keystone sampler (4 / 9): key + velocity zones, loop, root / tune, gate and one-shot, filter, release, 24-voice stealing with the 1.5 ms fade, engine Pitch (90)',
+    run(e) {
+      samples(e); testSample(e); e.tempo(126);
+      for (const [t, ty] of [[0, 9], [1, 4]]) {
+        e.trackInst(t, ty);
+        const Z = (z, k, v) => e.instParam(t, 100 + z * 8 + k, v);
+        [[3, 60, 0, 59, 1, 127, 0, 0], [0, 72, 60, 127, 1, 90, -12, 1], [2, 60, 60, 127, 91, 127, 30, 0], [1, 48, 30, 50, 1, 127, 0, 1]].forEach((q, z) => q.forEach((v, k) => Z(z, k, v)));
+        e.instParam(t, 2, 0.35); e.instParam(t, 5, 0.6);
+      }
+      const f = []; for (let k = 0; k < 40; k++) f.push(k * PPQ / 4, PPQ * (k % 5 === 0 ? 2 : 0.3), 36 + ((k * 7) % 48), 0.3 + (k % 4) * 0.22, 0); e.trackNotes(0, f, f.length / 5);
+      const g = []; for (let k = 0; k < 30; k++) g.push(k * 37, PPQ * 3, 50 + (k % 25), 0.95, 0); e.trackNotes(1, g, g.length / 5);   // more notes than voices: stealing
+      e.play(); play(e, 2, [128, 77, 256]);
+      e.instParam(0, 3, 1500); e.instParam(1, 3, 600); play(e, 1); e.instParam(0, 3, 20000); e.instParam(0, 1, 0.08); e.instParam(0, 4, 3.5); play(e, 1);
+      e.instParam(0, 6, 1); e.instParam(1, 90, 7); play(e, 1); e.instParam(0, 6, 0); e.instParam(1, 90, -5); e.instParam(0, 0, 1.2); play(e, 1);
+      e.preview(0, 64, 0.8, true); play(e, 0.3); e.preview(0, 64, 0, false); e.stop(); play(e, 1);
+    } },
+  { name: 'fx-flm', native: true, info: 'C++ only (native/engine/hdfx.cpp + hdfx2.cpp, Honeydew DSP): FL Studio Mobile effect modules (device 100 + FLM id) on tracks, returns and the master: their FLM params, the rack Post Gain / Mix / Wet Pan, tempo-synced LFOs / delays (song beat), Pitcher notes, Tape Stop toggled while playing, bypass, PDC (Gate / Limiter / Pitcher latency)',
+    run(e) {
+      samples(e); e.tempo(122);
+      e.trackClips(0, clipsA, 3); e.trackClips(1, clipsB, 3); e.trackInst(2, 1); const f = []; for (let k = 0; k < 32; k++) f.push(k * PPQ / 2, PPQ * 0.4, 48 + ((k * 7) % 24), 0.8, 0); e.trackNotes(2, f, f.length / 5);
+      const D = (t, j, id, vals) => { e.insertDevice(t, j, 100 + id); Object.entries(vals || {}).forEach(([k, v]) => e.devParam(t, j, +k, v)); };
+      D(0, 0, 6, { 1: 0.6, 5: 0.4 }); D(0, 1, 46, { 7: 1, 3: 0.9, 4: 0.2 }); D(0, 2, 32, { 3: 0.5, 7: 0.6 });             // Distortion, Tremolo (synced), Reverb
+      D(1, 0, 8, { 1: 0.3, 2: 0.7 }); D(1, 1, 16, { 5: 0.5, 2: 0.6 }); D(1, 2, 27, { 1: 0.3 });                           // Compressor, Trance Delay ping-pong, Gate
+      D(2, 0, 41, { 1: 0.5, 5: 0.6 }); D(2, 1, 25, { 2: 0.7 }); D(2, 2, 14, { 6: 1 }); D(2, 3, 4, { 1: 0.15 });            // Waveshaper, Pitcher (+ notes), Phaser (synced), Multi FX
+      e.devParam(2, 1, 23 + 3 + 1, 1); e.devParam(2, 1, 23 + 3 + 2, 0);
+      e.trackSend(0, 0, 0.5); e.trackSend(2, 0, 0.4); D(65, 0, 35, { 4: 0.2 }); D(65, 1, 43, { 7: 1 });                  // Return A: Reverb 2, Wow & Flutter
+      D(66, 0, 18, { 1: 0.4 }); e.trackOut(1, 1);                                                                          // Return B: Tape Delay
+      D(64, 0, 36, { 30: 1 }); D(64, 1, 28, { 1: 0.7 }); D(64, 2, 42); D(64, 3, 44, { 1: 0.6 });                          // master: Multiband, Limiter, Tape Stop, Spreader
+      e.devParam(0, 2, 16, 0.6); e.devParam(0, 2, 17, 0.7); e.devParam(0, 2, 18, 0.3);                                     // Reverb: Post Gain / Mix / Wet Pan
+      e.play(); play(e, 2.4, [128, 96, 256]);
+      e.devParam(0, 0, 1, 0.9); e.devParam(1, 1, 1, 0.75); play(e, 0.6);
+      e.devParam(64, 2, 5, 0); play(e, 0.8, [128, 77]); e.devParam(64, 2, 5, 1); play(e, 0.8);                           // Tape Stop: stop, then start again
+      e.devBypass(2, 1, true); play(e, 0.4); e.devBypass(2, 1, false); play(e, 0.4);
+      e.devParam(2, 1, 0, 0); play(e, 0.3); e.devParam(2, 1, 0, 1); play(e, 0.3);                                         // module On off / on
+      e.loop(true, BAR, BAR * 2); e.seek(BAR); play(e, 3, [128, 333]); e.loop(false, 0, 0);
+      e.stop(); play(e, 1);
+    } },
+  { name: 'inst-flmtb', native: true, info: 'C++ only (native/engine/hdtb.cpp, Honeydew transistor_bass.rs): FL Studio Mobile Transistor Bass (34): saw / pulse, cutoff, reso, env mod, decay, accent, slides of held notes, distortion, PW LFO',
+    run(e) {
+      e.tempo(128); e.trackInst(0, 34); const f = []; for (let k = 0; k < 32; k++) f.push(k * PPQ / 4, PPQ * (k % 4 === 2 ? 0.45 : 0.2), 36 + [0, 12, 3, 0, 7, 10, 0, 15][k % 8], k % 3 === 0 ? 0.9 : 0.6, 0); e.trackNotes(0, f, f.length / 5);
+      const P = (i, v) => e.instParam(0, i, v);
+      e.play(); play(e, 2, [128, 77, 256]); P(1, 1); P(4, 0.7); P(6, 0.8); play(e, 1); P(7, 1); P(9, 0.6); P(8, 0.3); play(e, 1); P(11, 0.4); P(12, 0.6); P(13, 0.7); P(1, 0.5); play(e, 1);
+      e.stop(); play(e, 0.6);
+    } },
+  { name: 'nfx-flm', native: true, info: 'C++ only (native/engine/hdnfx.cpp, Honeydew note_effects.rs + sequencer.rs): FL Studio Mobile note effects worked out when the notes arrive: Arpeggiator (Up, Cascade, Random), Note Echo, Transpose, Randomizer, Scale, chained, changed while playing',
+    run(e) {
+      e.tempo(124); e.trackInst(0, 33); const f = []; for (let k = 0; k < 16; k++) f.push(k * PPQ, PPQ * 0.9, 48 + [0, 4, 7, 12][k % 4], 0.8, 0); f.push(0, PPQ * 8, 60, 0.7, 0, 0, PPQ * 8, PPQ * 8, 64, 0.7, 0, 0);
+      const A = [1, 0.285714, 0.2105, 1, 0, 0, 0, 0.5, 0.5, 0.5, 2 / 23, 0, 0.5, 0.5, 0, 0.5, 0, 0, 0, 1, 0.5, 3 / 23, 0, 0.5, 0.5, 0, 0.5, 0, 0, 0, 0, 0.428571, 0.428571];
+      const E = [1, 0.3, 0.4, 0.5, 0, 0.5, 0.5, 0.4, 0.55, 0.6, 0.5, 0.2, 0.5, 0.6, 1, 0];
+      const set = (mods) => { const flat = []; for (const [ty, id, p] of mods) flat.push(ty, id, p.length, ...p); e.trackNoteFx(0, flat, 20); e.trackNotes(0, f, f.length / 6, 6); };
+      e.insertDevice(0, 0, 151); e.insertDevice(0, 1, 147);
+      set([[51, 11, A], [47, 12, E]]); e.play(); play(e, 3, [128, 77, 256]);
+      const A2 = A.slice(); A2[10] = 17 / 23; A2[30] = 1; A2[21] = 20 / 23; set([[48, 13, [1, 0.625, 0.5]], [51, 11, A2], [49, 14, [1, 0.1, 0.3, 0.4, 0.85, 0.3, 0.5]]]); play(e, 3);
+      set([[50, 15, [1, 0, 0, 1, 1, 0, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1]], [47, 12, E]]); play(e, 2);
+      e.stop(); play(e, 1);
+    } },
+  { name: 'core-clipenv', info: 'audio clips with a Level / Pan envelope (FLM clip envelope, stride 10 + points): before / between / after the points, looped segments, a clip without one',
+    run(e) {
+      samples(e); e.tempo(120);
+      const env = [0.2, 0.9, 0, 0.5, 0.1, -0.6, 0.5, 0.1, -0.6, 0.9, 1.3, 0.8, 1.6, 0.4, 0.2, 0.3, 0.2, 0, 1.0, 0.7, -1, 1.5, 0.05, 1];
+      e.trackClips(0, [0, BAR * 2, 0, 0.8, 0, 0, 0, 0, 0, 6, BAR * 2.5, BAR, 2, 0.6, 0.4, 0.01, 0.01, 0.3, 6, 2, BAR * 3.5, BAR, 0, 0.7, 0.5, 0, 0.2, 0, 0, 0], 3, 10, env);
+      e.trackClips(1, [PPQ, BAR * 2, 1, 1, 0, 0, 0, 0, 8, 1], 1, 10, env);   // a point index past the points: no envelope
+      e.play(); play(e, 4, [128, 77, 256]); e.seek(BAR * 2.75); play(e, 1.5); e.stop(); play(e, 0.3);
+    } },
+  { name: 'inst-flmslicer', native: true, info: 'C++ only (native/engine/hdslicer.cpp, Honeydew slicer.rs): FL Studio Mobile Slicer (35): a loop sliced at its transients (Sensitivity), slices on keys from 48 / a set first key, Pitch, Attack / Decay, Sustain Off / Hold / To End, Mono',
+    run(e) {
+      samples(e); e.tempo(118); e.trackInst(0, 35); e.instParam(0, 100, 2); e.instParam(0, 7, 0.6);
+      const f = []; for (let k = 0; k < 24; k++) f.push(k * PPQ / 2, PPQ * (k % 3 === 0 ? 1.2 : 0.4), 48 + ((k * 3) % 9), 0.4 + (k % 4) * 0.15, 0); e.trackNotes(0, f, f.length / 5);
+      const P = (i, v) => e.instParam(0, i, v);
+      e.play(); play(e, 2, [128, 77, 256]); P(5, 0.5); P(3, 0.3); P(4, 0.5); play(e, 1.5); P(5, 1); P(6, 1); P(1, 0.6); play(e, 1.5);
+      P(7, 0.15); play(e, 1); P(8, 55); play(e, 1); e.stop(); play(e, 0.6);
+    } },
+  { name: 'inst-flm3osc', native: true, info: 'C++ only (native/engine/hd3osc.cpp, Honeydew three_osc/*): FL Studio Mobile 3x Osc (36): shapes, HQ mips, the 8 filters, envelopes / LFOs, tracking, Mono / Porta / Gate, Echo / Fat Mode, Arpeggio, the wheel, tempo change',
+    run(e) {
+      e.tempo(126); e.trackInst(0, 36);
+      const f = []; for (let k = 0; k < 28; k++) f.push(k * PPQ / 2, PPQ * (k % 3 === 0 ? 1.1 : 0.35), 48 + ((k * 5) % 19), 0.45 + (k % 4) * 0.15, 0); e.trackNotes(0, f, f.length / 5);
+      const P = (i, v) => e.instParam(0, i, v);
+      P(1, 0.5); P(2, 1 / 3); P(22, 0.4); P(62, 1); P(74, 0.1); P(86, 0.3); P(94, 0.5); P(98, 0.2);
+      e.play(); play(e, 1.5, [128, 77, 256]); P(110, 1 / 7); P(111, 0.4); P(112, 0.6); P(53, 0.8); P(58, 0.3); play(e, 1.2);
+      P(25, 1); P(3, 2 / 3); P(110, 5 / 7); P(63, 1); P(107, 0.9); play(e, 1.2); P(131, 0.4); P(132, 0.2); P(134, 0.6); play(e, 1.2);
+      P(131, 0); P(139, 0.2); P(145, 4 / 90); P(140, 0.3); e.bend(0, 1.5); play(e, 1.2); e.tempo(90); P(144, 1); P(120, 1); play(e, 1); e.stop(); play(e, 0.6);
+    } },
+  { name: 'inst-harmor', native: true, info: 'C++ only (native/engine/harmor.cpp): Harmor (38), additive: saw / square / custom timbres, mix and morph, phase randomisation, partial count / quality, stretch, sub, voice stealing, pitch bend, release',
+    run(e) {
+      e.tempo(124); e.trackInst(0, 38);
+      const f = []; for (let k = 0; k < 20; k++) f.push(k * PPQ / 2, PPQ * (k % 3 === 0 ? 1.5 : 0.45), 40 + ((k * 5) % 26), 0.5 + (k % 4) * 0.12, 0); e.trackNotes(0, f, f.length / 5);
+      const P = (i, v) => e.instParam(0, i, v);
+      P(3, 6); P(10, 1); P(20, 2); P(30, 0.35); e.play(); play(e, 1.5, [128, 77, 256]);
+      P(31, 1); P(12, 0.7); P(32, 0.4); P(33, 0.5); P(2, 0); play(e, 1.2);
+      P(2, 2); P(1, 400); P(40, 0.05); P(43, 0.6); e.bend(0, 1.5); play(e, 1.2);
+      // phase 2: filters (+ resonance, self-osc, formant), unison, LFOs, articulators (AHDSR and multi-point with loop), vibrato, mono glide
+      P(50, 1); P(52, 900); P(53, 0.7); P(57, 0.5); P(70, 0.4); P(60, 1); P(61, 4); P(62, 600); P(75, 4); P(76, 20); P(77, 1);
+      P(91, 3); P(94, 0.6); P(95, 2); P(97, 0.7); P(98, 4); P(100, 0.5); P(101, 7); P(45, 5); P(46, 30);
+      P(110, 1); P(115, 0.02); P(117, 0.3); P(118, 0.6); P(119, 0.4); P(170, 1); P(171, 0.1); P(410, 1); P(411, 0.4); play(e, 1.5);
+      P(230, 1); P(231, 0.5); P(232, 4); P(233, 2); P(234, 0); P(240, 0); P(241, 0); P(243, 0.05); P(244, 1); P(246, 0.05); P(247, 0.2); P(249, 0.1); P(250, 0); play(e, 1.2);
+      P(7, 1); P(8, 1); P(6, 0.1); play(e, 1.2);
+      // phase 2b: Prism, Pluck, Blur, spectral phaser, the effects rack (reordered, mix)
+      P(7, 0); P(81, 0.4); P(83, 0.7); P(84, 0.6); P(86, 0.05); P(87, 0.2); P(88, 0.5); P(103, 0.8); P(105, 1.5); play(e, 1.2);
+      P(82, 1); P(720, 1); P(722, 9); P(768, 1); P(816, 1); P(864, 1); P(873, 0.4); P(912, 1); P(913, 0.5); P(960, 1); P(1008, 1); P(1013, 1); P(1016, 4); P(712, 4); P(713, 0); play(e, 1.5);
+      // phase 3: a partial map (stereo amplitude + deviation / phase): frames in time, interpolated, looped, formant, shift
+      { const fr = 6, bn = 24, hdr = (a, lay) => { a[0] = 4096.5; a[1] = fr; a[2] = bn; a[3] = 0.2; a[4] = lay; a[5] = 57; a[6] = 40; a[7] = 16000; return a; };
+        const L = hdr(new Float32Array(16 + fr * bn), 0), R = hdr(new Float32Array(16 + fr * bn), 0), D = hdr(new Float32Array(16 + fr * bn), 0), H = hdr(new Float32Array(16 + fr * bn), 0);
+        for (let f = 0; f < fr; f++) for (let j = 0; j < bn; j++) { const o = 16 + f * bn + j; L[o] = j % (f + 2) === 0 ? 0.3 / (j + 1) : 0; R[o] = j % (f + 3) === 0 ? 0.3 / (j + 1) : 0; D[o] = 20 * Math.sin(f + j); H[o] = ((f * 7 + j * 3) % 10) / 10; }
+        e.loadSample(40, L, R); e.loadSample(41, D, H);
+        P(720, 0); P(768, 0); P(816, 0); P(864, 0); P(912, 0); P(960, 0); P(1008, 0); P(81, 0); P(83, 0); P(86, 0); P(87, 0); P(103, 0);
+        P(1061, 40); P(1062, 41); P(1060, 0.8); P(1073, 1); P(1076, 5); P(1069, 1.5); play(e, 1.5);
+        P(1072, 0); P(1071, 0); P(1060, 1); P(1074, 0.5); play(e, 1.0); }
+    } },
+  { name: 'inst-moisture', native: true, info: 'C++ only (native/engine/moist2.cpp): Moisture (37), the Serum-style wavetable synth: wavetables A / B, WT position, unison + detune + blend, warp modes (sync, bend, PWM, FM from B), sub, noise, the filter types, Env 1-3, LFO -> matrix routes, mono glide, pitch bend, every effect of the rack, tempo change',
+    run(e) {
+      e.tempo(128); e.trackInst(0, 37);
+      const f = []; for (let k = 0; k < 24; k++) f.push(k * PPQ / 2, PPQ * (k % 3 === 0 ? 1.2 : 0.4), 45 + ((k * 7) % 24), 0.5 + (k % 4) * 0.12, 0); e.trackNotes(0, f, f.length / 5);
+      const P = (i, v) => e.instParam(0, i, v);
+      P(300, 1); P(11, 0.3); P(6, 7 / 16); P(7, 0.6); P(213, 1); P(301, 4); P(24, 0.5); P(216, 1); P(45, 0.62); P(46, 0.3);
+      e.play(); play(e, 1.5, [128, 77, 256]);
+      P(168, 2 / 21); P(9, 0.6); P(215, 1); P(33, 0.6); P(214, 1); P(27, 0.2); P(44, 3 / 95); P(332, 4); P(333, 45); P(180, 0.8); P(61, 0.6); play(e, 1.2);
+      P(168, 17 / 21); P(9, 0.4); P(44, 9 / 95); P(334, 2); P(335, 11); P(182, 0.9); P(53, 0.3); P(54, 0.2); play(e, 1.2);
+      P(163, 1); P(154, 1); P(97, 0.4); P(155, 1); P(156, 1); P(157, 1); play(e, 1.2);
+      P(158, 1); P(159, 1); P(160, 1); P(161, 1); P(92, 0.7); P(162, 1); P(143, 0.7); play(e, 1.2);
+      P(306, 1); P(65, 0.4); e.bend(0, 1.5); play(e, 1); e.tempo(96); P(99, 6 / 12); play(e, 1); e.stop(); play(e, 1.5);
+    } },
+  { name: 'inst-flmdw', native: true, info: 'C++ only (native/engine/hddw.cpp, Honeydew DW Sampler): FL Studio Mobile DirectWave (30): key / vel zones (gain / pan), loop, reverse, root / tune, filter + filter envelope, frequency (pitch) envelope, LFO (Hertz / One Shot / Tempo) to filter / frequency / level / pan, slide / legato / mono, PB range + bend',
+    run(e) {
+      samples(e); testSample(e); e.tempo(124); e.trackInst(0, 30);
+      const Z = (z, k, v) => e.instParam(0, 100 + z * 8 + k, v), G = (z, g, pn) => { e.instParam(0, 300 + z * 2, g); e.instParam(0, 300 + z * 2 + 1, pn); };
+      [[3, 60, 0, 59, 1, 127, 0, 0], [0, 72, 60, 127, 1, 90, -12, 1], [2, 60, 60, 127, 91, 127, 30, 1], [1, 48, 30, 50, 1, 127, 0, 0]].forEach((q, z) => q.forEach((v, k) => Z(z, k, v)));
+      G(0, 0, 0); G(1, -3, -0.4); G(2, 2, 0.5); G(3, -6, 0.2);
+      const f = []; for (let k = 0; k < 40; k++) f.push(k * PPQ / 4, PPQ * (k % 5 === 0 ? 2 : 0.3), 36 + ((k * 7) % 48), 0.25 + (k % 4) * 0.24, (k % 3 - 1) / 2); e.trackNotes(0, f, f.length / 5);
+      e.play(); play(e, 2, [128, 77, 256]);
+      const P = (i, v) => e.instParam(0, i, v);
+      P(16, 1); P(12, 45); P(13, 60); P(14, 40); P(15, 30); play(e, 0.8);
+      P(21, 60); P(17, 20); P(18, 40); P(19, 0.2); play(e, 0.8);
+      P(16, 2); play(e, 0.4); P(16, 3); play(e, 0.4);
+      P(26, 50); P(22, 10); P(23, 35); play(e, 0.8);
+      P(32, 60); P(33, 0); P(28, 5); play(e, 0.6); P(33, 1); play(e, 0.4); P(33, 2); play(e, 0.4); P(33, 3); play(e, 0.4);
+      P(27, 1); play(e, 0.4); P(27, 2); P(29, 7); play(e, 0.5);
+      P(8, 1); play(e, 0.6);
+      P(11, 1); P(6, 0.08); play(e, 0.8);
+      P(7, 12); e.bend(0, 1.5); play(e, 0.4);
+      e.preview(0, 64, 0.8, true); play(e, 0.3); e.preview(0, 64, 0, false); e.stop(); play(e, 1);
+    } },
+  { name: 'inst-livesampler', info: 'Sampler (10): zones (key / vel), sustain loop forward + back-and-forth, crossfade, reverse, snap, start / end, HQ interpolation, filter types, envelopes, LFO, pitch envelope, spread, voices, release mode, Osc (all waves, with and without a sample)',
+    run(e) {
+      samples(e); testSample(e); e.tempo(118); e.trackInst(0, 10);
+      const Z = (z, f) => f.forEach((v, k) => e.instParam(0, 200 + z * 16 + k, v));
+      Z(0, [3, 60, 0, 59, 1, 127, 0, 1, 0.05, 0.9, 0.3, 0.6, 0.4, 0, -3, -0.3]);
+      Z(1, [0, 69, 60, 84, 1, 100, 15, 2, 0, 1, 0.2, 0.5, 0, 1, 0, 0.4]);
+      Z(2, [2, 60, 60, 84, 101, 127, -20, 0, 0.1, 0.7, 0, 1, 0, 0, 2, 0]);
+      const f = []; for (let k = 0; k < 28; k++) f.push(k * PPQ / 3, PPQ * (k % 4 === 0 ? 2.5 : 0.4), 40 + ((k * 7) % 44), 0.4 + (k % 3) * 0.3, 0); e.trackNotes(0, f, f.length / 5);
+      e.play(); play(e, 1.5, [128, 77, 256]);
+      const P = (i, v) => e.instParam(0, i, v);
+      P(8, 1); P(9, 1); P(10, 0); P(11, 1800); P(12, 3); P(13, 0.6); play(e, 0.8); P(10, 1); play(e, 0.4); P(10, 2); play(e, 0.4); P(10, 3); play(e, 0.4);
+      P(24, 4); P(25, 7); P(26, 0.2); P(27, 0.5); P(28, 0.6); P(29, 0.5); play(e, 0.6); P(24, 1); play(e, 0.3);
+      P(22, 12); P(23, 0.3); P(4, 0.4); P(5, 4); P(30, 1); P(31, 1); P(32, 1.5); play(e, 1);
+      P(33, 1); for (const w of [0, 1, 2, 3, 4]) { P(34, w); P(35, -6); P(36, 7); P(37, 20); play(e, 0.3); } P(38, -12); play(e, 0.4);
+      e.instParam(0, 90, 5); P(2, -3); P(3, 30); P(6, 0.5); P(7, 0.9); play(e, 0.5);
+      Z(0, [-1]); Z(1, [-1]); Z(2, [-1]); play(e, 0.6);     // no zones: the Osc alone
+      e.stop(); play(e, 1);
+    } },
+  { name: 'inst-irack', info: 'Instrument Rack (12): 3 chains (Mini Synth / SuperSaw + Saturator / GMS + Compressor 10 ms look-ahead), key and velocity zones, chain volume / pan / solo / activator, macros on a chain instrument and on a chain effect, chain instrument swap, reset; PDC between chains',
+    run(e) {
+      e.tempo(120); e.trackInst(0, 12); const R = (op, c, j, a, b) => e.rackCmd(0, -1, op, c, j, a, b), P = (k, v) => e.instParam(0, 100 + k, v);
+      R(0, 0, 0, 0, 0); P(32, 3);
+      R(5, 0, 0, 1, 0); R(6, 0, 0, 1, 3000); R(5, 1, 0, 2, 0); R(6, 1, 0, 2, 0.4); R(5, 2, 0, 5, 0); R(6, 2, 0, 0, 1);
+      R(1, 1, 0, 3, 0); R(2, 1, 0, 0, 10); R(1, 2, 0, 4, 0); R(2, 2, 0, 9, 2); R(2, 2, 0, 0, -30);
+      P(122, 0); P(123, 59); P(124, 55); P(125, 127); P(140, 1); P(141, 100);                                 // chain 0 keys 0..59, chain 1 keys 55..127, chain 1 velocity 1..100
+      [0, -1, 1, 0, 8000, 1, 0, 1].forEach((v, k) => P(41 + k, v)); [1, 0, 0, 0, 24, 0, 0, 1].forEach((v, k) => P(49 + k, v));   // macro 0 -> chain 0 instrument cutoff (log), macro 1 -> chain 1 Saturator drive
+      const f = []; for (let k = 0; k < 32; k++) f.push(k * PPQ / 4, PPQ * 0.35, 36 + ((k * 7) % 48), 0.3 + (k % 4) * 0.22, 0); e.trackNotes(0, f, f.length / 5);
+      e.play(); play(e, 2, [128, 77, 256]);
+      for (let k = 0; k <= 4; k++) { P(33, k / 4); P(34, 1 - k / 4); play(e, 0.25); }
+      P(0, -6); P(5, 0.7); P(7, 1); play(e, 0.5); P(7, 0); P(10, 0); play(e, 0.4); P(10, 1);
+      R(5, 0, 0, 8, 0); play(e, 0.6); R(4, 2, 0, 0, 0); play(e, 0.4); R(0, 0, 0, 0, 0); play(e, 0.4);
+      e.stop(); play(e, 0.8);
+    } },
+  { name: 'inst-drums', info: 'Drum Sampler (3, the drum step sequencer kit): all six built-in sounds, closed hat choking the open hat, level / pitch / decay, sample pads (start / end, reverse, attack / decay / sustain / release, pan), a pad chain (Mini Synth + Saturator), mute, engine Pitch, GM aliases',
+    run(e) {
+      samples(e); testSample(e); e.tempo(124); e.trackInst(0, 3);
+      const S = (pad, f, v) => e.instParam(0, 200 + pad * 16 + f, v);
+      S(6, 0, 3); S(6, 11, 50); S(6, 3, 0.1); S(6, 4, 0.8); S(6, 6, 0.01); S(6, 7, 0.1); S(6, 8, 0.4); S(6, 9, 0.2); S(6, 2, -0.5);   // sample pad with ADSR
+      S(7, 0, 0); S(7, 11, 52); S(7, 5, 1); S(7, 2, 0.6);                                                                       // reversed sample, one-shot
+      S(8, 11, 54); e.rackCmd(0, -1, 5, 8, 0, 1, 0); e.rackCmd(0, -1, 6, 8, 0, 1, 2500); e.rackCmd(0, -1, 1, 8, 0, 3, 0); e.rackCmd(0, -1, 2, 8, 0, 0, 12);   // pad chain
+      e.instParam(0, 1, 3); e.instParam(0, 5, -5); e.instParam(0, 11, 1.6); e.instParam(0, 3, -6);                               // legacy pad level / pitch / decay
+      const pat = [36, 42, 38, 42, 36, 46, 39, 42, 41, 44, 40, 35, 50, 52, 54, 42];
+      const f = []; for (let k = 0; k < 48; k++) f.push(k * PPQ / 4, PPQ * (k % 3 ? 0.2 : 0.6), pat[k % 16], 0.5 + (k % 4) * 0.16, 0); e.trackNotes(0, f, f.length / 5);
+      e.play(); play(e, 3, [128, 77, 256]);
+      e.instParam(0, 90, 4); S(1, 10, 1); play(e, 1); e.instParam(0, 90, -3); S(1, 10, 0); S(3, 1, 4); play(e, 1);
+      e.rackCmd(0, -1, 3, 8, 0, 1, 0); play(e, 0.5); e.rackCmd(0, -1, 7, 8, 0, 0, 0); play(e, 0.5); e.rackCmd(0, -1, 0, 0, 0, 0, 0);
+      e.stop(); play(e, 1);
+    } },
+  { name: 'core-slide', info: 'Slide notes (trackCC kind 4, exact semitones) on four instrument kinds: classic voice bend (1), FLM MiniSynth (32, setBendSl past its PB range), Live Analog (15, setBend), Operator (14); with and without a wheel lane',
+    run(e) {
+      e.tempo(120); [1, 32, 15, 14].forEach((ty, t) => e.trackInst(t, ty));
+      for (let t = 0; t < 4; t++) {
+        const f = []; for (let k = 0; k < 4; k++) f.push(k * PPQ * 2, PPQ * 1.8, 57 + t, 0.8, 0); e.trackNotes(t, f, 4);
+        const cc = [0, 4, 0, PPQ * 0.5, 4, 0, PPQ * 1.2, 4, 7, PPQ * 1.8, 4, 7, PPQ * 1.8 + 1, 4, 0, PPQ * 4, 4, 0, PPQ * 5, 4, -12, PPQ * 5.8, 4, -12, PPQ * 5.8 + 1, 4, 0];
+        if (t === 1) cc.push(PPQ * 2, 0, 0, PPQ * 3, 0, 1);       // a wheel lane on top of the slide (scaled by MiniSynth's PB range, the slide is not)
+        e.trackCC(t, cc, cc.length / 3);
+      }
+      e.play(); play(e, 8, [128, 77, 256]);
+    } },
+  { name: 'core-panlaw', info: 'FL Studio Mobile pan law (trackPanLaw 1 = balance) next to the Live / MobileDAW constant-power law: tracks panned hard left / -0.4 / +0.7 / centre with both laws, a pan lane (CC10) on a balance track, a return with the balance law, law switched while playing',
+    run(e) {
+      e.tempo(120); for (let t = 0; t < 4; t++) { e.trackInst(t, 2); const f = []; for (let k = 0; k < 4; k++) f.push(k * PPQ, PPQ * 0.9, 50 + t * 5, 0.8, 0); e.trackNotes(t, f, 4); }
+      e.trackPan(0, -1); e.trackPan(1, -0.4); e.trackPan(2, 0.7); e.trackPanLaw(0, 1); e.trackPanLaw(1, 1); e.trackPanLaw(3, 1);
+      e.trackSend(2, 0, 0.6); e.trackPan(65, 0.5); e.trackPanLaw(65, 1);   // 65 = RET0 (Return A)
+      e.trackCC(3, [0, 2, 0, PPQ * 3, 2, 127], 2);
+      e.play(); play(e, 1.5, [128, 77]); e.trackPanLaw(2, 1); e.trackPanLaw(0, 0); play(e, 1.5, [128]);
+    } },
+  { name: 'core-modwheel', info: 'Mod wheel (modWheel command and trackCC kind 7 = CC1): FLM SuperSaw ModWheel Amount / Dest to Cutoff, Pulse Width, Unison Detune, Level, LFO Amount and LFO Rate; a wheel lane on a second SuperSaw; instrument re-created while the wheel is up',
+    run(e) {
+      e.tempo(120); e.trackInst(0, 33); e.trackInst(1, 33);
+      const P = (t, k, v) => e.instParam(t, k, v);
+      P(0, 18, 40); P(0, 19, 50); P(0, 41, 80); P(0, 5, 4); P(0, 0, 1); P(0, 32, 50); P(0, 28, 2);
+      const f = []; for (let k = 0; k < 6; k++) f.push(k * PPQ * 2, PPQ * 1.8, 52 + k, 0.8, 0); e.trackNotes(0, f, 6); e.trackNotes(1, f, 6);
+      P(1, 42, 0); P(1, 41, -60); P(1, 18, 70);
+      e.trackCC(1, [0, 7, 0, PPQ * 4, 7, 127, PPQ * 8, 7, 30, PPQ * 12, 7, 90], 4);
+      e.play();
+      for (const [dest, w] of [[0, 1], [3, 0.6], [4, 1], [5, 0.5], [7, 1], [8, 0.8]]) { P(0, 42, dest); e.modWheel(0, w); play(e, 0.5, [128, 77]); e.modWheel(0, 0.2); play(e, 0.3); }
+      e.modWheel(0, 0.9); e.trackInst(0, 33); P(0, 41, 100); P(0, 42, 0); P(0, 18, 30); play(e, 0.6, [128, 256]);
+      e.trackCC(1, [], 0); play(e, 0.4);
+    } },
+  { name: 'inst-drumpitch', info: 'Drum Sampler per-step pitch (stride-6 note events, step graph Pitch lane): sample pad and built-in pads hit at -12 / -5 / 0 / +7 / +12 semitones, pan per step, old stride-5 track next to it',
+    run(e) {
+      samples(e); testSample(e); e.tempo(120); e.trackInst(0, 3); e.trackInst(1, 3);
+      e.instParam(0, 200 + 6 * 16 + 0, 3); e.instParam(0, 200 + 6 * 16 + 11, 50);
+      const f = [], sts = [-12, -5, 0, 7, 12, 3, -2, 0];
+      for (let k = 0; k < 16; k++) f.push(k * PPQ / 2, PPQ / 4, [50, 36, 38, 42][k % 4], 0.8, k % 3 ? 0 : -0.5, sts[k % 8]);
+      e.trackNotes(0, f, 16, 6);
+      const g = []; for (let k = 0; k < 8; k++) g.push(k * PPQ, PPQ / 2, 36, 0.9, 0); e.trackNotes(1, g, 8);
+      e.play(); play(e, 8, [128, 77, 256]);
+    } },
+  { name: 'inst-drumcut', info: 'Drum Sampler Seq settings (FL Studio Mobile): cut groups (sample pads, built-in pads, mixed), poly off (a pad cuts itself), hold (sample and built-in), shift (delay), changed while playing',
+    run(e) {
+      samples(e); testSample(e); e.tempo(120); e.trackInst(0, 3);
+      const S = (pad, f, v) => e.instParam(0, 200 + pad * 16 + f, v);
+      S(6, 0, 3); S(6, 11, 50); S(6, 12, 1);                                   // sample pad, cut group A
+      S(7, 0, 0); S(7, 11, 52); S(7, 12, 1); S(7, 9, 0.3); S(7, 2, 0.4);        // sample pad, cut group A, release 0.3 s
+      S(8, 0, 2); S(8, 11, 54); S(8, 13, 0);                                   // sample pad, poly off
+      S(9, 0, 3); S(9, 11, 55); S(9, 14, 0.12); S(9, 9, 0.05);                 // sample pad, hold 0.12 s, release 50 ms
+      S(10, 0, 1); S(10, 11, 56); S(10, 15, 0.03);                             // sample pad, shift 30 ms
+      S(0, 12, 2); S(5, 12, 2); S(7, 12, 1);                                   // built-in kick + tom: cut group B
+      S(1, 13, 0); S(2, 14, 0.05); S(3, 15, 0.02); S(4, 12, 1);                // snare poly off, clap hold, hat shift, open hat cut group A (chokes the sample pads of A)
+      const pat = [36, 41, 50, 52, 54, 55, 56, 38, 39, 42, 46, 36, 52, 54, 41, 50];
+      const f = []; for (let k = 0; k < 64; k++) f.push(k * PPQ / 8, PPQ * (k % 3 ? 0.2 : 0.7), pat[k % 16], 0.45 + (k % 4) * 0.17, 0); e.trackNotes(0, f, f.length / 5);
+      e.play(); play(e, 3, [128, 77, 256]);
+      S(6, 12, 0); S(8, 13, 1); S(2, 14, 0); S(0, 12, 0); play(e, 1.5);
+      S(6, 12, 3); S(7, 12, 3); S(9, 14, 0); S(10, 15, 0.25); play(e, 1.5);
+      e.stop(); play(e, 1);
+    } },
+  { name: 'inst-drumflmeg', info: 'Drum Sampler pad envelope model 1 (FL Studio Mobile drum slot, Honeydew drums.rs): one-pole attack / decay to sustain / release from the 0..1 sliders, release by note-off and by Hold, cut group choke of a releasing voice, default sliders (0 / 1 / 1 / 1), model switched while playing',
+    run(e) {
+      samples(e); testSample(e); e.tempo(120); e.trackInst(0, 3);
+      const S = (pad, f, v) => e.instParam(0, 200 + pad * 16 + f, v), EG = (pad, v) => e.instParam(0, 500 + pad, v);
+      S(6, 0, 3); S(6, 11, 50); EG(6, 1); S(6, 6, 0); S(6, 7, 1); S(6, 8, 1); S(6, 9, 1);              // FLM defaults: instant attack, slow release
+      S(7, 0, 0); S(7, 11, 52); EG(7, 1); S(7, 6, 0.35); S(7, 7, 0.3); S(7, 8, 0.4); S(7, 9, 0.25);    // attack, decay to 0.4, short release
+      S(8, 0, 2); S(8, 11, 54); EG(8, 1); S(8, 6, 0.1); S(8, 7, 0.6); S(8, 8, 0); S(8, 9, 0.5); S(8, 14, 0.08);   // decay to silence, Hold 80 ms
+      S(9, 0, 3); S(9, 11, 55); EG(9, 1); S(9, 9, 0.6); S(9, 12, 1); S(10, 0, 1); S(10, 11, 56); EG(10, 1); S(10, 12, 1); S(10, 9, 0.0005);   // cut group A, instant release
+      const pat = [50, 52, 54, 55, 56, 52, 50, 54];
+      const f = []; for (let k = 0; k < 32; k++) f.push(k * PPQ / 4, PPQ * (k % 3 ? 0.15 : 0.6), pat[k % 8], 0.5 + (k % 4) * 0.15, 0); e.trackNotes(0, f, f.length / 5);
+      e.play(); play(e, 3, [128, 77, 256]);
+      EG(7, 0); S(7, 6, 0.01); S(7, 7, 0.2); S(7, 9, 0.1); EG(6, 0); play(e, 1.5);
+      EG(7, 1); S(7, 6, 0.5); S(7, 7, 0.5); S(7, 9, 0.3); play(e, 1.5);
+      e.stop(); play(e, 1);
+    } },
+  { name: 'core-width-invert', info: 'channel stereo width (0 / 0.4 / 2, smoothed) and phase invert (L, R, both; ramped) on tracks, a return and the master, plus width automation (lane kind 7)',
+    run(e) {
+      samples(e); e.tempo(120); e.trackClips(0, clipsA, 3); e.trackClips(1, clipsB, 3); e.trackSend(0, 0, 0.5); e.insertDevice(65, 0, 7);
+      e.automation([7, 1, 0, 0, 3, 0, 0, PPQ * 4, 2, PPQ * 8, 0.3], 11);
+      e.play(); play(e, 1, [128, 77]);
+      e.trackWidth(0, 0); play(e, 0.4); e.trackWidth(0, 2); play(e, 0.4); e.trackWidth(0, 0.4); e.trackInvert(0, 1); play(e, 0.4);
+      e.trackInvert(0, 2); play(e, 0.3); e.trackInvert(0, 3); play(e, 0.3); e.trackInvert(0, 0); e.trackWidth(0, 1); play(e, 0.3);
+      e.trackWidth(65, 1.8); e.trackInvert(65, 1); play(e, 0.5); e.trackWidth(64, 0.2); e.trackInvert(64, 2); play(e, 1.2, [128, 333]);
+      e.trackWidth(64, 1); e.trackInvert(64, 0); play(e, 0.5); e.stop(); play(e, 0.5);
+    } },
+  { name: 'core-clip-nofade', info: 'audio clips with fade -1 (no fade at all: frozen tracks), next to the default 64-frame fade and real fades',
+    run(e) { samples(e); e.tempo(126); e.trackClips(0, [0, BAR, 0, 0.8, 0, -1, -1, BAR, BAR, 2, 0.9, 0.3, 0, 0, BAR * 2, BAR, 1, 1, 0, 0.02, -1], 3); e.play(); play(e, 6, [128, 77]); } },
+  { name: 'core-clip-pan', info: 'audio clips with a pan of their own (stride 8: balance, centre untouched): hard left, half right, centre next to an old stride-7 track',
+    run(e) { samples(e); e.tempo(126); e.trackClips(0, [0, BAR, 0, 0.8, 0, 0, 0, -1, BAR, BAR, 2, 0.9, 0.1, 0.02, 0.02, 0.5, BAR * 2, BAR, 1, 1, 0, 0.02, 0.02, 0], 3, 8); e.trackClips(1, [0, BAR * 3, 2, 0.7, 0, 0, 0], 1); e.play(); play(e, 6, [128, 77]); } },
+  ...fxScenarios(),
+  { name: 'core-slide-vp', info: 'slide notes with velocity / pan glide (trackCC kinds 5 = gain ratio, 6 = pan offset) next to a CC7 / CC10 lane, then removed',
+    run(e) {
+      e.tempo(118); e.trackInst(0, 33); e.trackInst(1, 32); e.trackPan(1, -0.3);
+      e.trackNotes(0, [0, PPQ * 8, 55, 0.9, 0, PPQ * 8, PPQ * 4, 60, 0.7, 0.2], 2); e.trackNotes(1, [0, PPQ * 12, 48, 0.8, 0], 1);
+      e.trackCC(0, [PPQ, 4, 0, PPQ * 2, 4, 5, PPQ, 5, 1, PPQ * 2, 5, 0.4, PPQ * 3, 5, 0.4, PPQ * 4, 5, 1.6, PPQ * 2, 6, 0, PPQ * 4, 6, 0.8, PPQ * 8, 6, 0.8, PPQ * 8 + 1, 6, 0, PPQ * 9, 6, -2.5], 11);
+      e.trackCC(1, [0, 1, 100, PPQ * 6, 1, 60, 0, 2, 64, PPQ * 6, 2, 20, PPQ, 5, 1, PPQ * 5, 5, 0.25, PPQ, 6, 0, PPQ * 5, 6, 1.5], 8);
+      e.play(); play(e, 4, [128, 77, 256]); e.trackCC(1, [], 0); play(e, 1.5);
+    } },
+  { name: 'core-fx-mix', info: 'per-module Mix / Gain (devParam 1000 / 1001) on every effect: Reverb, Compressor with 10 ms look-ahead (dry delayed to match), Limiter, a Saturator inside a rack chain and in a drum pad chain; ramps, automation of Mix, back to Mix 1 (plain path) and on again',
+    run(e) {
+      e.tempo(122); e.trackInst(0, 2); e.trackInst(1, 3);
+      const f = []; for (let k = 0; k < 24; k++) f.push(k * PPQ / 2, PPQ * 0.45, 48 + ((k * 5) % 19), 0.85, 0); e.trackNotes(0, f, f.length / 5);
+      const dr = []; for (let k = 0; k < 16; k++) dr.push(k * PPQ / 2, PPQ * 0.2, k % 4 ? 42 : 36, 1, 0); e.trackNotes(1, dr, dr.length / 5);
+      e.insertDevice(0, 0, 7); e.devParam(0, 0, 2, 0.6); e.devParam(0, 0, 1000, 0.4); e.devParam(0, 0, 1001, 1.5);
+      e.insertDevice(0, 1, 4); [-24, 8, 1, 80].forEach((v, k) => e.devParam(0, 1, k, v)); e.devParam(0, 1, 9, 2); e.devParam(0, 1, 1000, 0.5);
+      e.insertDevice(0, 2, 5); e.devParam(0, 2, 1000, 0.7); e.devParam(0, 2, 1001, 0.5);
+      e.insertDevice(0, 3, 51); e.devParam(0, 3, 32, 1); e.rackCmd(0, 3, 0, 0, 0, 0, 0); e.rackCmd(0, 3, 1, 0, 0, 3, 0); e.rackCmd(0, 3, 2, 0, 0, 0, 18); e.rackCmd(0, 3, 2, 0, 0, 1000, 0.3);
+      e.insertDevice(1, 0, 7); e.devParam(1, 0, 1000, 0.25);
+      e.play(); play(e, 1.5, [128, 77, 256]);
+      e.devParam(0, 0, 1000, 0.9); e.devParam(0, 1, 1001, 2); e.devParam(0, 2, 1000, 0); play(e, 1);
+      e.automation([4, 0, 0, 1000, 3, 0, 0, BAR, 1, BAR * 2, 0.2]); play(e, 1.5, [128, 333]);
+      e.automation([]); e.devParam(0, 1, 1000, 1); e.devParam(0, 1, 1001, 1); e.devParam(0, 3, 1000, -1); play(e, 1);
+      e.devParam(0, 1, 1000, 0.2); e.devParam(0, 1, 9, 1); play(e, 1);
+    } },
+  { name: 'fx-autoduck-sc', info: 'Autoduck: track 2 (short bass notes) ducks the pad on track 1; source / threshold / amount / attack / release changes while playing',
+    run(e) {
+      e.tempo(124); e.trackInst(0, 2); e.trackInst(1, 1);
+      const pad = []; for (let k = 0; k < 4; k++) pad.push(k * PPQ * 4, PPQ * 3.9, 55 + k * 2, 0.7, 0); e.trackNotes(0, pad, pad.length / 5);
+      const kick = []; for (let k = 0; k < 16; k++) kick.push(k * PPQ, PPQ * 0.2, 36, 1, 0); e.trackNotes(1, kick, kick.length / 5);
+      e.insertDevice(0, 0, 10); [2, -40, 18, 3, 150].forEach((v, k) => e.devParam(0, 0, k, v));
+      e.play(); play(e, 2, [128, 77, 256]);
+      e.devParam(0, 0, 1, -12); e.devParam(0, 0, 3, 40); play(e, 1);
+      e.devParam(0, 0, 2, 48); e.devParam(0, 0, 4, 900); play(e, 1, [128, 333]);
+      e.devParam(0, 0, 0, 1); play(e, 0.5); e.devParam(0, 0, 0, 0); play(e, 0.5);
+      e.stop(); play(e, 0.5);
+    } },
+  { name: 'demo-ghibli', info: 'demo song Ghibli Sky (SoundFont + Osphere)', run: (e, o) => demo(e, o, 'ghibli-sky.mdaw', 30) },
+  { name: 'demo-meadow', info: 'demo song Meadow Wind (SoundFont + Osphere)', run: (e, o) => demo(e, o, 'meadow-wind.mdaw', 30) },
+];
+
+// Demo song, loaded like tools/bench.mjs does (instruments, devices, notes, mixer). Renders the first `sec` seconds.
+async function demo(e, { root }, file, sec) {
+  const { parseSf2 } = await import(path.join(root, 'js/engine/sf2.js'));
+  const j = JSON.parse(fs.readFileSync(path.join(root, 'demos', file), 'utf8'));
+  e.tempo(j.bpm); const sfs = new Map();
+  const dev = (strip, d) => { const di = e.engine.s[strip].dev.length; e.insertDevice(strip, di, d.type); d.params.forEach((v, pi) => e.devParam(strip, di, pi, v)); if (d.bypass) e.devBypass(strip, di, true); };
+  (j.master.devices || []).forEach((d) => dev(64, d));
+  (j.returns || []).forEach((r, k) => { e.trackVol(65 + k, r.vol); (r.devices || []).forEach((d) => dev(65 + k, d)); });
+  let i = 0;
+  for (const t of j.tracks) {
+    if (t.kind !== 'midi' || !t.inst) continue;
+    e.trackInst(i, t.inst.type);
+    for (const [k, v] of Object.entries(t.inst.params || {})) e.instParam(i, +k, v);
+    if (t.inst.sf) {
+      let id = sfs.get(t.inst.sf.path);
+      if (id === undefined) { id = sfs.size; const b = fs.readFileSync(path.join(root, 'demos', t.inst.sf.path.replace(/^\//, ''))); e.loadSoundFont(id, parseSf2(b.buffer.slice(b.byteOffset, b.byteOffset + b.length))); sfs.set(t.inst.sf.path, id); }
+      e.instParam(i, 100, id); e.instParam(i, 1, t.inst.sf.preset);
+    }
+    (t.devices || []).forEach((d) => dev(i, d));
+    e.trackVol(i, t.vol ?? 0.85); e.trackPan(i, t.pan || 0);
+    if (t.send) { e.trackSend(i, 0, t.send[0]); e.trackSend(i, 1, t.send[1]); }
+    const f = []; let n = 0;
+    for (const c of t.clips) for (const nt of c.notes || []) { f.push(c.start + nt.t, nt.d, nt.p, nt.v, nt.pan || 0); n++; }
+    e.trackNotes(i, f, n); i++;
+  }
+  e.play(); play(e, sec);
+}
+
+// Instruments: (1) every factory preset in turn (fresh track per preset, chord + melody with different velocities),
+// (2) one patch played with parameter automation, the pitch parameter (90), CC pitch bend, live preview notes and preset changes mid-note.
+function instScenarios() {
+  const out = [];
+  for (const t of SYNTHS) {
+    const def = D.INSTRUMENTS[t]; if (!def) continue;
+    const key = def.name.toLowerCase().replace(/[^a-z0-9]+/g, '');
+    const presets = D.PRESETS[t] || [];
+    const apply = (e, p) => def.params.forEach((q, k) => e.instParam(0, k, p[k] ?? q.def));
+    const notes = () => { const f = []; for (const n of [48, 52, 55, 60]) f.push(0, PPQ * 1.5, n, 0.8, 0); [72, 74, 76, 79].forEach((n, i) => f.push(PPQ * (0.25 + i * 0.4), PPQ * 0.3, n, 0.35 + i * 0.2, (i - 1.5) / 2)); return f; };
+    if (presets.length) out.push({ name: 'presets-' + key, info: `${def.name}: all ${presets.length} factory presets`, run(e) {
+      e.tempo(120);
+      for (const pr of presets) { e.resetTrack(0); e.trackInst(0, t); apply(e, pr.p); const f = notes(); e.trackNotes(0, f, f.length / 5); e.seek(0); e.play(); play(e, 1.5); e.stop(); }
+    } });
+    out.push({ name: 'play-' + key, info: `${def.name}: automation, pitch, bend, preview, preset change mid-note`, run(e) {
+      e.tempo(100); e.trackInst(0, t); apply(e, (presets[3] || {}).p || {});
+      const f = []; for (let k = 0; k < 24; k++) f.push(k * PPQ / 2, PPQ * (k % 3 ? 0.4 : 1.2), 45 + ((k * 7) % 24), 0.3 + (k % 5) * 0.15, k % 2 ? 0.3 : -0.3);
+      e.trackNotes(0, f, f.length / 5);
+      const p1 = def.params.findIndex((q) => q.max > q.min && !q.step), q1 = def.params[p1 < 0 ? 0 : p1];
+      e.automation([5, 0, 0, p1 < 0 ? 0 : p1, 3, 0, q1.min, BAR, q1.max, BAR * 3, (q1.min + q1.max) / 2, 5, 0, 0, 90, 2, BAR * 2, 0, BAR * 2 + 1, 5]);
+      e.trackCC(0, [0, 0, 0, BAR, 0, 1, BAR * 1.5, 0, -0.5], 3);
+      e.play(); play(e, 3);
+      e.preview(0, 64, 0.9, true); play(e, 0.3); e.bend(0, 1.5); play(e, 0.3); e.preview(0, 64, 0, false);
+      if (presets[10]) apply(e, presets[10].p);
+      play(e, 2); e.stop(); play(e, 1);
+    } });
+  }
+  return out;
+}
+
+// Live 12 instruments: every parameter in turn at its minimum and maximum (all modes / switches / branches), a chord + low and high notes,
+// released; sample-based ones get a test sample in every slot (Impulse: zones 0..7 on C3..G3, Granulator III: zone 0).
+function testSample(e) {
+  const n = 48000, l = new Float32Array(n), r = new Float32Array(n); let ph = 0, seed = 9;
+  for (let i = 0; i < n; i++) { const t = (i % 12000) / 48000, a = [0.5, 0.15, 0.4, 0.1][Math.floor(i / 12000)], env = Math.exp(-t * 6) * a; ph += 220 / 48000; seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; const x = ((ph % 1) * 2 - 1) * env + (seed / 4294967296 - 0.5) * Math.exp(-t * 60) * a * 2; l[i] = x; r[i] = x * 0.9; }
+  e.loadSample(3, l, r);
+}
+function paramScenarios() {
+  return PARAM_SYNTHS.filter((t) => D.INSTRUMENTS[t]).map((t) => {
+    const def = D.INSTRUMENTS[t], key = def.name.toLowerCase().replace(/[^a-z0-9]+/g, '');
+    return { name: 'params-' + key, info: `${def.name}: every parameter at min and max`, run(e) {
+      e.tempo(120); const smp = def.sampler; if (smp) testSample(e);
+      const notes = smp && def.slots ? [60, 61, 62, 63, 64, 65, 66, 67] : [36, 48, 55, 64, 84];
+      const base = () => { def.params.forEach((q, k) => e.instParam(0, k, q.def)); if (smp) for (let z = 0; z < (def.slots || 1); z++) { e.instParam(0, 200 + z * 16, 3); e.instParam(0, 201 + z * 16, 60); } };
+      const hit = () => { const f = []; notes.forEach((nn, j) => f.push(j * 60, PPQ * 0.8, nn, 0.3 + (j % 4) * 0.2, 0)); e.trackNotes(0, f, f.length / 5); e.seek(0); e.play(); play(e, 0.9, [128, 64, 200]); e.stop(); play(e, 0.15); };
+      e.resetTrack(0); e.trackInst(0, t); base(); hit();
+      def.params.forEach((q, k) => { if (q.hidden) return; for (const v of [q.min, q.max]) { base(); e.instParam(0, k, v); hit(); } });
+    } };
+  });
+}
+
+// Effects: a SuperSaw + DS Kick pattern through the effect; every parameter in turn at its minimum, maximum and a middle value (plus the
+// defaults first), the effect instance kept between settings (state carries over, as in a real session); render sizes vary.
+function fxScenarios() {
+  return FX_PORTED.filter((t) => D.DEVICES[t]).map((t) => {
+    const def = D.DEVICES[t], key = def.name.toLowerCase().replace(/[^a-z0-9]+/g, '');
+    return { name: 'fx-' + key, info: `${def.name}: every parameter at min / max / middle`, run(e) {
+      e.tempo(120); e.trackInst(0, 2);
+      const f = []; for (let k = 0; k < 16; k++) f.push(k * PPQ / 2, PPQ * 0.45, 48 + ((k * 5) % 19), 0.4 + (k % 4) * 0.15, 0); e.trackNotes(0, f, f.length / 5);
+      e.insertDevice(0, 0, t); const base = () => def.params.forEach((q, k) => e.devParam(0, 0, k, q.def));
+      base(); e.seek(0); e.play(); play(e, 1, [128, 64, 200]);
+      def.params.forEach((q, k) => { if (q.hidden) return; for (const v of [q.min, q.max, q.min + (q.max - q.min) * 0.37]) { base(); e.devParam(0, 0, k, v); play(e, 0.35, [128, 96]); } });
+      e.stop(); play(e, 0.5);
+    } };
+  });
+}

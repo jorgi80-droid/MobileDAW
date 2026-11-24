@@ -1,0 +1,185 @@
+# Impor proyek FL Studio Mobile / FL Studio / Ableton ke MDAW
+
+Menu: **Browser → Proyek → Impor proyek FL Studio Mobile / FL Studio / Ableton…** (atau menu ⋮ → Impor → Proyek FLM / FLP / Ableton). Setelah file dipilih muncul satu pilihan: **Ganti modul yang hilang dengan stock plugin**.
+Pilih `.flm`, `.flp`, `.als`, atau **ZIP** yang berisi file proyek itu beserta sample-nya (mis. ZIP ekspor FL Studio Mobile dengan folder
+`My Samples` / `My Tracks`). Jendela progres tampil selama konversi; di akhir ada laporan. Hasilnya disimpan sebagai
+`Projects/<nama>.mdaw`. Sample proyek **FL Studio Mobile** disimpan di **`FLM/<nama proyek>/<folder sample aslinya>`** (mis.
+`FLM/Lagu Saya/My Samples/Drums/kick.wav`; folder pembungkus ZIP dibuang), sample FLP / ALS di `Samples/Imports/<nama>/`. Proyek `.mdaw`
+merujuk ke path itu, jadi tetap terbuka offline. **Ekspor ZIP** (menu ⋮ → Ekspor) membawa semua sample di dalam ZIP dengan path yang sama
+(termasuk sample pad drum); saat ZIP itu dibuka lagi, path folder library (`FLM/...`, `Samples/sub/...`) dipertahankan.
+
+## Alur (js/import/)
+| Langkah | File | Progres |
+|---|---|---|
+| Buka ZIP, cari file proyek, petakan sample | `index.js` (`readZip` dari `zip.js`) | 0–15 % |
+| Baca proyek | `flm.js` / `flp.js` / `als.js` → model netral | 15–30 % |
+| Konversi ke JSON MDAW | `build.js` | 30–35 % |
+| Sesuaikan modul ke stock plugin | `fxmap.js` | 30–35 % |
+| Salin sample ke `FLM/<proyek>/…` (yang hilang: file hening pendek) | `index.js` | 36–70 % |
+| Simpan + buka (decode sample, render klip stretch) | `P.deserialize(text, onProgress)` | 70–100 % |
+
+Model netral: satuan ketuk (beat), gain linear (1 = level bawaan), pan −1..1; kanal `master` / `bus` / `track` dengan `modules`
+(efek), `instrument`, `pads`, dan `tracks` (sub-track: `notes`, `drums`, `audio`, `automation`) berisi klip
+(`pos`, `len`, `cycle` = panjang siklus pattern / loop, `offset`, not / sample / titik otomasi).
+
+## Aturan "tidak ada yang hilang diam-diam"
+- **Plugin tidak ada di MDAW** → device placeholder: Utility netral (audio diteruskan apa adanya) dengan `d.missing = { name, app, preset,
+  params }`; kartunya bertuliskan **[Plugin tidak tersedia] <nama>**, nilai parameter asli disimpan, bisa diganti lewat ⋯ → Ganti dengan.
+- **Sample audio tidak ada** → klip tetap di posisi / panjang / namanya ("⚠ <nama> (sample tidak ada)") dengan file hening pendek.
+- **DirectWave FLM → DirectWave MDAW (mesin FLM, instrumen 30, lihat `docs/FLM-INSTRUMENTS.md`)**: setiap modul DirectWave di kanal
+  (lapisan) menjadi satu zona dengan sample dan **root key** aslinya (rentang tuts penuh, jadi lapisan berbunyi bersamaan seperti di FLM),
+  plus **Pitch / Fine Tune lapisan** (root digeser, tune dalam cent), level dan pan lapisan. Seluruh parameter dikonversi (tab Sample,
+  Filter, Flt Env, Frq Env, LFO — tata letak di bagian "Presisi" di bawah). Sample lapisan yang tidak ada di arsip tetap menjadi zona
+  (file hening + `zone.missing`), jadi pengaturan instrumen tidak hilang.
+- **Program library bawaan FLM** (mis. `DirectWave Samples/Keyboard/Grand Piano.dwp`, tidak ikut di ZIP) → **SoundFont General MIDI** bawaan
+  MobileDAW (`SoundFonts/TimGM6mb.sf2`) dengan preset paling mirip dari namanya (Grand Piano → Acoustic Grand Piano); chip "pengganti …" di
+  kartu instrumen. Suaranya mirip, bukan sample FLM yang sama. Tanpa padanan nama → DirectWave kosong, pattern utuh, chip "hilang".
+- **GMS / MiniSynth / SuperSaw** → instrumen FLM MobileDAW yang sama (31 / 32 / 33, tab dan kontrol seperti FLM) dengan preset bernama sama bila ada;
+  nilai parameter FLM asli disimpan di `inst.from`. Dikenali dari nama / path preset modul — type id synth ini belum terverifikasi dari file
+  FLM asli (arsip pemilik tidak memakainya).
+- **Sample pad drum tidak ada** → pad tetap (nama, step), dibisukan sampai diberi sample.
+- **Otomasi** volume mixer → track otomasi MDAW; otomasi parameter plugin yang tidak tersedia dan otomasi master → dilaporkan.
+- Laporan akhir: instrumen (asal → hasil), plugin tidak tersedia (dengan jumlah), sample hilang, yang tidak dikonversi, catatan.
+
+## FL Studio Mobile (.flm) — dipetakan dari proyek asli (FLM 4.6)
+Format tidak terdokumentasi; struktur di bawah dibaca dan diverifikasi pada proyek pemilik (28 kanal, 1041 klip, 33 sample unik).
+- File = `10LF` + chunk (`tag` 4 huruf + `u32` ukuran + data). HEAD: nama, **tempo** (f64 di +0x108), versi aplikasi. TDIV: birama.
+- RACK ×N dan CHNL ×N berurutan sama. CHNL: jenis (master / bus efek / track), CHHD (nama, kunci urutan, hue warna, nomor), TRKH per
+  sub-track (DESc: 0 not, 1 otomasi, 2 audio, 3 drum; target otomasi + label seperti "Gain : FX Leveller").
+- CLIP: posisi u32 (**128 tick per ketuk**) + CLHd (panjang, panjang siklus/loop, offset, panjang sumber dalam ketuk, flag mute) — sama
+  dengan model pattern MDAW (`len`, `ll`, `lp`), jadi pengulangan pattern tidak menyalin not. EVN2: not 20 byte (waktu, durasi f64 ketuk,
+  pitch, pan, velocity). CLSm: path sample (`@L@` = folder pengguna FLM), **rasio stretch** (STRC), gain / pan klip.
+- RACK: RPRM (volume, pan), RMOd = modul berurutan sesuai rantai sinyal (tipe, id instance, preset, parameter dengan [0] = aktif;
+  CSTM/ZONE = sample DirectWave, PATh `@R@` = library bawaan FLM), RSMP/SMPl = sample per pad drum.
+- **Nama plugin**: hanya yang terbukti dari isi file — 1 DirectWave, 8 Compressor, 20 FX Leveller (label otomasi), 29 Autoduck,
+  34 Spacer, 43 Wow & Flutter (folder preset) — plus nama yang dipelajari dari folder preset / label otomasi di file yang sedang diimpor.
+  Tipe lain tampil sebagai **"Efek FLM #<id>"** (bukan tebakan). Tabel `KNOWN` di `flm.js` bisa dilengkapi begitu nama tipe lain
+  diketahui (mis. dari screenshot rack FLM).
+- Level dan velocity: lihat bagian **Presisi** di bawah.
+- **Klip yang tidak pernah di-resize** (duplikat / klip tertaut, chunk `LINk`) menyimpan panjang 0: panjangnya = panjang siklus (dulu
+  terbaca hampir nol, contoh arsip pemilik: 74 klip "BASS LOUD FUNKYTONE" di Audio 7 hanya muncul sebagian). 82 klip di arsip pemilik.
+- **Pitch klip audio**: stretch hidup → `STR1` (u8 on, f64 rasio waktu, f64 **semitone**), sama dengan `STRC` (f64 rasio pitch =
+  2^(st/12), f32 knob = 0,5 + st/48); diterapkan sebagai warp pitch (waktu tetap). Stretch mati → knob pitch di `PRMS[2]` (0,5 + st/48)
+  = resample (kecepatan ikut berubah) → warp mode `repitch`. Arsip pemilik: 377 klip dengan pitch + 48 klip repitch (96_Tom −4,16 st).
+- **Pad drum**: pitch dengan cent (`PRMS[2]` = 0,5 + st/48, mis. kick +1,85 st) dan envelope A / D / S / R (`PRMS[6..9]`, kurva waktu
+  kubik 1 ms–10 s, perkiraan — FLM tidak menampilkan angka).
+- **Modul**: `SMPR` = **Wet Pan, Mix, Post Gain** (opsi Mix di Rack menurut manual resmi; bawaan 0,5 / 1 / 0,5). Mix → level/wet modul: pada
+  efek yang dikonversi menjadi Dry/Wet stock plugin, atau campuran dry + olahan untuk Utility / EQ Eight; pada lapisan DirectWave: level
+  (dB) per zona. Wet Pan dan Post Gain non-default dilaporkan (kedua arsip pemilik selalu bawaan, jadi tidak ada yang hilang).
+- **Penomoran nada**: root zona DirectWave FLM tersimpan 12 di bawah MIDI (Banjo.wav ber-unity 60 di chunk `smpl` / `acid`, FLM
+  menyimpan 48; nada dasarnya terukur C4 = 261 Hz). Root dan not pattern digeser +12 → nada relatif sampler tetap, nada absolut benar untuk
+  synth / SoundFont. Kesimpulan dari satu sample; dikonfirmasi lebih lanjut bila ada proyek FLM dengan synth.
+- **Proyek pemilik ke-2 (HIPDUT, 42 kanal)**: dari folder preset / file: tipe 2 = **GMSynth** (`.flgsynth`), 23 = **SuperSaw**, 52 =
+  **pemutar SoundFont** (sf2 bawaan FLM → pengganti SoundFont GM menurut nama: BAS → Synth Bass, LED → Saw Lead, PAD → Pad …), 6 =
+  Distortion, 15 = Stereoizer, 32 = Reverb, 35 = Reverb 2, 42 = Tape Stop, 46 = Tremolo. Tebakan lama "44 = Stereoizer" dicabut.
+  Modul tak dikenal berparameter banyak (≥ 40) di kanal not = instrumennya (dilaporkan "Instrumen FLM #39"); tipe 48 (3 parameter, selalu
+  sebelum instrumen) kemungkinan Note Effect, belum dikenali.
+- **Otomasi parameter plugin** (sebelumnya hanya volume): jalur otomasi device ke plugin hasil konversi — Tape Stop "Toggle Play" (param 5)
+  → Play (step, berbunyi sampai titiknya lalu berhenti), mix modul (id 32705) → Dry/Wet, Leveller gain / pan → Utility, band Graphic EQ →
+  EQ Eight (nilai dikonversi seperti modulnya). Otomasi ke modul yang tetap placeholder dihapus dan dilaporkan.
+- **Tape Stop** sekarang ada di MobileDAW (efek 52, `js/engine/fx8.js`): Play, Sync, Start / Stop Time (detik atau ketukan), Warp.
+- Belum terbaca: chunk `KEYB` (pengaturan akor keyboard FLM, JSON), `META` (tanggal). `SEND` dibaca: semua kanal arsip pemilik ke Master
+  dengan level bawaan.
+
+## Presisi impor FLM (apa yang persis, apa yang asumsi)
+Prinsip: data asli tidak dibulatkan, tidak dipotong, tidak dibuang; nilai mentah modul / instrumen disimpan apa adanya (f32 seperti di file)
+di `d.missing.params` / `inst.from`, jadi konversi yang lebih baik nanti bisa diterapkan ulang tanpa kehilangan apa pun. Laporan impor
+punya bagian **Presisi**: posisi di luar grid yang dipertahankan, not dengan boost velocity, track yang di-mute, instrumen yang dikonversi
+dari nilai file vs dari preset bernama sama, dan data asli yang belum bisa diterapkan.
+
+**Persis (terbukti dari file):**
+- **Waktu**: posisi FLM ada di grid 1/128 ketuk = 7,5 tick MDAW (960 PPQ) — setengah tick disimpan apa adanya (dulu dibulatkan, selisih
+  ≤ 0,24 ms; dua arsip pemilik: 660 awal not dan 871 posisi / panjang klip di luar grid MDAW). Panjang not / klip f64 → tick tanpa pembulatan (resolusi 1/1024 tick).
+- **Velocity not**: u16, 32767 = 100 % (nilai semua not yang tidak diubah), sampai 65535 = 200 % (boost FLM). MDAW: velocity = mentah /
+  32767, 0..2 — boost **tidak dipotong** (dulu semua di atas 125 % menjadi rata 1; HIPDUT punya crescendo sampai 143 % dan drum sampai
+  174 %). Instrumen memakai velocity secara linear, jadi 100 % = level penuh instrumen; pemilihan zona velocity memakai batas 127.
+- **Level**: track, master, bus, klip audio, pad drum: slider 0..1 dengan bawaan f32 0,85312408 = **0 dB** di MDAW, nilai lain = gain
+  relatif terhadap bawaan itu (dulu track / master dipetakan ke 0,85 = −1,4 dB masing-masing, klip / pad memakai 0,853 → tidak konsisten).
+- **Mute track**: `RPRM` = f32 × 6 (level, pan, **mute 0 / 1**, solo?, 0,5, ?). Dulu tidak dibaca — 5 track HIPDUT yang di-mute di FLM (Sytrus
+  Cubed, MUGWANTI, Synth_Shot_A (41), dua "rhythm"; dua di antaranya kosong) ikut berbunyi; sekarang di-mute. Nilai mentah di `ch.rprm`.
+- **Solo (asumsi)**: manual menyebut kontrol kanal Activate (mute) lalu **Solo**; indeks ke-3 `RPRM` kandidatnya, tetapi **0 di semua proyek
+  yang ada** sehingga belum bisa dibuktikan. Dibaca dan dilaporkan bila > 0, **tidak diterapkan otomatis** (solo yang salah akan membungkam
+  seluruh proyek — risiko terlalu besar untuk byte yang belum terbukti).
+- **Pitch klip audio** (f64 semitone) dan **rasio stretch** (f64) apa adanya; rasio yang sangat dekat 1 tetap diterapkan (dulu < 0,0001
+  diabaikan: 4 klip di arsip pemilik).
+- **DirectWave** (`PRMS`, [0] = on): [1] Attack, [2] Release, [3] Pitch (±24 st, knob bertingkat: semitone utuh ke arah nol), [4] Fine Tune
+  (±100 cent), [5] Decay, [6] Sustain, [7] Slide Time, [8] Reverse, [9] Loop, [10] Legato, [11] Mono, [12] Cutoff, [13] Resonance,
+  [14] Kbd Trk, [15] Vel Trk (0..1 = 0..100 seperti di FLM), [16] Filter Off / Lowpass / Highpass / Bandpass, [17..21] Flt Env A D S R
+  Amount, [22..26] Frq Env, [27..32] LFO. Bukti: screenshot FLM pemilik vs nilai tersimpan — program library dengan filter 40 / 0 / 50 / 100
+  tersimpan 0,4075 / 0 / 0,5075 / 1 / 1/3 (Lowpass); toggle Loop menyala; nilai bawaan sample baru (Attack 0, Release 0,1, Decay 1,
+  Sustain 1, Slide 0); Legato + Slide pada instance yang sama; Pitch: Synth_Shot (88) −15,25 dan (90) −3,74 memainkan melodi yang sama →
+  −15 dan −3 (tepat satu oktaf), empat track sample "C" pada −3,18..−3,74 → −3, lapisan Banjo −12,68 → −12 (oktaf); pembulatan biasa
+  merusak semua pola itu. HIPDUT: pitch −3 / −12 / −15 / +9 semitone dan fine tune yang dulu hilang sekarang terbawa.
+
+**Asumsi (belum bisa dibuktikan tanpa render dari FLM):**
+- Hukum volume di antara titik bawaan: gain linear relatif (bawaan = 0 dB). Kalau fader FLM ternyata memakai kurva lain, keseimbangan
+  track yang levelnya jauh dari bawaan bisa berbeda.
+- Waktu envelope DirectWave / pad dari slider 0..1: kubik 1 ms .. 10 s (FLM tidak menampilkan angka); Slide Time dibatasi 2 dtk.
+- Hukum pan FLM; respons velocity → amplitudo instrumen FLM (diasumsikan linear).
+- Pan dan envelope per klip audio (`PRMS[1]`, `[6..9]`): MobileDAW belum punya pan / envelope per klip; dilaporkan di laporan impor
+  (bagian **Presisi**) bila dipakai (kedua arsip pemilik memakai nilai bawaan).
+
+**Belum diketahui (data mentah disimpan, dilaporkan):**
+- Urutan parameter GMSynth (75) dan SuperSaw (60): instrumen diimpor dengan preset bernama sama di MobileDAW (bukan nilai proyek).
+- SoundFont player FLM (52: semua nilai kelipatan 1/81 = pilihan diskrit), modul 48 (3 parameter, sebelum SoundFont player — kemungkinan
+  efek not; track "rhythm" HIPDUT memainkan not di oktaf 7–8 sehingga hasilnya bisa salah oktaf), instrumen 39 (149 parameter).
+- Parameter Reverb, Reverb 2, Tremolo, Distortion; tipe efek 4, 9, 16, 26, 30, 44, 45.
+- **Urutan proses Rack**: manual resmi menyebut efek yang berada **sebelum** sebuah instrumen di rack tidak memengaruhi instrumen itu
+  (DirectWave > Distortion > MiniSynth > Reverb → MiniSynth hanya kena Reverb). MobileDAW = satu instrumen + satu rantai efek per track,
+  jadi rack FLM dengan beberapa instrumen berselang-seling efek dipetakan mendekati (semua modul non-instrumen jadi device track); kasus
+  ini jarang dan dilaporkan. Mix options (Wet Pan / Mix / Post Gain) sesuai halaman Rack manual.
+- Kode DSP efek / instrumen FLM tidak dipublikasikan: instrumen FLM di MobileDAW meniru kontrol dan logikanya, tetapi bunyinya tidak
+  identik bit demi bit. Kalibrasi akhir butuh render referensi (WAV per track) dari FLM untuk proyek yang sama.
+
+## Migrasi modul ke stock plugin MobileDAW (`js/import/fxmap.js`)
+Sumber nama / parameter modul: panduan FX FL Studio Mobile dari pemilik (30 modul) + data di proyek asli.
+- **Saat impor** (langkah "Menyesuaikan dan memproses parameter modul ke plugin bawaan…", 30–35 %), hanya konversi yang menjaga suara:
+  - Graphic EQ (8-band, 80 Hz – 12 kHz) → **EQ Eight**: 8 band bell, gain dari slider (0,5 = 0 dB, rentang ±12 dB diasumsikan) —
+    datar = persis (null test < −90 dB), diatur = perkiraan (tes: +6 dB slider → +6,0 dB di 160 Hz).
+  - Leveller → **Utility** gain / pan (0,7071 = 0 dB; null test persis di 0 dB).
+  - Spacer pada setelan netral → Utility netral (persis); setelan lain tidak ditebak.
+  - Modul yang **off** di proyek asli → stock plugin padanannya **dalam keadaan bypass** (suara identik).
+  - Analyzer / Tuner → Spectrum / Tuner (tidak mengubah audio).
+- **"Ganti modul yang hilang dengan stock plugin"** — pilihan yang hanya muncul saat memuat proyek (dialog setelah file dipilih, bawaan
+  dicentang; tidak ada lagi di menu ⋮ maupun di laporan). Dicentang (`fxMode 'all'`): selain padanan persis, modul yang punya padanan
+  (Compressor, Autoduck, Multiband Compressor, Tape Delay, Stereoizer, Waveshaper, …) menjadi stock plugin **bypass** — suara tetap seperti
+  aslinya, tinggal dinyalakan dan diatur; nilai asli tersimpan di `d.from`. Tidak dicentang (`'map'`): hanya padanan persis, sisanya
+  tetap placeholder. Progres "Menyesuaikan dan memproses parameter modul ke plugin bawaan…" ada di jendela impor.
+- **Tidak diterapkan** (dilaporkan): modul tanpa padanan di MobileDAW (Pitcher 2, Tape Stop, Multi FX, Comb Filter) dan tipe yang belum dikenali (`Efek FLM #id`).
+- Identitas tipe: pasti = 1 DirectWave, 7 Graphic EQ, 8 Compressor, 20 Leveller, 29 Autoduck, 34 Spacer, 36 Multiband Compressor,
+  43 Wow & Flutter; diduga dari tata letak (tidak pernah diaktifkan otomatis) = 11 Tape Delay, 25 Waveshaper, 44 Stereoizer;
+  belum dikenali = 4, 9, 16, 30, 35, 45.
+- Arsip pemilik: Banjo → DirectWave 2 zona (root C3), DW Sampler 9 ("Keyboard/Grand Piano") → SoundFont GM Acoustic Grand Piano;
+  impor = 30 dari 69 modul efek diterapkan (3 persis, 25 perkiraan, 2 off); "ganti seluruh" = 50 dari 69 (20 bypass untuk
+  diatur); 19 tetap placeholder (lapisan DirectWave kedua kini menjadi zona, bukan modul).
+- Batas yang jujur: kesamaan suara dengan FL Studio Mobile hanya bisa dibuktikan untuk konversi "persis" / bypass. Untuk Graphic EQ yang
+  diatur dan Leveller, skala nilai FLM diasumsikan; kalibrasi pasti butuh render referensi dari FLM (ekspor stem per track).
+
+## Ableton Live (.als)
+gzip + XML (Live 9–12: MasterTrack / MainTrack). Dibaca: tempo, birama, MidiTrack / AudioTrack / ReturnTrack, volume / pan / mute, klip
+arrangement (posisi, panjang, loop, not + velocity), klip audio (path sample, warp marker → rasio stretch, offset), device bawaan (nama
+Live 12) dan plugin VST / VST3 / AU (nama). Simpler / Sampler → DirectWave dengan sample-nya; Drum Rack → track drum (pad per branch).
+Group track dilewati (track di dalamnya tetap). Sample dicocokkan dengan path lalu nama file di dalam ZIP.
+
+## FL Studio (.flp) — eksperimental
+Format event (`FLhd` / `FLdt`). Dibaca: tempo, birama, judul, channel (nama, plugin, sample), pattern (not), playlist (pattern dan klip
+audio), nama efek slot mixer (insert 0 → Master, insert lain → track Return). Routing channel → insert belum. Dites dengan file buatan
+sesuai dokumentasi komunitas (PyFLP); belum dengan file .flp asli.
+
+## Tes
+- `node tools/import-test.mjs` (masuk `run-tests`): FLM / ALS / FLP buatan + alur impor ZIP lengkap. `FLM_ZIP=/path.zip` = juga arsip asli.
+- `IMPORT_FILE=/path.zip node tools/import-ui-test.mjs` (Chromium Pixel 7): impor lewat UI, progres, laporan, decode semua sample, render
+  klip stretch, kartu placeholder, proyek bisa diputar. Arsip pemilik: 26 track, 1032 klip, 620 not, 42/42 sample, 619 klip stretch, ±31 dtk.
+
+- **Otomasi Level Master** (sesi ini): jadi lane volume di strip master (`target.strip 'master'`), bukan dilewati lagi. Audit arsip asli + modul yang belum dikenali: `docs/replica/`.
+
+## Kalibrasi dari stem pemilik ("New Song", FLM app 10.19)
+Arsip berisi keempat instrumen bawaan FLM tanpa diubah (DirectWave library "Brazil Piano", GMS, SuperSaw, MiniSynth) masing-masing memainkan akor A minor
+(57 / 60 / 64), plus render MP3 FLM per instrumen. Diukur dengan `tools/flm-stem-test.mjs` (run-tests; dilewati bila arsip / ffmpeg tidak ada):
+- **Nada**: not tersimpan 57 / 60 / 64 berbunyi A3 220 Hz / C4 / E4 di FLM (synth dan piano library). Nomor not FLM = MIDI. Importer dulu menggeser +12
+  (synth satu oktaf terlalu tinggi); sekarang `NOTE_OFS = 0` untuk not DAN root zona DirectWave (nada sample tetap relatif, nada synth / GM absolut benar).
+- **Tipe modul 0 = MiniSynth** (dulu tidak dikenal: track jadi DirectWave kosong / diam).
+- **Patch default** (hanya bila modul FLM tanpa preset): SuperSaw Gain +9,5 dB + Release 3 ms (spektrum sudah cocok, jarak pita 1,1 dB); MiniSynth Cutoff 80 %
+  + Release 3 ms + Level +9,9 dB (jarak pita 5,2 -> 1,2 dB); GMS Level +2,6 dB. Hasil: level 125 ms pertama dalam 0,1 dB, gate setelah not-off sama.
+- Belum: gelombang default GMS (spektrum di atas 2,4 kHz masih lebih gelap; satu akor tidak cukup untuk membuktikan bentuk gelombangnya), program library
+  DirectWave (tetap diganti SoundFont GM; nadanya kini benar), arti tiap angka parameter (butuh proyek "satu knop per track").

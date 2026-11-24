@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=0.8, minimum-scale=0.8, maximum-scale=0.8, user-scalable=no, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#242426">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>MobileDAW 2</title>
+<link rel="stylesheet" href="css/app.css">
+<link rel="stylesheet" href="css/live.css">
+<link rel="stylesheet" href="css/float.css">
+<link rel="stylesheet" href="css/ableton.css">
+<link rel="stylesheet" href="css/ui2.css">
+</head>
+<body>
+<script>
+// If a file of the app does not load (wrong upload, blocked script), say so instead of showing a half-built page.
+(function () {
+  var app = !!(window.Capacitor && Capacitor.isNativePlatform && Capacitor.isNativePlatform()) || matchMedia('(display-mode: fullscreen)').matches || matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  function show(msg) {
+    if (window.__dawBooted) { console.error(msg); return; }   // after start-up the app reports problems itself
+    var d = document.getElementById('diag');
+    if (!d) { d = document.createElement('div'); d.id = 'diag'; d.style.cssText = 'position:fixed;inset:0;z-index:9999;background:#1b1b1c;color:#eee;padding:24px;font:15px/1.5 system-ui;overflow:auto'; d.innerHTML = '<h2 style="margin-top:0">MobileDAW tidak bisa dimuat</h2>'; document.body.appendChild(d); }
+    var p = document.createElement('p'); p.textContent = msg; d.appendChild(p);
+  }
+  window.addEventListener('error', function (e) {
+    var t = e.target;
+    if (t && (t.src || t.href)) show(app ? 'Aplikasi gagal dimuat. Tutup lalu buka MobileDAW lagi; jika masih sama, pasang ulang aplikasi.' : 'File gagal dimuat: ' + (t.src || t.href) + '. Pastikan seluruh isi folder (index.html, css/, js/, icons/, manifest.json, sw.js) ikut di-upload.');
+    else if (e.message) show('Kesalahan: ' + e.message + (e.filename ? ' (' + e.filename.split('/').pop() + ':' + e.lineno + ')' : ''));
+  }, true);
+  window.addEventListener('unhandledrejection', function (e) { show('Kesalahan: ' + ((e.reason && e.reason.message) || e.reason)); });
+  window.addEventListener('load', function () { setTimeout(function () { if (!window.__dawBooted && !document.getElementById('diag')) show(app ? 'MobileDAW belum mulai. Tutup lalu buka lagi aplikasinya.' : 'Aplikasi belum mulai setelah 5 detik. Coba muat ulang; jika tetap sama, ada file yang tidak ter-upload.'); }, 5000); });
+})();
+</script>
+<div id="app">
+  <header id="top">
+   <div id="top-l">
+    <button id="btn-browser" class="b ic" aria-label="Browser"></button>
+    <button class="readout" id="rd-bpm" aria-label="Tempo">120.00</button>
+    <button class="readout lvf" id="rd-sig2" aria-label="Birama">4 / 4</button>
+    <div class="grp hist">
+      <button id="btn-undo" class="b ic" aria-label="Urungkan"></button>
+      <button id="btn-redo" class="b ic" aria-label="Ulangi"></button>
+    </div>
+   </div>
+   <div id="top-c">
+    <button class="readout lvf" id="rd-pos2" aria-label="Posisi lagu">1. 1. 1</button>
+    <div class="grp tport">
+      <button id="btn-rew" class="b ic" aria-label="Kembali ke awal"></button>
+      <button id="btn-play" class="b ic" aria-label="Play / pause"></button>
+      <button id="btn-rec" class="b ic rec" aria-label="Rekam"></button>
+      <button id="btn-metro" class="b ic" aria-label="Metronom"></button>
+    </div>
+    <div class="grp lvloop"><button class="readout lvf" id="rd-lst" aria-label="Awal loop">1. 1. 1</button><button id="btn-loop" class="b ic" aria-label="Loop arrangement"></button><button class="readout lvf" id="rd-llen" aria-label="Panjang loop">4. 0. 0</button></div>
+   </div>
+   <div id="top-r">
+    <div class="perf" aria-label="Performa">
+      <div class="fpsbox" title="Frame per detik"><b>FPS</b><span id="fps-t">--</span></div>
+      <div class="cpubox" title="Beban CPU audio"><div id="cpu"><i></i><span id="cpu-t">0%</span></div></div>
+    </div>
+    <div class="seg">
+      <button data-view="arr" class="b on">Arrange</button>
+      <button data-view="mix" class="b">Mixer</button>
+    </div>
+    <button id="btn-menu" class="b ic" aria-label="Menu"></button>
+   </div>
+   <!-- not shown in the control bar (still used by the code): position / time, stop, back to start, tap, time signature, follow, sample rate, MIDI.
+        Tap, time signature and follow are in the Tempo window; Stop is in the menu; "Ke awal" is the rewind button in the control bar. -->
+   <div id="top-x" hidden>
+    <div id="rd-pos">1.1.1</div><div id="rd-time">0:00.0</div><div id="rd-sr"></div>
+    <button id="btn-stop"></button><button id="btn-tap"></button><button id="rd-sig">4 / 4</button><button id="btn-follow"></button><button id="midi-ind"><i></i></button>
+   </div>
+  </header>
+  <div id="body">
+    <aside id="browser" hidden></aside>
+    <main id="main">
+      <section id="view-arr">
+        <div id="arr"></div>
+        <div id="detail">
+          <nav id="dtabs">
+            <div id="split" aria-label="Ubah tinggi panel"></div>
+            <button data-tab="dev" class="b on">Device</button>
+            <button data-tab="keys" class="b">Keys</button>
+            <span id="dtitle"></span>
+            <button id="btn-shut" class="b ic" aria-label="Tutup panel bawah"></button>
+            <button id="btn-max" class="b ic" aria-label="Perbesar panel"></button>
+            <button id="btn-edclose" class="b ic" aria-label="Tutup editor" hidden></button>
+          </nav>
+          <div id="dbody"></div>
+        </div>
+      </section>
+      <section id="view-mix" hidden></section>
+    </main>
+  </div>
+  <div id="layer"></div>
+</div>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
